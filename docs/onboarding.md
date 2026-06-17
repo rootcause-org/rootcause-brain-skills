@@ -26,7 +26,7 @@ Clones the kit once to `~/.rootcause-brain-skills` and symlinks the skill into t
 `SKILL="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/skills/brain-dev"`. Update: re-run the installer.
 
 **B — Claude Code plugin (user scope).** `/plugin marketplace add rootcause-org/rootcause-brain-skills`
-then `/plugin install rootcause-brain-dev` (update: `/plugin marketplace update`). Engine at
+then `/plugin install brain-dev` (update: `/plugin marketplace update`). Engine at
 `${CLAUDE_PLUGIN_ROOT}/skills/brain-dev/scripts`.
 
 **C — Codex plugin (user scope).** `codex plugin marketplace add rootcause-org/rootcause-brain-skills`

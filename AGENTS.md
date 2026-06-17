@@ -2,8 +2,8 @@
 
 **This repo produces the reusable skills (Agent Skills) + engine + `rootcause-runtime` package that get
 imported into our project BRAIN repositories.** It is the *kit*, not a brain itself. Skills authored
-here are installed once (as a Claude Code plugin) and run against whatever brain you're `cd`'d into —
-killing the per-brain copy/drift problem.
+here are installed once (Claude Code / Codex plugin, or a local symlink) and run against whatever
+brain you're `cd`'d into — killing the per-brain copy/drift problem.
 
 The code + the shipped `SKILL.md` are the durable record; release mechanics live in
 [RELEASING.md](RELEASING.md).

@@ -22,7 +22,7 @@ callback, never touches our host. Grounding queries run in a `READ ONLY` Postgre
 
 | Mode | What it is | Use |
 |---|---|---|
-| **`uv`** (default) | `uv run` with the bundled `lib` + its pinned deps, env from `./.env`. | Tight inner loop while writing/fixing a script. |
+| **`uv`** (default) | `uv run` with the pinned `rootcause-runtime` (`lib`) + its deps, env from `./.env`. | Tight inner loop while writing/fixing a script. |
 | **`docker`** | `docker run` the published workspace image — brain + mirrors `:ro`, prod isolation. | "Does it actually work in the box?" before pushing. |
 
 > **uv-mode fidelity gap — surface it, don't over-trust it.** uv mode reproduces the import surface,

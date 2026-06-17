@@ -1,7 +1,7 @@
 # rootcause-brain-skills
 
 One kit to iterate on a project's **brain** locally and verify it works the way production does. It's
-a **single self-contained skill** (`brain-dev`, engine bundled in its own `scripts/`) that installs
+a **single self-contained skill** (`brain-dev`, engine in its own `scripts/`) that installs
 natively in **Claude Code** *and* **OpenAI Codex** — as a plugin in either, or a local gitignored
 symlink. Plus a pinned Python package (**`rootcause-runtime`**, the `lib` helpers brain scripts
 import). No `rootcause-light` source needed.
@@ -37,7 +37,7 @@ uv run "$SKILL/scripts/brain_test.py" --live        # run the tiers (read-only p
 
 ```text
 /plugin marketplace add rootcause-org/rootcause-brain-skills
-/plugin install rootcause-brain-dev          # later: /plugin marketplace update
+/plugin install brain-dev                    # later: /plugin marketplace update
 # engine then lives at ${CLAUDE_PLUGIN_ROOT}/skills/brain-dev/scripts/
 ```
 
@@ -78,7 +78,7 @@ fixtures**, under `skills/<name>/`.)
 | Path | What |
 |---|---|
 | `skills/brain-dev/SKILL.md` | The skill: brief → run a grounding script / test tiers → report, in `uv` or `docker` mode. |
-| `skills/brain-dev/scripts/brain_env.py` · `brain_run.py` · `brain_test.py` | The engine, bundled inside the skill — shared core + run one script + the pytest tiers; both modes, brain-dir-relative. |
+| `skills/brain-dev/scripts/brain_env.py` · `brain_run.py` · `brain_test.py` | The engine, inside the skill — shared core + run one script + the pytest tiers; both modes, brain-dir-relative. |
 | `runtime/` | The **`rootcause-runtime`** package (`lib/`: db, stripe, cloudwatch, fs, http, html, livecheck). Canonical home. |
 | `docker/Dockerfile` | The workspace image (installs `rootcause-runtime`); published to ghcr for `docker` mode. |
 | `.claude-plugin/marketplace.json`, `plugin.json` | Claude Code plugin catalog + manifest. |

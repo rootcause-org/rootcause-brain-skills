@@ -182,7 +182,7 @@ def uv_child_env(
     base: dict[str, str], extra_pythonpath: list[Path], mirrors_root: str | None
 ) -> dict[str, str]:
     """The child env for a uv-mode invocation: the script's own dir(s) on PYTHONPATH (for siblings
-    like `from ka import …`; `lib` itself arrives as the installed bundled package), and
+    like `from ka import …`; `lib` itself arrives via `uv run --with` — see `runtime_spec`), and
     `RC_MIRRORS_ROOT` so lib.fs reads a local mirror farm instead of the absent `/mirrors`."""
     child = dict(base)
     paths = [str(p) for p in extra_pythonpath] + ([child["PYTHONPATH"]] if child.get("PYTHONPATH") else [])
