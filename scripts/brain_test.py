@@ -39,8 +39,10 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--live", action="store_true", help="run the live tier (schema canary + render-smoke)")
     g.add_argument("--require-live", action="store_true",
                    help="--live, and error if no live test ran (no DSN / nothing collected)")
-    p.add_argument("pytest_args", nargs="*", help="extra args passed through to pytest")
-    args = p.parse_args(sys.argv[1:] if argv is None else argv)
+    p.add_argument("pytest_args", nargs="*", help="extra positional args passed through to pytest")
+    # Unknown args (pytest flags like -k/-x/--tb) pass through too; kit flags precede them.
+    args, extra = p.parse_known_args(sys.argv[1:] if argv is None else argv)
+    args.pytest_args = [*args.pytest_args, *extra]
 
     brain_dir = E.resolve_brain_dir(args.brain)
     skills_dir = brain_dir / "skills"
@@ -57,6 +59,9 @@ def main(argv: list[str] | None = None) -> int:
     mirrors = E.discover_mirrors(args.mirrors_root, args.mirror)
 
     if args.mode == "uv":
+        if args.mirror:
+            print("warning: --mirror is docker-only; uv mode reads mirrors via --mirrors-root "
+                  "(RC_MIRRORS_ROOT). Ignoring the explicit --mirror entries.", file=sys.stderr)
         return _run_uv(brain_dir, skills_dir, live, pytest_args, args.mirrors_root)
     return _run_docker(brain_dir, mirrors, live, pytest_args, args)
 
@@ -80,8 +85,9 @@ def _run_docker(brain_dir: Path, mirrors: dict[str, Path], live: bool, pytest_ar
     if not E.docker_available():
         print("error: docker not available (is colima/Docker running?)", file=sys.stderr)
         return 1
-    env = E.load_env(brain_dir, required=live)
-    if env is None:
+    # Inject ONLY the brain's .env (not the host environ) — matches prod, no host-var leakage.
+    secrets = E.brain_secrets(brain_dir, required=live)
+    if secrets is None:
         return 1
     for name, path in mirrors.items():
         if not path.is_dir():
@@ -93,9 +99,9 @@ def _run_docker(brain_dir: Path, mirrors: dict[str, Path], live: bool, pytest_ar
     command = ["pytest", "-p", "no:cacheprovider", f"{E.BRAIN_MOUNT}/skills", *pytest_args]
     run_args = E.docker_run_args(
         image=args.image, brain_dir=brain_dir, mirrors=mirrors,
-        env_names=list(env), command=command,
+        env_names=list(secrets), command=command,
     )
-    return E.run_docker(run_args, env)
+    return E.run_docker(run_args, secrets)
 
 
 if __name__ == "__main__":

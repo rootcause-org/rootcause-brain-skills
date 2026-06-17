@@ -102,9 +102,40 @@ def load_env(brain_dir: Path, *, required: bool) -> dict[str, str] | None:
     return child
 
 
+def brain_secrets(brain_dir: Path, *, required: bool) -> dict[str, str] | None:
+    """JUST the brain's `./.env` (no host env merged) — the keys docker mode injects. Prod injects
+    only the project's secret set, never the operator's whole environment, so forwarding the merged
+    `os.environ` into the container would both leak host vars (HOME, AWS_*, …) and shadow the image's
+    own PYTHONPATH/HOME. Returns {} when absent and not `required`; None (caller errors) when required."""
+    env_file = brain_dir / ".env"
+    if env_file.is_file():
+        return parse_env(env_file)
+    if required:
+        print(
+            f"error: no .env at {env_file} — the live tier / a real run needs the project secrets. "
+            "Operators recover it with rootcause-light's `rc_env.py <project> --pull`.",
+            file=sys.stderr,
+        )
+        return None
+    return {}
+
+
 def dsn_names(env: dict[str, str]) -> list[str]:
     """The project DSN env vars present (`*_DSN`), excluding the host store — mirrors lib.db.databases."""
     return sorted(k for k, v in env.items() if k.endswith("_DSN") and v and k != "DATABASE_URL")
+
+
+def resolve_brain_script(brain_dir: Path, target: str) -> Path:
+    """Resolve a brain-relative (or absolute) script path, rejecting any `..` escape out of the brain
+    — the kit 'operates on `.`' (SPEC §5), and docker mode mounts only the brain, so a path that
+    climbs out is always a mistake. Raises FileNotFoundError (missing) or ValueError (escapes)."""
+    t = Path(target)
+    script = t if t.is_absolute() else (brain_dir / t).resolve()
+    if not t.is_absolute() and not (script == brain_dir or script.is_relative_to(brain_dir)):
+        raise ValueError(f"{target!r} escapes the brain dir {brain_dir}")
+    if not script.is_file():
+        raise FileNotFoundError(script)
+    return script
 
 
 # ── mirrors (source repos the brain's fs helpers read) ────────────────────────────────────────────
