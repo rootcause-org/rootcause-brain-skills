@@ -52,15 +52,10 @@ repointing prod before the tag exists breaks prod image builds.
    repo's `docker/Dockerfile` — pick ONE builder to avoid drift; this repo's is recommended since
    `runtime/` lives here.
 
-5. **Delete the bucket-A copies + point the support skill at the kit:**
-   - Remove `rootcause-light/.agents/skills/support/scripts/brain_run.py` and
-     `rootcause-light/scripts/brain_test.py`.
-   - Rewrite `rootcause-light/.agents/skills/support/local-brain-scripts.md` to say: install the
-     `brain-dev` skill (any of the three paths in this repo's README), `cd` into the brain, and run
-     `brain_run.py`/`brain_test.py` from the skill's `scripts/` (CC plugin:
-     `${CLAUDE_PLUGIN_ROOT}/skills/brain-dev/scripts`). Leave buckets B/C (`db.py`, `rc_env.py`, …)
-     untouched.
-   - Operator wrappers (bucket C, e.g. `rc_run_locally.py`) may *call* the engine; never the reverse.
+5. **Delete the bucket-A copies + point the support skill at the kit:** *Already done* — an earlier
+   `rootcause-light` cleanup removed the engine copies (`brain_run.py`, `brain_test.py`) and the old
+   `local-brain-scripts.md`; the support skill's `scripts/` now holds only buckets B/C (`db.py`,
+   `logs.py`, `rc_agent_debug.py`, …). No action.
 
 ## Already done (no action)
 
