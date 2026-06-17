@@ -11,42 +11,30 @@ env**.
 
 ## Use it against a brain
 
-Pick one install path, then `cd` into the brain and go. **Nothing is added to the brain repo** (see
-below).
+**Recommended — local, per-repo, gitignored (no global install, works with any agent).** One pinned
+clone on disk, symlinked into the brain's gitignored `.agents/` (vendor-neutral) + `.claude/` (Claude
+Code discovery). Nothing is committed; nothing reaches `/brain` (see below).
 
-**A. Claude Code plugin — recommended, zero brain footprint.** Installs once at user scope; works in
-every brain.
+```bash
+cd ~/code/rootcause-org/rootcause-brain-<project>   # needs the brain's gitignored ./.env
+bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/v0.1.0/install.sh)
+# then, from the brain root:
+uv run .agents/brain-dev/scripts/brain_run.py --brief        # map the brain
+uv run .agents/brain-dev/scripts/brain_test.py --live        # run the tiers (read-only prod)
+```
+
+The installer (`install.sh`) clones the kit once to `~/.rootcause-brain-skills` (override with
+`RC_BRAIN_KIT` / `RC_BRAIN_KIT_TAG`), symlinks it in, and appends the ignore rules. Claude Code picks
+up the `brain-dev` skill + `/brain-dev` command automatically; other agents read `AGENTS.md` +
+`.agents/`.
+
+**Alternative — Claude Code plugin (user scope).** If you do want a global install:
 
 ```bash
 # in Claude Code
 /plugin marketplace add rootcause-org/rootcause-brain-skills
 /plugin install rootcause-brain-dev          # later: /plugin marketplace update
-```
-```bash
-cd ~/code/rootcause-org/rootcause-brain-<project>   # needs the brain's gitignored ./.env
-# invoke the brain-dev skill, or /brain-dev, or call the engine directly:
-KIT=${CLAUDE_PLUGIN_ROOT}/scripts
-uv run "$KIT/brain_run.py" --brief                  # map the brain
-uv run "$KIT/brain_test.py" --live                  # run the tiers (read-only prod)
-```
-
-**B. No plugin — clone the kit once, run the engine directly.** Good for scripted/CI use or non–Claude
-Code shells.
-
-```bash
-git clone https://github.com/rootcause-org/rootcause-brain-skills ~/.rootcause-brain-skills
-cd ~/code/rootcause-org/rootcause-brain-<project>
-uv run ~/.rootcause-brain-skills/scripts/brain_run.py --brief
-```
-
-**C. Co-located in the brain, but gitignored.** If you want the kit *inside* the brain dir for
-convenience, keep it untracked so it can't leak into prod or clutter the repo:
-
-```bash
-cd ~/code/rootcause-org/rootcause-brain-<project>
-git clone https://github.com/rootcause-org/rootcause-brain-skills dev-kit   # or symlink
-echo "dev-kit/" >> .gitignore                                               # never committed
-uv run dev-kit/scripts/brain_run.py --brief
+# engine then lives at ${CLAUDE_PLUGIN_ROOT}/scripts/
 ```
 
 Full walkthrough: [docs/onboarding.md](docs/onboarding.md).

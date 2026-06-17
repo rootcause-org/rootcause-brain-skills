@@ -33,11 +33,21 @@ callback, never touches our host. Grounding queries run in a `READ ONLY` Postgre
 > `uv` run is not a guaranteed-green prod run.** The runner prints this caveat on every uv run; repeat
 > it when you report a uv-mode result. The honest pre-push gate is `--mode docker`.
 
+## Locate the engine
+
+The engine scripts live in this kit's `scripts/`. Resolve `$KIT` once, depending on how the kit was
+installed:
+
+- **Plugin install:** `KIT=${CLAUDE_PLUGIN_ROOT}/scripts`
+- **Local (gitignored) install** (`install.sh`): `KIT=.agents/brain-dev/scripts` (run from the brain root)
+
+All commands below use `"$KIT/…"`.
+
 ## Workflow
 
 1. **Brief — map the brain first.** Don't guess at script paths or DB names:
    ```bash
-   uv run ${CLAUDE_PLUGIN_ROOT}/scripts/brain_run.py --brief
+   uv run "$KIT/brain_run.py" --brief
    ```
    Lists the `.env` key names (values redacted), the project databases (`*_DSN`), the mirrors the
    runner can see, and each skill + its scripts. Also read the brain's `AGENTS.md` and the relevant
@@ -45,22 +55,22 @@ callback, never touches our host. Grounding queries run in a `READ ONLY` Postgre
 
 2. **Run a grounding script** (everything after the path passes through to the script):
    ```bash
-   uv run ${CLAUDE_PLUGIN_ROOT}/scripts/brain_run.py skills/databases/scripts/lookup_customer.py --email a@b.com
-   uv run ${CLAUDE_PLUGIN_ROOT}/scripts/brain_run.py -m lib.db --list          # ad-hoc DB query CLI
-   uv run ${CLAUDE_PLUGIN_ROOT}/scripts/brain_run.py -m lib.db "select count(*) from accounts"
+   uv run "$KIT/brain_run.py" skills/databases/scripts/lookup_customer.py --email a@b.com
+   uv run "$KIT/brain_run.py" -m lib.db --list          # ad-hoc DB query CLI
+   uv run "$KIT/brain_run.py" -m lib.db "select count(*) from accounts"
    ```
 
 3. **Run the test tiers:**
    ```bash
-   uv run ${CLAUDE_PLUGIN_ROOT}/scripts/brain_test.py                 # offline L1 (hermetic, no DSN)
-   uv run ${CLAUDE_PLUGIN_ROOT}/scripts/brain_test.py --live          # + L2 schema canary + L3 render-smoke (read-only prod)
-   uv run ${CLAUDE_PLUGIN_ROOT}/scripts/brain_test.py --require-live   # gated: error if no live test ran
+   uv run "$KIT/brain_test.py"                 # offline L1 (hermetic, no DSN)
+   uv run "$KIT/brain_test.py" --live          # + L2 schema canary + L3 render-smoke (read-only prod)
+   uv run "$KIT/brain_test.py" --require-live   # gated: error if no live test ran
    ```
 
 4. **Pre-push gate — re-run in docker** once it's green in uv:
    ```bash
-   uv run ${CLAUDE_PLUGIN_ROOT}/scripts/brain_run.py  --mode docker skills/databases/scripts/lookup_customer.py --email a@b.com
-   uv run ${CLAUDE_PLUGIN_ROOT}/scripts/brain_test.py --mode docker --live
+   uv run "$KIT/brain_run.py"  --mode docker skills/databases/scripts/lookup_customer.py --email a@b.com
+   uv run "$KIT/brain_test.py" --mode docker --live
    ```
 
 5. **Report** the grounded result, the mode used, and — for a uv-mode result — the fidelity caveat.
