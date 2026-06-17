@@ -3,7 +3,7 @@
 # ///
 """Run a brain's pytest tiers the way the workspace container would — offline by default, live on demand.
 
-Brain-dir-relative (SPEC §5): `cd` into a `rootcause-brain-<project>` checkout and invoke; operates
+Brain-dir-relative: `cd` into a `rootcause-brain-<project>` checkout and invoke; operates
 on `./skills`. Tiers (from `lib.livecheck`):
 
   * **offline (default)** — `-m "not live"`: hermetic L1 fixture tests. No DSN, no network.
@@ -93,7 +93,7 @@ def _run_docker(brain_dir: Path, mirrors: dict[str, Path], live: bool, pytest_ar
         if not path.is_dir():
             print(f"warning: mirror {name!r} path missing: {path}", file=sys.stderr)
     print(f"[docker mode] image={args.image} — egress is OPEN (default bridge), not the prod "
-          "default-deny firewall (SPEC §4.2).", file=sys.stderr)
+          "default-deny firewall.", file=sys.stderr)
     # pytest over the read-only /brain/skills; lib + the livecheck plugin are baked into the image.
     # `-p no:cacheprovider`: /brain is :ro (EROFS), and the cache is useless for a one-shot --rm run.
     command = ["pytest", "-p", "no:cacheprovider", f"{E.BRAIN_MOUNT}/skills", *pytest_args]

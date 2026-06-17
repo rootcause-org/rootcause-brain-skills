@@ -5,7 +5,7 @@ argument-hint: "[brief | <script-path> [args…] | test [--live] | --mode docker
 
 Use the **brain-dev** skill to work on the brain in the current directory (`$ARGUMENTS`).
 
-The engine is at `${CLAUDE_PLUGIN_ROOT}/scripts`:
+The engine is at `${CLAUDE_PLUGIN_ROOT}/skills/brain-dev/scripts`:
 - `brain_run.py --brief` — map the brain (env keys, DBs, mirrors, skills).
 - `brain_run.py <script-path> [args…]` / `-m lib.db …` — run a grounding script or the DB CLI.
 - `brain_test.py [--live | --require-live]` — run the pytest tiers.

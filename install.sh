@@ -27,7 +27,7 @@ if [ -d "$KIT/.git" ]; then
   echo "kit: updating $KIT -> $TAG"
   git -C "$KIT" fetch -q --tags origin || true
   git -C "$KIT" checkout -q "$TAG" || echo "  (tag $TAG not found; using current checkout)" >&2
-elif [ -d "$KIT/scripts" ]; then
+elif [ -d "$KIT/skills/brain-dev" ]; then
   echo "kit: using existing non-git kit at $KIT"
 else
   echo "kit: cloning $REPO@$TAG -> $KIT"
@@ -35,8 +35,9 @@ else
 fi
 
 # 2. Gitignored symlinks into the brain: the SKILL dir at the standard discovery paths —
-#    `.agents/skills/brain-dev` (vendor-neutral) + `.claude/skills/brain-dev` (Claude Code) — plus the
-#    `/brain-dev` command. The engine binary stays in the shared clone ($KIT/scripts), not the brain.
+#    `.agents/skills/brain-dev` (vendor-neutral, Codex auto-discovers) + `.claude/skills/brain-dev`
+#    (Claude Code) — plus the `/brain-dev` command. The engine ships INSIDE the skill (scripts/), so the
+#    symlink carries it along; the canonical runtime/ stays in the shared clone (resolved via the link).
 mkdir -p "$BRAIN/.agents/skills" "$BRAIN/.claude/skills" "$BRAIN/.claude/commands"
 ln -sfn "$KIT/skills/brain-dev"      "$BRAIN/.agents/skills/brain-dev"
 ln -sfn "$KIT/skills/brain-dev"      "$BRAIN/.claude/skills/brain-dev"
@@ -50,8 +51,8 @@ for rule in "/.agents/skills/brain-dev" "/.claude/skills/brain-dev" "/.claude/co
 done
 
 echo
-echo "installed (gitignored). The engine lives in the shared clone:"
-echo "  KIT=$KIT/scripts"
-echo "  uv run \"\$KIT/brain_run.py\" --brief"
-echo "  uv run \"\$KIT/brain_test.py\" --live"
-echo "Claude Code also auto-discovers the 'brain-dev' skill + /brain-dev command."
+echo "installed (gitignored). The engine ships inside the skill:"
+echo "  SKILL=$KIT/skills/brain-dev"
+echo "  uv run \"\$SKILL/scripts/brain_run.py\" --brief"
+echo "  uv run \"\$SKILL/scripts/brain_test.py\" --live"
+echo "Claude Code auto-discovers the 'brain-dev' skill + /brain-dev command; Codex auto-discovers .agents/skills."

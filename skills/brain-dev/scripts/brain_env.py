@@ -4,14 +4,13 @@
 """Shared engine core for the brain-dev kit — env + PYTHONPATH + lib preflight + the two run modes.
 
 `brain_run.py` and `brain_test.py` are thin front-ends over this module. Everything here is
-**brain-dir-relative and `accounts.yml`-free** (SPEC §5): the brain is just the cwd (or an explicit
-path), its env is the gitignored plaintext `./.env`, and `lib` comes from the kit's *bundled*
-`runtime/` package — the exact bytes pinned by this plugin's tag, which is the same
-`rootcause-runtime@<tag>` the prod workspace image installs. So a green uv-mode run is provably the
-same `lib` prod runs (SPEC §3.1), with the fidelity gaps called out in `UV_MODE_CAVEATS`.
+**brain-dir-relative and `accounts.yml`-free**: the brain is just the cwd (or an explicit path), its
+env is the gitignored plaintext `./.env`, and `lib` comes from `rootcause-runtime` — the exact bytes
+the prod workspace image installs (see `runtime_spec`). So a green uv-mode run is provably the same
+`lib` prod runs, with the fidelity gaps called out in `UV_MODE_CAVEATS`.
 
-Two run modes (SPEC §4):
-  * **uv**     — fast inner loop: `uv run` with the bundled `lib` + its pinned deps, env from `./.env`.
+Two run modes:
+  * **uv**     — fast inner loop: `uv run` with `rootcause-runtime` + its pinned deps, env from `./.env`.
   * **docker** — faithful pre-push gate: `docker run` the published workspace image, brain + mirrors
                  mounted `:ro`, env injected, isolation matching prod.
 """
@@ -24,14 +23,17 @@ import sys
 from pathlib import Path
 
 # ── version line ────────────────────────────────────────────────────────────────────────────────
-# The single version line (SPEC §7): plugin tag == rootcause-runtime pin == workspace image tag ==
-# prod Dockerfile pin. Bump all together so local and prod cannot diverge.
+# The single version line: plugin tag == rootcause-runtime pin == workspace image tag == prod
+# Dockerfile pin. Bump all together (see RELEASING.md) so local and prod cannot diverge.
 VERSION = "0.1.0"
+REPO_URL = "https://github.com/rootcause-org/rootcause-brain-skills"
 
-# brain_env.py lives at <plugin>/scripts/ ; the bundled runtime package (holding lib/) is one up.
-RUNTIME = (Path(__file__).resolve().parents[1] / "runtime").resolve()
+# brain_env.py lives at <kit>/skills/brain-dev/scripts/ ; the canonical runtime/ package (holding
+# lib/) sits at the kit root — three levels up. Present in every distribution that bundles the whole
+# kit (checkout, CC plugin, local symlink); absent only if the skill dir is shipped on its own.
+RUNTIME = (Path(__file__).resolve().parents[3] / "runtime").resolve()
 
-# The published workspace image prod uses (SPEC §4.2). Overridable for a local build or a fork.
+# The published workspace image prod uses. Overridable for a local build or a fork.
 DEFAULT_IMAGE = os.environ.get("RC_WORKSPACE_IMAGE", f"ghcr.io/rootcause-org/workspace:v{VERSION}")
 
 # Container constants, mirrored from rootcause-light internal/workspace/docker.go so docker mode is
@@ -43,11 +45,27 @@ BRAIN_MOUNT = "/brain"
 MIRRORS_MOUNT = "/mirrors"
 
 UV_MODE_CAVEATS = (
-    "uv-mode fidelity gap (SPEC §4.1): open internet (a call that passes here can be EGRESS_BLOCKED "
-    "in prod), no :ro mounts (no EROFS), no container isolation, deps resolved fresh (not the pinned "
-    "image set). A green uv run is NOT a guaranteed-green prod run — gate with `--mode docker` before "
-    "pushing."
+    "uv-mode fidelity gap: open internet (a call that passes here can be EGRESS_BLOCKED in prod), no "
+    ":ro mounts (no EROFS), no container isolation, deps resolved fresh (not the pinned image set). A "
+    "green uv run is NOT a guaranteed-green prod run — gate with `--mode docker` before pushing."
 )
+
+
+def runtime_spec() -> str:
+    """What `uv run --with` installs to provide `lib`. ONE pinned source of truth, resolved in order:
+
+      1. `RC_RUNTIME_SPEC` env override — for testing an unreleased runtime/ or a fork.
+      2. The sibling `runtime/` dir, if present — offline, the canonical bytes (kit checkout, the CC
+         plugin bundle, a local symlink install). What prod's image installs, byte-for-byte.
+      3. Else the tag-pinned git spec — for a skill shipped without the kit alongside it. Needs network
+         + repo read access. Pin the TAG, never float main (a push would silently change `lib`).
+    """
+    override = os.environ.get("RC_RUNTIME_SPEC")
+    if override:
+        return override
+    if RUNTIME.is_dir():
+        return str(RUNTIME)
+    return f"rootcause-runtime @ git+{REPO_URL}@v{VERSION}#subdirectory=runtime"
 
 
 # ── env parsing (mirrors the Go host's secret.parseEnv, plus shell-quote tolerance) ───────────────
@@ -79,8 +97,8 @@ def parse_env(path: Path) -> dict[str, str]:
 
 
 def resolve_brain_dir(arg: str | None) -> Path:
-    """The brain is the cwd by default (you `cd` into the brain and invoke the skill — SPEC §5);
-    an explicit path overrides for multi-brain / scripted use."""
+    """The brain is the cwd by default (you `cd` into the brain and invoke the skill); an explicit
+    path overrides for multi-brain / scripted use."""
     return Path(arg).expanduser().resolve() if arg else Path.cwd().resolve()
 
 
@@ -127,7 +145,7 @@ def dsn_names(env: dict[str, str]) -> list[str]:
 
 def resolve_brain_script(brain_dir: Path, target: str) -> Path:
     """Resolve a brain-relative (or absolute) script path, rejecting any `..` escape out of the brain
-    — the kit 'operates on `.`' (SPEC §5), and docker mode mounts only the brain, so a path that
+    — the kit 'operates on `.`', and docker mode mounts only the brain, so a path that
     climbs out is always a mistake. Raises FileNotFoundError (missing) or ValueError (escapes)."""
     t = Path(target)
     script = t if t.is_absolute() else (brain_dir / t).resolve()
@@ -142,7 +160,7 @@ def resolve_brain_script(brain_dir: Path, target: str) -> Path:
 def discover_mirrors(mirrors_root: str | None, explicit: list[str]) -> dict[str, Path]:
     """Map mirror-name -> local path, from `--mirrors-root DIR` (each immediate subdir is a mirror)
     and/or repeated `--mirror name=path`. Explicit wins on a name clash. Missing paths are dropped by
-    the caller with a spoken reason (SPEC §9: mirrors may be absent locally — degrade gracefully)."""
+    the caller with a spoken reason (mirrors may be absent locally — degrade gracefully)."""
     out: dict[str, Path] = {}
     if mirrors_root:
         root = Path(mirrors_root).expanduser().resolve()
@@ -176,16 +194,16 @@ def uv_child_env(
 
 
 def uv_base_cmd(extra_with: list[str] | None = None) -> list[str]:
-    """`uv run` installing the bundled rootcause-runtime (brings `lib` + its pinned deps from
-    runtime/pyproject.toml — one dependency source of truth), plus any extras (e.g. pytest)."""
-    cmd = ["uv", "run", "--no-project", "--with", str(RUNTIME)]
+    """`uv run` installing `rootcause-runtime` (brings `lib` + its pinned deps from runtime's
+    pyproject.toml — one dependency source of truth; see `runtime_spec`), plus any extras (e.g. pytest)."""
+    cmd = ["uv", "run", "--no-project", "--with", runtime_spec()]
     for w in extra_with or []:
         cmd += ["--with", w]
     return cmd
 
 
 def preflight_lib_db(child_env: dict[str, str], extra_with: list[str] | None = None) -> bool:
-    """HARD-FAIL preflight (the footgun guard, SPEC §4.1): prove `import lib.db` resolves in the SAME
+    """HARD-FAIL preflight (the footgun guard): prove `import lib.db` resolves in the SAME
     child env before the real script runs. A brain's `ka.py` guards `from lib import db` in
     try/except → `db = None`; a broken import would otherwise fail *silently* at call time. We make
     it loud up front."""
@@ -218,7 +236,7 @@ def docker_run_args(
     all caps dropped, no-new-privileges, tmpfs /tmp + writable agent home, brain + mirrors `:ro`
     (kernel-enforced EROFS), env by `-e KEY` (values ride the docker client's own env, off the argv,
     exactly as prod keeps secrets off argv). One-shot `--rm` — no detached keep-alive needed for the
-    pre-push check. Egress is left open (default bridge); the caller says so (SPEC §4.2)."""
+    pre-push check. Egress is left open (default bridge); the caller says so."""
     args = [
         "docker", "run", "--rm", "--init",
         "--cap-drop", "ALL",

@@ -3,9 +3,9 @@
 # ///
 """Run one brain grounding script the way the workspace container would — fast `uv` or faithful `docker`.
 
-Brain-dir-relative: `cd` into a `rootcause-brain-<project>` checkout and invoke; it operates on `.`
-(SPEC §5). Reads `./.env`, resolves `lib` from the kit's bundled runtime (uv) or the published image
-(docker). No `accounts.yml`, no project name, no `code_root`.
+Brain-dir-relative: `cd` into a `rootcause-brain-<project>` checkout and invoke; it operates on `.`.
+Reads `./.env`, resolves `lib` from `rootcause-runtime` (uv) or the published image (docker). No
+`accounts.yml`, no project name, no `code_root`.
 
     uv run brain_run.py skills/records/scripts/lookup_person.py --tenant X --email a@b.com
     uv run brain_run.py -m lib.db --list
@@ -60,7 +60,7 @@ def _split_argv(argv: list[str]) -> tuple[list[str], str | None, str | None, lis
 
 
 def _brief(brain_dir: Path, mirrors: dict[str, Path]) -> int:
-    """Map the brain without running anything (SPEC §5 'brief'): env key NAMES (values redacted),
+    """Map the brain without running anything: env key NAMES (values redacted),
     the project DBs, the mirrors the runner can see, and the skills + their scripts."""
     print(f"brain: {brain_dir}")
     env_file = brain_dir / ".env"
@@ -169,7 +169,7 @@ def _run_docker(brain_dir: Path, mirrors: dict[str, Path], args, module, target,
     secrets = E.brain_secrets(brain_dir, required=False)
     _warn_missing_mirrors(mirrors)
     print(f"[docker mode] image={args.image} — egress is OPEN (default bridge), not the prod "
-          "default-deny firewall (SPEC §4.2).", file=sys.stderr)
+          "default-deny firewall.", file=sys.stderr)
     run_args = E.docker_run_args(
         image=args.image, brain_dir=brain_dir, mirrors=mirrors,
         env_names=list(secrets), command=command,

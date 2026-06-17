@@ -13,8 +13,7 @@ without any `rootcause-light` source.
 
 **Brain-dir-relative and zero-config.** You `cd` into a brain checkout and invoke; everything operates
 on `.` — it reads `./.env`, `./skills/*/scripts/`, `./skills` for tests. No `accounts.yml`, no project
-name, no `code_root`. The engine lives in the plugin (`${CLAUDE_PLUGIN_ROOT}/scripts`), **never copied
-into the brain**.
+name, no `code_root`. The engine ships *inside this skill* (`scripts/`), **never copied into the brain**.
 
 **Read-only, no side effects** — exactly like a real run. It never writes the brain, never posts a
 callback, never touches our host. Grounding queries run in a `READ ONLY` Postgres transaction.
@@ -35,21 +34,25 @@ callback, never touches our host. Grounding queries run in a `READ ONLY` Postgre
 
 ## Locate the engine
 
-The engine scripts live in this kit's `scripts/`. Resolve `$KIT` once, depending on how the kit was
-installed:
+The engine ships **inside this skill**, in `scripts/` next to this `SKILL.md`:
+`brain_env.py` · `brain_run.py` · `brain_test.py`. This is the same on every install path (Claude
+Code plugin, Codex plugin, local symlink) and in both agents — no `${CLAUDE_PLUGIN_ROOT}`, no clone
+path to track.
 
-- **Local (gitignored) install** (`install.sh`): `KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/scripts"`
-  — the skill is symlinked into the brain at `.agents/skills/brain-dev`, but the engine binary lives in
-  the shared clone, not the brain.
-- **Plugin install:** `KIT=${CLAUDE_PLUGIN_ROOT}/scripts`
+Set `SKILL` to the directory you loaded this `SKILL.md` from, then call the scripts under it:
 
-All commands below use `"$KIT/…"`.
+```bash
+SKILL=<the absolute directory of this SKILL.md>   # e.g. …/skills/brain-dev
+```
+
+All commands below use `"$SKILL/scripts/…"`. (`lib` is resolved automatically — from the kit's sibling
+`runtime/` when present, else the tag-pinned `rootcause-runtime` git spec; override with `RC_RUNTIME_SPEC`.)
 
 ## Workflow
 
 1. **Brief — map the brain first.** Don't guess at script paths or DB names:
    ```bash
-   uv run "$KIT/brain_run.py" --brief
+   uv run "$SKILL/scripts/brain_run.py" --brief
    ```
    Lists the `.env` key names (values redacted), the project databases (`*_DSN`), the mirrors the
    runner can see, and each skill + its scripts. Also read the brain's `AGENTS.md` and the relevant
@@ -57,22 +60,22 @@ All commands below use `"$KIT/…"`.
 
 2. **Run a grounding script** (everything after the path passes through to the script):
    ```bash
-   uv run "$KIT/brain_run.py" skills/databases/scripts/lookup_customer.py --email a@b.com
-   uv run "$KIT/brain_run.py" -m lib.db --list          # ad-hoc DB query CLI
-   uv run "$KIT/brain_run.py" -m lib.db "select count(*) from accounts"
+   uv run "$SKILL/scripts/brain_run.py" skills/databases/scripts/lookup_customer.py --email a@b.com
+   uv run "$SKILL/scripts/brain_run.py" -m lib.db --list          # ad-hoc DB query CLI
+   uv run "$SKILL/scripts/brain_run.py" -m lib.db "select count(*) from accounts"
    ```
 
 3. **Run the test tiers:**
    ```bash
-   uv run "$KIT/brain_test.py"                 # offline L1 (hermetic, no DSN)
-   uv run "$KIT/brain_test.py" --live          # + L2 schema canary + L3 render-smoke (read-only prod)
-   uv run "$KIT/brain_test.py" --require-live   # gated: error if no live test ran
+   uv run "$SKILL/scripts/brain_test.py"                 # offline L1 (hermetic, no DSN)
+   uv run "$SKILL/scripts/brain_test.py" --live          # + L2 schema canary + L3 render-smoke (read-only prod)
+   uv run "$SKILL/scripts/brain_test.py" --require-live   # gated: error if no live test ran
    ```
 
 4. **Pre-push gate — re-run in docker** once it's green in uv:
    ```bash
-   uv run "$KIT/brain_run.py"  --mode docker skills/databases/scripts/lookup_customer.py --email a@b.com
-   uv run "$KIT/brain_test.py" --mode docker --live
+   uv run "$SKILL/scripts/brain_run.py"  --mode docker skills/databases/scripts/lookup_customer.py --email a@b.com
+   uv run "$SKILL/scripts/brain_test.py" --mode docker --live
    ```
 
 5. **Report** the grounded result, the mode used, and — for a uv-mode result — the fidelity caveat.
