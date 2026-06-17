@@ -1,0 +1,38 @@
+# rootcause-runtime — the `lib` helpers a brain's grounding scripts import (`from lib import db`).
+#
+# ONE canonical source of truth, consumed by BOTH ends by the same pin (SPEC §3.1):
+#   - prod:  rootcause-light/runtime/Dockerfile installs `rootcause-runtime @ git+…@vX.Y.Z`
+#            (subdirectory=runtime) instead of `COPY runtime/lib`.
+#   - local: the kit's uv-mode runners + a brain's own scripts resolve the same `lib`.
+# Because both install identical versioned bytes, "tested locally" provably equals "runs in prod".
+#
+# Pin by tag, never float `main` — a push would silently break clients' green local tests (SPEC §7).
+#   uv add "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.0#subdirectory=runtime"
+[project]
+name = "rootcause-runtime"
+version = "0.1.0"
+description = "Read-only grounding helpers (db, stripe, cloudwatch, fs, http, html, livecheck) that a rootcause brain's scripts import."
+requires-python = ">=3.11"
+
+# Same pins the workspace image bakes (rootcause-light/runtime/Dockerfile). Kept in lockstep with the
+# image tag so a uv-mode install and the docker-mode image carry the same dependency surface.
+dependencies = [
+    "psycopg[binary]==3.2.3",
+    "stripe==11.4.1",
+    "boto3==1.35.92",
+    "requests==2.32.3",
+    "markdownify==1.2.2",
+]
+
+[project.optional-dependencies]
+# Pulled in by the kit's brain_test.py runner; the livecheck pytest plugin lives in lib/.
+test = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# Ship the `lib` package as-is (db.py, fs.py, livecheck.py, …). The import name stays `lib` so brain
+# scripts and the prod container agree: `from lib import db`.
+packages = ["lib"]

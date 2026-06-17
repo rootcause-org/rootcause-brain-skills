@@ -1,0 +1,197 @@
+"""Read-only CloudWatch Logs access for grounding.
+
+The story behind a thread lives in the app's structured (``slog`` JSON) logs. Two ways in:
+
+- ``insights(query, log_group, ...)`` runs a **CloudWatch Logs Insights** query — the powerful
+  path: ``filter`` / ``parse`` / ``stats`` over a time range — and returns rows as dicts.
+- ``search`` / ``tail`` are thin conveniences over it for the common "find X" / "show recent"
+  cases; ``log_groups`` discovers what's there.
+
+Insights matches a field in context, so prefer ``filter @message like /"thread_id":"<uuid>"/``
+over a bare id, which false-matches any field carrying those digits.
+
+Credentials come from the standard AWS env vars injected per run
+(``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY`` / ``AWS_REGION``), read-only by IAM.
+``boto3`` is imported lazily so the module loads for projects without CloudWatch.
+
+CLI (token-efficient one-offs from bash):
+
+    python -m lib.cloudwatch --list                       # discover log groups
+    python -m lib.cloudwatch --tail /app --hours 1
+    python -m lib.cloudwatch --search /app --pattern '"level":"ERROR"' --hours 6
+    python -m lib.cloudwatch /app 'fields @message | filter @message like /panic/ | limit 50'
+"""
+
+import os
+import time
+
+# Insights runs async: start_query → poll get_query_results. Bound the poll so a slow query
+# can't hang the per-bash timeout; the caller can raise max_wait for heavy aggregations.
+_POLL_INTERVAL = 1.0
+_MAX_WAIT = 60.0
+
+
+def _client():
+    region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+    if not os.environ.get("AWS_ACCESS_KEY_ID"):
+        raise RuntimeError("AWS credentials not set — no CloudWatch configured for this run")
+    import boto3
+
+    return boto3.client("logs", region_name=region)
+
+
+def _epoch(t) -> int:
+    """Coerce an epoch number or an ISO / ``YYYY-MM-DD HH:MM:SS`` string to epoch seconds."""
+    import datetime as dt
+
+    if isinstance(t, (int, float)):
+        return int(t)
+    return int(dt.datetime.fromisoformat(str(t)).timestamp())
+
+
+def _time_range(hours: float, start, end) -> tuple[int, int]:
+    """Resolve a (start, end) epoch-second window: explicit ``start``/``end`` win, else last ``hours``."""
+    now = int(time.time())
+    e = _epoch(end) if end else now
+    s = _epoch(start) if start else e - int(hours * 3600)
+    return s, e
+
+
+def insights(
+    query: str,
+    log_group,
+    hours: float = 24,
+    start=None,
+    end=None,
+    limit: int = 1000,
+    max_wait: float = _MAX_WAIT,
+) -> list[dict]:
+    """Run a Logs Insights query over ``log_group`` (a name or list) and return rows as dicts.
+
+    Each result row becomes ``{field: value}`` with the internal ``@ptr`` pointer dropped.
+    """
+    client = _client()
+    s, e = _time_range(hours, start, end)
+    groups = list(log_group) if isinstance(log_group, (list, tuple)) else [log_group]
+    qid = client.start_query(
+        logGroupNames=groups, startTime=s, endTime=e, queryString=query, limit=limit
+    )["queryId"]
+    waited = 0.0
+    while True:
+        resp = client.get_query_results(queryId=qid)
+        status = resp.get("status")
+        if status == "Complete":
+            break
+        if status in ("Failed", "Cancelled", "Timeout"):
+            raise RuntimeError(f"CloudWatch Insights query {status}")
+        if waited >= max_wait:
+            client.stop_query(queryId=qid)
+            raise TimeoutError(f"CloudWatch Insights query exceeded {max_wait}s")
+        time.sleep(_POLL_INTERVAL)
+        waited += _POLL_INTERVAL
+    return [
+        {f["field"]: f["value"] for f in row if f["field"] != "@ptr"}
+        for row in resp.get("results", [])
+    ]
+
+
+def _escape_pattern(pattern: str) -> str:
+    """Make ``pattern`` safe to interpolate inside a ``/.../`` Logs Insights regex literal.
+
+    ``pattern`` often carries attacker-influenceable text (a subject line, an email body). A bare
+    ``/`` would close the literal early and let the rest be reinterpreted as query syntax, and a
+    newline corrupts the single-line ``filter`` clause outright. We escape backslash and ``/`` so
+    they're matched literally, and reject control characters (newlines, NULs, etc.) — there's no
+    valid way to embed them in a single-line clause, so silently stripping them would change the
+    user's intent. Raise loudly instead of running a mangled query.
+    """
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in pattern):
+        raise ValueError(
+            "CloudWatch search pattern contains a control character (e.g. newline) — "
+            "remove it or use insights() with an explicit query"
+        )
+    # Order matters: escape the escape char first so we don't double-escape the slashes we add.
+    return pattern.replace("\\", "\\\\").replace("/", "\\/")
+
+
+def search(log_group, pattern: str, hours: float = 24, limit: int = 200) -> list[dict]:
+    """Return recent log lines whose ``@message`` matches ``pattern`` (a Logs Insights regex).
+
+    ``pattern`` is interpolated into a ``/.../`` regex literal, so it's escaped first to keep
+    attacker-influenceable text from breaking out of the literal (see ``_escape_pattern``).
+    """
+    q = (
+        "fields @timestamp, @message\n"
+        f"| filter @message like /{_escape_pattern(pattern)}/\n"
+        "| sort @timestamp desc\n"
+        f"| limit {int(limit)}"
+    )
+    return insights(q, log_group, hours=hours, limit=limit)
+
+
+def tail(log_group, hours: float = 1, limit: int = 200) -> list[dict]:
+    """Return the most recent log lines in the window (newest first)."""
+    q = f"fields @timestamp, @message\n| sort @timestamp desc\n| limit {int(limit)}"
+    return insights(q, log_group, hours=hours, limit=limit)
+
+
+def log_groups(prefix: str | None = None, limit: int = 50) -> list[str]:
+    """List log group names, optionally filtered by ``prefix`` — for discovery."""
+    kwargs: dict = {"limit": limit}
+    if prefix:
+        kwargs["logGroupNamePrefix"] = prefix
+    groups = _client().describe_log_groups(**kwargs).get("logGroups", [])
+    return [g["logGroupName"] for g in groups]
+
+
+def filter_log_events(log_group: str, pattern: str, limit: int = 50) -> list[dict]:
+    """Low-level escape hatch: a synchronous ``FilterLogEvents`` (no Insights polling).
+
+    Cheaper than ``insights`` for a quick grep, but no ``parse``/``stats`` and a different
+    (metric-filter) pattern syntax. Prefer ``search`` for the common case.
+    """
+    events = _client().filter_log_events(logGroupName=log_group, filterPattern=pattern, limit=limit)
+    return list(events.get("events", []))
+
+
+def _main(argv=None) -> int:
+    import argparse
+
+    from . import _output
+
+    p = argparse.ArgumentParser(prog="python -m lib.cloudwatch", description=__doc__.split("\n")[0])
+    p.add_argument("log_group", nargs="?", help="Log group name.")
+    p.add_argument("query", nargs="?", help="A Logs Insights query string.")
+    p.add_argument("--list", nargs="?", const="", metavar="PREFIX", help="List log groups and exit.")
+    p.add_argument("--tail", metavar="GROUP", help="Show the most recent lines of GROUP.")
+    p.add_argument("--search", metavar="GROUP", help="Search GROUP for --pattern.")
+    p.add_argument("--pattern", help="Regex for --search.")
+    p.add_argument("--hours", type=float, default=24, help="Look back N hours (default 24).")
+    p.add_argument("--start", help="Window start (ISO or 'YYYY-MM-DD HH:MM:SS').")
+    p.add_argument("--end", help="Window end (ISO or 'YYYY-MM-DD HH:MM:SS').")
+    p.add_argument("--limit", type=int, default=200)
+    p.add_argument("--format", choices=("csv", "json", "table"), default="csv")
+    args = p.parse_args(argv)
+
+    if args.list is not None:
+        for name in log_groups(prefix=args.list or None):
+            print(name)
+        return 0
+    if args.tail:
+        rows = tail(args.tail, hours=args.hours, limit=args.limit)
+    elif args.search:
+        if not args.pattern:
+            p.error("--search requires --pattern")
+        rows = search(args.search, args.pattern, hours=args.hours, limit=args.limit)
+    elif args.log_group and args.query:
+        rows = insights(
+            args.query, args.log_group, hours=args.hours, start=args.start, end=args.end, limit=args.limit
+        )
+    else:
+        p.error("give a log group + query, or use --list / --tail / --search")
+    _output.emit(_output.render(rows, args.format), label="cw")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

@@ -1,0 +1,15 @@
+{
+  "name": "rootcause-brain-skills",
+  "owner": { "name": "rootcause" },
+  "metadata": {
+    "description": "The rootcause brain-dev kit: a skill + engine for iterating on a project's brain locally, distributed alongside the pinned rootcause-runtime package."
+  },
+  "plugins": [
+    {
+      "name": "rootcause-brain-dev",
+      "source": ".",
+      "description": "Run a brain's grounding scripts + pytest tiers locally (uv or docker mode), brain-dir-relative.",
+      "version": "0.1.0"
+    }
+  ]
+}

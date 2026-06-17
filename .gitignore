@@ -1,5 +1,12 @@
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.ruff_cache/
 .env
 .env.*
 .DS_Store
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
