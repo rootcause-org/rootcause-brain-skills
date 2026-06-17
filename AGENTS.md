@@ -46,6 +46,16 @@ CloudWatch / the box over SSM)? If yes → it stays in `rootcause-light`, never 
 locally" provably equals "runs in prod". Keep the plugin tag, `rootcause-runtime` pin, image tag, and
 prod Dockerfile pin moving **together**.
 
+**The prod consumer (other end of the coupling).** `runtime/lib/` here is canonical; the only place
+that consumes it in production is **`rootcause-light/runtime/Dockerfile`**, which installs
+`rootcause-runtime @ git+…@v<TAG>#subdirectory=runtime` (NOT a `COPY lib/`). That repo builds its
+workspace image from `runtime/` on deploy (`deploy/bootstrap.sh`, triggered by a push to its `stable`
+branch). So a `lib` change is only *live* once you: edit it here → bump the version line per
+[RELEASING.md](RELEASING.md) + tag + publish the ghcr image → bump the pin in
+`rootcause-light/runtime/Dockerfile` → deploy. Never edit `lib` in `rootcause-light` — the cutover
+removes its duplicate copy ([docs/migration-rootcause-light.md](docs/migration-rootcause-light.md));
+`rootcause-light`'s devops skill carries the reciprocal note.
+
 ## Two run modes (the engine offers both — fidelity vs. speed)
 
 - **Fast `uv` mode** — inner loop. Reproduces the import surface + per-project env + read-only DB
