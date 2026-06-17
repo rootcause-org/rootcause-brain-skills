@@ -38,8 +38,10 @@ callback, never touches our host. Grounding queries run in a `READ ONLY` Postgre
 The engine scripts live in this kit's `scripts/`. Resolve `$KIT` once, depending on how the kit was
 installed:
 
+- **Local (gitignored) install** (`install.sh`): `KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/scripts"`
+  — the skill is symlinked into the brain at `.agents/skills/brain-dev`, but the engine binary lives in
+  the shared clone, not the brain.
 - **Plugin install:** `KIT=${CLAUDE_PLUGIN_ROOT}/scripts`
-- **Local (gitignored) install** (`install.sh`): `KIT=.agents/brain-dev/scripts` (run from the brain root)
 
 All commands below use `"$KIT/…"`.
 

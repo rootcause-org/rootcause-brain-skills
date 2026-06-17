@@ -34,22 +34,24 @@ else
   git clone -q --branch "$TAG" --depth 1 "$REPO" "$KIT"
 fi
 
-# 2. Gitignored symlinks into the brain: vendor-neutral `.agents/brain-dev` (the whole kit, so the
-#    engine is at a stable brain-relative path) + `.claude/` skill+command for Claude Code discovery.
-mkdir -p "$BRAIN/.agents" "$BRAIN/.claude/skills" "$BRAIN/.claude/commands"
-ln -sfn "$KIT"                       "$BRAIN/.agents/brain-dev"
+# 2. Gitignored symlinks into the brain: the SKILL dir at the standard discovery paths —
+#    `.agents/skills/brain-dev` (vendor-neutral) + `.claude/skills/brain-dev` (Claude Code) — plus the
+#    `/brain-dev` command. The engine binary stays in the shared clone ($KIT/scripts), not the brain.
+mkdir -p "$BRAIN/.agents/skills" "$BRAIN/.claude/skills" "$BRAIN/.claude/commands"
+ln -sfn "$KIT/skills/brain-dev"      "$BRAIN/.agents/skills/brain-dev"
 ln -sfn "$KIT/skills/brain-dev"      "$BRAIN/.claude/skills/brain-dev"
 ln -sfn "$KIT/commands/brain-dev.md" "$BRAIN/.claude/commands/brain-dev.md"
 
 # 3. Ignore rules (idempotent). Committing the RULE is fine — it's tiny, documents intent, and blocks
-#    an accidental `git add` of the kit. The kit itself stays untracked → never reaches /brain.
+#    an accidental `git add` of the symlinks. They stay untracked → never reach /brain.
 GI="$BRAIN/.gitignore"
-for rule in "/.agents/brain-dev" "/.claude/skills/brain-dev" "/.claude/commands/brain-dev.md"; do
+for rule in "/.agents/skills/brain-dev" "/.claude/skills/brain-dev" "/.claude/commands/brain-dev.md"; do
   grep -qxF "$rule" "$GI" 2>/dev/null || echo "$rule" >> "$GI"
 done
 
 echo
-echo "installed (gitignored). From inside the brain:"
-echo "  uv run .agents/brain-dev/scripts/brain_run.py --brief"
-echo "  uv run .agents/brain-dev/scripts/brain_test.py --live"
+echo "installed (gitignored). The engine lives in the shared clone:"
+echo "  KIT=$KIT/scripts"
+echo "  uv run \"\$KIT/brain_run.py\" --brief"
+echo "  uv run \"\$KIT/brain_test.py\" --live"
 echo "Claude Code also auto-discovers the 'brain-dev' skill + /brain-dev command."

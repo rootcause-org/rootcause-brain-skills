@@ -12,21 +12,23 @@ env**.
 ## Use it against a brain
 
 **Recommended — local, per-repo, gitignored (no global install, works with any agent).** One pinned
-clone on disk, symlinked into the brain's gitignored `.agents/` (vendor-neutral) + `.claude/` (Claude
-Code discovery). Nothing is committed; nothing reaches `/brain` (see below).
+clone on disk; the skill is symlinked into the brain's gitignored `.agents/skills/brain-dev`
+(vendor-neutral) + `.claude/skills/brain-dev` (Claude Code discovery). Nothing is committed; nothing
+reaches `/brain` (see below).
 
 ```bash
 cd ~/code/rootcause-org/rootcause-brain-<project>   # needs the brain's gitignored ./.env
 bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/v0.1.0/install.sh)
 # then, from the brain root:
-uv run .agents/brain-dev/scripts/brain_run.py --brief        # map the brain
-uv run .agents/brain-dev/scripts/brain_test.py --live        # run the tiers (read-only prod)
+KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/scripts"
+uv run "$KIT/brain_run.py" --brief        # map the brain
+uv run "$KIT/brain_test.py" --live        # run the tiers (read-only prod)
 ```
 
 The installer (`install.sh`) clones the kit once to `~/.rootcause-brain-skills` (override with
-`RC_BRAIN_KIT` / `RC_BRAIN_KIT_TAG`), symlinks it in, and appends the ignore rules. Claude Code picks
-up the `brain-dev` skill + `/brain-dev` command automatically; other agents read `AGENTS.md` +
-`.agents/`.
+`RC_BRAIN_KIT` / `RC_BRAIN_KIT_TAG`), symlinks the skill in, and appends the ignore rules. Claude Code
+picks up the `brain-dev` skill + `/brain-dev` command automatically; other agents read `AGENTS.md` +
+`.agents/skills/`.
 
 **Alternative — Claude Code plugin (user scope).** If you do want a global install:
 

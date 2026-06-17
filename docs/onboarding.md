@@ -17,9 +17,10 @@ Operators recover it with rootcause-light's `rc_env.py <project> --pull`.
 bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/v0.1.0/install.sh)
 ```
 
-This clones the kit once to `~/.rootcause-brain-skills` and symlinks it into this brain's gitignored
-`.agents/` (any agent) + `.claude/` (Claude Code skill + `/brain-dev` command). Nothing is committed;
-nothing reaches `/brain`. `KIT=.agents/brain-dev/scripts`.
+This clones the kit once to `~/.rootcause-brain-skills` and symlinks the skill into this brain's
+gitignored `.agents/skills/brain-dev` (any agent) + `.claude/skills/brain-dev` (Claude Code, plus the
+`/brain-dev` command). Nothing is committed; nothing reaches `/brain`.
+`KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/scripts"`.
 
 > **Alternative:** the Claude Code plugin (user scope) — `/plugin marketplace add
 > rootcause-org/rootcause-brain-skills` + `/plugin install rootcause-brain-dev`; then
@@ -34,7 +35,7 @@ nothing reaches `/brain`. `KIT=.agents/brain-dev/scripts`.
 Invoke the **brain-dev** skill (or `/brain-dev`), or call the engine directly:
 
 ```bash
-KIT=.agents/brain-dev/scripts        # or ${CLAUDE_PLUGIN_ROOT}/scripts for the plugin install
+KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/scripts"   # or ${CLAUDE_PLUGIN_ROOT}/scripts for the plugin install
 
 uv run "$KIT/brain_run.py" --brief                                   # map the brain
 uv run "$KIT/brain_run.py" skills/databases/scripts/lookup_customer.py --email a@b.com
