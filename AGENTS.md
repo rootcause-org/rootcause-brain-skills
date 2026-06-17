@@ -5,8 +5,8 @@ imported into our project BRAIN repositories.** It is the *kit*, not a brain its
 here are installed once (as a Claude Code plugin) and run against whatever brain you're `cd`'d into —
 killing the per-brain copy/drift problem.
 
-Build details live in [SPEC.md](SPEC.md) (delete once implemented — code + shipped `SKILL.md` are the
-durable record).
+The code + the shipped `SKILL.md` are the durable record; release mechanics live in
+[RELEASING.md](RELEASING.md).
 
 ## What a "brain" is (the consumer)
 
@@ -37,7 +37,7 @@ CloudWatch / the box over SSM)? If yes → it stays in `rootcause-light`, never 
 
 | Concern | Mechanism | Update |
 |---|---|---|
-| **Skill + engine** | Claude Code plugin marketplace (`.claude-plugin/marketplace.json`) | `/plugin marketplace update` |
+| **Skill + engine** | one self-contained skill (`skills/brain-dev/`, engine in its `scripts/`), shipped three ways: Claude Code plugin (`.claude-plugin/marketplace.json`), Codex plugin (`.agents/plugins/marketplace.json` + `.codex-plugin/plugin.json`), local symlink (`install.sh`) | `/plugin marketplace update` · `codex plugin marketplace upgrade` · re-run `install.sh` |
 | **`lib` → `rootcause-runtime`** | pinned Python package, consumed by git tag | bump the tag |
 
 **The trap:** vendoring/copying `lib` here creates *`lib` drift* — a green local test against a stale
@@ -65,17 +65,25 @@ prod Dockerfile pin moving **together**.
   the drift this repo exists to kill). Only project-specific test fixtures live in the brain.
 - **No ASCII diagrams** — Mermaid only.
 
-## Layout (target, per SPEC §6)
+## Layout
 
 ```
-.claude-plugin/marketplace.json   # plugin catalog
-plugin.json                       # plugin manifest
-skills/brain-dev/SKILL.md         # the install-once brain-dev/test skill
-scripts/                          # ENGINE: brain_env.py · brain_run.py · brain_test.py (brain-dir-relative)
-runtime/                          # rootcause-runtime package (lib: db, stripe, cloudwatch, fs, http, livecheck…)
-docker/Dockerfile                 # workspace image (or published-tag ref)
-SPEC.md  README.md  AGENTS.md
+skills/brain-dev/SKILL.md             # the install-once brain-dev/test skill (self-contained)
+skills/brain-dev/scripts/             # ENGINE inside the skill: brain_env.py · brain_run.py · brain_test.py
+.claude-plugin/marketplace.json       # Claude Code plugin catalog
+plugin.json                           # Claude Code plugin manifest
+.agents/plugins/marketplace.json      # Codex plugin catalog
+.codex-plugin/plugin.json             # Codex plugin manifest (skills: ./skills/)
+commands/brain-dev.md                 # Claude-Code-only /brain-dev sugar (Codex needs none — SKILL.md is self-sufficient)
+install.sh                            # local gitignored symlink install (cross-agent)
+runtime/                              # rootcause-runtime package (lib: db, stripe, cloudwatch, fs, http, livecheck…)
+docker/Dockerfile                     # workspace image (or published-tag ref)
+README.md  AGENTS.md  RELEASING.md
 ```
+
+The skill is self-contained (engine in its own `scripts/`) so the SAME directory installs natively in
+Claude Code (`.claude/skills`) and Codex (`.agents/skills`). SKILL.md references its scripts relative
+to itself — never `${CLAUDE_PLUGIN_ROOT}` or a clone path (those don't port to Codex).
 
 ## Tooling
 

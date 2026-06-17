@@ -11,46 +11,54 @@ cd ~/code/rootcause-org/rootcause-brain-<project>
 You need the brain's gitignored plaintext **`.env`** at its root (DSNs + API keys). Don't have it?
 Operators recover it with rootcause-light's `rc_env.py <project> --pull`.
 
-## 2. Install the kit locally (gitignored — recommended)
+## 2. Install the kit — pick one path
 
+The `brain-dev` skill is self-contained (engine in its own `scripts/`), so the same skill installs
+natively in any of these. All are read-only; none commit anything to the brain or reach `/brain`.
+
+**A — Local, gitignored (recommended; any agent).**
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/v0.1.0/install.sh)
 ```
+Clones the kit once to `~/.rootcause-brain-skills` and symlinks the skill into this brain's gitignored
+`.agents/skills/brain-dev` (Codex auto-discovers) + `.claude/skills/brain-dev` (Claude Code, plus the
+`/brain-dev` command). Engine then at
+`SKILL="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/skills/brain-dev"`. Update: re-run the installer.
 
-This clones the kit once to `~/.rootcause-brain-skills` and symlinks the skill into this brain's
-gitignored `.agents/skills/brain-dev` (any agent) + `.claude/skills/brain-dev` (Claude Code, plus the
-`/brain-dev` command). Nothing is committed; nothing reaches `/brain`.
-`KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/scripts"`.
+**B — Claude Code plugin (user scope).** `/plugin marketplace add rootcause-org/rootcause-brain-skills`
+then `/plugin install rootcause-brain-dev` (update: `/plugin marketplace update`). Engine at
+`${CLAUDE_PLUGIN_ROOT}/skills/brain-dev/scripts`.
 
-> **Alternative:** the Claude Code plugin (user scope) — `/plugin marketplace add
-> rootcause-org/rootcause-brain-skills` + `/plugin install rootcause-brain-dev`; then
-> `KIT=${CLAUDE_PLUGIN_ROOT}/scripts`.
+**C — Codex plugin (user scope).** `codex plugin marketplace add rootcause-org/rootcause-brain-skills`
+then `codex plugin install brain-dev` (update: `codex plugin marketplace upgrade`).
 
-> **Private-repo auth.** While this repo is private, the clone (and any `uv` git-deps) need your
-> git/SSH or a token with read access. Arms-length clients get a public marketplace + a real package
-> registry later (SPEC §9).
+> The git clone (and the tag-pinned `rootcause-runtime` spec, if your install can't see a sibling
+> `runtime/`) need read access to this repo. Local & CC-plugin installs ship `runtime/` alongside the
+> skill, so `uv` mode resolves `lib` offline.
 
 ## 3. Run
 
-Invoke the **brain-dev** skill (or `/brain-dev`), or call the engine directly:
+Invoke the **brain-dev** skill (or `/brain-dev` in Claude Code), or call the engine directly. With the
+plugin, the agent knows the skill's path; for path A set `SKILL` to the shared clone's skill dir:
 
 ```bash
-KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/scripts"   # or ${CLAUDE_PLUGIN_ROOT}/scripts for the plugin install
+SKILL="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/skills/brain-dev"   # path A
+# (CC plugin: SKILL=${CLAUDE_PLUGIN_ROOT}/skills/brain-dev)
 
-uv run "$KIT/brain_run.py" --brief                                   # map the brain
-uv run "$KIT/brain_run.py" skills/databases/scripts/lookup_customer.py --email a@b.com
-uv run "$KIT/brain_test.py"                                          # offline tier
-uv run "$KIT/brain_test.py" --live                                  # live tier (read-only prod)
+uv run "$SKILL/scripts/brain_run.py" --brief                                   # map the brain
+uv run "$SKILL/scripts/brain_run.py" skills/databases/scripts/lookup_customer.py --email a@b.com
+uv run "$SKILL/scripts/brain_test.py"                                          # offline tier
+uv run "$SKILL/scripts/brain_test.py" --live                                  # live tier (read-only prod)
 
 # faithful pre-push gate (same image prod runs):
-uv run "$KIT/brain_run.py"  --mode docker skills/databases/scripts/lookup_customer.py --email a@b.com
-uv run "$KIT/brain_test.py" --mode docker --live
+uv run "$SKILL/scripts/brain_run.py"  --mode docker skills/databases/scripts/lookup_customer.py --email a@b.com
+uv run "$SKILL/scripts/brain_test.py" --mode docker --live
 ```
 
 Docker mode needs a running Docker (colima) and pulls `ghcr.io/rootcause-org/workspace:<tag>`.
 
-## Definition of done (SPEC §10)
+## Definition of done
 
-From a brain repo with only `.env` + the installed plugin: both `uv` and `docker` modes run a
+From a brain repo with only `.env` + the installed skill: both `uv` and `docker` modes run a
 grounding script and the live test tier read-only against prod, and the `rootcause-runtime` / image
 pins match what prod runs.

@@ -1,12 +1,12 @@
 # rootcause-runtime — the `lib` helpers a brain's grounding scripts import (`from lib import db`).
 #
-# ONE canonical source of truth, consumed by BOTH ends by the same pin (SPEC §3.1):
+# ONE canonical source of truth, consumed by BOTH ends by the same pin:
 #   - prod:  rootcause-light/runtime/Dockerfile installs `rootcause-runtime @ git+…@vX.Y.Z`
 #            (subdirectory=runtime) instead of `COPY runtime/lib`.
 #   - local: the kit's uv-mode runners + a brain's own scripts resolve the same `lib`.
 # Because both install identical versioned bytes, "tested locally" provably equals "runs in prod".
 #
-# Pin by tag, never float `main` — a push would silently break clients' green local tests (SPEC §7).
+# Pin by tag, never float `main` — a push would silently break clients' green local tests.
 #   uv add "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.0#subdirectory=runtime"
 [project]
 name = "rootcause-runtime"

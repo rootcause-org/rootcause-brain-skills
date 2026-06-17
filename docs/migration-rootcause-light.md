@@ -1,4 +1,4 @@
-# Migration runbook — cut over `rootcause-light` to the kit (SPEC §10 steps 2,3,7)
+# Migration runbook — cut over `rootcause-light` to the kit
 
 These steps are **outward-facing / sequencing-sensitive** and are intentionally NOT applied
 automatically: they push a public tag + image and edit the production repo. Do them **in order** —
@@ -7,9 +7,9 @@ repointing prod before the tag exists breaks prod image builds.
 ## Order of operations
 
 1. **Tag this repo** `v0.1.0` and push.
-   - Bump together if you change anything: `plugin.json` version, `.claude-plugin/marketplace.json`
-     plugin version, `runtime/pyproject.toml` version, the image tag, and `scripts/brain_env.py`
-     `VERSION` / `DEFAULT_IMAGE`. They are the single version line (SPEC §7).
+   - Bump the whole single version line together first — see [../RELEASING.md](../RELEASING.md)
+     (`skills/brain-dev/scripts/brain_env.py` `VERSION`/`DEFAULT_IMAGE`, `runtime/pyproject.toml`, both
+     plugin manifests + marketplaces, the image tag).
    - Prove the package resolves by tag (no `rootcause-light` source):
      ```bash
      uv run --no-project \
@@ -38,14 +38,13 @@ repointing prod before the tag exists breaks prod image builds.
    ...
    -COPY lib/ /opt/rootcause/lib/
    -ENV PYTHONPATH=/opt/rootcause
-   +# lib now ships as the pinned rootcause-runtime package (ONE source of truth — SPEC §3.1).
+   +# lib now ships as the pinned rootcause-runtime package (ONE source of truth).
    +# subdirectory=runtime is where pyproject.toml lives; the import name stays `lib`.
    +# Needs build-time network + read auth to the (private) repo; pin the tag, never float main.
    +RUN uv pip install --system --no-cache \
    +        "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.0#subdirectory=runtime"
    ```
-   **Confirm a real prod run still grounds** before deleting anything (the make-or-break check —
-   SPEC §10 step 2).
+   **Confirm a real prod run still grounds** before deleting anything (the make-or-break check).
 
 4. **Delete the now-redundant `lib` source in `rootcause-light`** once step 3 is confirmed:
    `rootcause-light/runtime/lib/` and `runtime/tests/` (the package + its tests are canonical here
@@ -53,16 +52,18 @@ repointing prod before the tag exists breaks prod image builds.
    repo's `docker/Dockerfile` — pick ONE builder to avoid drift; this repo's is recommended since
    `runtime/` lives here.
 
-5. **Delete the bucket-A copies + point the support skill at the kit** (SPEC §10 step 7):
+5. **Delete the bucket-A copies + point the support skill at the kit:**
    - Remove `rootcause-light/.agents/skills/support/scripts/brain_run.py` and
      `rootcause-light/scripts/brain_test.py`.
    - Rewrite `rootcause-light/.agents/skills/support/local-brain-scripts.md` to say: install the
-     `rootcause-brain-dev` plugin, `cd` into the brain, run `brain_run.py`/`brain_test.py` from
-     `${CLAUDE_PLUGIN_ROOT}/scripts`. Leave buckets B/C (`db.py`, `rc_env.py`, …) untouched.
+     `brain-dev` skill (any of the three paths in this repo's README), `cd` into the brain, and run
+     `brain_run.py`/`brain_test.py` from the skill's `scripts/` (CC plugin:
+     `${CLAUDE_PLUGIN_ROOT}/skills/brain-dev/scripts`). Leave buckets B/C (`db.py`, `rc_env.py`, …)
+     untouched.
    - Operator wrappers (bucket C, e.g. `rc_run_locally.py`) may *call* the engine; never the reverse.
 
 ## Already done (no action)
 
-- **`.env` standardization (SPEC §8).** `rootcause-brain-momentum-tools` already uses a single
-  gitignored `.env` at its root (mode 600). No rename needed. (`rootcause-light/.env.momentum-tools`
-  is the operator's own copy — bucket C — leave it.)
+- **`.env` standardization.** `rootcause-brain-momentum-tools` already uses a single gitignored `.env`
+  at its root (mode 600). No rename needed. (`rootcause-light/.env.momentum-tools` is the operator's
+  own copy — bucket C — leave it.)

@@ -1,10 +1,10 @@
-# The workspace image — the SAME image prod runs (SPEC §4.2), published so a client reproduces the
+# The workspace image — the SAME image prod runs, published so a client reproduces the
 # box with NO rootcause-light source. Build context is the repo root:
 #
 #     docker build -f docker/Dockerfile -t ghcr.io/rootcause-org/workspace:vX.Y.Z .
 #     docker push   ghcr.io/rootcause-org/workspace:vX.Y.Z
 #
-# Pin the image tag to the rootcause-runtime / plugin tag (SPEC §7): the bytes installed below ARE
+# Pin the image tag to the rootcause-runtime / plugin tag (see RELEASING.md): the bytes installed below ARE
 # `rootcause-runtime@vX.Y.Z` (we install the in-repo runtime/ package), and prod's
 # rootcause-light/runtime/Dockerfile installs the same package by the same pin — so "tested in this
 # image" provably equals "runs in prod".
@@ -35,7 +35,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /usr/local/bin/uv
 # client deps (psycopg/stripe/boto3/requests/markdownify) come from runtime/pyproject.toml, the ONE
 # dependency source of truth. The import name stays `lib` (`from lib import db`), so brain scripts and
 # prod agree. `--system` (no venv): the workspace is single-purpose.
-# The `[test]` extra bakes pytest in so docker mode (SPEC §4.2) can run the brain's test tiers
+# The `[test]` extra bakes pytest in so docker mode can run the brain's test tiers
 # offline — the image is self-sufficient, no in-container network/uv-resolve needed at test time.
 COPY runtime/ /opt/rootcause-runtime/
 RUN uv pip install --system --no-cache "/opt/rootcause-runtime[test]"
