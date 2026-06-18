@@ -18,7 +18,7 @@ natively in any of these. All are read-only; none commit anything to the brain o
 
 **A — Local, gitignored (recommended; any agent).**
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/v0.1.0/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/v0.1.1/install.sh)
 ```
 Clones the kit once to `~/.rootcause-brain-skills` and symlinks the skill into this brain's gitignored
 `.agents/skills/brain-dev` (Codex auto-discovers) + `.claude/skills/brain-dev` (Claude Code, plus the
