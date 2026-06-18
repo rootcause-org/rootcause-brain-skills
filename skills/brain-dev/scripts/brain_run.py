@@ -131,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_uv(brain_dir: Path, mirrors: dict[str, Path], args, module, target, rest) -> int:
-    env = E.load_env(brain_dir, required=False)  # script may need it, but inherit + .env always works
+    secrets = E.brain_secrets(brain_dir, required=False)  # script sees ONLY the brain's .env, like prod
     if args.mirror:
         print("warning: --mirror is docker-only; uv mode reads mirrors via --mirrors-root "
               "(RC_MIRRORS_ROOT). Ignoring the explicit --mirror entries.", file=sys.stderr)
@@ -144,7 +144,7 @@ def _run_uv(brain_dir: Path, mirrors: dict[str, Path], args, module, target, res
             print(f"error: {e}", file=sys.stderr)
             return 1
         invocation, script_dir = [str(script), *rest], script.parent
-    child = E.uv_child_env(env, [script_dir] if script_dir else [], args.mirrors_root)
+    child = E.uv_child_env(secrets, [script_dir] if script_dir else [], args.mirrors_root)
     if not E.preflight_lib_db(child):
         return 1
     print(f"[uv mode] {E.UV_MODE_CAVEATS}", file=sys.stderr)

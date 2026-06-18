@@ -8,10 +8,12 @@ commit, then tag + push:
 |---|---|---|
 | Engine version + image tag | `skills/brain-dev/scripts/brain_env.py` | `VERSION` (drives `DEFAULT_IMAGE`) |
 | `rootcause-runtime` package | `runtime/pyproject.toml` | `version` |
+| Dep lockfile (regen on any dep change) | `runtime/requirements.lock` | `uv pip compile runtime/pyproject.toml --universal --python-version 3.12 -o runtime/requirements.lock` |
 | Claude Code plugin | `plugin.json` + `.claude-plugin/marketplace.json` | `version` |
 | Codex plugin | `.codex-plugin/plugin.json` + `.agents/plugins/marketplace.json` | `version` / `ref` |
 | Docs install snippets | `README.md`, `docs/onboarding.md`, `docs/migration-rootcause-light.md`, `install.sh` | the `v0.1.0` literals |
 | **Prod (separate repo)** | `rootcause-light/runtime/Dockerfile` | the `rootcause-runtime @ git+…@vX.Y.Z` pin + workspace image tag |
+| **Prod lock copy (separate repo)** | `rootcause-light/runtime/requirements.lock` | `cp runtime/requirements.lock ../rootcause-light/runtime/requirements.lock` (lockstep copy) |
 
 Then:
 
@@ -25,3 +27,13 @@ Then re-point prod and follow [docs/migration-rootcause-light.md](docs/migration
 **Why one line:** the engine resolves `lib` from the sibling `runtime/` when present (offline,
 canonical bytes), else `rootcause-runtime @ git+…@vX.Y.Z`. Both must be the same bytes prod's image
 bakes. Never float `main` — a push would silently change `lib` under a green local test.
+
+**Why the lockfile:** the `==` pins in `pyproject.toml` only fix the *direct* deps; their transitive
+tail (botocore, urllib3, certifi, …) would otherwise float as PyPI moves, so two installs days apart
+could differ. `runtime/requirements.lock` (universal, Python 3.12) freezes the **full** closure. uv
+mode installs from it (`--with-requirements`) and the workspace image constrains to it
+(`docker/Dockerfile`, `-c …/requirements.lock`) — same closure both ends. Regenerate it whenever you
+change a dependency, in the same commit. Prod (`rootcause-light/runtime/Dockerfile`) constrains to a
+**lockstep COPY** of this file at `rootcause-light/runtime/requirements.lock` (vendored, not fetched
+from the tag, so its build is hermetic and can't break when a tag predates the lock) — re-copy it
+there in the same release so prod's box matches byte-for-byte.

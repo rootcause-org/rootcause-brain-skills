@@ -66,12 +66,15 @@ fixtures**, under `skills/<name>/`.)
 
 ## The two modes
 
-- **`uv` (inner loop)** — fast; reproduces the import surface, per-project env, read-only DB grounding,
-  and the pytest tiers. Does **not** reproduce egress allowlist / `:ro` mounts / container isolation /
-  the exact pinned dep set. *A green uv run is not a guaranteed-green prod run.*
+- **`uv` (inner loop)** — fast, low-friction: no Docker daemon, warm runs in ~1s, needs only `uv`
+  (it fetches the pinned Python 3.12 — no mise/pyenv). Reproduces the import surface *faithfully* —
+  deps are lockfile-pinned (`runtime/requirements.lock`, the same lock the image builds under), the
+  interpreter is Python 3.12, and the script sees **only** the brain's `./.env`. Does **not** reproduce
+  egress allowlist / `:ro` mounts / container isolation / OS-arch (runs on your host, not linux/amd64).
+  *A green uv run is not a guaranteed-green prod run.* Iterate here.
 - **`docker` (pre-push gate)** — `docker run` the published workspace image, brain + mirrors `:ro`,
-  prod isolation. The honest "does it work in the box?" check. (Egress is left open by default and the
-  runner says so.)
+  full prod isolation. The honest "does it work in the box?" check — run once before pushing. (Egress
+  is left open by default and the runner says so.)
 
 ## What's here
 

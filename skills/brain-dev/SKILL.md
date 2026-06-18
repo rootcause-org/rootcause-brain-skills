@@ -20,17 +20,23 @@ callback, never touches our host. Grounding queries run in a `READ ONLY` Postgre
 
 ## The two modes (fidelity vs. speed)
 
-| Mode | What it is | Use |
-|---|---|---|
-| **`uv`** (default) | `uv run` with the pinned `rootcause-runtime` (`lib`) + its deps, env from `./.env`. | Tight inner loop while writing/fixing a script. |
-| **`docker`** | `docker run` the published workspace image — brain + mirrors `:ro`, prod isolation. | "Does it actually work in the box?" before pushing. |
+| Mode | What it is | Benefit | Use it for |
+|---|---|---|---|
+| **`uv`** (default) | `uv run` with `lib` + its **lockfile-pinned** deps on **Python 3.12** (the image's interpreter), env from `./.env` only. | Near-zero friction: no Docker/colima daemon, no image pull, warm runs in ~1s. Needs only `uv` — uv fetches the pinned Python, so **no mise/pyenv setup**. | The tight inner loop — writing/fixing a grounding script or chasing an import. Iterate here. |
+| **`docker`** | `docker run` the published workspace image — brain + mirrors `:ro`, full prod isolation. | Byte-faithful to the box: same deps, mounts, egress firewall, container isolation. | The honest "does it work in the box?" gate. Run it **once before pushing**. |
 
-> **uv-mode fidelity gap — surface it, don't over-trust it.** uv mode reproduces the import surface,
-> the per-project env, read-only DB grounding, and the pytest tiers. It does **NOT** reproduce the
-> egress allowlist (you have open internet locally — a call that passes here can be `EGRESS_BLOCKED`
-> in prod), the `:ro` mounts (`EROFS`), container isolation, or the exact pinned dep set. **A green
-> `uv` run is not a guaranteed-green prod run.** The runner prints this caveat on every uv run; repeat
-> it when you report a uv-mode result. The honest pre-push gate is `--mode docker`.
+**What uv mode now matches prod on:** the import surface — deps are pinned by `runtime/requirements.lock`
+(the full transitive closure, the *same* lock the workspace image builds under), and the interpreter is
+pinned to Python 3.12. The brain script sees **only** the project's `./.env` (plus the few host vars uv
+needs to launch), exactly like prod injects only the project's secrets — so a host-exported key can't
+mask a missing `.env` entry into a false green.
+
+> **uv-mode fidelity gap — surface it, don't over-trust it.** What uv mode still does **NOT** reproduce:
+> the egress allowlist (you have open internet locally — a call that passes here can be `EGRESS_BLOCKED`
+> in prod), the `:ro` mounts (`EROFS`), container isolation, and the OS/arch (it runs on your host —
+> e.g. macOS arm64 — not the image's linux/amd64, so native wheels and OS behaviour can differ).
+> **A green `uv` run is not a guaranteed-green prod run.** The runner prints this caveat on every uv
+> run; repeat it when you report a uv-mode result. The honest pre-push gate is `--mode docker`.
 
 ## Locate the engine
 

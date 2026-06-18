@@ -37,8 +37,10 @@ COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /usr/local/bin/uv
 # prod agree. `--system` (no venv): the workspace is single-purpose.
 # The `[test]` extra bakes pytest in so docker mode can run the brain's test tiers
 # offline — the image is self-sufficient, no in-container network/uv-resolve needed at test time.
+# `-c requirements.lock`: constrain the transitive closure to the SAME committed lock uv mode installs
+# from, so the image's import surface is byte-identical to a local uv run (no build-time PyPI drift).
 COPY runtime/ /opt/rootcause-runtime/
-RUN uv pip install --system --no-cache "/opt/rootcause-runtime[test]"
+RUN uv pip install --system --no-cache -c /opt/rootcause-runtime/requirements.lock "/opt/rootcause-runtime[test]"
 
 # Unbuffered so stdout/stderr reach the host promptly even on a killed (timed-out) container.
 ENV PYTHONUNBUFFERED=1

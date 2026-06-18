@@ -28,10 +28,21 @@ from pathlib import Path
 VERSION = "0.1.0"
 REPO_URL = "https://github.com/rootcause-org/rootcause-brain-skills"
 
+# The interpreter prod runs (docker/Dockerfile `FROM python:3.12-slim`). uv mode pins to it with
+# `uv run --python` — uv fetches a managed CPython if the host lacks it, so this needs NO mise/pyenv
+# setup and a green uv run can't silently use a different Python than the box.
+PYTHON_VERSION = "3.12"
+
 # brain_env.py lives at <kit>/skills/brain-dev/scripts/ ; the canonical runtime/ package (holding
 # lib/) sits at the kit root — three levels up. Present in every distribution that bundles the whole
 # kit (checkout, CC plugin, local symlink); absent only if the skill dir is shipped on its own.
 RUNTIME = (Path(__file__).resolve().parents[3] / "runtime").resolve()
+
+# The committed, universal lockfile pinning runtime's FULL transitive closure (not just the `==`
+# direct deps in pyproject). uv mode installs from it so a green run can't drift as PyPI moves; the
+# prod image installs the same package under this lock as a constraint (docker/Dockerfile), so the
+# local import surface == the image's. Regenerate when bumping a dep — see RELEASING.md.
+RUNTIME_LOCK = (RUNTIME / "requirements.lock").resolve()
 
 # The published workspace image prod uses. Overridable for a local build or a fork.
 DEFAULT_IMAGE = os.environ.get("RC_WORKSPACE_IMAGE", f"ghcr.io/rootcause-org/workspace:v{VERSION}")
@@ -46,8 +57,11 @@ MIRRORS_MOUNT = "/mirrors"
 
 UV_MODE_CAVEATS = (
     "uv-mode fidelity gap: open internet (a call that passes here can be EGRESS_BLOCKED in prod), no "
-    ":ro mounts (no EROFS), no container isolation, deps resolved fresh (not the pinned image set). A "
-    "green uv run is NOT a guaranteed-green prod run — gate with `--mode docker` before pushing."
+    ":ro mounts (no EROFS), no container isolation, and it runs on THIS host's OS/arch (e.g. macOS "
+    "arm64), not the image's linux/amd64 — native wheels and OS behaviour can still differ. Deps "
+    "(lockfile) and the Python 3.12 interpreter ARE pinned, so the import surface matches prod; the "
+    "box does not. A green uv run is NOT a guaranteed-green prod run — gate with `--mode docker` "
+    "before pushing."
 )
 
 
@@ -100,24 +114,6 @@ def resolve_brain_dir(arg: str | None) -> Path:
     """The brain is the cwd by default (you `cd` into the brain and invoke the skill); an explicit
     path overrides for multi-brain / scripted use."""
     return Path(arg).expanduser().resolve() if arg else Path.cwd().resolve()
-
-
-def load_env(brain_dir: Path, *, required: bool) -> dict[str, str] | None:
-    """The child env = current env + the brain's `./.env`. Returns None (and the caller errors) when
-    `required` and there's no `.env`."""
-    env_file = brain_dir / ".env"
-    if not env_file.is_file():
-        if required:
-            print(
-                f"error: no .env at {env_file} — the brain's gitignored plaintext .env is the env "
-                "source. Operators recover it with rootcause-light's `rc_env.py <project> --pull`.",
-                file=sys.stderr,
-            )
-            return None
-        return dict(os.environ)
-    child = dict(os.environ)
-    child.update(parse_env(env_file))
-    return child
 
 
 def brain_secrets(brain_dir: Path, *, required: bool) -> dict[str, str] | None:
@@ -178,13 +174,33 @@ def discover_mirrors(mirrors_root: str | None, explicit: list[str]) -> dict[str,
 
 
 # ── uv mode ───────────────────────────────────────────────────────────────────────────────────────
+# Host vars the uv launcher / CPython need to even start. Everything ELSE in the operator's
+# environment is dropped from the child, so the brain script sees only the project's `./.env` — just
+# like docker mode injects only the brain's secrets. This stops a host-exported KEY from masking a
+# missing `.env` entry (a false green) or leaking host creds (AWS_*, …) into an outbound call.
+_HOST_PASSTHROUGH = frozenset({
+    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TERM", "TMPDIR", "TZ",  # OS/shell essentials
+    "LANG", "LC_ALL", "LC_CTYPE",                                        # locale → deterministic text
+    "UV_CACHE_DIR", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME",  # uv cache / managed-python
+    "SSL_CERT_FILE", "SSL_CERT_DIR",                                       # TLS roots for uv fetches
+})
+
+
+def _host_base() -> dict[str, str]:
+    """The minimal slice of the host environment uv/Python need to launch — NOT the whole environ."""
+    return {k: v for k, v in os.environ.items()
+            if k in _HOST_PASSTHROUGH or k.startswith(("UV_", "LC_"))}
+
+
 def uv_child_env(
-    base: dict[str, str], extra_pythonpath: list[Path], mirrors_root: str | None
+    brain_env: dict[str, str], extra_pythonpath: list[Path], mirrors_root: str | None
 ) -> dict[str, str]:
-    """The child env for a uv-mode invocation: the script's own dir(s) on PYTHONPATH (for siblings
-    like `from ka import …`; `lib` itself arrives via `uv run --with` — see `runtime_spec`), and
+    """The child env for a uv-mode invocation: the launcher essentials (`_host_base`) + the brain's
+    `./.env` (the env source of truth, so it wins), the script's own dir(s) on PYTHONPATH (for
+    siblings like `from ka import …`; `lib` itself arrives via `uv run` — see `uv_base_cmd`), and
     `RC_MIRRORS_ROOT` so lib.fs reads a local mirror farm instead of the absent `/mirrors`."""
-    child = dict(base)
+    child = _host_base()
+    child.update(brain_env)  # the brain's .env wins over any passed-through host var
     paths = [str(p) for p in extra_pythonpath] + ([child["PYTHONPATH"]] if child.get("PYTHONPATH") else [])
     if paths:
         child["PYTHONPATH"] = os.pathsep.join(paths)
@@ -194,9 +210,16 @@ def uv_child_env(
 
 
 def uv_base_cmd(extra_with: list[str] | None = None) -> list[str]:
-    """`uv run` installing `rootcause-runtime` (brings `lib` + its pinned deps from runtime's
-    pyproject.toml — one dependency source of truth; see `runtime_spec`), plus any extras (e.g. pytest)."""
-    cmd = ["uv", "run", "--no-project", "--with", runtime_spec()]
+    """`uv run` providing `lib` + its deps, pinned two ways so a green run can't drift from prod:
+    `--python 3.12` (the image's interpreter) and, when the canonical `runtime/` is present, the
+    committed `requirements.lock` (the full transitive closure) instead of a fresh resolve. Falls
+    back to the tag-pinned git spec (`==` direct pins only) when the skill ships without the kit, or
+    to a bare `--with` when `RC_RUNTIME_SPEC` overrides the source. `extra_with` adds tooling (pytest)."""
+    cmd = ["uv", "run", "--no-project", "--python", PYTHON_VERSION]
+    use_lock = not os.environ.get("RC_RUNTIME_SPEC") and RUNTIME.is_dir() and RUNTIME_LOCK.is_file()
+    if use_lock:
+        cmd += ["--with-requirements", str(RUNTIME_LOCK)]
+    cmd += ["--with", runtime_spec()]
     for w in extra_with or []:
         cmd += ["--with", w]
     return cmd

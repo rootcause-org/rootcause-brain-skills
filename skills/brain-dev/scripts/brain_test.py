@@ -68,11 +68,12 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run_uv(brain_dir: Path, skills_dir: Path, live: bool, pytest_args: list[str],
             mirrors_root: str | None) -> int:
-    # The live tier needs the DSN; the offline tier runs without a .env.
-    env = E.load_env(brain_dir, required=live)
-    if env is None:
+    # The live tier needs the DSN; the offline tier runs without a .env. Script sees ONLY the
+    # brain's .env (+ launcher essentials), like prod — never the operator's whole environment.
+    secrets = E.brain_secrets(brain_dir, required=live)
+    if secrets is None:
         return 1
-    child = E.uv_child_env(env, [], mirrors_root)
+    child = E.uv_child_env(secrets, [], mirrors_root)
     if not E.preflight_lib_db(child, extra_with=["pytest"]):
         return 1
     print(f"[uv mode] {E.UV_MODE_CAVEATS}", file=sys.stderr)
