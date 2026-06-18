@@ -70,7 +70,8 @@ fixtures**, under `skills/<name>/`.)
   (it fetches the pinned Python 3.12 — no mise/pyenv). Reproduces the import surface *faithfully* —
   deps are lockfile-pinned (`runtime/requirements.lock`, the same lock the image builds under), the
   interpreter is Python 3.12, and the script sees **only** the brain's `./.env`. Does **not** reproduce
-  egress allowlist / `:ro` mounts / container isolation / OS-arch (runs on your host, not linux/amd64).
+  egress allowlist / `:ro` mounts / container isolation / OS (runs on macOS, not the image's Linux —
+  same arm64 arch, but macOS wheels differ from prod's manylinux ones).
   *A green uv run is not a guaranteed-green prod run.* Iterate here.
 - **`docker` (pre-push gate)** — `docker run` the published workspace image, brain + mirrors `:ro`,
   full prod isolation. The honest "does it work in the box?" check — run once before pushing. (Egress

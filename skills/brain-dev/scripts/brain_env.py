@@ -57,11 +57,11 @@ MIRRORS_MOUNT = "/mirrors"
 
 UV_MODE_CAVEATS = (
     "uv-mode fidelity gap: open internet (a call that passes here can be EGRESS_BLOCKED in prod), no "
-    ":ro mounts (no EROFS), no container isolation, and it runs on THIS host's OS/arch (e.g. macOS "
-    "arm64), not the image's linux/amd64 — native wheels and OS behaviour can still differ. Deps "
-    "(lockfile) and the Python 3.12 interpreter ARE pinned, so the import surface matches prod; the "
-    "box does not. A green uv run is NOT a guaranteed-green prod run — gate with `--mode docker` "
-    "before pushing."
+    ":ro mounts (no EROFS), no container isolation, and it runs on THIS host's OS (e.g. macOS), not "
+    "the image's Linux — same arm64 arch, but macOS wheels ≠ the manylinux wheels prod installs, so "
+    "native deps and OS behaviour can still differ. Deps (lockfile) and the Python 3.12 interpreter "
+    "ARE pinned, so the import surface matches prod; the box does not. A green uv run is NOT a "
+    "guaranteed-green prod run — gate with `--mode docker` before pushing."
 )
 
 

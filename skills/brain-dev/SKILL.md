@@ -33,8 +33,9 @@ mask a missing `.env` entry into a false green.
 
 > **uv-mode fidelity gap — surface it, don't over-trust it.** What uv mode still does **NOT** reproduce:
 > the egress allowlist (you have open internet locally — a call that passes here can be `EGRESS_BLOCKED`
-> in prod), the `:ro` mounts (`EROFS`), container isolation, and the OS/arch (it runs on your host —
-> e.g. macOS arm64 — not the image's linux/amd64, so native wheels and OS behaviour can differ).
+> in prod), the `:ro` mounts (`EROFS`), container isolation, and the OS (it runs on your host — e.g.
+> macOS — not the image's Linux; same arm64 arch, but macOS wheels ≠ the manylinux wheels prod
+> installs, so native deps and OS behaviour can differ).
 > **A green `uv` run is not a guaranteed-green prod run.** The runner prints this caveat on every uv
 > run; repeat it when you report a uv-mode result. The honest pre-push gate is `--mode docker`.
 
