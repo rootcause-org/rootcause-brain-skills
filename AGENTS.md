@@ -85,7 +85,8 @@ plugin.json                           # Claude Code plugin manifest
 .agents/plugins/marketplace.json      # Codex plugin catalog
 .codex-plugin/plugin.json             # Codex plugin manifest (skills: ./skills/)
 commands/brain-dev.md                 # Claude-Code-only /brain-dev sugar (Codex needs none — SKILL.md is self-sufficient)
-install.sh                            # local gitignored symlink install (cross-agent)
+install.sh                            # per-brain primitive: pin the shared clone + symlink it in (gitignored)
+refresh-brains.sh                     # STANDARD FLOW: cut a release (RELEASING.md) + fan install.sh out to every local brain
 runtime/                              # rootcause-runtime package (lib: db, stripe, cloudwatch, fs, http, livecheck…)
 docker/Dockerfile                     # workspace image (or published-tag ref)
 docs/rc-cli.md                        # the project's `rc` CLI (sibling rootcause-cli) + ground-first author→verify loop

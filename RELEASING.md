@@ -1,5 +1,22 @@
 # Releasing — the single version line
 
+> **The standard flow is one command** — [`./refresh-brains.sh`](refresh-brains.sh). It does the
+> whole table below, then re-points the shared clone and re-symlinks every local brain:
+>
+> ```bash
+> ./refresh-brains.sh --release patch            # skill/doc change → bump, tag+push, re-tag image, refresh all brains
+> ./refresh-brains.sh --release minor --relock   # deps changed → also regen the lock + REBUILD the image
+> ./refresh-brains.sh --release patch --dry-run  # print the whole plan, mutate nothing
+> ./refresh-brains.sh                            # no release: just re-point every brain at the newest tag
+> ```
+>
+> The skill ships **strictly tag-pinned** (every skill change is a release), so brains only pick up a
+> change once it's a pushed tag. The image bakes `runtime/` only (never the skill), so a skill/doc
+> release **re-tags** the prior image instead of rebuilding — `--relock` forces a real rebuild for dep
+> changes. Prod (`rootcause-light`) stays a separate, deploy-gated step the script only reminds you of.
+>
+> The rest of this file is the manual reference for what that script automates.
+
 Local and prod must install **identical** `lib` bytes, or "green locally" stops meaning "green in
 prod". One tag enforces that. To cut a release, bump **all of these together** to the new `vX.Y.Z`,
 commit, then tag + push:
