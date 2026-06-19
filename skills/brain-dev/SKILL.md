@@ -18,6 +18,11 @@ name, no `code_root`. The engine ships *inside this skill* (`scripts/`), **never
 **Read-only, no side effects** — exactly like a real run. It never writes the brain, never posts a
 callback, never touches our host. Grounding queries run in a `READ ONLY` Postgres transaction.
 
+> **Diagnosis is read-only and runs locally; actions are the one state-changing plane — and they do
+> NOT run on the laptop.** An **action** executes on the project's *own production app* (via the
+> customer gem), test-triggered with `/rc-action-test` — there is no local or dry run. That's a
+> different surface, not a brain-dev mode. See [docs/actions.md](../../docs/actions.md).
+
 ## The two modes (fidelity vs. speed)
 
 | Mode | What it is | Benefit | Use it for |
@@ -86,6 +91,14 @@ All commands below use `"$SKILL/scripts/…"`. (`lib` is resolved automatically 
    ```
 
 5. **Report** the grounded result, the mode used, and — for a uv-mode result — the fidelity caveat.
+
+## Ship it to prod & verify (outer loop)
+
+Done iterating locally and want the change **live on prod with feedback** — push → force a brain sync
+(no waiting on the cron) → trigger a real run → read the result? That's a different surface (it drives
+host-owned `rootcause-light` commands, not this read-only local engine). The lean playbook, with the
+action-iteration gotchas (digest re-propose, push-only brain, the two feedback modes), is here:
+[ship-and-verify.md](ship-and-verify.md).
 
 ## Gotchas
 

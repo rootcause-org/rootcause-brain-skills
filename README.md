@@ -87,6 +87,7 @@ fixtures**, under `skills/<name>/`.)
 | `docker/Dockerfile` | The workspace image (installs `rootcause-runtime`); published to ghcr for `docker` mode. |
 | `.claude-plugin/marketplace.json`, `plugin.json` | Claude Code plugin catalog + manifest. |
 | `.agents/plugins/marketplace.json`, `.codex-plugin/plugin.json` | Codex plugin catalog + manifest. |
+| `docs/actions.md` | The **action plane** concept (the one state-changing path) + the author→push→sync→resolve→execute loop. |
 | `docs/migration-rootcause-light.md` | Ordered runbook to cut prod over to the package + published image. |
 
 ## Single version line
