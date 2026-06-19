@@ -100,6 +100,33 @@ host-owned `rootcause-light` commands, not this read-only local engine). The lea
 action-iteration gotchas (digest re-propose, push-only brain, the two feedback modes), is here:
 [ship-and-verify.md](ship-and-verify.md).
 
+## Reaching the database — the `lib` way (no raw DSNs)
+
+A brain script reads the customer DB **only through `lib.db`** — never by reading a `*_DSN` env var
+itself or opening its own `psycopg` connection. `lib.db` is the single source of truth: it resolves
+the DSN, opens a `READ ONLY` transaction with a `statement_timeout` (so a stray write or runaway
+query fails loudly), and parses enum/other arrays psycopg leaves as raw literals. Re-implementing any
+of that silently drops those guarantees.
+
+- **Name a database, not a connection string.** Pick the DB with `db=` — a short name (`db="prod"`),
+  the exact env-var name (`db="KAMPADMIN_PROD_DSN"`), or a raw DSN. With a single DB configured it can
+  be omitted. `db.databases()` (or `python -m lib.db --list`) shows what this run has.
+  ```python
+  from lib import db
+  rows  = db.query("select … where tenant_id = %s and deleted_at is null", [tid], db="prod")
+  one   = db.query_one("select … ", [id], db="prod")
+  cols  = db.columns("subscriptions", db="prod")        # introspect when the schema's unsure
+  ```
+- **The DSNs *are* injected — as `*_DSN` env vars — but that's `lib.db`'s business, not the script's.**
+  There are no libpq-style `PGHOST`/`PGUSER`/`DATABASE_URL` vars to read (`DATABASE_URL` is the host's
+  own store and is deliberately excluded from discovery). So "use the env var" is never the answer;
+  the script names a `db=`, `lib.db` maps it to the right `*_DSN`.
+- **A thin per-project wrapper is the norm — re-implementing the connection is not.** Brains add a small
+  module that *calls* `lib.db` and bakes in project gotchas (tenant scoping, money formatting, short
+  `db=` defaults) — e.g. kampadmin's `skills/records/scripts/ka.py` `rows()`/`row_one()`, momentum's
+  `scripts/_db.py`. Copy that shape; don't write a new connector.
+- **`%s` placeholders + a params list, never f-string SQL** — `lib.db` passes them through to psycopg.
+
 ## Gotchas
 
 - **`import lib.db` preflight.** Both runners hard-fail up front if `lib.db` won't import in the child

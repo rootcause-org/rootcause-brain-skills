@@ -63,6 +63,15 @@ A run that proposes nothing changes nothing.
 The plane is **off by default** and enabled per project (`actions_enabled` + an `action_runner_url` +
 a reverse secret + the gem host on the egress allowlist).
 
+## Ground first — verify against real runs before you author
+
+**Don't author an action blind.** Before you write or change `actions/<id>/`, inspect what the agent
+*actually did* on real cases with the project's own [`rc` CLI](rc-cli.md): `rc runs --limit 20`
+(filter `--kind`/`--category`) to find relevant runs, then `rc run <id> --events` to read the
+per-event trace — each tool call's bash command + stdout/stderr. That evidence shapes the action's `params` schema and its
+`description` (what makes a future run reach for it). This is the standard "verify against real data
+first" step — see the full [author→verify loop](rc-cli.md#the-author--verify-loop--ground-in-real-runs-before-you-write-an-action).
+
 ## The author → test loop
 
 This is the spine of authoring an action. The mechanics of the trigger live in **rootcause-light** —
@@ -100,6 +109,8 @@ authoring.
 
 ## Related
 
+- [`rc` CLI](rc-cli.md) — the project's self-service window into its own runs; the **ground-first**
+  step (`rc runs`, `rc run <id> --events`) that should precede authoring any action.
 - [`/rc-action-test`](../../rootcause-light/.agents/commands/rc-action-test.md) — the trigger command
   (arguments, what it relays, how it works).
 - [rootcause-light `action-runbook.md`](../../rootcause-light/.agents/skills/support/action-runbook.md)

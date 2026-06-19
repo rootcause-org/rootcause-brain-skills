@@ -88,6 +88,7 @@ commands/brain-dev.md                 # Claude-Code-only /brain-dev sugar (Codex
 install.sh                            # local gitignored symlink install (cross-agent)
 runtime/                              # rootcause-runtime package (lib: db, stripe, cloudwatch, fs, http, livecheck…)
 docker/Dockerfile                     # workspace image (or published-tag ref)
+docs/rc-cli.md                        # the project's `rc` CLI (sibling rootcause-cli) + ground-first author→verify loop
 README.md  AGENTS.md  RELEASING.md
 ```
 

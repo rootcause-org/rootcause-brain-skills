@@ -38,6 +38,13 @@ No plane ⇒ a run will never propose your action and there's nothing to execute
 
 ---
 
+### 0 · Ground in real runs first
+
+Before editing, see what the agent *actually did* on real cases with the project's own
+[`rc` CLI](../../docs/rc-cli.md): `rc runs --limit 20` (filter `--kind`/`--category`) to find relevant
+runs, then `rc run <id> --events` for the full per-event trace (each tool call's command + stdout/stderr). Author the action's `params` +
+`description` from that evidence, not a guess. Full loop: [`docs/rc-cli.md`](../../docs/rc-cli.md).
+
 ### 1 · Edit + verify what you can locally
 
 An action is `actions/<id>/{manifest.yaml,script.rb}` — Ruby, **not** a `from lib import db` grounding
@@ -123,6 +130,10 @@ uv run db.py "select id, action_id, params, intent, status from action_runs wher
 You're looking for `action_id=<id>` with sane `params`. (A run **proposes**; it never executes. If it
 *should* have proposed but didn't, that's a brain-content/altitude problem — fix the action's
 `description` or the surrounding skill, not the script.)
+
+> **No operator/SSM access?** The `db.py` queries above are rootcause-light operator tools. A project
+> dev reads the same triggered run over the public API with [`rc run <id> --events`](../../docs/rc-cli.md)
+> — the trace shows whether (and with what params) the run reached for the action.
 
 **Mode B — does the script actually work end-to-end against prod's gem?** Take the `action_runs.id`
 from Mode A and execute it headlessly (same confirm→execute POST the reviewer's email button fires):
