@@ -18,10 +18,14 @@ name, no `code_root`. The engine ships *inside this skill* (`scripts/`), **never
 **Read-only, no side effects** — exactly like a real run. It never writes the brain, never posts a
 callback, never touches our host. Grounding queries run in a `READ ONLY` Postgres transaction.
 
-> **Diagnosis is read-only and runs locally; actions are the one state-changing plane — and they do
-> NOT run on the laptop.** An **action** executes on the project's *own production app* (via the
-> customer gem), test-triggered with `/rc-action-test` — there is no local or dry run. That's a
-> different surface, not a brain-dev mode. See [docs/actions.md](../../docs/actions.md).
+> **Diagnosis is read-only and runs locally; actions are the one state-changing plane.** A **gem**
+> action executes on the project's *own production app* (via the customer Ruby gem), test-triggered
+> with `/rc-action-test` — no local or dry run. A **hosted Python** action
+> (`actions/<id>/script.py`) DOES run locally, faithfully: `scripts/brain_action.py` mirrors
+> `HostedExecutor` (Layer-1 validation → `preflight.py` → the write body fed only the sealed
+> `.env.action`), **dry-run by default** (the body rolls back). See
+> [the local action loop](#testing-a-hosted-python-action-locally-brain_actionpy) below and
+> [docs/actions.md](../../docs/actions.md).
 
 ## The two modes (fidelity vs. speed)
 
@@ -91,6 +95,36 @@ All commands below use `"$SKILL/scripts/…"`. (`lib` is resolved automatically 
    ```
 
 5. **Report** the grounded result, the mode used, and — for a uv-mode result — the fidelity caveat.
+
+## Testing a hosted Python action locally (`brain_action.py`)
+
+The one state-changing plane. A **hosted** Python action (`actions/<id>/{manifest.yaml, script.py,
+preflight.py?}`) runs locally through `scripts/brain_action.py`, which mirrors prod's `HostedExecutor`
+and surfaces the same feedback at the same points — **dry-run by default** (the write body rolls back,
+since prod offers no dry run of a write):
+
+```bash
+uv run "$SKILL/scripts/brain_action.py" --list                                   # actions in the brain
+uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --preflight-only  # Layer-1 + preflight only
+uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>'                   # + body, DRY-RUN (rollback)
+uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --commit          # REAL write (safe target only)
+```
+
+Three phases, each faithful to prod:
+
+1. **Layer-1 manifest validation** — the same `type`/`format`/`pattern`/`enum`/`required` the host runs
+   at propose time. A mis-shaped param fails here; the body never runs.
+2. **Preflight** (`preflight.py`, if present) — read-only against the grounding `./.env`, fail-closed
+   (`ok:false`/crash/unparseable stops the run), exactly as the host's in-loop Layer-2.
+3. **Write body** (`script.py`) — fed the sealed **`./.env.action` ONLY** (never the grounding `.env`),
+   via the `RC_ACTION_PARAMS`/`RC_ACTION_RESULT` file contract. So the action container's env isolation
+   is reproduced: a read DSN the body needs but that's missing from `.env.action` fails locally just as
+   it would in prod. `--commit` writes for real — point `.env.action` at a local/staging DB, never a
+   live customer.
+
+> This is a **local faithful reproduction**, not the prod path. Authoring against a real run still goes
+> push → `/rc-sync-brain` → `/rc-action-test` (the operator dev-trigger). Full contract +
+> credential-plane rules: [docs/actions.md](../../docs/actions.md).
 
 ## Ship it to prod & verify (outer loop)
 

@@ -5,15 +5,41 @@ agent drafts a reply, nothing in the customer's world changes. An **action** is 
 exception — the one path by which a run can *do* something to a project's app instead of just
 describing it.
 
-> ⚠️ **The WRITE BODY executes on the project's OWN production app — not the laptop.** Unlike
-> `brain-dev` (which reproduces read-only diagnosis locally), there is **no local run of the write
-> script and no dry run of it**. The only way to exercise the body is to run it for real against
-> whatever `action_runner_url` points at. Iterate against a **staging** gem, or write strictly
-> **idempotent** actions, before firing one at a live customer.
+> ⚠️ **In PROD the WRITE BODY executes on the project's OWN production app/infra — never as a prod dry
+> run.** For a **gem** action the body is Ruby running in the customer's app: the only way to exercise
+> it is for real against whatever `action_runner_url` points at — iterate against a **staging** gem or
+> write strictly **idempotent** actions. For a **hosted Python** action (`script.py`) you additionally
+> get a **faithful LOCAL dry-run**: `brain_action.py` (below) runs the real body the way
+> `HostedExecutor` does — same `RC_ACTION_PARAMS`/`RC_ACTION_RESULT` contract, fed **only** the sealed
+> `.env.action`, defaulting `RC_ACTION_DRY_RUN=1` so the transaction **rolls back**. That is a laptop
+> reproduction, not the prod path; prod itself still has no dry run.
 >
-> What you *can* check locally and in-loop, read-only, is whether the **inputs make sense** — the
+> What you can *also* check locally and in-loop, read-only, is whether the **inputs make sense** — the
 > [validation layers](#validating-inputs-layer-1--preflight) (a manifest schema + an optional
 > read-only `preflight.py`) catch a mis-grounded param before a human ever confirms.
+
+## Testing a hosted Python action locally (`brain_action.py`)
+
+A **hosted** Python action (`actions/<id>/{manifest.yaml, script.py, preflight.py?}`, runtime `python`)
+runs locally through the brain-dev kit's `brain_action.py`, which mirrors `HostedExecutor` and gives the
+same feedback at the same points — **dry-run by default** (the body rolls back):
+
+```bash
+SKILL=<brain-dev skill dir>
+uv run "$SKILL/scripts/brain_action.py" --list
+uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --preflight-only   # Layer-1 + preflight
+uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>'                    # + body, DRY-RUN (rollback)
+uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --commit           # REAL write (safe target only)
+```
+
+It reproduces prod precisely: **(1)** Layer-1 manifest validation (the same `type`/`format`/`pattern`/
+`enum`/`required` the host runs at propose time); **(2)** the `preflight.py` read-only against the
+grounding `.env`; **(3)** the write body against the sealed **`.env.action` ONLY** — so the action
+container's env isolation is faithful, and a read DSN the body needs but that's missing from
+`.env.action` fails locally exactly as it would in prod. It is **not** the prod path: authoring against
+a real run still goes push → `/rc-sync-brain` → `/rc-action-test`. `--commit` writes for real — point
+`.env.action` at a local/staging DB, never a live customer. The worked example is momentum-tools'
+`boost_powertools_credits` (its `PLAYBOOK.md` + `actions/README.md`).
 
 ## What an action is
 
