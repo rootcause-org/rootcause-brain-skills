@@ -34,19 +34,22 @@ rc config set max_run_usd=5 default_tier=pro
 **No Go needed** — grab a prebuilt binary (cross-compiled per release by GoReleaser).
 
 ```bash
-# Homebrew (macOS/Linux) — once the tap is published:
+# Homebrew (macOS/Linux):
 brew install rootcause-org/tap/rc
 
-# Or a prebuilt binary: pick your OS/arch on the releases page, then e.g. (macOS arm64):
+# Or a prebuilt binary: pick your OS/arch on the releases page, then (macOS arm64 example —
+# substitute the real version + your arch from the asset you downloaded):
 curl -sSL https://github.com/rootcause-org/rootcause-cli/releases/latest/download/rc_<ver>_darwin_arm64.tar.gz \
   | tar -xz && sudo mv rc /usr/local/bin/ && rc --version
+# macOS Gatekeeper may quarantine the unsigned binary: xattr -d com.apple.quarantine $(which rc)
 
 # Go devs:
 go install github.com/rootcause-org/rootcause-cli/cmd/rc@latest
 ```
 
-Binaries live on the [releases page](https://github.com/rootcause-org/rootcause-cli/releases) — they
-appear once a `vX.Y.Z` tag is cut (until then, `…@main` or build from source).
+Binaries + the Homebrew formula are published per `vX.Y.Z` tag (see the
+[releases page](https://github.com/rootcause-org/rootcause-cli/releases)). Cut a release with
+`scripts/release.sh patch|minor|major` from the `rootcause-cli` repo.
 
 ## The author → verify loop — ground in real runs *before* you write an action
 
