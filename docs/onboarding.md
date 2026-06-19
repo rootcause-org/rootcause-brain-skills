@@ -23,7 +23,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brai
 Clones the kit once to `~/.rootcause-brain-skills` and symlinks the skill into this brain's gitignored
 `.agents/skills/brain-dev` (Codex auto-discovers) + `.claude/skills/brain-dev` (Claude Code, plus the
 `/brain-dev` command). Engine then at
-`SKILL="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/skills/brain-dev"`. Update: re-run the installer.
+`SKILL="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/skills/brain-dev"`. Update: re-run the installer
+(or, to release + update every local brain at once, the maintainer's standard flow `./refresh-brains.sh`).
 
 **B — Claude Code plugin (user scope).** `/plugin marketplace add rootcause-org/rootcause-brain-skills`
 then `/plugin install brain-dev` (update: `/plugin marketplace update`). Engine at

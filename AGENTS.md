@@ -37,7 +37,7 @@ CloudWatch / the box over SSM)? If yes → it stays in `rootcause-light`, never 
 
 | Concern | Mechanism | Update |
 |---|---|---|
-| **Skill + engine** | one self-contained skill (`skills/brain-dev/`, engine in its `scripts/`), shipped three ways: Claude Code plugin (`.claude-plugin/marketplace.json`), Codex plugin (`.agents/plugins/marketplace.json` + `.codex-plugin/plugin.json`), local symlink (`install.sh`) | `/plugin marketplace update` · `codex plugin marketplace upgrade` · re-run `install.sh` |
+| **Skill + engine** | one self-contained skill (`skills/brain-dev/`, engine in its `scripts/`), shipped three ways: Claude Code plugin (`.claude-plugin/marketplace.json`), Codex plugin (`.agents/plugins/marketplace.json` + `.codex-plugin/plugin.json`), local symlink (`install.sh`) | `/plugin marketplace update` · `codex plugin marketplace upgrade` · the local-symlink fleet updates via the standard flow [`./refresh-brains.sh`](refresh-brains.sh) (release + re-run `install.sh` per brain) |
 | **`lib` → `rootcause-runtime`** | pinned Python package, consumed by git tag | bump the tag |
 
 **The trap:** vendoring/copying `lib` here creates *`lib` drift* — a green local test against a stale

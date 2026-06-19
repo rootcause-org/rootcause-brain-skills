@@ -31,7 +31,9 @@ uv run "$SKILL/scripts/brain_test.py" --live        # run the tiers (read-only p
 ```
 
 `install.sh` clones the kit once to `~/.rootcause-brain-skills` (override with `RC_BRAIN_KIT` /
-`RC_BRAIN_KIT_TAG`), symlinks the skill in, and appends the ignore rules. To update: re-run it.
+`RC_BRAIN_KIT_TAG`), symlinks the skill in, and appends the ignore rules. To update **one** brain,
+re-run it. To cut a release and update **every** local brain at once, use the standard flow
+[`./refresh-brains.sh`](refresh-brains.sh) (see [RELEASING.md](RELEASING.md)).
 
 **B — Claude Code plugin (user scope).**
 
