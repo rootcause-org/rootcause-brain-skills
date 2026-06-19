@@ -100,7 +100,7 @@ if [ -n "$RELEASE" ]; then
     git -C "$ROOT" commit -q -m "release: v$NEW" \
       -m "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
   fi
-  run git -C "$ROOT" tag "v$NEW"
+  run git -C "$ROOT" tag -a -m "v$NEW" "v$NEW"   # annotated: repo config forces signed/annotated tags
   [ "$NO_PUSH" = 1 ] || { run git -C "$ROOT" push origin HEAD; run git -C "$ROOT" push origin "v$NEW"; }
 
   # 1d. workspace image for the tag. Rebuild only when runtime/ changed; else re-tag the prior image

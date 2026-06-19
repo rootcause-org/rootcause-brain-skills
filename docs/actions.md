@@ -5,11 +5,15 @@ agent drafts a reply, nothing in the customer's world changes. An **action** is 
 exception — the one path by which a run can *do* something to a project's app instead of just
 describing it.
 
-> ⚠️ **Actions execute on the project's OWN production app — not the laptop.** Unlike `brain-dev`
-> (which reproduces read-only diagnosis locally), there is **no local action run and no dry run**. The
-> only way to exercise an action is to run it for real against whatever `action_runner_url` points at.
-> Iterate against a **staging** gem, or write strictly **idempotent** actions, before firing one at a
-> live customer.
+> ⚠️ **The WRITE BODY executes on the project's OWN production app — not the laptop.** Unlike
+> `brain-dev` (which reproduces read-only diagnosis locally), there is **no local run of the write
+> script and no dry run of it**. The only way to exercise the body is to run it for real against
+> whatever `action_runner_url` points at. Iterate against a **staging** gem, or write strictly
+> **idempotent** actions, before firing one at a live customer.
+>
+> What you *can* check locally and in-loop, read-only, is whether the **inputs make sense** — the
+> [validation layers](#validating-inputs-layer-1--preflight) (a manifest schema + an optional
+> read-only `preflight.py`) catch a mis-grounded param before a human ever confirms.
 
 ## What an action is
 
@@ -72,6 +76,36 @@ per-event trace — each tool call's bash command + stdout/stderr. That evidence
 `description` (what makes a future run reach for it). This is the standard "verify against real data
 first" step — see the full [author→verify loop](rc-cli.md#the-author--verify-loop--ground-in-real-runs-before-you-write-an-action).
 
+## Validating inputs (Layer 1 + preflight)
+
+The agent fills `params` from a thread, so it can **mis-ground** them — an org *name* where a slug is
+wanted, the wrong model, a stale uuid. Two **read-only, in-loop** layers catch that *before* the
+proposal reaches the human, so the agent self-corrects instead of a person discovering it on a failed
+confirm. Neither is a dry run of the write body (that's intrinsically mode-specific and can't run in our
+container) — they check *preconditions observable in the data*.
+
+- **Layer 1 — manifest, always, no script.** A `Param` carries optional `format` (`email|url|uuid`),
+  `pattern` (anchored regex), and `enum` (closed set); the host validates them at propose time. Cheap
+  *shape* checks — a non-uuid id, a name-shaped slug, an out-of-set value — with zero DB access.
+- **Layer 2 — `preflight.py`, optional, read-only.** When `actions/<id>/preflight.py` exists, it runs
+  in our grounding container at propose time and predicts *would these args do the intended thing* using
+  real data (e.g. "no Subscription <uuid> for tenant 'lbv'"). It reads `$PREFLIGHT_PARAMS`, writes a
+  `PreflightResult` `{ok, summary, reason?, observed?}` to `$PREFLIGHT_RESULT`. **Fail-closed:**
+  `ok:false`/crash/unparseable ⇒ the proposal is blocked and `reason` returns to the model; `ok:true` ⇒
+  `summary`/`observed` ride the draft + confirm button. The catalog flags it `(preflight)`.
+
+> **Test the preflight locally.** A preflight is a read-only grounding-plane script, so the standard
+> [`brain-dev`](skills/brain-dev/SKILL.md) runner executes it on the laptop —
+> `brain_run.py actions/<id>/preflight.py --params '<json>'` (write a thin `--params`/stdout fallback
+> alongside the prod `$PREFLIGHT_PARAMS`/`$PREFLIGHT_RESULT` env contract so the *same* file runs both
+> ways). The kampadmin `recompute_record_formulas` action is the worked example — see its
+> `PLAYBOOK.md` + `tools/preflight.sh` wrapper.
+
+> **Honest caveat:** a preflight for a *gem* action re-encodes the Ruby body's logic in Python and can
+> **drift**. Lean on checks that are genuinely data-observable (does the tenant/record exist) and let
+> them **fail closed** when a derived mapping is uncertain; the write body's own guards stay the hard
+> gate. Don't write a preflight that merely duplicates a fragile slice of the body.
+
 ## The author → test loop
 
 This is the spine of authoring an action. The mechanics of the trigger live in **rootcause-light** —
@@ -104,8 +138,10 @@ mints the `action_run` by name (`run_id=NULL`, `approved_by="operator:dev"`) and
 round-trip. It re-pins the current digest on every call, so the re-propose dance never bites during
 authoring.
 
-> **No dry run — say it again.** `/rc-action-test` and the Gmail confirm both **execute for real**.
-> There is no local or simulated action path. Default to a staging target or idempotent actions.
+> **No dry run of the WRITE — say it again.** `/rc-action-test` and the Gmail confirm both **execute
+> the body for real**. There is no local or simulated *write* path — only the read-only
+> [preflight](#validating-inputs-layer-1--preflight) predicts preconditions in-loop. Default to a
+> staging target or idempotent actions.
 
 ## Related
 
