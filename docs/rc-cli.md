@@ -17,7 +17,7 @@ over the same endpoints); it's a typed, paginating, TTY-aware front-end to the A
 ```bash
 rc status                       # recent runs + health summary           (GET /api/v1/runs)
 rc runs [--limit N] [--kind email|prompt|mcp|analysis] [--category ok|timeout|...]
-rc run <id>                     # one run, high level: kind, status, outcome, cost, duration (+ created/finished, attachments)
+rc run <id>                     # one run, high level: status, category, draft?/note?, cost, duration (+ kind/outcome/turns/bash/created/finished/trace)
 rc run <id> --events            # full detail: per-event trace — bash command + stdout/stderr, exit code, timing
 rc config get                   # effective settings + box defaults
 rc config set max_run_usd=5 default_tier=pro
