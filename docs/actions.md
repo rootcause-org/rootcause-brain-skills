@@ -90,8 +90,11 @@ A run that proposes nothing changes nothing.
 | **gem** | The customer hosts the `rootcause-action-gem`; the host sends it a signed Execute call and it runs the script inside their app. | shipped |
 | **rootcause-hosted** | We run the action against the project's app from our own infra. | planned |
 
-The plane is **off by default** and enabled per project (`actions_enabled` + an `action_runner_url` +
-a reverse secret + the gem host on the egress allowlist).
+The plane is **off by default** and requires four-sided wiring — see
+[`ship-and-verify.md` → "Precondition"](../skills/brain-dev/ship-and-verify.md) for the full
+checklist (box `ACTION_TOKEN_KEY`, per-project row, customer-app RackApp mount + `ROOTCAUSE_FETCH_URL`,
+brain sync). Use `scripts/rc_action_enable.sh <project> --runner-url <url>` to set the per-project
+side and print the rest of the checklist.
 
 ## Ground first — verify against real runs before you author
 
@@ -132,6 +135,25 @@ container) — they check *preconditions observable in the data*.
 > them **fail closed** when a derived mapping is uncertain; the write body's own guards stay the hard
 > gate. Don't write a preflight that merely duplicates a fragile slice of the body.
 
+## Local verify — gem vs hosted
+
+| What you can do locally | gem | hosted Python |
+|---|---|---|
+| Layer-1 manifest syntax (`ruby -c`) | ✅ | n/a |
+| Layer-1 + preflight via `tools/preflight.sh` or `brain_run.py` | ✅ (preflight is Python) | ✅ |
+| Full body, dry-run (rollback) | ❌ no local Ruby runtime for gem | ✅ `brain_action.py` (see below) |
+| Whole-pipe validate, zero side effects | ✅ `rc_action_doctor.sh` | ✅ `rc_action_doctor.sh` |
+
+> ⚠️ **Gem rspec ≠ wire contract proof.** `bundle exec rspec -q` on the gem runs against mocks.
+> Contract bugs (schema shape, `project_id` on fetch, signed-response format) are invisible to mocked
+> tests. The wire contract between the host and the gem is specified in **`WIRE-CONTRACT.md`** (in
+> the `rootcause-light` repo) — concrete tests in both repos guard it. A green gem rspec does NOT
+> prove the host↔gem pipe works. The side-effect-free pre-flight is:
+> `scripts/rc_action_doctor.sh <project> <action_id> [--params '<json>']` — runs a `dry_run`
+> validate-only invocation, returns `would_execute:true` or a **named** structured error
+> (`error.class` + `error.message`, e.g. `resolve_failed`, `schema_violation`). Run it before
+> committing to a real execute.
+
 ## The author → test loop
 
 This is the spine of authoring an action. The mechanics of the trigger live in **rootcause-light** —
@@ -155,8 +177,10 @@ flowchart LR
 3. **Resolve (digest ack)** — confirms the new version is now serving, read from the same box-local
    brain `main` the executor serves from, so ack and execution can't disagree. A 404 here means the
    action isn't approved on the box yet (author + push, then re-run with `--sync`).
-4. **Execute** — the real signed gem call. On ❌, surface `error.class` / `error.message` /
-   `backtrace`, fix `script.rb`, and loop.
+4. **Execute** — the real signed gem call. On ❌, the host surfaces the gem's **structured error**:
+   `error.class` (e.g. `resolve_failed`, `schema_violation`) + `error.message` — so a failure names
+   its cause. Fix `script.rb` and loop. Before a real execute, consider `rc_action_doctor.sh` for a
+   zero-side-effect dry-run validate pass (see above).
 
 `/rc-action-test` is the **operator dev-trigger**: it fires the *exact same* signed Execute path the
 Gmail **confirm** button fires (same digest re-verify, same signing, same `egress_log`) — it just

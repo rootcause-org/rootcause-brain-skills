@@ -23,17 +23,36 @@ edit  ─▶  push   ─▶  sync prod (+ack)  ─▶  feedback         ─▶  
 
 ---
 
-### Precondition (one-time): is the action plane on for this project?
+### Precondition: is the action plane fully wired?
 
-Actions are off by default. The agent can only **propose** an action, and it can only **execute**,
-if the project row carries the plane fields:
+Actions are off by default. Without **all four sides** wired, the plane is silently dead (bare 404s):
 
-```bash
-uv run db.py "select name, actions_enabled, action_runner_url from projects where name='<project>'"
-```
+**Side 1 — box-wide (rootcause-light `.env`) — ONE-TIME, not per-project:**
+`ACTION_TOKEN_KEY` (+ `PUBLIC_BASE_URL`) must be set on the box. Without it the entire
+`/api/v1/actions/*` + confirm surface returns 404 — no amount of per-project config fixes it.
 
-`actions_enabled=true` + a gem `action_runner_url` + a reverse secret must be set (and the gem host on
-the egress allowlist). If not, enable it once per [`action-runbook.md` → "First enable the plane"].
+**Side 2 — per-project Postgres `projects` row:**
+`actions_enabled=true`, `action_mode='gem'`, `action_runner_url` (the customer app's mounted
+endpoint, e.g. `https://admin.kampadmin.be/rootcause/action`), `action_reverse_secret`.
+Check: `uv run db.py "select name, actions_enabled, action_mode, action_runner_url from projects where name='<project>'"`.
+
+**Side 3 — customer app (the Rails app / gem host):**
+Must MOUNT `RootCause::ActionRunner::RackApp` at `/rootcause/action` (the inbound receiver — separate
+from `ResultRackApp` at `/rootcause/result`) AND set `ROOTCAUSE_FETCH_URL` to
+`https://rootcause-light.probackup.io/actions/script`. Without the mount: the host's signed
+invocation hits a 404. Without `ROOTCAUSE_FETCH_URL`: the gem fetches from a `rootcause.invalid`
+placeholder.
+
+**Side 4 — brain:**
+The action exists in `actions/<id>/` and has been synced (`rc_sync_brain.sh <project>`).
+
+**Operator shortcut** — `scripts/rc_action_enable.sh <project> --runner-url <url> [--generate-secret]`
+sets the per-project row fields and prints the box-key/customer-app checklist. Run once per project.
+
+**Verify the whole pipe before trusting it** — `scripts/rc_action_doctor.sh <project> <action_id> [--params '<json>']`
+proves resolve works, the gem mount answers (GET → 405), and a `dry_run` validate-only invocation
+returns `would_execute:true` (or a named structured error). Run this before Mode A/B below.
+
 No plane ⇒ a run will never propose your action and there's nothing to execute.
 
 ---
@@ -48,17 +67,29 @@ runs, then `rc run <id> --events` for the full per-event trace (each tool call's
 ### 1 · Edit + verify what you can locally
 
 An action is `actions/<id>/{manifest.yaml,script.rb}` — Ruby, **not** a `from lib import db` grounding
-script, so `brain-dev`'s `uv`/`docker` runners don't apply. The honest local checks:
+script, so `brain-dev`'s `uv`/`docker` runners don't apply.
+
+**Read-only input validation (run these locally):**
 
 ```bash
-# syntax, exactly as the gem compiles it (lambda-wrap — see rootcause-action-gem executor.rb)
+# Layer-1 manifest syntax + schema check
 { printf 'lambda do |params|\n'; cat actions/<id>/script.rb; printf '\nend\n'; } | ruby -c -
-# the gem's own contract specs still pass
-cd ~/code/rootcause-org/rootcause-action-gem && bundle exec rspec -q
+
+# preflight (if actions/<id>/preflight.py exists) — read-only, same contract as prod propose time
+tools/preflight.sh <id> --params '<json>'
+# or directly: uv run "$SKILL/scripts/brain_run.py" actions/<id>/preflight.py --params '<json>'
 ```
 
-That's as far as the laptop goes; the script only does anything real **inside the customer app**, so
-true verification is Mode B below.
+These cover Layer-1 (manifest shape) and Layer-2 (preflight read-only preconditions) locally.
+
+> ⚠️ **The gem's rspec proves nothing about the live wire.** `bundle exec rspec -q` runs against
+> **mocks** — it cannot catch host↔gem contract bugs. Three real contract bugs we hit
+> (schema shape mismatch, wrong `project_id` on fetch, malformed signed fetch-response) were all
+> **invisible to mocked tests** and only surfaced against the live pipe. A green gem rspec does NOT
+> prove the wire works. The real pre-flight is `rc_action_doctor.sh` (the validate-only `dry_run`,
+> side-effect-free) — plus the wire-contract tests now in both repos.
+
+The WRITE body has no local run for gem actions; that's `rc_action_doctor` dry-run + `rc-action-test`.
 
 ### 2 · Push the brain
 
@@ -148,8 +179,14 @@ uv run db.py --format table "select status, result, error from action_runs where
 ```
 
 `status=succeeded` + your `{ ok: true, … }` in `result` = the script did what you expected on real
-data. `error` set (or `result.ok=false`) = read it, fix `script.rb`, and go back to step 2 — **and
-re-propose** (new digest, see the gotcha in step 2) before re-executing.
+data. `error` set (or `result.ok=false`) = read it. The host now surfaces the gem's **structured
+error**: `error.class` (e.g. `resolve_failed`, `schema_violation`) + `error.message` — so a failed
+execute names its cause, not just "HTTP 5xx". Fix `script.rb`, go back to step 2 — **and re-propose**
+(new digest, see the gotcha in step 2) before re-executing.
+
+> **Pre-flight alternative (zero side effects):** `scripts/rc_action_doctor.sh <project> <action_id> [--params '<json>']`
+> runs a `dry_run` validate-only invocation that returns `would_execute:true` (or a structured error)
+> — proves the whole pipe without writing anything. Run this before committing to a real Mode B execute.
 
 ---
 
@@ -159,15 +196,18 @@ re-propose** (new digest, see the gotcha in step 2) before re-executing.
 # from the brain repo
 cd ~/code/rootcause-org/rootcause-brain-<project>
 { printf 'lambda do |params|\n'; cat actions/<id>/script.rb; printf '\nend\n'; } | ruby -c -
+tools/preflight.sh <id> --params '<json>'                       # (if preflight.py exists)
 git pull --rebase origin main && git push origin main
 
 # from the rootcause-light repo
 cd ~/code/rootcause-org/rootcause-light
 scripts/rc_sync_brain.sh <project>                              # expect: STATE adopted-origin -> <sha>
+scripts/rc_action_doctor.sh <project> <id> --params '<json>'   # dry_run: proves whole pipe, zero side effects
 scripts/rc_agent_run.sh  <project> "<symptom prompt>"          # Mode A: did it propose <id>?
 uv run db.py "select id,action_id,params,status from action_runs where status='proposed' order by proposed_at desc limit 3"
 # Mode B: execute the proposed id per action-runbook.md, then:
 # uv run db.py --format table "select status,result,error from action_runs where id='<action_run_id>'"
+# (error.class + error.message now named on failure, not just HTTP status)
 ```
 
 ## Gotchas (high-signal)
