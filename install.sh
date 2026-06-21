@@ -20,7 +20,10 @@ KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}"
 TAG="${RC_BRAIN_KIT_TAG:-v0.1.2}"
 REPO="https://github.com/rootcause-org/rootcause-brain-skills"
 
-[ -d "$BRAIN/skills" ] || { echo "error: $BRAIN has no skills/ — not a brain checkout?" >&2; exit 1; }
+# Sanity-check this is a brain checkout. Accept both layouts: legacy (skills/) and the newer
+# projection-based layout (playbooks/ + projection.yaml).
+[ -d "$BRAIN/skills" ] || [ -d "$BRAIN/playbooks" ] || [ -f "$BRAIN/projection.yaml" ] || {
+  echo "error: $BRAIN has no skills/ or playbooks/ or projection.yaml — not a brain checkout?" >&2; exit 1; }
 
 # 1. One pinned clone on disk (shared by every brain). Pin the tag, never float main.
 if [ -d "$KIT/.git" ]; then
