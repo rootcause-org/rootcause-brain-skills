@@ -177,5 +177,67 @@ class EmitJsonl(unittest.TestCase):
         self.assertEqual(header["created_at"], "2026-06-21T12:00:00+00:00")
 
 
+class ByteIdentity(unittest.TestCase):
+    """The headline DRY guarantee (spec acceptance #3 / server-spec #4): the renderer output is
+    byte-identical whether fed the API-shape bundle (`fetch_via_api` here: ISO-string timestamps,
+    float costs) or the operator-shape bundle (`fetch_via_db` in rc_agent_debug.py: datetime objects,
+    Decimal costs/tokens). Same run → same bytes, because BOTH go through this ONE renderer."""
+
+    @staticmethod
+    def _operator_shape(bundle: dict) -> dict:
+        """Re-cast an API-shape bundle the way the operator's SSM/DB fetch hands it over: datetimes for
+        every timestamp, Decimal for the money/token columns psycopg returns as Decimal."""
+        from copy import deepcopy
+        from datetime import datetime
+        from decimal import Decimal
+
+        b = deepcopy(bundle)
+
+        def dt(v):
+            return datetime.fromisoformat(v) if isinstance(v, str) else v
+
+        run = b["run"]
+        run["created_at"] = dt(run["created_at"])
+        run["finished_at"] = dt(run["finished_at"])
+        if run.get("run_cost_usd") is not None:
+            run["run_cost_usd"] = Decimal(str(run["run_cost_usd"]))
+        if run.get("run_total_tokens") is not None:
+            run["run_total_tokens"] = Decimal(str(run["run_total_tokens"]))
+        for g in run.get("egress") or []:
+            g["at"] = dt(g["at"])
+        for e in b["events"]:
+            e["at"] = dt(e["at"])
+            if e.get("cost_usd") is not None:
+                e["cost_usd"] = Decimal(str(e["cost_usd"]))
+        return b
+
+    def _assert_identical(self, api_bundle: dict):
+        from copy import deepcopy
+        op_bundle = self._operator_shape(api_bundle)
+        # deepcopy each call: render_index/emit_jsonl mutate events in place (decorate), and the two
+        # bundles must not share state.
+        api_md = render_index(deepcopy(api_bundle))
+        op_md = render_index(deepcopy(op_bundle))
+        self.assertEqual(api_md, op_md, "index .md differs between API and operator bundle shapes")
+        api_jl = "\n".join(emit_jsonl(deepcopy(api_bundle)))
+        op_jl = "\n".join(emit_jsonl(deepcopy(op_bundle)))
+        self.assertEqual(api_jl, op_jl, "JSONL differs between API and operator bundle shapes")
+
+    def test_plain_run(self):
+        self._assert_identical(_bundle())
+
+    def test_test_run_with_brain_ref(self):
+        self._assert_identical(_bundle(brain_ref="dev/refund-rework", trigger="test"))
+
+    def test_with_blocked_egress(self):
+        egress = [
+            {"host": "api.stripe.com", "port": 443, "scheme": "https", "url": "https://api.stripe.com",
+             "bytes_out": 10, "decision": "allow", "at": "2026-06-21T12:00:10+00:00"},
+            {"host": "evil.example", "port": 443, "scheme": "https", "url": "https://evil",
+             "bytes_out": 0, "decision": "block", "at": "2026-06-21T12:00:11+00:00"},
+        ]
+        self._assert_identical(_bundle(egress=egress))
+
+
 if __name__ == "__main__":
     unittest.main()
