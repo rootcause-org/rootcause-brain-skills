@@ -4,7 +4,7 @@ One kit to iterate on a project's **brain** locally and verify it works the way 
 a **single self-contained skill** (`brain-dev`, engine in its own `scripts/`) that installs
 natively in **Claude Code** *and* **OpenAI Codex** — as a plugin in either, or a local gitignored
 symlink. Plus a pinned Python package (**`rootcause-runtime`**, the `lib` helpers brain scripts
-import). No `rootcause-light` source needed.
+import). No `rootcause` source needed.
 
 A *brain* is `rootcause-org/rootcause-brain-<project>`: markdown skills + Python grounding scripts that
 do `from lib import db` to read a customer's data read-only. In prod those run in a workspace
@@ -62,7 +62,7 @@ the brain would pollute runs.
 Both are guaranteed for free: prod builds `/brain` with `git worktree --detach HEAD` — a checkout of
 the brain's **committed** `main`. So **anything untracked or gitignored in the brain never reaches
 `/brain`.** The plugin installs (B, C) add nothing to the brain at all; the local install (A) is
-gitignored. No rootcause-light mirror/strip tricks are needed — only *committed* files travel, and you
+gitignored. No rootcause mirror/strip tricks are needed — only *committed* files travel, and you
 never commit the kit. (The one thing that legitimately lives in a brain is project-specific **test
 fixtures**, under `skills/<name>/`.)
 
@@ -91,11 +91,11 @@ fixtures**, under `skills/<name>/`.)
 | `.agents/plugins/marketplace.json`, `.codex-plugin/plugin.json` | Codex plugin catalog + manifest. |
 | `docs/actions.md` | The **action plane** concept (the one state-changing path) + the author→push→sync→resolve→execute loop. |
 | `docs/rc-cli.md` | The project's **`rc` CLI** (sibling `rootcause-cli`) — self-consume runs/config over the public API; the **ground-first** author→verify loop. |
-| `docs/migration-rootcause-light.md` | Ordered runbook to cut prod over to the package + published image. |
+| `docs/migration-rootcause.md` | Ordered runbook to cut prod over to the package + published image. |
 
 ## Single version line
 
-The plugin versions, the `rootcause-runtime` pin, the workspace image tag, and rootcause-light's prod
+The plugin versions, the `rootcause-runtime` pin, the workspace image tag, and rootcause's prod
 Dockerfile pin **move together** so local and prod can't diverge — one bump point, see
 [RELEASING.md](RELEASING.md). Current line: **`v0.1.2`**.
 

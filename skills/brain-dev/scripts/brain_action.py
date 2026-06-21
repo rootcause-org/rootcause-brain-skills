@@ -5,7 +5,7 @@
 """Run a rootcause-HOSTED Python action locally — the same way `HostedExecutor` runs it in prod.
 
 A hosted action (`actions/<id>/{manifest.yaml, script.py, preflight.py?}`) is the one state-changing
-plane in a brain (see rootcause-light's `actions` / `brain-authoring` skills). In prod the agent only
+plane in a brain (see rootcause's `actions` / `brain-authoring` skills). In prod the agent only
 *proposes* it, a human confirms, and `HostedExecutor` runs `script.py` ONCE in the hardened workspace
 container against the sealed `.env.action`. There is otherwise **no dry run of a write body** — so this
 runner reproduces that loop on the laptop, faithfully, defaulting to a **dry-run** (the body rolls back).

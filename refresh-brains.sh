@@ -24,7 +24,7 @@
 #   --dry-run     show every step without running it
 #   [BRAIN_DIR...]  explicit brains to refresh (default: auto-discover siblings)
 #
-# Prod (rootcause-light) is a SEPARATE, deploy-gated step — this script only PRINTS the follow-up.
+# Prod (rootcause) is a SEPARATE, deploy-gated step — this script only PRINTS the follow-up.
 set -euo pipefail
 
 # ── repo + tooling ──────────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ if [ -n "$RELEASE" ]; then
     plugin.json .claude-plugin/marketplace.json
     .codex-plugin/plugin.json .agents/plugins/marketplace.json
     runtime/pyproject.toml install.sh
-    README.md docs/onboarding.md docs/migration-rootcause-light.md
+    README.md docs/onboarding.md docs/migration-rootcause.md
   )
   for f in "${FILES[@]}"; do
     [ -f "$ROOT/$f" ] || continue
@@ -146,13 +146,13 @@ for b in "${BRAINS[@]}"; do
   [ "$DRY" = 1 ] || RC_BRAIN_KIT="$KIT" RC_BRAIN_KIT_TAG="$TARGET" "$ROOT/install.sh" "$b" >/dev/null
 done
 
-# ── 3. prod (rootcause-light) — separate, deploy-gated; we only remind ───────
+# ── 3. prod (rootcause) — separate, deploy-gated; we only remind ───────
 if [ -n "$RELEASE" ] && [ "$RELOCK" = 1 ]; then
-  say "Prod follow-up (deps changed → rootcause-light needs the new lib):"
+  say "Prod follow-up (deps changed → rootcause needs the new lib):"
   cat <<EOF
-  cp runtime/requirements.lock ../rootcause-light/runtime/requirements.lock
-  # bump the pin in rootcause-light/runtime/Dockerfile to @${TARGET}, then deploy (push its stable branch)
-  # see docs/migration-rootcause-light.md
+  cp runtime/requirements.lock ../rootcause/runtime/requirements.lock
+  # bump the pin in rootcause/runtime/Dockerfile to @${TARGET}, then deploy (push its stable branch)
+  # see docs/migration-rootcause.md
 EOF
 fi
 echo; echo "✅ done — brains now run $TARGET"

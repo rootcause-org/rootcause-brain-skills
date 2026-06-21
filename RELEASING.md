@@ -13,7 +13,7 @@
 > The skill ships **strictly tag-pinned** (every skill change is a release), so brains only pick up a
 > change once it's a pushed tag. The image bakes `runtime/` only (never the skill), so a skill/doc
 > release **re-tags** the prior image instead of rebuilding — `--relock` forces a real rebuild for dep
-> changes. Prod (`rootcause-light`) stays a separate, deploy-gated step the script only reminds you of.
+> changes. Prod (`rootcause`) stays a separate, deploy-gated step the script only reminds you of.
 >
 > The rest of this file is the manual reference for what that script automates.
 
@@ -28,9 +28,9 @@ commit, then tag + push:
 | Dep lockfile (regen on any dep change) | `runtime/requirements.lock` | `uv pip compile runtime/pyproject.toml --universal --python-version 3.12 -o runtime/requirements.lock` |
 | Claude Code plugin | `plugin.json` + `.claude-plugin/marketplace.json` | `version` |
 | Codex plugin | `.codex-plugin/plugin.json` + `.agents/plugins/marketplace.json` | `version` / `ref` |
-| Docs install snippets | `README.md`, `docs/onboarding.md`, `docs/migration-rootcause-light.md`, `install.sh` | the `v0.1.0` literals |
-| **Prod (separate repo)** | `rootcause-light/runtime/Dockerfile` | the `rootcause-runtime @ git+…@vX.Y.Z` pin + workspace image tag |
-| **Prod lock copy (separate repo)** | `rootcause-light/runtime/requirements.lock` | `cp runtime/requirements.lock ../rootcause-light/runtime/requirements.lock` (lockstep copy) |
+| Docs install snippets | `README.md`, `docs/onboarding.md`, `docs/migration-rootcause.md`, `install.sh` | the `v0.1.0` literals |
+| **Prod (separate repo)** | `rootcause/runtime/Dockerfile` | the `rootcause-runtime @ git+…@vX.Y.Z` pin + workspace image tag |
+| **Prod lock copy (separate repo)** | `rootcause/runtime/requirements.lock` | `cp runtime/requirements.lock ../rootcause/runtime/requirements.lock` (lockstep copy) |
 
 Then:
 
@@ -39,7 +39,7 @@ git tag vX.Y.Z && git push origin vX.Y.Z          # makes the git-pinned runtime
 docker build -f docker/Dockerfile -t ghcr.io/rootcause-org/workspace:vX.Y.Z . && docker push ghcr.io/rootcause-org/workspace:vX.Y.Z
 ```
 
-Then re-point prod and follow [docs/migration-rootcause-light.md](docs/migration-rootcause-light.md).
+Then re-point prod and follow [docs/migration-rootcause.md](docs/migration-rootcause.md).
 
 **Why one line:** the engine resolves `lib` from the sibling `runtime/` when present (offline,
 canonical bytes), else `rootcause-runtime @ git+…@vX.Y.Z`. Both must be the same bytes prod's image
@@ -50,7 +50,7 @@ tail (botocore, urllib3, certifi, …) would otherwise float as PyPI moves, so t
 could differ. `runtime/requirements.lock` (universal, Python 3.12) freezes the **full** closure. uv
 mode installs from it (`--with-requirements`) and the workspace image constrains to it
 (`docker/Dockerfile`, `-c …/requirements.lock`) — same closure both ends. Regenerate it whenever you
-change a dependency, in the same commit. Prod (`rootcause-light/runtime/Dockerfile`) constrains to a
-**lockstep COPY** of this file at `rootcause-light/runtime/requirements.lock` (vendored, not fetched
+change a dependency, in the same commit. Prod (`rootcause/runtime/Dockerfile`) constrains to a
+**lockstep COPY** of this file at `rootcause/runtime/requirements.lock` (vendored, not fetched
 from the tag, so its build is hermetic and can't break when a tag predates the lock) — re-copy it
 there in the same release so prod's box matches byte-for-byte.

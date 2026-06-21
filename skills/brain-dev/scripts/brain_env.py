@@ -47,7 +47,7 @@ RUNTIME_LOCK = (RUNTIME / "requirements.lock").resolve()
 # The published workspace image prod uses. Overridable for a local build or a fork.
 DEFAULT_IMAGE = os.environ.get("RC_WORKSPACE_IMAGE", f"ghcr.io/rootcause-org/workspace:v{VERSION}")
 
-# Container constants, mirrored from rootcause-light internal/workspace/docker.go so docker mode is
+# Container constants, mirrored from rootcause internal/workspace/docker.go so docker mode is
 # byte-faithful to a real run.
 CONTAINER_UID = 10001
 CONTAINER_GID = 10001
@@ -127,7 +127,7 @@ def brain_secrets(brain_dir: Path, *, required: bool) -> dict[str, str] | None:
     if required:
         print(
             f"error: no .env at {env_file} — the live tier / a real run needs the project secrets. "
-            "Operators recover it with rootcause-light's `rc_env.py <project> --pull`.",
+            "Operators recover it with rootcause's `rc_env.py <project> --pull`.",
             file=sys.stderr,
         )
         return None
@@ -255,7 +255,7 @@ def docker_run_args(
     workdir: str = BRAIN_MOUNT,
     command: list[str],
 ) -> list[str]:
-    """`docker run` argv mirroring rootcause-light internal/workspace/docker.go: read-only rootfs,
+    """`docker run` argv mirroring rootcause internal/workspace/docker.go: read-only rootfs,
     all caps dropped, no-new-privileges, tmpfs /tmp + writable agent home, brain + mirrors `:ro`
     (kernel-enforced EROFS), env by `-e KEY` (values ride the docker client's own env, off the argv,
     exactly as prod keeps secrets off argv). One-shot `--rm` — no detached keep-alive needed for the

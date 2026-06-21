@@ -1,7 +1,7 @@
 # rootcause-runtime — the `lib` helpers a brain's grounding scripts import (`from lib import db`).
 #
 # ONE canonical source of truth, consumed by BOTH ends by the same pin:
-#   - prod:  rootcause-light/runtime/Dockerfile installs `rootcause-runtime @ git+…@vX.Y.Z`
+#   - prod:  rootcause/runtime/Dockerfile installs `rootcause-runtime @ git+…@vX.Y.Z`
 #            (subdirectory=runtime) instead of `COPY runtime/lib`.
 #   - local: the kit's uv-mode runners + a brain's own scripts resolve the same `lib`.
 # Because both install identical versioned bytes, "tested locally" provably equals "runs in prod".
@@ -14,7 +14,7 @@ version = "0.1.2"
 description = "Read-only grounding helpers (db, stripe, cloudwatch, fs, http, html, livecheck) that a rootcause brain's scripts import."
 requires-python = ">=3.11"
 
-# Same pins the workspace image bakes (rootcause-light/runtime/Dockerfile). Kept in lockstep with the
+# Same pins the workspace image bakes (rootcause/runtime/Dockerfile). Kept in lockstep with the
 # image tag so a uv-mode install and the docker-mode image carry the same dependency surface.
 dependencies = [
     "psycopg[binary]==3.2.3",

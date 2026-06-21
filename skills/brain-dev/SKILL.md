@@ -1,6 +1,6 @@
 ---
 name: brain-dev
-description: Iterate on and verify a rootcause project's BRAIN locally — run its grounding scripts (skills/*/scripts/*.py, which do `from lib import db`) and its pytest tiers the way the production workspace container does, without rootcause-light source. Use when working inside a `rootcause-brain-<project>` checkout to test a grounding script, debug a `from lib import db` import, run the offline/live test tiers, reproduce a run's database grounding read-only, or check a brain change before pushing. Two modes: fast `uv` (inner loop) and faithful `docker` (pre-push gate).
+description: Iterate on and verify a rootcause project's BRAIN locally — run its grounding scripts (skills/*/scripts/*.py, which do `from lib import db`) and its pytest tiers the way the production workspace container does, without rootcause source. Use when working inside a `rootcause-brain-<project>` checkout to test a grounding script, debug a `from lib import db` import, run the offline/live test tiers, reproduce a run's database grounding read-only, or check a brain change before pushing. Two modes: fast `uv` (inner loop) and faithful `docker` (pre-push gate).
 ---
 
 # brain-dev — run a brain locally, the way prod does
@@ -9,7 +9,7 @@ A **brain** (`rootcause-brain-<project>`) is markdown skills + Python grounding 
 `from lib import db` to read a customer's data read-only. In prod those scripts run inside a workspace
 container; this skill reproduces that loop **on the laptop**, with the same `lib` (the pinned
 `rootcause-runtime` package) and the same per-project env — so you can iterate without a real run and
-without any `rootcause-light` source.
+without any `rootcause` source.
 
 **Brain-dir-relative and zero-config.** You `cd` into a brain checkout and invoke; everything operates
 on `.` — it reads `./.env`, `./skills/*/scripts/`, `./skills` for tests. No `accounts.yml`, no project
@@ -51,9 +51,9 @@ mask a missing `.env` entry into a false green.
 ## Locate the engine
 
 The engine ships **inside this skill**, in `scripts/` next to this `SKILL.md`:
-`brain_env.py` · `brain_run.py` · `brain_test.py`. This is the same on every install path (Claude
-Code plugin, Codex plugin, local symlink) and in both agents — no `${CLAUDE_PLUGIN_ROOT}`, no clone
-path to track.
+`brain_env.py` · `brain_run.py` · `brain_test.py` · `brain_action.py` · `brain_dump.py`. This is the
+same on every install path (Claude Code plugin, Codex plugin, local symlink) and in both agents — no
+`${CLAUDE_PLUGIN_ROOT}`, no clone path to track.
 
 Set `SKILL` to the directory you loaded this `SKILL.md` from, then call the scripts under it:
 
@@ -126,11 +126,51 @@ Three phases, each faithful to prod:
 > push → `/rc-sync-brain` → `/rc-action-test` (the operator dev-trigger). Full contract +
 > credential-plane rules: [docs/actions.md](../../docs/actions.md).
 
+## Test a brain change on real prod infra — *without* pushing `main` (`rc ask` + `brain_dump.py`)
+
+uv/docker reproduce one **grounding script**; they do **not** reproduce the LLM loop (two-tool
+orchestration, warm-start, the grounding pre-pass, system-prompt assembly, model calls, egress
+gateway, KB tenant-scoping). That loop is host code in `rootcause` and — by the AGENTS.md litmus
+— is **not** vendored here; running it locally would recreate the lib-drift trap as *loop-drift* (a
+green local loop against a stale copy is a false green). So the high-fidelity loop test is to run on
+**real prod infra against a pushed `dev/*` branch**, then dump the run here. This needs **no operator
+/ SSM access** — only the project's `ROOTCAUSE_API_KEY` and the [`rc` CLI](../../docs/rc-cli.md).
+
+```bash
+# 1) trigger a run from a customer-style question (against main HEAD):
+rc ask "Hi, my account is sophie@coca-cola.com. Do I still have open invoices?"
+
+# …or test a brain change WITHOUT touching main — push a dev branch, run against it:
+git push origin dev/refund-rework            # dev branch; main stays live
+rc ask "<customer question>" --brain-ref dev/refund-rework
+
+# 2) dump the run to two local files (concise index + jq-queryable event log):
+uv run "$SKILL/scripts/brain_dump.py" <run_id>        # → out/brain-dump/<run8>-<proj>.{md,jsonl}
+
+# 3) progressive disclosure: read the index, then jq into any step (the index prints the queries):
+jq -r 'select(.disp=="3").command' out/brain-dump/<run8>-<proj>.jsonl
+```
+
+`brain_dump.py` shells `rc run <id> --full -o json` (the bundle) → the **shared** `run_dump` renderer
+in `rootcause-runtime` → both files. It's the same renderer the operator's `rc_agent_debug.py` uses,
+so the output is byte-identical regardless of which side dumped the run.
+
+Playbook beats:
+- **Side-effect-free.** A `--brain-ref` run posts no callback and pushes no journal; proposed
+  actions/PRs are recorded but **flagged `test`** — so "did the agent reach for the action?" (**Mode
+  A**) still works against a dev ref. The dump's header echoes `brain_ref` + `trigger=test`, so a test
+  run is never mistaken for a live one.
+- **Boundary.** Mirrors + KB are at their current cron-synced versions; you're testing *brain*
+  changes, not mirror/KB changes.
+- **It does NOT replace [ship-and-verify.md](ship-and-verify.md).** That's the path to make a change
+  *live* on `main`. This is the path to *gain confidence on real infra first* — the project-dev's Mode
+  A without operator/SSM access and without a `main` push.
+
 ## Ship it to prod & verify (outer loop)
 
 Done iterating locally and want the change **live on prod with feedback** — push → force a brain sync
 (no waiting on the cron) → trigger a real run → read the result? That's a different surface (it drives
-host-owned `rootcause-light` commands, not this read-only local engine). The lean playbook, with the
+host-owned `rootcause` commands, not this read-only local engine). The lean playbook, with the
 action-iteration gotchas (digest re-propose, push-only brain, the two feedback modes), is here:
 [ship-and-verify.md](ship-and-verify.md).
 
@@ -175,5 +215,5 @@ of that silently drops those guarantees.
   sets `RC_MIRRORS_ROOT` so `lib.fs` finds them. Without mirrors, `fs` helpers report which mirror is
   missing — degrade gracefully, don't treat it as a brain bug.
 - **No `.env`?** uv-offline tests and `--brief` run without one; a script run and the live tier need
-  it. Operators recover it with rootcause-light's `rc_env.py <project> --pull`.
+  it. Operators recover it with rootcause's `rc_env.py <project> --pull`.
 - **Run from inside the brain** (cwd), or pass `--brain <dir>` to target another checkout.

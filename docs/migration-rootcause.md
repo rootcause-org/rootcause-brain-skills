@@ -1,4 +1,4 @@
-# Migration runbook — cut over `rootcause-light` to the kit
+# Migration runbook — cut over `rootcause` to the kit
 
 These steps are **outward-facing / sequencing-sensitive** and are intentionally NOT applied
 automatically: they push a public tag + image and edit the production repo. Do them **in order** —
@@ -10,7 +10,7 @@ repointing prod before the tag exists breaks prod image builds.
    - Bump the whole single version line together first — see [../RELEASING.md](../RELEASING.md)
      (`skills/brain-dev/scripts/brain_env.py` `VERSION`/`DEFAULT_IMAGE`, `runtime/pyproject.toml`, both
      plugin manifests + marketplaces, the image tag).
-   - Prove the package resolves by tag (no `rootcause-light` source):
+   - Prove the package resolves by tag (no `rootcause` source):
      ```bash
      uv run --no-project \
        --with "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.2#subdirectory=runtime" \
@@ -24,7 +24,7 @@ repointing prod before the tag exists breaks prod image builds.
    ```
    (Already builds + runs locally — see verification in the session that produced this repo.)
 
-3. **Repoint prod** — `rootcause-light/runtime/Dockerfile`. Replace the inline client-dep install +
+3. **Repoint prod** — `rootcause/runtime/Dockerfile`. Replace the inline client-dep install +
    `COPY lib/` + `ENV PYTHONPATH=/opt/rootcause` with a single package install (deps now come from
    `rootcause-runtime`'s `pyproject.toml`; the import name stays `lib`):
 
@@ -46,19 +46,19 @@ repointing prod before the tag exists breaks prod image builds.
    ```
    **Confirm a real prod run still grounds** before deleting anything (the make-or-break check).
 
-4. **Delete the now-redundant `lib` source in `rootcause-light`** once step 3 is confirmed:
-   `rootcause-light/runtime/lib/` and `runtime/tests/` (the package + its tests are canonical here
-   now). Optionally publish the same image from `rootcause-light/runtime/Dockerfile` instead of this
+4. **Delete the now-redundant `lib` source in `rootcause`** once step 3 is confirmed:
+   `rootcause/runtime/lib/` and `runtime/tests/` (the package + its tests are canonical here
+   now). Optionally publish the same image from `rootcause/runtime/Dockerfile` instead of this
    repo's `docker/Dockerfile` — pick ONE builder to avoid drift; this repo's is recommended since
    `runtime/` lives here.
 
 5. **Delete the bucket-A copies + point the support skill at the kit:** *Already done* — an earlier
-   `rootcause-light` cleanup removed the engine copies (`brain_run.py`, `brain_test.py`) and the old
+   `rootcause` cleanup removed the engine copies (`brain_run.py`, `brain_test.py`) and the old
    `local-brain-scripts.md`; the support skill's `scripts/` now holds only buckets B/C (`db.py`,
    `logs.py`, `rc_agent_debug.py`, …). No action.
 
 ## Already done (no action)
 
 - **`.env` standardization.** `rootcause-brain-momentum-tools` already uses a single gitignored `.env`
-  at its root (mode 600). No rename needed. (`rootcause-light/.env.momentum-tools` is the operator's
+  at its root (mode 600). No rename needed. (`rootcause/.env.momentum-tools` is the operator's
   own copy — bucket C — leave it.)

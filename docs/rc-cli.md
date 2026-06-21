@@ -1,7 +1,7 @@
 # `rc` — the project's self-service window into its own rootcause data
 
 `rc` (repo: **`rootcause-org/rootcause-cli`**) is a thin Go CLI that lets a **project consume its OWN
-rootcause data and change its own config** — over rootcause-light's public JSON `/api/v1`, authed with
+rootcause data and change its own config** — over rootcause's public JSON `/api/v1`, authed with
 the project's existing **Prompt API bearer key**. No business logic lives in it (MCP is a planned layer
 over the same endpoints); it's a typed, paginating, TTY-aware front-end to the API.
 
@@ -9,19 +9,29 @@ over the same endpoints); it's a typed, paginating, TTY-aware front-end to the A
 > tooling — the litmus test ([AGENTS.md](../AGENTS.md)) is "does it touch OUR host?". `rc` does **not**:
 > it speaks the public API with the project's own key, so it's the **project-dev's read-side
 > counterpart** to the operator-only host-debug tools (`db.py`, trace/`logs.py`, `rc_*_debug.py`) that
-> stay in `rootcause-light`. A dev with no operator/SSM access can still ground themselves in real runs.
+> stay in `rootcause`. A dev with no operator/SSM access can still ground themselves in real runs.
 > `rc` lives in its own repo; this page is where the **author→verify loop** that uses it is taught.
 
 ## Commands (progressive disclosure: index → one run → detail)
 
 ```bash
+rc ask "<customer-style question>"      # trigger a REAL prod run; prints the run_id   (POST /api/v1/runs)
+rc ask "<q>" --brain-ref dev/x          # …against a pushed dev/* branch — NO main push, main stays live
 rc status                       # recent runs + health summary           (GET /api/v1/runs)
 rc runs [--limit N] [--kind email|prompt|mcp|analysis] [--category ok|timeout|...]
 rc run <id>                     # one run, high level: status, category, draft?/note?, cost, duration (+ kind/outcome/turns/bash/created/finished/trace)
 rc run <id> --events            # full detail: per-event trace — bash command + stdout/stderr, exit code, timing
+rc run <id> --full -o json      # the whole run-dump BUNDLE ({run, events}) — what brain_dump.py renders  (GET /api/v1/runs/{id}/full)
 rc config get                   # effective settings + box defaults
 rc config set max_run_usd=5 default_tier=pro
 ```
+
+- **`rc ask` is the high-fidelity loop test.** It runs the *real* prod loop (model, egress, `/brain:ro`,
+  `/mirrors`, KB) — `--brain-ref dev/x` fetches a pushed `dev/*` branch so a brain change is tested on
+  real infra **without** moving `main` (which is live). The run is **side-effect-free**: no callback,
+  no journal push, and any proposed action/PR is flagged `test`. Dump it with the `brain-dev` skill's
+  [`brain_dump.py`](../skills/brain-dev/SKILL.md#test-a-brain-change-on-real-prod-infra--without-pushing-main-rc-ask--brain_dumppy)
+  (`rc run <id> --full` → the shared `run_dump` renderer → an index `.md` + jq-queryable `.jsonl`).
 
 - **Output is TTY-aware** — pretty table on a terminal, **JSON when piped** (`rc runs | jq …`); force
   with `-o json|table`.

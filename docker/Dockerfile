@@ -1,15 +1,15 @@
 # The workspace image — the SAME image prod runs, published so a client reproduces the
-# box with NO rootcause-light source. Build context is the repo root:
+# box with NO rootcause source. Build context is the repo root:
 #
 #     docker build -f docker/Dockerfile -t ghcr.io/rootcause-org/workspace:vX.Y.Z .
 #     docker push   ghcr.io/rootcause-org/workspace:vX.Y.Z
 #
 # Pin the image tag to the rootcause-runtime / plugin tag (see RELEASING.md): the bytes installed below ARE
 # `rootcause-runtime@vX.Y.Z` (we install the in-repo runtime/ package), and prod's
-# rootcause-light/runtime/Dockerfile installs the same package by the same pin — so "tested in this
+# rootcause/runtime/Dockerfile installs the same package by the same pin — so "tested in this
 # image" provably equals "runs in prod".
 #
-# Faithful to rootcause-light's runtime/Dockerfile: the host starts ONE container per run
+# Faithful to rootcause's runtime/Dockerfile: the host starts ONE container per run
 # (`docker run -d <image> sleep infinity`) driven by many `docker exec`; files/installs/tmp persist.
 # The kit's docker mode runs it one-shot (`docker run --rm`) for the pre-push check, same image.
 FROM python:3.12-slim

@@ -147,7 +147,7 @@ container) — they check *preconditions observable in the data*.
 > ⚠️ **Gem rspec ≠ wire contract proof.** `bundle exec rspec -q` on the gem runs against mocks.
 > Contract bugs (schema shape, `project_id` on fetch, signed-response format) are invisible to mocked
 > tests. The wire contract between the host and the gem is specified in **`WIRE-CONTRACT.md`** (in
-> the `rootcause-light` repo) — concrete tests in both repos guard it. A green gem rspec does NOT
+> the `rootcause` repo) — concrete tests in both repos guard it. A green gem rspec does NOT
 > prove the host↔gem pipe works. The side-effect-free pre-flight is:
 > `scripts/rc_action_doctor.sh <project> <action_id> [--params '<json>']` — runs a `dry_run`
 > validate-only invocation, returns `would_execute:true` or a **named** structured error
@@ -156,9 +156,9 @@ container) — they check *preconditions observable in the data*.
 
 ## The author → test loop
 
-This is the spine of authoring an action. The mechanics of the trigger live in **rootcause-light** —
+This is the spine of authoring an action. The mechanics of the trigger live in **rootcause** —
 this page teaches the loop; the command is
-[`/rc-action-test`](../../rootcause-light/.agents/commands/rc-action-test.md) (script
+[`/rc-action-test`](../../rootcause/.agents/commands/rc-action-test.md) (script
 `scripts/rc_action_test.sh <project> <action_id> [--params '<json>'] [--sync]`).
 
 ```mermaid
@@ -196,10 +196,13 @@ authoring.
 ## Related
 
 - [`rc` CLI](rc-cli.md) — the project's self-service window into its own runs; the **ground-first**
-  step (`rc runs`, `rc run <id> --events`) that should precede authoring any action.
-- [`/rc-action-test`](../../rootcause-light/.agents/commands/rc-action-test.md) — the trigger command
+  step (`rc runs`, `rc run <id> --events`) that should precede authoring any action. `rc ask "<symptom>"
+  --brain-ref dev/x` + [`brain_dump.py`](../skills/brain-dev/SKILL.md#test-a-brain-change-on-real-prod-infra--without-pushing-main-rc-ask--brain_dumppy)
+  is now the project-dev's **Mode A** ("did the agent reach for the action?") — real prod infra, action
+  flagged `test`, **no operator/SSM access and no `main` push** required.
+- [`/rc-action-test`](../../rootcause/.agents/commands/rc-action-test.md) — the trigger command
   (arguments, what it relays, how it works).
-- [rootcause-light `action-runbook.md`](../../rootcause-light/.agents/skills/support/action-runbook.md)
+- [rootcause `action-runbook.md`](../../rootcause/.agents/skills/support/action-runbook.md)
   — enabling the plane, the full Execute mechanics, the reviewer-confirm path.
 - [`ship-and-verify.md`](../skills/brain-dev/ship-and-verify.md) — the broader outer loop (push → sync
   → feedback), including the *agent-propose* feedback mode (does the agent reach for the action?) vs

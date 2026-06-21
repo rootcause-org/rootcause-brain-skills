@@ -1,4 +1,4 @@
-"""rootcause-light sandbox helper library.
+"""rootcause sandbox helper library.
 
 Thin, READ-ONLY helpers the agent's Python grounding code imports inside the disposable
 container: `db`, `stripe`, `cloudwatch`, `fs`, `http`, `html`. Each is configured from the per-project

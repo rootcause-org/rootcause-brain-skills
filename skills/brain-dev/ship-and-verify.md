@@ -4,11 +4,11 @@
 edited a brain file (typically an **action** under `actions/<id>/`), now you want it live on prod and
 want to know *did it do what I expected* — without waiting for the brain-sync cron.
 
-> **Boundary.** Every prod-touching command below lives in and is owned by **`rootcause-light`** (it
+> **Boundary.** Every prod-touching command below lives in and is owned by **`rootcause`** (it
 > talks to our host: SSM box, Postgres registry, the Prompt API). This page only **sequences** them —
-> it ships no host-touching code. Run them from your `rootcause-light` checkout (needs its gitignored
+> it ships no host-touching code. Run them from your `rootcause` checkout (needs its gitignored
 > `accounts.yml`). Canonical docs: [`support/action-runbook.md`], [`commands/rc-sync-brain.md`],
-> [`commands/rc-agent-run.md`] in rootcause-light.
+> [`commands/rc-agent-run.md`] in rootcause.
 
 ## The loop
 
@@ -19,7 +19,7 @@ edit  ─▶  push   ─▶  sync prod (+ack)  ─▶  feedback         ─▶  
 ```
 
 `<project>` below = the `projects.name` (e.g. `kampadmin`), **not** the repo name. Commands shown as
-`scripts/…` are run from the `rootcause-light` repo root.
+`scripts/…` are run from the `rootcause` repo root.
 
 ---
 
@@ -27,7 +27,7 @@ edit  ─▶  push   ─▶  sync prod (+ack)  ─▶  feedback         ─▶  
 
 Actions are off by default. Without **all four sides** wired, the plane is silently dead (bare 404s):
 
-**Side 1 — box-wide (rootcause-light `.env`) — ONE-TIME, not per-project:**
+**Side 1 — box-wide (rootcause `.env`) — ONE-TIME, not per-project:**
 `ACTION_TOKEN_KEY` (+ `PUBLIC_BASE_URL`) must be set on the box. Without it the entire
 `/api/v1/actions/*` + confirm surface returns 404 — no amount of per-project config fixes it.
 
@@ -39,7 +39,7 @@ Check: `uv run db.py "select name, actions_enabled, action_mode, action_runner_u
 **Side 3 — customer app (the Rails app / gem host):**
 Must MOUNT `RootCause::ActionRunner::RackApp` at `/rootcause/action` (the inbound receiver — separate
 from `ResultRackApp` at `/rootcause/result`) AND set `ROOTCAUSE_FETCH_URL` to
-`https://rootcause-light.probackup.io/actions/script`. Without the mount: the host's signed
+`https://rootcause.probackup.io/actions/script`. Without the mount: the host's signed
 invocation hits a 404. Without `ROOTCAUSE_FETCH_URL`: the gem fetches from a `rootcause.invalid`
 placeholder.
 
@@ -162,9 +162,13 @@ You're looking for `action_id=<id>` with sane `params`. (A run **proposes**; it 
 *should* have proposed but didn't, that's a brain-content/altitude problem — fix the action's
 `description` or the surrounding skill, not the script.)
 
-> **No operator/SSM access?** The `db.py` queries above are rootcause-light operator tools. A project
-> dev reads the same triggered run over the public API with [`rc run <id> --events`](../../docs/rc-cli.md)
-> — the trace shows whether (and with what params) the run reached for the action.
+> **No operator/SSM access?** The `db.py` queries above are rootcause operator tools. A project
+> dev does the **entire** Mode A without them — and **without a `main` push**: `rc ask "<symptom>"
+> --brain-ref dev/x` triggers the real prod loop against a pushed dev branch (side-effect-free, action
+> flagged `test`), then `brain_dump.py <run_id>` renders the index + jq-queryable trace locally — which
+> shows whether (and with what params) the run reached for the action. See the
+> [brain-dev test-run loop](SKILL.md#test-a-brain-change-on-real-prod-infra--without-pushing-main-rc-ask--brain_dumppy)
+> and [`rc run <id> --events`](../../docs/rc-cli.md) for the operator-free read path.
 
 **Mode B — does the script actually work end-to-end against prod's gem?** Take the `action_runs.id`
 from Mode A and execute it headlessly (same confirm→execute POST the reviewer's email button fires):
@@ -199,8 +203,8 @@ cd ~/code/rootcause-org/rootcause-brain-<project>
 tools/preflight.sh <id> --params '<json>'                       # (if preflight.py exists)
 git pull --rebase origin main && git push origin main
 
-# from the rootcause-light repo
-cd ~/code/rootcause-org/rootcause-light
+# from the rootcause repo
+cd ~/code/rootcause-org/rootcause
 scripts/rc_sync_brain.sh <project>                              # expect: STATE adopted-origin -> <sha>
 scripts/rc_action_doctor.sh <project> <id> --params '<json>'   # dry_run: proves whole pipe, zero side effects
 scripts/rc_agent_run.sh  <project> "<symptom prompt>"          # Mode A: did it propose <id>?
@@ -225,8 +229,8 @@ uv run db.py "select id,action_id,params,status from action_runs where status='p
   action's `description`/altitude); "proposed but execution errored" is a `script.rb` problem. Don't
   confuse them — they live in different files.
 
-[`support/action-runbook.md`]: ../../../rootcause-light/.agents/skills/support/action-runbook.md
-[`commands/rc-sync-brain.md`]: ../../../rootcause-light/.agents/commands/rc-sync-brain.md
-[`commands/rc-agent-run.md`]: ../../../rootcause-light/.agents/commands/rc-agent-run.md
-[`action-runbook.md` → "First enable the plane"]: ../../../rootcause-light/.agents/skills/support/action-runbook.md
-[rc-action-test]: ../../../rootcause-light/.agents/commands/rc-action-test.md
+[`support/action-runbook.md`]: ../../../rootcause/.agents/skills/support/action-runbook.md
+[`commands/rc-sync-brain.md`]: ../../../rootcause/.agents/commands/rc-sync-brain.md
+[`commands/rc-agent-run.md`]: ../../../rootcause/.agents/commands/rc-agent-run.md
+[`action-runbook.md` → "First enable the plane"]: ../../../rootcause/.agents/skills/support/action-runbook.md
+[rc-action-test]: ../../../rootcause/.agents/commands/rc-action-test.md

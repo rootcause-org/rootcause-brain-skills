@@ -1,6 +1,6 @@
 # Client onboarding — `cd brain → install → run`
 
-From zero to iterating on a brain, with **no `rootcause-light` source**.
+From zero to iterating on a brain, with **no `rootcause` source**.
 
 ## 1. `cd` into a brain
 
@@ -9,7 +9,7 @@ cd ~/code/rootcause-org/rootcause-brain-<project>
 ```
 
 You need the brain's gitignored plaintext **`.env`** at its root (DSNs + API keys). Don't have it?
-Operators recover it with rootcause-light's `rc_env.py <project> --pull`.
+Operators recover it with rootcause's `rc_env.py <project> --pull`.
 
 ## 2. Install the kit — pick one path
 

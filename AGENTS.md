@@ -15,8 +15,8 @@ Python **grounding scripts** (`from lib import db`) + **runbooks** + **actions**
 reads (mounted **read-only at `/brain`**) to draft a project's support replies. It's also the
 customer's read-only audit/trust artifact (human-readable notes + code, **never secrets**).
 
-- Brain git mechanics: [rootcause-light `.agents/skills/architecture/brain.md`](../rootcause-light/.agents/skills/architecture/brain.md)
-- Authoring brain content: [rootcause-light `.agents/skills/brain-authoring/SKILL.md`](../rootcause-light/.agents/skills/brain-authoring/SKILL.md)
+- Brain git mechanics: [rootcause `.agents/skills/architecture/brain.md`](../rootcause/.agents/skills/architecture/brain.md)
+- Authoring brain content: [rootcause `.agents/skills/brain-authoring/SKILL.md`](../rootcause/.agents/skills/brain-authoring/SKILL.md)
 
 A run never writes its brain; durable knowledge grows out-of-band (per-run journal → weekly
 consolidation PR an operator merges).
@@ -25,13 +25,19 @@ consolidation PR an operator merges).
 
 Only **brain-author/test tooling** that is *infra-free and customer-world-facing* belongs here. The
 litmus test: **does it touch OUR host** (Postgres registry / River / `run_events` / Frankfurt
-CloudWatch / the box over SSM)? If yes → it stays in `rootcause-light`, never here.
+CloudWatch / the box over SSM)? If yes → it stays in `rootcause`, never here.
 
-| Ships here | Stays in rootcause-light |
+| Ships here | Stays in rootcause |
 |---|---|
 | `brain_run.py`, `brain_test.py`, the `brain-dev` skill | operator host-debug (`db.py`, `logs.py`, `rc_*_debug.py`) |
-| `rootcause-runtime` (`lib`) package | key/env plumbing (`rc_secret.py`, `rc_env.py`) |
+| `rootcause-runtime` (`lib`) package, incl. the `lib/run_dump` index+JSONL renderer | the operator SSM fetch in `rc_agent_debug.py` (imports the shared renderer) |
+| `brain_dump.py` (run dump over the public API + project key) | `rc_agent_debug.py` (run dump over SSM + the registry DB) |
 | workspace Dockerfile / published image ref | anything reading `accounts.yml` or SSM |
+
+The run-dump split is the litmus test in action: the **renderer is shared** (one `rootcause-runtime`
+module, pulled by both ends via the tag pin, so output is byte-identical), but the **fetch differs** —
+`brain_dump.py` shells `rc run <id> --full` (public API, project key, infra-free → here); the operator's
+`rc_agent_debug.py` reads the DB over SSM (touches OUR host → stays in rootcause).
 
 ## Two distribution concerns (keep separate)
 
@@ -42,19 +48,19 @@ CloudWatch / the box over SSM)? If yes → it stays in `rootcause-light`, never 
 
 **The trap:** vendoring/copying `lib` here creates *`lib` drift* — a green local test against a stale
 `lib` is a *false* green. `lib` must have exactly **ONE** source of truth, pinned by tag. Both prod
-(`rootcause-light/runtime/Dockerfile`) and local installs pull identical versioned bytes, so "tested
+(`rootcause/runtime/Dockerfile`) and local installs pull identical versioned bytes, so "tested
 locally" provably equals "runs in prod". Keep the plugin tag, `rootcause-runtime` pin, image tag, and
 prod Dockerfile pin moving **together**.
 
 **The prod consumer (other end of the coupling).** `runtime/lib/` here is canonical; the only place
-that consumes it in production is **`rootcause-light/runtime/Dockerfile`**, which installs
+that consumes it in production is **`rootcause/runtime/Dockerfile`**, which installs
 `rootcause-runtime @ git+…@v<TAG>#subdirectory=runtime` (NOT a `COPY lib/`). That repo builds its
 workspace image from `runtime/` on deploy (`deploy/bootstrap.sh`, triggered by a push to its `stable`
 branch). So a `lib` change is only *live* once you: edit it here → bump the version line per
 [RELEASING.md](RELEASING.md) + tag + publish the ghcr image → bump the pin in
-`rootcause-light/runtime/Dockerfile` → deploy. Never edit `lib` in `rootcause-light` — the cutover
-removes its duplicate copy ([docs/migration-rootcause-light.md](docs/migration-rootcause-light.md));
-`rootcause-light`'s devops skill carries the reciprocal note.
+`rootcause/runtime/Dockerfile` → deploy. Never edit `lib` in `rootcause` — the cutover
+removes its duplicate copy ([docs/migration-rootcause.md](docs/migration-rootcause.md));
+`rootcause`'s devops skill carries the reciprocal note.
 
 ## Two run modes (the engine offers both — fidelity vs. speed)
 
@@ -79,7 +85,7 @@ removes its duplicate copy ([docs/migration-rootcause-light.md](docs/migration-r
 
 ```
 skills/brain-dev/SKILL.md             # the install-once brain-dev/test skill (self-contained)
-skills/brain-dev/scripts/             # ENGINE inside the skill: brain_env.py · brain_run.py · brain_test.py
+skills/brain-dev/scripts/             # ENGINE inside the skill: brain_env.py · brain_run.py · brain_test.py · brain_dump.py
 .claude-plugin/marketplace.json       # Claude Code plugin catalog
 plugin.json                           # Claude Code plugin manifest
 .agents/plugins/marketplace.json      # Codex plugin catalog
@@ -87,7 +93,7 @@ plugin.json                           # Claude Code plugin manifest
 commands/brain-dev.md                 # Claude-Code-only /brain-dev sugar (Codex needs none — SKILL.md is self-sufficient)
 install.sh                            # per-brain primitive: pin the shared clone + symlink it in (gitignored)
 refresh-brains.sh                     # STANDARD FLOW: cut a release (RELEASING.md) + fan install.sh out to every local brain
-runtime/                              # rootcause-runtime package (lib: db, stripe, cloudwatch, fs, http, livecheck…)
+runtime/                              # rootcause-runtime package (lib: db, stripe, cloudwatch, fs, http, livecheck, run_dump…)
 docker/Dockerfile                     # workspace image (or published-tag ref)
 docs/rc-cli.md                        # the project's `rc` CLI (sibling rootcause-cli) + ground-first author→verify loop
 README.md  AGENTS.md  RELEASING.md
