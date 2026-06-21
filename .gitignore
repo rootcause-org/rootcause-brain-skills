@@ -10,3 +10,6 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+# Run-dump output (brain_dump.py writes the index .md + .jsonl pair here)
+out/
