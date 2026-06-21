@@ -261,9 +261,14 @@ def flags(bundle: dict) -> list[str]:
     if not _has_result(run):
         out.append("no stored callback — the run never produced one")
     # The loop's own accumulator (callback metadata) vs the ai_usage ledger: a gap means some call's
-    # usage row never landed (or was double-counted) — an accounting bug worth a look.
+    # usage row never landed (or was double-counted) — an accounting bug worth a look. Coerce both to
+    # float: the operator path hands the ledger sum as a psycopg Decimal while metadata cost is a JSON
+    # float, and float−Decimal / float×Decimal both raise TypeError — a crash on the very runs this
+    # flag exists to surface. float() is a no-op on the API path (both already float), so byte-identical.
     meta_cost = (run.get("metadata") or {}).get("total_cost_usd")
     ledger_cost = run.get("run_cost_usd") or 0
+    meta_cost = float(meta_cost) if meta_cost else meta_cost
+    ledger_cost = float(ledger_cost) if ledger_cost else ledger_cost
     if meta_cost and ledger_cost and abs(meta_cost - ledger_cost) > 0.02 * max(meta_cost, ledger_cost):
         out.append(f"cost accounting gap: callback metadata says {_cost(meta_cost)} "
                    f"but the ai_usage ledger sums to {_cost(ledger_cost)}")

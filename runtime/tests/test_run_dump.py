@@ -229,6 +229,17 @@ class ByteIdentity(unittest.TestCase):
     def test_test_run_with_brain_ref(self):
         self._assert_identical(_bundle(brain_ref="dev/refund-rework", trigger="test"))
 
+    def test_cost_accounting_gap_decimal_ledger(self):
+        # Operator path: ledger cost is a psycopg Decimal, metadata cost a JSON float, >2% apart — the
+        # cost-accounting-gap flag must fire (not raise float−Decimal TypeError) and read identically to
+        # the all-float API shape.
+        from decimal import Decimal
+        api = _bundle(run_cost_usd=1.00, metadata={"total_cost_usd": 1.10})
+        op = _bundle(run_cost_usd=Decimal("1.00"), metadata={"total_cost_usd": 1.10})
+        af, of = flags(api), flags(op)
+        self.assertTrue(any("cost accounting gap" in f for f in af))
+        self.assertEqual(af, of)  # Decimal ledger renders identically to float ledger
+
     def test_with_blocked_egress(self):
         egress = [
             {"host": "api.stripe.com", "port": 443, "scheme": "https", "url": "https://api.stripe.com",
