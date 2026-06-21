@@ -11,13 +11,13 @@
 # for Claude Code discovery). One source of truth, per-repo discovery, zero /brain footprint.
 #
 #   curl -fsSL .../install.sh | bash -s -- [BRAIN_DIR]      # or: ./install.sh [BRAIN_DIR]
-#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.2 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
+#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.3 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
 set -euo pipefail
 
 BRAIN="${1:-$PWD}"
 BRAIN="$(cd "$BRAIN" && pwd)"
 KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}"
-TAG="${RC_BRAIN_KIT_TAG:-v0.1.2}"
+TAG="${RC_BRAIN_KIT_TAG:-v0.1.3}"
 REPO="https://github.com/rootcause-org/rootcause-brain-skills"
 
 # Sanity-check this is a brain checkout. Accept both layouts: legacy (skills/) and the newer

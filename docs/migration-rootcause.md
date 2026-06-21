@@ -6,21 +6,21 @@ repointing prod before the tag exists breaks prod image builds.
 
 ## Order of operations
 
-1. **Tag this repo** `v0.1.2` and push.
+1. **Tag this repo** `v0.1.3` and push.
    - Bump the whole single version line together first — see [../RELEASING.md](../RELEASING.md)
      (`skills/brain-dev/scripts/brain_env.py` `VERSION`/`DEFAULT_IMAGE`, `runtime/pyproject.toml`, both
      plugin manifests + marketplaces, the image tag).
    - Prove the package resolves by tag (no `rootcause` source):
      ```bash
      uv run --no-project \
-       --with "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.2#subdirectory=runtime" \
+       --with "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.3#subdirectory=runtime" \
        python -c "import lib.db; print('ok')"
      ```
 
 2. **Publish the workspace image** to ghcr, pinned to the same tag:
    ```bash
-   docker build -f docker/Dockerfile -t ghcr.io/rootcause-org/workspace:v0.1.2 .
-   docker push ghcr.io/rootcause-org/workspace:v0.1.2
+   docker build -f docker/Dockerfile -t ghcr.io/rootcause-org/workspace:v0.1.3 .
+   docker push ghcr.io/rootcause-org/workspace:v0.1.3
    ```
    (Already builds + runs locally — see verification in the session that produced this repo.)
 
@@ -42,7 +42,7 @@ repointing prod before the tag exists breaks prod image builds.
    +# subdirectory=runtime is where pyproject.toml lives; the import name stays `lib`.
    +# Needs build-time network + read auth to the (private) repo; pin the tag, never float main.
    +RUN uv pip install --system --no-cache \
-   +        "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.2#subdirectory=runtime"
+   +        "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.3#subdirectory=runtime"
    ```
    **Confirm a real prod run still grounds** before deleting anything (the make-or-break check).
 

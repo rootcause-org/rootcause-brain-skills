@@ -23,7 +23,7 @@ the skill is symlinked into the brain's gitignored `.agents/skills/brain-dev` (C
 
 ```bash
 cd ~/code/rootcause-org/rootcause-brain-<project>
-bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/v0.1.2/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/v0.1.3/install.sh)
 # then, from the brain root — the engine ships inside the skill:
 SKILL="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/skills/brain-dev"
 uv run "$SKILL/scripts/brain_run.py" --brief        # map the brain
@@ -97,12 +97,12 @@ fixtures**, under `skills/<name>/`.)
 
 The plugin versions, the `rootcause-runtime` pin, the workspace image tag, and rootcause's prod
 Dockerfile pin **move together** so local and prod can't diverge — one bump point, see
-[RELEASING.md](RELEASING.md). Current line: **`v0.1.2`**.
+[RELEASING.md](RELEASING.md). Current line: **`v0.1.3`**.
 
 - `lib` dependency (brain scripts + CI):
-  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.2#subdirectory=runtime`
+  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.3#subdirectory=runtime`
   — **always pin a tag, never float `main`** (a push would silently break green local tests).
-- workspace image: `ghcr.io/rootcause-org/workspace:v0.1.2`.
+- workspace image: `ghcr.io/rootcause-org/workspace:v0.1.3`.
 
 ## Develop on the kit itself
 
