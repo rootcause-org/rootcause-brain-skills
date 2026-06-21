@@ -2,9 +2,9 @@
 # requires-python = ">=3.11"
 # ///
 """Dump ONE brain run to two local files — a concise markdown index + a jq-queryable JSONL — over the
-PUBLIC API. The infra-free twin of rootcause-light's operator-only `rc_agent_debug.py`: it needs only
+PUBLIC API. The infra-free twin of rootcause's operator-only `rc_agent_debug.py`: it needs only
 the project's `ROOTCAUSE_API_KEY` (+ optional `ROOTCAUSE_BASE_URL`) and the `rc` CLI on PATH — never
-SSM, the registry DB, or the box. So it rightfully ships HERE, not in rootcause-light.
+SSM, the registry DB, or the box. So it rightfully ships HERE, not in rootcause.
 
     uv run brain_dump.py <run_id>                 # writes out/brain-dump/<run8>-<proj>.{md,jsonl}
     uv run brain_dump.py <run_id> --out-dir /tmp

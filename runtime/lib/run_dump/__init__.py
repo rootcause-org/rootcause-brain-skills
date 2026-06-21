@@ -7,10 +7,10 @@ rendering, imported by BOTH consumers so their output is provably byte-identical
 
   * the project-dev path — `skills/brain-dev/scripts/brain_dump.py` here, fed by the public-API
     bundle (`rc run <id> --full -o json`);
-  * the operator path — rootcause-light's `rc_agent_debug.py`, fed by its SSM/DB query.
+  * the operator path — rootcause's `rc_agent_debug.py`, fed by its SSM/DB query.
 
 Both normalize their source to the **bundle dict** (`{"run": {...}, "events": [...]}`) defined in the
-server spec (`rootcause-light/docs/specs/brain-test-runs.md`, Change 4) and hand it here. The server
+server spec (`rootcause/docs/specs/brain-test-runs.md`, Change 4) and hand it here. The server
 ships raw truth; this module decorates it — the `disp`/`label`/`P1,P2…` computation, anomaly flags,
 and "files read" extraction are presentation, computed here, never by the server.
 

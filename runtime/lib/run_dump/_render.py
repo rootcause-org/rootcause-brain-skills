@@ -1,6 +1,6 @@
 """Implementation of the shared run-dump renderer. See the package docstring for the bundle contract.
 
-Ported verbatim from rootcause-light's `rc_agent_debug.py` (the operator script that pioneered this
+Ported verbatim from rootcause's `rc_agent_debug.py` (the operator script that pioneered this
 output) so the rendered bytes stay identical; the ONLY change is the data-access layer — the
 formatting/decoration logic reads the normalized **bundle dict** instead of raw DB rows. Keep this in
 lockstep with `rc_agent_debug.py`'s fetch normalization: both must feed the same bundle for the
@@ -15,7 +15,7 @@ import statistics
 from datetime import datetime
 from typing import Iterable
 
-PUBLIC_BASE_URL = "https://rootcause-light.probackup.io"
+PUBLIC_BASE_URL = "https://rootcause.probackup.io"
 
 
 # ---------------------------------------------------------------- shared formatting helpers

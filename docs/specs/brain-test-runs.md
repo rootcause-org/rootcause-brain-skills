@@ -4,7 +4,7 @@
 shipped in the `rootcause-runtime` package, and (b) the **`brain-dev` skill** that teaches the
 self-service run + dev-ref test loop from inside a brain.
 
-- Server contract (endpoints, test-run semantics): [`../../rootcause-light/docs/specs/brain-test-runs.md`](../../../rootcause-light/docs/specs/brain-test-runs.md)
+- Server contract (endpoints, test-run semantics): [`../../rootcause/docs/specs/brain-test-runs.md`](../../../rootcause/docs/specs/brain-test-runs.md)
 - CLI (`rc ask`, `rc run --full`): [`../../rootcause-cli/docs/specs/brain-test-runs.md`](../../../rootcause-cli/docs/specs/brain-test-runs.md)
 
 ## The two capabilities, from inside a brain
@@ -28,11 +28,11 @@ flowchart LR
 | `brain_run.py` (`uv`) | one grounding script, real read-only DB | imports + per-project env | none | brain-dev (exists) |
 | `brain_run.py` (`docker`) | one grounding script in real sandbox (mounts, deps, EROFS) | sandbox-faithful | none | brain-dev (exists) |
 | **`rc ask --brain-ref dev/x`** | **the whole LLM loop on real infra** | **prod-identical** | a `dev/*` branch only — **`main` untouched** | this feature |
-| `rc_agent_run.sh` (operator) | whole loop on `main` | prod | `main` = **live** | rootcause-light |
+| `rc_agent_run.sh` (operator) | whole loop on `main` | prod | `main` = **live** | rootcause |
 
 > **Why no "full loop in local Docker" tier.** The agent loop (two-tool orchestration, warm-start,
 > grounding pre-pass, system-prompt assembly, model calls, egress gateway, KB tenant-scoping, PII
-> vault) is **host code in rootcause-light** and, by AGENTS.md's litmus ("does it touch OUR host?"),
+> vault) is **host code in rootcause** and, by AGENTS.md's litmus ("does it touch OUR host?"),
 > must not be vendored here. Shipping it to run locally would recreate the **lib-drift trap as
 > loop-drift**: a green local loop against a stale copy is a *false* green. The `--brain-ref` run *is*
 > the high-fidelity loop test — it reuses the actual prod loop. Local Docker stays the fast inner loop
@@ -62,7 +62,7 @@ Input is the **bundle dict** defined in the server spec (`{run:{…}, events:[�
 
 - **dev/project path (this repo):** `fetch_via_api()` shells `rc run <id> --full -o json` (or calls
   `/full` directly with `ROOTCAUSE_API_KEY`).
-- **operator path (rootcause-light):** `rc_agent_debug.py`'s existing SSM `fetch_via_db()` → same dict.
+- **operator path (rootcause):** `rc_agent_debug.py`'s existing SSM `fetch_via_db()` → same dict.
 
 Version: bump the `rootcause-runtime` tag when the renderer or the bundle contract changes; move the
 `rc-cli` `/full` contract version with it (see RELEASING.md — keep plugin tag, runtime pin, image tag,
@@ -87,7 +87,7 @@ jq -r 'select(.disp=="23").command' <file>.jsonl  # progressive disclosure: dril
 
 `brain_dump.py` = `fetch_via_api()` → `run_dump` renderer → write both files (gitignored `out/` dir,
 mirroring `rc_agent_debug.py`'s output convention). It is **infra-free** (public API + env key only),
-so it rightfully ships here, not in rootcause-light.
+so it rightfully ships here, not in rootcause.
 
 Playbook beats to document in the skill:
 - **Side-effect freedom**: a `--brain-ref` run posts no callback and pushes no journal; actions/PRs are
