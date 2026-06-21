@@ -47,20 +47,22 @@ A vetted, parameterized, **digest-pinned** script in the operator-governed regis
 
 ```
 brain/actions/<id>/
-  manifest.yaml      # id, description (the agent reads this to decide), params schema, mode
-  script.rb          # the body that runs inside the customer app (Ruby, via the gem)
+  manifest.yaml      # id, description (the agent reads this to decide), params schema, runtime/mode
+  script.rb | script.py   # the body — Ruby (Embassy mode) or Python (rootcause-hosted mode)
 ```
 
 - **Vetted & operator-governed** — it lives in the brain repo, reviewed and merged like any other
   brain change. The agent can't invent one at run time; it can only reach for one that already exists.
 - **Parameterized** — the agent supplies `params` (e.g. `{"invoice_id":"in_123"}`); the script is a
   template, not a one-off.
-- **Digest-pinned** — the approved version is identified by `sha256(script.rb)`. A proposal pins the
+- **Digest-pinned** — the approved version is identified by `sha256(script)`. A proposal pins the
   digest *at propose time* and the executor refuses to run a stale one, so "what was approved" and
   "what ran" provably match. (This is why editing the script means re-proposing — see the loop below.)
 
-It is **not** a `from lib import db` grounding script: it's Ruby, it runs inside the customer's app,
-and `brain-dev`'s `uv`/`docker` runners don't apply to it.
+It is **not** a `from lib import db` grounding script. An **Embassy**-mode (`script.rb`) action runs
+inside the customer's app, so `brain-dev`'s `uv`/`docker` grounding runners don't apply to it. A
+**rootcause-hosted** (`script.py`) action runs in our own workspace container and **can** be authored and
+dry-run on the laptop via the brain-dev kit's `brain_action.py` (see the section above).
 
 ## Propose → confirm → execute (the product flow)
 
@@ -75,7 +77,7 @@ sequenceDiagram
     Run->>Human: proposes reply.actions (action_id + params, digest pinned)
     Note over Run: run ends — read-only throughout
     Human->>Exec: clicks "confirm" in the draft
-    Exec->>App: signed Execute → gem (re-verifies digest)
+    Exec->>App: Execute (Embassy: signed → gem; hosted: HostedExecutor runs it) — re-verifies digest
     App-->>Exec: return_value / error
 ```
 
@@ -87,8 +89,8 @@ A run that proposes nothing changes nothing.
 
 | Mode | Where the script runs | Status |
 |---|---|---|
-| **gem** | The customer hosts the `rootcause-action-gem`; the host sends it a signed Execute call and it runs the script inside their app. | shipped |
-| **rootcause-hosted** | We run the action against the project's app from our own infra. | planned |
+| **Embassy** (customer-hosted) | The customer hosts the `rootcause-embassy` Ruby Embassy gem; the host sends it a signed Execute call and it runs the digest-pinned `script.rb` inside their app. | shipped |
+| **rootcause-hosted** | We run the action ourselves, in a hardened workspace container on our own infra, against a sealed write credential we hold (the self-owned carve-out, e.g. Momentum Tools → Podio). `HostedExecutor` runs the digest-pinned `script.py` once against the sealed `.env.action`. | shipped (self-owned v1) |
 
 The plane is **off by default** and requires four-sided wiring — see
 [`ship-and-verify.md` → "Precondition"](../skills/brain-dev/ship-and-verify.md) for the full
@@ -188,10 +190,13 @@ mints the `action_run` by name (`run_id=NULL`, `approved_by="operator:dev"`) and
 round-trip. It re-pins the current digest on every call, so the re-propose dance never bites during
 authoring.
 
-> **No dry run of the WRITE — say it again.** `/rc-action-test` and the Gmail confirm both **execute
-> the body for real**. There is no local or simulated *write* path — only the read-only
+> **No dry run of the WRITE *in prod* — say it again.** `/rc-action-test` and the Gmail confirm both
+> **execute the body for real**; in prod, only the read-only
 > [preflight](#validating-inputs-layer-1--preflight) predicts preconditions in-loop. Default to a
-> staging target or idempotent actions.
+> staging target or idempotent actions. (A **hosted Python** action does get a faithful *laptop* dry-run
+> via [`brain_action.py`](#testing-a-hosted-python-action-locally-brain_actionpy) — rollback by default —
+> but that is a local reproduction, not the prod path; an **Embassy** `script.rb` has no local write path
+> at all.)
 
 ## Related
 
