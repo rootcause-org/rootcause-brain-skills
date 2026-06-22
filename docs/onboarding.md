@@ -9,7 +9,10 @@ cd ~/code/rootcause-org/rootcause-brain-<project>
 ```
 
 You need the brain's gitignored plaintext **`.env`** at its root (DSNs + API keys). Don't have it?
-Operators recover it with rootcause's `rc_env.py <project> --pull`.
+**Self-serve it with `rc env pull`** (from inside this brain) — it fetches the project's PRODUCTION
+grounding `.env` over your `ROOTCAUSE_API_KEY` and writes a `0600 ./.env`, no operator/SSM access
+needed (tenant-enabled projects: `rc env pull --tenant <slug>`). See [`rc-cli.md`](rc-cli.md). Operators
+can still use the privileged `rc_env.py <project> --pull` (SSM) path.
 
 ## 2. Install the kit — pick one path
 

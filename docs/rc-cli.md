@@ -24,6 +24,9 @@ rc run <id> --events            # full detail: per-event trace — bash command 
 rc run <id> --full -o json      # the whole run-dump BUNDLE ({run, events}) — what brain_dump.py renders  (GET /api/v1/runs/{id}/full)
 rc config get                   # effective settings + box defaults
 rc config set max_run_usd=5 default_tier=pro
+rc env keys                     # key NAMES of the project's PRODUCTION grounding .env (log-safe)  (GET /api/v1/env)
+rc env pull                     # write that env to a 0600 ./.env (so brain-dev --live can run grounding locally)
+rc env diff                     # names-only drift: local ./.env vs the server (nonzero exit on drift)
 ```
 
 - **`rc ask` is the high-fidelity loop test.** It runs the *real* prod loop (model, egress, `/brain:ro`,
@@ -92,6 +95,25 @@ flowchart LR
 The same verify-first discipline applies to **value/env conventions**: `rc config get` shows the
 effective settings + box defaults you're authoring against (e.g. `max_run_usd`, `default_tier`), so you
 tune config to what's actually live rather than to assumptions.
+
+## Sync the grounding env (`rc env`)
+
+A brain's grounding scripts read their credentials (the `*_DSN`s, API keys) from a **gitignored
+`./.env`** at the brain root. `rc env` lets a **project dev self-serve** that env — the same role the
+operator-only `scripts/rc_env.py --pull` plays, but over the **Prompt API key** instead of AWS/SSM, so
+no operator access is needed:
+
+```bash
+rc env keys                 # what keys exist (NAMES only — safe to paste/log)
+rc env pull                 # fetch the PRODUCTION grounding .env → write 0600 ./.env
+rc env diff                 # has my local ./.env drifted from prod? (names-only; exit≠0 on drift)
+rc env pull --tenant <slug> # tenant-enabled project (e.g. dentai): the project ∪ tenant env a run sees
+```
+
+Pull it once and `brain-dev`'s **`--live`** tier can run grounding scripts against real prod data
+locally. **Secret hygiene:** no subcommand ever prints a secret VALUE (`pull` writes them only to the
+0600 file; `keys`/`diff` are names-only). The pulled `.env` holds **real production secrets** on your
+laptop — it's gitignored in every brain; treat it like a password file.
 
 ## Related
 
