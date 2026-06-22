@@ -141,7 +141,9 @@ if [ "${#BRAINS[@]}" -eq 0 ]; then
 fi
 say "Refresh ${#BRAINS[@]} brain(s) to $TARGET (shared clone: $KIT)"
 for b in "${BRAINS[@]}"; do
-  [ -d "$b/skills" ] || { echo "  skip $b (no skills/ — not a brain)"; continue; }
+  # accept all brain layouts: project (skills/ | playbooks/ | projection.yaml) + nested tenant (tenant.json)
+  [ -d "$b/skills" ] || [ -d "$b/playbooks" ] || [ -f "$b/projection.yaml" ] || [ -f "$b/tenant.json" ] || {
+    echo "  skip $b (no skills/ | playbooks/ | projection.yaml | tenant.json — not a brain)"; continue; }
   echo "  → $(basename "$b")"
   [ "$DRY" = 1 ] || RC_BRAIN_KIT="$KIT" RC_BRAIN_KIT_TAG="$TARGET" "$ROOT/install.sh" "$b" >/dev/null
 done

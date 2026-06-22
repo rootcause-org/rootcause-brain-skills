@@ -11,19 +11,20 @@
 # for Claude Code discovery). One source of truth, per-repo discovery, zero /brain footprint.
 #
 #   curl -fsSL .../install.sh | bash -s -- [BRAIN_DIR]      # or: ./install.sh [BRAIN_DIR]
-#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.5 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
+#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.6 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
 set -euo pipefail
 
 BRAIN="${1:-$PWD}"
 BRAIN="$(cd "$BRAIN" && pwd)"
 KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}"
-TAG="${RC_BRAIN_KIT_TAG:-v0.1.5}"
+TAG="${RC_BRAIN_KIT_TAG:-v0.1.6}"
 REPO="https://github.com/rootcause-org/rootcause-brain-skills"
 
-# Sanity-check this is a brain checkout. Accept both layouts: legacy (skills/) and the newer
-# projection-based layout (playbooks/ + projection.yaml).
-[ -d "$BRAIN/skills" ] || [ -d "$BRAIN/playbooks" ] || [ -f "$BRAIN/projection.yaml" ] || {
-  echo "error: $BRAIN has no skills/ or playbooks/ or projection.yaml — not a brain checkout?" >&2; exit 1; }
+# Sanity-check this is a brain checkout. Accept all three layouts: legacy (skills/), the
+# projection-based PROJECT layout (playbooks/ + projection.yaml), and a nested TENANT brain
+# (tenant.json delta over a project brain — no skills/playbooks of its own).
+[ -d "$BRAIN/skills" ] || [ -d "$BRAIN/playbooks" ] || [ -f "$BRAIN/projection.yaml" ] || [ -f "$BRAIN/tenant.json" ] || {
+  echo "error: $BRAIN has no skills/ or playbooks/ or projection.yaml or tenant.json — not a brain checkout?" >&2; exit 1; }
 
 # 1. One pinned clone on disk (shared by every brain). Pin the tag, never float main.
 if [ -d "$KIT/.git" ]; then
