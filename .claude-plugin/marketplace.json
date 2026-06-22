@@ -9,7 +9,7 @@
       "name": "brain-dev",
       "source": ".",
       "description": "Run a brain's grounding scripts + pytest tiers locally (uv or docker mode), brain-dir-relative.",
-      "version": "0.1.7"
+      "version": "0.1.8"
     }
   ]
 }

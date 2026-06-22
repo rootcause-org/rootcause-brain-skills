@@ -11,13 +11,13 @@
 # for Claude Code discovery). One source of truth, per-repo discovery, zero /brain footprint.
 #
 #   curl -fsSL .../install.sh | bash -s -- [BRAIN_DIR]      # or: ./install.sh [BRAIN_DIR]
-#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.7 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
+#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.8 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
 set -euo pipefail
 
 BRAIN="${1:-$PWD}"
 BRAIN="$(cd "$BRAIN" && pwd)"
 KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}"
-TAG="${RC_BRAIN_KIT_TAG:-v0.1.7}"
+TAG="${RC_BRAIN_KIT_TAG:-v0.1.8}"
 REPO="https://github.com/rootcause-org/rootcause-brain-skills"
 
 # Sanity-check this is a brain checkout. Accept all three layouts: legacy (skills/), the
@@ -43,14 +43,15 @@ fi
 #    (Claude Code) — plus the `/brain-dev` command. The engine ships INSIDE the skill (scripts/), so the
 #    symlink carries it along; the canonical runtime/ stays in the shared clone (resolved via the link).
 mkdir -p "$BRAIN/.agents/skills" "$BRAIN/.claude/skills" "$BRAIN/.claude/commands"
-ln -sfn "$KIT/skills/brain-dev"      "$BRAIN/.agents/skills/brain-dev"
-ln -sfn "$KIT/skills/brain-dev"      "$BRAIN/.claude/skills/brain-dev"
-ln -sfn "$KIT/commands/brain-dev.md" "$BRAIN/.claude/commands/brain-dev.md"
+ln -sfn "$KIT/skills/brain-dev"        "$BRAIN/.agents/skills/brain-dev"
+ln -sfn "$KIT/skills/brain-dev"        "$BRAIN/.claude/skills/brain-dev"
+ln -sfn "$KIT/commands/brain-dev.md"   "$BRAIN/.claude/commands/brain-dev.md"
+ln -sfn "$KIT/commands/brain-debug.md" "$BRAIN/.claude/commands/brain-debug.md"
 
 # 3. Ignore rules (idempotent). Committing the RULE is fine — it's tiny, documents intent, and blocks
 #    an accidental `git add` of the symlinks. They stay untracked → never reach /brain.
 GI="$BRAIN/.gitignore"
-for rule in "/.agents/skills/brain-dev" "/.claude/skills/brain-dev" "/.claude/commands/brain-dev.md"; do
+for rule in "/.agents/skills/brain-dev" "/.claude/skills/brain-dev" "/.claude/commands/brain-dev.md" "/.claude/commands/brain-debug.md"; do
   grep -qxF "$rule" "$GI" 2>/dev/null || echo "$rule" >> "$GI"
 done
 
