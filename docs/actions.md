@@ -85,6 +85,70 @@ The agent only ever populates `reply.actions` with a *proposal*. A human clicks 
 Gmail draft; only then does execution happen — **post-loop, in a context distinct from the LLM run**.
 A run that proposes nothing changes nothing.
 
+## What the reviewer sees — return a result envelope
+
+By default rootcause has nothing human to show after an action runs, so it dumps the raw return value
+as JSON — unreadable for anything non-trivial. **The action controls its own result presentation** by
+returning a **result envelope** (the same `{ok, summary}` shape as a preflight, so it's one convention
+to learn):
+
+```jsonc
+{ "ok": true, "summary": "<Markdown>" }   // ok defaults to true; summary is what the human reads
+```
+
+- **`summary`** is rendered as **GitHub-flavored Markdown** (headings, tables, lists, bold, links),
+  server-side and sanitized. It is shown in two places: the **Run-action confirm page** result box and
+  the **✅/❌ note posted back into Gmail**. Write it *for the reviewer* — what happened, to whom, the
+  key facts — not a data dump.
+- **`ok`** is the explicit success/failure signal (defaults `true`). Return **`ok:false`** to report a
+  **handled negative outcome without raising** (e.g. "no matching appointment found") — the run still
+  *executed* cleanly, but the UI styles the result as a failure and shows the "don't send the draft"
+  warning. Raising an exception remains a **hard** failure; its message becomes the summary.
+- **Shorthand:** returning a **bare string** is treated as `{ok:true, summary:"<that string>"}`.
+- **Fallback:** any other return value (a non-envelope object, etc.) still works — it's shown as a JSON
+  dump, exactly as before. Prefer the envelope; the dump is the ugly path you're replacing.
+
+The envelope is the action's **return value**, so where you put it depends on the runtime:
+
+**Embassy (`script.rb`)** — the script's last expression *is* the return value:
+
+```ruby
+appt = Appointment.create!(patient:, agenda:, start:)
+{
+  ok: true,
+  summary: <<~MD
+    **Appointment booked** for #{appt.patient_name}.
+
+    | Field | Value |
+    |---|---|
+    | When | #{appt.start.strftime('%a %-d %b %Y, %H:%M')} |
+    | Dentist | #{appt.dentist} |
+  MD
+}
+
+# handled negative — no raise, but the reviewer must NOT send the draft:
+# { ok: false, summary: "No patient matches #{email}. Re-check the address." }
+```
+
+**rootcause-hosted (`script.py`)** — you write the full `Result` to `$RC_ACTION_RESULT`; the envelope
+goes in its **`return_value`** (the outer `ok` is the mechanical success of the Result itself):
+
+```python
+import json, os
+n = boost_credits(org_id, amount)
+result = {
+    "ok": True,
+    "return_value": {  # the envelope — inner `ok` defaults true, so success needs only `summary`
+        "summary": f"**Boosted {n} credits** for `{org}`. New balance: **{bal}**.",
+    },
+}
+with open(os.environ["RC_ACTION_RESULT"], "w") as f:
+    json.dump(result, f)
+```
+
+> The operator **actions** drill-down still shows the raw return value (it's a debugging surface). The
+> envelope is for the human-facing confirm page + Gmail note — those are what `summary` cleans up.
+
 ## Two execution modes (per project)
 
 | Mode | Where the script runs | Status |
