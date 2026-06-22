@@ -85,7 +85,10 @@ def pick_tenant(lc: LiveCheck) -> object | None:
     """
     override = os.environ.get("RC_LIVE_TENANT")
     if override:
-        return int(override) if override.lstrip("-").isdigit() else override
+        try:
+            return int(override)  # int tenant_id stays well-typed for the canary
+        except ValueError:
+            return override       # uuid / non-numeric slug passes through verbatim
 
     from lib import db
 
