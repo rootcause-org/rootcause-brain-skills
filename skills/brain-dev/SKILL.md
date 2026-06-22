@@ -133,8 +133,10 @@ A project may serve many **tenants** (e.g. DentAI → dental practices). Two thi
 
 - **Two brains, two repos.** The **project (shared) brain** (`rootcause-brain-<project>`) holds the
   grounding scripts + shared playbooks a run mounts at `/brain`; each **tenant brain**
-  (`rootcause-brain-<project>-<slug>`) holds that practice's `tenant.json` + NL delta, mounted at
-  `/tenant`. `cd` into whichever repo you're editing — this kit is brain-dir-relative either way. The
+  (`rootcause-brain-<project>-<slug>`) holds only that practice's free-form NL delta + sealed `.env`,
+  mounted at `/tenant`. (The practice's structured **values** are no longer a file here — they live in the
+  rootcause DB settings record, edited via the operator Configuration form / `rc`.) `cd` into whichever
+  repo you're editing — this kit is brain-dir-relative either way. The
   grounding scripts + their live tiers live in the **project** brain, so run `brain_test.py` from there.
 - **Shared-DB RLS makes grounding tenant-blind.** When one DB holds all tenants keyed by a column, the
   host scopes each run **in the engine** (a per-run login role over filtered views) — so grounding

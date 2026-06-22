@@ -20,11 +20,12 @@ KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}"
 TAG="${RC_BRAIN_KIT_TAG:-v0.1.8}"
 REPO="https://github.com/rootcause-org/rootcause-brain-skills"
 
-# Sanity-check this is a brain checkout. Accept all three layouts: legacy (skills/), the
-# projection-based PROJECT layout (playbooks/ + projection.yaml), and a nested TENANT brain
-# (tenant.json delta over a project brain — no skills/playbooks of its own).
-[ -d "$BRAIN/skills" ] || [ -d "$BRAIN/playbooks" ] || [ -f "$BRAIN/projection.yaml" ] || [ -f "$BRAIN/tenant.json" ] || {
-  echo "error: $BRAIN has no skills/ or playbooks/ or projection.yaml or tenant.json — not a brain checkout?" >&2; exit 1; }
+# Sanity-check this is a brain checkout. Accept all layouts: legacy (skills/), the projection-based
+# PROJECT layout (playbooks/ + projection.yaml), and a nested TENANT brain — which holds only a free-form
+# NL delta + sealed .env now (its values live in the rootcause DB record, no tenant.json), so its marker
+# is the committed .rootcause.toml (project∪tenant binding).
+[ -d "$BRAIN/skills" ] || [ -d "$BRAIN/playbooks" ] || [ -f "$BRAIN/projection.yaml" ] || [ -f "$BRAIN/.rootcause.toml" ] || {
+  echo "error: $BRAIN has no skills/ or playbooks/ or projection.yaml or .rootcause.toml — not a brain checkout?" >&2; exit 1; }
 
 # 1. One pinned clone on disk (shared by every brain). Pin the tag, never float main.
 if [ -d "$KIT/.git" ]; then
