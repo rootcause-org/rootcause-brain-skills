@@ -83,9 +83,10 @@ All commands below use `"$SKILL/scripts/…"`. (`lib` is resolved automatically 
 
 3. **Run the test tiers:**
    ```bash
-   uv run "$SKILL/scripts/brain_test.py"                 # offline L1 (hermetic, no DSN)
-   uv run "$SKILL/scripts/brain_test.py" --live          # + L2 schema canary + L3 render-smoke (read-only prod)
-   uv run "$SKILL/scripts/brain_test.py" --require-live   # gated: error if no live test ran
+   uv run "$SKILL/scripts/brain_test.py"                    # offline L1 (hermetic, no DSN)
+   uv run "$SKILL/scripts/brain_test.py" --live             # + L2 schema canary + L3 render-smoke (read-only prod)
+   uv run "$SKILL/scripts/brain_test.py" --require-live      # gated: error if no live test ran
+   uv run "$SKILL/scripts/brain_test.py" --live --tenant 103 # pin the canary to one tenant (else auto-picked)
    ```
 
 4. **Pre-push gate — re-run in docker** once it's green in uv:
@@ -125,6 +126,32 @@ Three phases, each faithful to prod:
 > This is a **local faithful reproduction**, not the prod path. Authoring against a real run still goes
 > push → `/rc-sync-brain` → `/rc-action-test` (the operator dev-trigger). Full contract +
 > credential-plane rules: [docs/actions.md](../../docs/actions.md).
+
+## Tenant-enabled projects (two brains, channels, a private-DB live-test gap)
+
+A project may serve many **tenants** (e.g. DentAI → dental practices). Two things change for brain-dev:
+
+- **Two brains, two repos.** The **project (shared) brain** (`rootcause-brain-<project>`) holds the
+  grounding scripts + shared playbooks a run mounts at `/brain`; each **tenant brain**
+  (`rootcause-brain-<project>-<slug>`) holds that practice's `tenant.json` + NL delta, mounted at
+  `/tenant`. `cd` into whichever repo you're editing — this kit is brain-dir-relative either way. The
+  grounding scripts + their live tiers live in the **project** brain, so run `brain_test.py` from there.
+- **Shared-DB RLS makes grounding tenant-blind.** When one DB holds all tenants keyed by a column, the
+  host scopes each run **in the engine** (a per-run login role over filtered views) — so grounding
+  scripts carry **no** `tenant_id` filter; they read "the current tenant" implicitly. The live tier's
+  canary still wants a real tenant id for typing — auto-picked from `subjects_sql`, or pin it with
+  `--tenant <id>` (above).
+- **Private-DB live-test limitation — the honest part.** The live tiers need a **laptop-reachable**
+  DSN. A tenant DB locked to the box (DentAI's RDS is SG-restricted to the prod box `/32`) is **not**
+  reachable from your laptop, so `--live` **skips/fails** there. That is expected and not a brain bug.
+  When the DB isn't laptop-reachable, the **faithful test is a real prod run** — `rc ask` (next
+  section) or the operator's `rc_agent_run.sh` — which executes the real grounding against the real DB
+  under the real RLS scope. Offline (`brain_test.py`, no `--live`) still runs everywhere.
+
+> **Channel trap (shipping, not testing).** A run sources the shared `/brain` at the tenant's pinned
+> `project_brain_ref` (default `stable`), **not `main`** — so pushing + syncing a shared-brain change is
+> NOT enough; it must be **promoted** `main`→`stable`/`edge`. The one-command outer loop that does
+> sync **and** promote is rootcause's `/rc-brain-ship` (see [ship-and-verify.md](ship-and-verify.md)).
 
 ## Test a brain change on real prod infra — *without* pushing `main` (`rc ask` + `brain_dump.py`)
 
@@ -215,5 +242,9 @@ of that silently drops those guarantees.
   sets `RC_MIRRORS_ROOT` so `lib.fs` finds them. Without mirrors, `fs` helpers report which mirror is
   missing — degrade gracefully, don't treat it as a brain bug.
 - **No `.env`?** uv-offline tests and `--brief` run without one; a script run and the live tier need
-  it. Operators recover it with rootcause's `rc_env.py <project> --pull`.
+  it. **Project devs self-serve it: `rc env pull`** from inside the brain — fetches that project's
+  PRODUCTION grounding `.env` over your `ROOTCAUSE_API_KEY` and writes a `0600 ./.env` (no operator/SSM
+  access needed; tenant-enabled projects pass `--tenant <slug>`). See
+  [`rc-cli.md`](../../docs/rc-cli.md#sync-the-grounding-env-rc-env). Operators can still recover it the
+  privileged way with rootcause's `rc_env.py <project> --pull` (SSM).
 - **Run from inside the brain** (cwd), or pass `--brain <dir>` to target another checkout.

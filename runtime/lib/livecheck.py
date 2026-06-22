@@ -28,6 +28,7 @@ no test-file edit. Enable the plugin from the brain's top-level conftest: `pytes
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -77,7 +78,15 @@ def pick_tenant(lc: LiveCheck) -> object | None:
     tenant table here. Returns the row's `tenant_id` (correctly typed — avoids a uuid-vs-int cast
     false-positive when probing), or None when the table is empty (the canary then falls back to
     FAKE_UUID, which still validates every column since Postgres plans the query regardless of value).
+
+    `RC_LIVE_TENANT` (set by `brain_test.py --tenant`) overrides the auto-pick to pin one tenant — a
+    numeric value is coerced to int so an int `tenant_id` column stays well-typed; anything else passes
+    through verbatim (e.g. a uuid string).
     """
+    override = os.environ.get("RC_LIVE_TENANT")
+    if override:
+        return int(override) if override.lstrip("-").isdigit() else override
+
     from lib import db
 
     rows = db.query(lc.subjects_sql, {"k": 1}, db=lc.db)

@@ -10,6 +10,14 @@ want to know *did it do what I expected* — without waiting for the brain-sync 
 > `accounts.yml`). Canonical docs: [`support/action-runbook.md`], [`commands/rc-sync-brain.md`],
 > [`commands/rc-agent-run.md`] in rootcause.
 
+> **For grounding / playbook / tenant changes (not actions), prefer the one command.** rootcause's
+> **`/rc-brain-ship <project> [--tenant <slug>] [--ask "<prompt>"]`**
+> (`scripts/rc_brain_ship.sh`) runs the whole non-action loop — QA → push → sync (project + tenant) →
+> **promote `main`→`stable`/`edge`** → verify — and crucially does the **promote** a tenant-enabled
+> project needs (a run reads the tenant's pinned channel, not `main`). This page's manual sequence is
+> what it wraps; the **action** flow below (digest re-propose, `/rc-action-test`) is the part
+> `/rc-brain-ship` does not cover.
+
 ## The loop
 
 ```

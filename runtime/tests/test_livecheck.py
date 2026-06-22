@@ -19,7 +19,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # make `lib` importable
 
 from lib import db  # noqa: E402
-from lib.livecheck import FAKE_UUID, LiveCheck, all_live_checks, assert_render_smoke, assert_schema  # noqa: E402
+from lib.livecheck import (  # noqa: E402
+    FAKE_UUID,
+    LiveCheck,
+    all_live_checks,
+    assert_render_smoke,
+    assert_schema,
+    pick_tenant,
+)
 
 
 def _lc(**kw) -> LiveCheck:
@@ -96,6 +103,28 @@ def test_schema_skips_without_column_probes(monkeypatch):
     monkeypatch.setattr(db, "query", lambda *a, **k: [{"id": "1", "tenant_id": "t"}])
     with pytest.raises(pytest.skip.Exception):
         assert_schema(_lc(column_probes=None))
+
+
+# ---- pick_tenant + RC_LIVE_TENANT override -----------------------------------------------------
+
+
+def test_pick_tenant_auto_from_subjects_sql(monkeypatch):
+    monkeypatch.delenv("RC_LIVE_TENANT", raising=False)
+    monkeypatch.setattr(db, "query", lambda *a, **k: [{"id": "1", "tenant_id": "auto-t"}])
+    assert pick_tenant(_lc()) == "auto-t"
+
+
+def test_pick_tenant_override_coerces_numeric_to_int(monkeypatch):
+    monkeypatch.setenv("RC_LIVE_TENANT", "103")
+    # the override wins without ever touching the DB
+    monkeypatch.setattr(db, "query", lambda *a, **k: pytest.fail("subjects_sql ran despite override"))
+    assert pick_tenant(_lc()) == 103
+
+
+def test_pick_tenant_override_passes_uuid_through(monkeypatch):
+    monkeypatch.setenv("RC_LIVE_TENANT", FAKE_UUID)
+    monkeypatch.setattr(db, "query", lambda *a, **k: pytest.fail("subjects_sql ran despite override"))
+    assert pick_tenant(_lc()) == FAKE_UUID
 
 
 # ---- all_live_checks discovery -----------------------------------------------------------------

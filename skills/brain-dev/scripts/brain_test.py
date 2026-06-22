@@ -39,6 +39,9 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--live", action="store_true", help="run the live tier (schema canary + render-smoke)")
     g.add_argument("--require-live", action="store_true",
                    help="--live, and error if no live test ran (no DSN / nothing collected)")
+    p.add_argument("--tenant", metavar="ID",
+                   help="override the live tier's auto-picked tenant id (lib.livecheck.pick_tenant) — "
+                        "pin the schema canary to one tenant. Best-effort; numeric ids are coerced to int.")
     p.add_argument("pytest_args", nargs="*", help="extra positional args passed through to pytest")
     # Unknown args (pytest flags like -k/-x/--tb) pass through too; kit flags precede them.
     args, extra = p.parse_known_args(sys.argv[1:] if argv is None else argv)
@@ -58,22 +61,30 @@ def main(argv: list[str] | None = None) -> int:
 
     mirrors = E.discover_mirrors(args.mirrors_root, args.mirror)
 
+    # --tenant pins the live tier's canary tenant via RC_LIVE_TENANT (read by lib.livecheck.pick_tenant);
+    # inert offline. Only meaningful with --live, so warn if it'd be a no-op.
+    if args.tenant and not live:
+        print("warning: --tenant only affects the live tier; ignored without --live/--require-live.",
+              file=sys.stderr)
+
     if args.mode == "uv":
         if args.mirror:
             print("warning: --mirror is docker-only; uv mode reads mirrors via --mirrors-root "
                   "(RC_MIRRORS_ROOT). Ignoring the explicit --mirror entries.", file=sys.stderr)
-        return _run_uv(brain_dir, skills_dir, live, pytest_args, args.mirrors_root)
+        return _run_uv(brain_dir, skills_dir, live, pytest_args, args.mirrors_root, args.tenant)
     return _run_docker(brain_dir, mirrors, live, pytest_args, args)
 
 
 def _run_uv(brain_dir: Path, skills_dir: Path, live: bool, pytest_args: list[str],
-            mirrors_root: str | None) -> int:
+            mirrors_root: str | None, tenant: str | None) -> int:
     # The live tier needs the DSN; the offline tier runs without a .env. Script sees ONLY the
     # brain's .env (+ launcher essentials), like prod — never the operator's whole environment.
     secrets = E.brain_secrets(brain_dir, required=live)
     if secrets is None:
         return 1
     child = E.uv_child_env(secrets, [], mirrors_root)
+    if tenant:
+        child["RC_LIVE_TENANT"] = tenant
     if not E.preflight_lib_db(child, extra_with=["pytest"]):
         return 1
     print(f"[uv mode] {E.UV_MODE_CAVEATS}", file=sys.stderr)
@@ -90,6 +101,8 @@ def _run_docker(brain_dir: Path, mirrors: dict[str, Path], live: bool, pytest_ar
     secrets = E.brain_secrets(brain_dir, required=live)
     if secrets is None:
         return 1
+    if args.tenant:
+        secrets = {**secrets, "RC_LIVE_TENANT": args.tenant}  # rides `-e RC_LIVE_TENANT`, value off argv
     for name, path in mirrors.items():
         if not path.is_dir():
             print(f"warning: mirror {name!r} path missing: {path}", file=sys.stderr)
