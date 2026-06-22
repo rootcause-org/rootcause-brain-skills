@@ -27,6 +27,8 @@ rc config set max_run_usd=5 default_tier=pro
 rc env keys                     # key NAMES of the project's PRODUCTION grounding .env (log-safe)  (GET /api/v1/env)
 rc env pull                     # write that env to a 0600 ./.env (so brain-dev --live can run grounding locally)
 rc env diff                     # names-only drift: local ./.env vs the server (nonzero exit on drift)
+rc login                        # store THIS brain's API key in a gitignored .rootcause.secret.toml (0600)
+rc whoami                       # which project will rc hit from here, and why (brain binding + key source)
 ```
 
 - **`rc ask` is the high-fidelity loop test.** It runs the *real* prod loop (model, egress, `/brain:ro`,
@@ -38,9 +40,50 @@ rc env diff                     # names-only drift: local ./.env vs the server (
 
 - **Output is TTY-aware** — pretty table on a terminal, **JSON when piped** (`rc runs | jq …`); force
   with `-o json|table`.
-- **Auth/config** — `ROOTCAUSE_API_KEY` + `ROOTCAUSE_BASE_URL` env, or
-  `~/.config/rootcause/config.toml` profiles. (Same bearer key the project already uses for the Prompt
-  API — no new secret, and **keys live in env/config by name**, never committed.)
+
+### Auth — the brain checkout selects the project (no `--profile`, no env wrangling)
+
+A brain repo **is** one project, so `rc` binds to it by convention: run `rc` anywhere inside a brain
+clone and it targets *that* project. Two files make this work — one committed, one not:
+
+| File | Committed? | Holds | Role |
+|---|---|---|---|
+| **`.rootcause.toml`** | ✅ yes | `project = "<slug>"`, `base_url = "…"` | the binding — ships with the clone, so the project + endpoint are known out of the box |
+| **`.rootcause.secret.toml`** | ❌ gitignored | `api_key = "…"` | the token, written by `rc login`, never committed |
+
+Resolution precedence (per field; an env var always wins as a one-off override):
+
+```
+explicit --profile <name>        → that profile only (AWS-style override; no brain binding)
+otherwise, inside a brain:         env > .rootcause.secret.toml > [profiles.<slug>] > LOUD ERROR
+otherwise, outside any brain:      env > [default] > built-in default
+```
+
+The **loud error** is the point: inside a brain with no key, `rc` names the project and refuses —
+it will **never** silently fall back to a global `[default]` (the footgun where running `rc` in the
+Momentum repo quietly hit a different project). `rc whoami` shows what it resolved (and confirms the
+project with the server); `rc env pull`/`ask`/`run` all honor the same binding.
+
+**Onboard a brain (incl. an external customer who just cloned):**
+
+```bash
+git clone …/rootcause-brain-<project> && cd rootcause-brain-<project>   # .rootcause.toml already inside
+rc login            # paste the project's Prompt-API key once → writes .rootcause.secret.toml (0600)
+rc whoami           # confirms: project, base URL, key source, server agrees
+rc ask "…"          # just works — no --profile, no export
+```
+
+`rc login` verifies the key against the server and **refuses** to store it if it resolves to a
+different project than `.rootcause.toml` names (catches a pasted wrong key). The committed
+`.rootcause.toml` carries `base_url`, so a customer hits the right endpoint with zero env setup; only
+the secret key is theirs to add. The global `~/.config/rootcause/config.toml` (env vars / named
+profiles) still works as an override and for non-brain use — same bearer key, **never committed**.
+
+**Tenant brains.** A delta repo over a tenant-enabled project (e.g. a single clinic under DentAI) adds
+a `tenant` field to its marker — `project = "dentai"`, `tenant = "de-kies"`. `rc` then defaults
+`--tenant` for `ask`/`env`/`whoami` to that tenant, so the checkout resolves the **project ∪ tenant**
+scope without repeating the flag. The key is the *project* key (`rc login` with DentAI's key); the
+tenant just scopes it.
 
 ## Install
 
