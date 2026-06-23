@@ -12,5 +12,5 @@ dist/
 build/
 *.egg-info/
 
-# Run-dump output (brain_dump.py writes the index .md + .jsonl pair here)
-out/
+# Local rc/kit artifacts (rc CLI debug dumps, brain_dump run dumps) — gitignored wholesale, regenerable.
+/.rootcause/

@@ -85,8 +85,8 @@ uv run "$SKILL/scripts/brain_dump.py" <run_id>    # writes <run8>-<proj>.md + .j
 jq -r 'select(.disp=="23").command' <file>.jsonl  # progressive disclosure: drill into a step
 ```
 
-`brain_dump.py` = `fetch_via_api()` → `run_dump` renderer → write both files (gitignored `out/` dir,
-mirroring `rc_agent_debug.py`'s output convention). It is **infra-free** (public API + env key only),
+`brain_dump.py` = `fetch_via_api()` → `run_dump` renderer → write both files (gitignored `.rootcause/dump/`,
+under the wholesale-ignored `.rootcause/` artifact dir). It is **infra-free** (public API + env key only),
 so it rightfully ships here, not in rootcause.
 
 Playbook beats to document in the skill:

@@ -180,15 +180,16 @@ git push origin dev/refund-rework            # dev branch; main stays live
 rc ask "<customer question>" --brain-ref dev/refund-rework
 
 # 2) dump the run to two local files (concise index + jq-queryable event log):
-uv run "$SKILL/scripts/brain_dump.py" <run_id>        # → out/brain-dump/<run8>-<proj>.{md,jsonl}
+uv run "$SKILL/scripts/brain_dump.py" <run_id>        # → .rootcause/dump/<run8>-<proj>.{md,jsonl}
 
 # 3) progressive disclosure: read the index, then jq into any step (the index prints the queries):
-jq -r 'select(.disp=="3").command' out/brain-dump/<run8>-<proj>.jsonl
+jq -r 'select(.disp=="3").command' .rootcause/dump/<run8>-<proj>.jsonl
 ```
 
-> `brain_dump.py` writes its local run dumps to `./out/` (`out/brain-dump/<run8>-<proj>.{md,jsonl}`)
-> in whatever brain repo you run it from — **gitignored, never committed**. Every `rootcause-brain-*`
-> repo ignores `out/`; the brain-repo scaffold (`brain-authoring` SKILL) bakes it in for new brains.
+> `brain_dump.py` writes its local run dumps under `./.rootcause/dump/` (`<run8>-<proj>.{md,jsonl}`)
+> in whatever brain repo you run it from — **gitignored, never committed**. All rc/kit local artifacts
+> live under the wholesale-ignored `.rootcause/` dir (one `/.rootcause/` rule); every `rootcause-brain-*`
+> repo ignores it, and the brain-repo scaffold (`brain-authoring` SKILL) bakes it in for new brains.
 
 `brain_dump.py` shells `rc run <id> --full -o json` (the bundle) → the **shared** `run_dump` renderer
 in `rootcause-runtime` → both files. It's the same renderer the operator's `rc_agent_debug.py` uses,

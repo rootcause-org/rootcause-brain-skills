@@ -22,7 +22,7 @@ then dump it). If empty, ask for one and stop.
      `rc ask` prints the `run_id`. A `--brain-ref` run is side-effect-free (no callback/journal;
      proposed actions flagged `test`).
 
-2. **Dump the run to two local files** (gitignored `out/brain-dump/<run8>-<proj>.{md,jsonl}`):
+2. **Dump the run to two local files** (gitignored `.rootcause/dump/<run8>-<proj>.{md,jsonl}`):
    ```bash
    uv run "${CLAUDE_PLUGIN_ROOT}/skills/brain-dev/scripts/brain_dump.py" <run_id>
    ```

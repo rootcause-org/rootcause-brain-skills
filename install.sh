@@ -52,7 +52,9 @@ ln -sfn "$KIT/commands/brain-debug.md" "$BRAIN/.claude/commands/brain-debug.md"
 # 3. Ignore rules (idempotent). Committing the RULE is fine — it's tiny, documents intent, and blocks
 #    an accidental `git add` of the symlinks. They stay untracked → never reach /brain.
 GI="$BRAIN/.gitignore"
-for rule in "/.agents/skills/brain-dev" "/.claude/skills/brain-dev" "/.claude/commands/brain-dev.md" "/.claude/commands/brain-debug.md"; do
+# `/.rootcause/` = the wholesale-ignored local-artifact dir: rc CLI debug dumps, brain_dump run dumps,
+# and any future rc/kit subfolder. One rule, future-proof — never edit the ignore per new tool again.
+for rule in "/.rootcause/" "/.agents/skills/brain-dev" "/.claude/skills/brain-dev" "/.claude/commands/brain-dev.md" "/.claude/commands/brain-debug.md"; do
   grep -qxF "$rule" "$GI" 2>/dev/null || echo "$rule" >> "$GI"
 done
 

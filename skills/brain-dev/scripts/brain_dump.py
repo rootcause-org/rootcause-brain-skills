@@ -6,7 +6,7 @@ PUBLIC API. The infra-free twin of rootcause's operator-only `rc_agent_debug.py`
 the project's `ROOTCAUSE_API_KEY` (+ optional `ROOTCAUSE_BASE_URL`) and the `rc` CLI on PATH — never
 SSM, the registry DB, or the box. So it rightfully ships HERE, not in rootcause.
 
-    uv run brain_dump.py <run_id>                 # writes out/brain-dump/<run8>-<proj>.{md,jsonl}
+    uv run brain_dump.py <run_id>                 # writes .rootcause/dump/<run8>-<proj>.{md,jsonl}
     uv run brain_dump.py <run_id> --out-dir /tmp
 
 `fetch_via_api()` shells `rc run <id> --full -o json` → the run-dump **bundle** (`{run, events}`) →
@@ -16,7 +16,7 @@ the output is byte-identical to the operator path) → both files. Get a <run_id
 
 Then drill into any step with jq (the index prints ready-made queries):
 
-    jq -r 'select(.disp=="3").command' out/brain-dump/<run8>-<proj>.jsonl
+    jq -r 'select(.disp=="3").command' .rootcause/dump/<run8>-<proj>.jsonl
 """
 
 from __future__ import annotations
@@ -30,9 +30,10 @@ from pathlib import Path
 
 import brain_env as E
 
-# Gitignored, brain-dir-relative — mirrors rc_agent_debug.py's out/ convention. The brain repo should
-# gitignore `out/` (it's run output, not brain content). Written under the cwd you invoke from.
-OUT_DIR = Path("out") / "brain-dump"
+# Brain-dir-relative, under the wholesale-gitignored `.rootcause/` dir (one `/.rootcause/` rule covers
+# every rc/kit subfolder — debug dumps, run dumps, …). It's run output (real run data, PII), not brain
+# content, so it never gets committed. Written under the cwd you invoke from.
+OUT_DIR = Path(".rootcause") / "dump"
 
 
 def _load_renderer():
