@@ -430,6 +430,26 @@ def render_index(bundle: dict) -> str:
         if seed:
             L += ["**Grounding seed** (look-here / dead-ends, fed to the pre-pass):", "", _fence(seed), ""]
 
+    # Prior turns the brain was replayed this run: the conversation-so-far (verbatim webhook Messages)
+    # and our earlier internal notes (verbatim webhook Notes, never sent to the sender). Both absent on
+    # a first turn / a run predating the change, so the whole section appears only when one is present.
+    prior_msgs, prior_notes = run.get("prior_messages") or [], run.get("prior_notes") or []
+    if prior_msgs or prior_notes:
+        L += ["", "## Prior context given to the brain", ""]
+        if prior_msgs:
+            L += ["### Conversation so far", ""]
+            for m in prior_msgs:  # oldest-first as stored — do NOT re-sort
+                direction = "inbound" if m.get("is_inbound") else "outbound"
+                who = m.get("sender") or "?"
+                when = m.get("sent_at") or "?"
+                L += [f"- **{direction}** · {who} · {when}", "", _fence(m.get("body") or ""), ""]
+        if prior_notes:
+            L += ["### Earlier internal notes (never sent)", ""]
+            for n in prior_notes:
+                body = (n.get("body_markdown") or "").strip() or (n.get("body_html") or "")
+                when = n.get("created_at") or "?"
+                L += [f"- {when}", "", _fence(body), ""]
+
     # The exact main-loop system prompt, TRIMMED: the dynamic parts (per-mode preamble, the capability
     # paragraphs actually present, the per-run action catalog) in full; the large static
     # systemPromptBody collapsed to a marker. The untrimmed text is in the .jsonl run header.

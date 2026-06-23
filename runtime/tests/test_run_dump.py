@@ -133,6 +133,36 @@ class RenderIndex(unittest.TestCase):
         md = render_index(_bundle())
         self.assertIn("standing systemPromptBody", md)  # the static body collapsed to a marker
 
+    def test_prior_context_rendered_when_present(self):
+        md = render_index(_bundle(
+            prior_messages=[
+                {"sender": "buyer@example.com", "sent_at": "2026-06-20T09:00:00+00:00",
+                 "body": "First line\nSecond line", "is_inbound": True, "attachments": []},
+                {"sender": "support@us.example", "sent_at": "2026-06-20T10:00:00+00:00",
+                 "body": "Our earlier reply", "is_inbound": False, "attachments": []},
+            ],
+            prior_notes=[
+                {"key": "triage", "body_markdown": "**md note**", "body_html": "<b>html</b>",
+                 "created_at": "2026-06-20T09:30:00+00:00"},
+                {"key": "fallback", "body_markdown": "", "body_html": "html only",
+                 "created_at": "2026-06-20T09:45:00+00:00"},
+            ],
+        ))
+        self.assertIn("## Prior context given to the brain", md)
+        self.assertIn("### Conversation so far", md)
+        self.assertIn("**inbound** · buyer@example.com · 2026-06-20T09:00:00+00:00", md)
+        self.assertIn("**outbound** · support@us.example", md)
+        self.assertIn("First line\nSecond line", md)
+        self.assertIn("### Earlier internal notes (never sent)", md)
+        self.assertIn("**md note**", md)        # body_markdown preferred
+        self.assertIn("html only", md)          # body_html fallback when markdown empty
+        # oldest-first as stored: first inbound message precedes our outbound reply
+        self.assertLess(md.index("First line"), md.index("Our earlier reply"))
+
+    def test_prior_context_omitted_when_absent(self):
+        md = render_index(_bundle())  # no prior_messages / prior_notes — pre-change run
+        self.assertNotIn("## Prior context given to the brain", md)
+
     def test_brain_ref_echoed_for_test_run(self):
         md = render_index(_bundle(brain_ref="dev/refund-rework", trigger="test"))
         self.assertIn("Test run", md)
