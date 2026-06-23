@@ -119,6 +119,9 @@ def _code_gist(cmd: str, limit: int = 100) -> str:
 
 
 _LABEL_RULES = [
+    # An action preflight is read-only and predicts what an action would do — its own intent, ahead of
+    # the generic "python", so the timeline shows an action being validated in-loop.
+    (re.compile(r"actions/[A-Za-z0-9._\-]+/preflight\.(?:py|sh|rb)\b"), "check action"),
     (re.compile(r"\blib\.db\b|\bpsql\b|\bSELECT\b", re.I), "db query"),
     (re.compile(r"\bstripe\b", re.I), "stripe"),
     (re.compile(r"\bcloudwatch\b|\baws logs\b|\blib\.logs\b", re.I), "cloudwatch"),

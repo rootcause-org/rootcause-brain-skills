@@ -99,6 +99,14 @@ class Decorate(unittest.TestCase):
         self.assertEqual(events[0]["command"], "ls -la")
         self.assertEqual(events[0]["label"], "search files")
 
+    def test_action_preflight_label(self):
+        # An action preflight is a python run, but it gets the "check action" intent over "python".
+        events = [{"seq": 1, "tool": "bash", "args": {},
+                   "command": "cd /brain && python actions/create_appointment/preflight.py --params '{}'",
+                   "exit_code": 0, "status": "ok", "reasoning": ""}]
+        decorate(events)
+        self.assertEqual(events[0]["label"], "check action")
+
 
 class RenderIndex(unittest.TestCase):
     def test_sections_present(self):
