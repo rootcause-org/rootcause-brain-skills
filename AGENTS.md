@@ -29,15 +29,16 @@ CloudWatch / the box over SSM)? If yes → it stays in `rootcause`, never here.
 
 | Ships here | Stays in rootcause |
 |---|---|
-| `brain_run.py`, `brain_test.py`, the `brain-dev` skill | operator host-debug (`db.py`, `logs.py`, `rc_*_debug.py`) |
-| `rootcause-runtime` (`lib`) package, incl. the `lib/run_dump` index+JSONL renderer | the operator SSM fetch in `rc_agent_debug.py` (imports the shared renderer) |
-| `brain_dump.py` (run dump over the public API + project key) | `rc_agent_debug.py` (run dump over SSM + the registry DB) |
+| `brain_run.py`, `brain_test.py`, the `brain-dev` + `observability` skills | operator host-debug over SSM (`db.py`, `logs.py`) |
+| `rootcause-runtime` (`lib`) package, incl. the `lib/run_dump` index+JSONL renderer | the operator raw-SQL escape hatch (`db.py` over the registry DB) |
+| `brain_dump.py` (run dump over the public API + OAuth token) | — (the operator run dump migrated to the public-API CLI: `rc run <id> --debug`) |
 | workspace Dockerfile / published image ref | anything reading `accounts.yml` or SSM |
 
 The run-dump split is the litmus test in action: the **renderer is shared** (one `rootcause-runtime`
-module, pulled by both ends via the tag pin, so output is byte-identical), but the **fetch differs** —
-`brain_dump.py` shells `rc run <id> --full` (public API, project key, infra-free → here); the operator's
-`rc_agent_debug.py` reads the DB over SSM (touches OUR host → stays in rootcause).
+module, pulled by every consumer via the tag pin, so output is byte-identical), but the **fetch
+differs** — `brain_dump.py` shells `rc run <id> --full` (public API, OAuth token, infra-free → here);
+the operator's `rc run <id> --debug` likewise rides the public API now (the old SSM `rc_agent_debug.py`
+was retired). Only `db.py`/`logs.py` (true host/SSM access) stay in rootcause.
 
 ## Two distribution concerns (keep separate)
 

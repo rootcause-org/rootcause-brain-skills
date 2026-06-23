@@ -1,35 +1,50 @@
 # `rc` — the project's self-service window into its own rootcause data
 
 `rc` (repo: **`rootcause-org/rootcause-cli`**) is a thin Go CLI that lets a **project consume its OWN
-rootcause data and change its own config** — over rootcause's public JSON `/api/v1`, authed with
-the project's existing **Prompt API bearer key**. No business logic lives in it (MCP is a planned layer
-over the same endpoints); it's a typed, paginating, TTY-aware front-end to the API.
+rootcause data and change its own config** — over rootcause's public JSON `/api/v1`, authed with an
+**OAuth access token** (`rc login`). No business logic lives in it (MCP is a planned layer over the same
+endpoints); it's a typed, paginating, TTY-aware front-end to the API. The **token's scope is the
+dual-audience switch**: a project-scoped token sees only that project; a global admin's all-projects
+token sees the whole fleet — the SAME commands serve both.
 
 > **Why it's documented in this kit.** This repo is the *customer-world-facing, infra-free* brain
 > tooling — the litmus test ([AGENTS.md](../AGENTS.md)) is "does it touch OUR host?". `rc` does **not**:
-> it speaks the public API with the project's own key, so it's the **project-dev's read-side
-> counterpart** to the operator-only host-debug tools (`db.py`, trace/`logs.py`, `rc_*_debug.py`) that
-> stay in `rootcause`. A dev with no operator/SSM access can still ground themselves in real runs.
-> `rc` lives in its own repo; this page is where the **author→verify loop** that uses it is taught.
+> it speaks the public API with the project's own OAuth token, so it's the **project-dev's read-side
+> counterpart** to the operator-only host-debug tools (`db.py`, `logs.py`) that stay in `rootcause`. A
+> dev with no operator/SSM access can still ground themselves in real runs. `rc` lives in its own repo;
+> this page is where the **author→verify loop** that uses it is taught.
 
 ## Commands (progressive disclosure: index → one run → detail)
 
 ```bash
-rc ask "<customer-style question>"      # trigger a REAL prod run; prints the run_id   (POST /api/v1/runs)
+rc ask "<customer-style question>"      # trigger a REAL prod run, wait for the answer; prints the run_id   (POST /api/v1/runs)
 rc ask "<q>" --brain-ref dev/x          # …against a pushed dev/* branch — NO main push, main stays live
-rc status                       # recent runs + health summary           (GET /api/v1/runs)
-rc runs [--limit N] [--kind email|prompt|mcp|analysis] [--category ok|timeout|...]
 rc run <id>                     # one run, high level: status, category, draft?/note?, cost, duration (+ kind/outcome/turns/bash/created/finished/trace)
 rc run <id> --events            # full detail: per-event trace — bash command + stdout/stderr, exit code, timing
+rc run <id> --brain-diff        # the journal commit this run wrote to the brain (SHA + files + diff)  (GET …/brain-diff)
+rc run <id> --debug             # decompose the run → rc-debug/<run8>-<project>.{md,jsonl} (index + jq-able log)
 rc run <id> --full -o json      # the whole run-dump BUNDLE ({run, events}) — what brain_dump.py renders  (GET /api/v1/runs/{id}/full)
+rc runs [--limit N] [--kind email|prompt|mcp|analysis] [--category ok|timeout|...]
+rc status                       # health summary + recent runs                          (GET /api/v1/runs)
+rc fleet [--days N] [--kind …]  # fleet digest: per-run flag table + rates + worst offenders (--format agent for token-lean)
+rc patterns [--days N]          # cluster recent failures (bash fails + blocked egress) into ranked patterns
+rc health [--hours N]           # mirror + dead-letter health; EXITS NON-ZERO when unhealthy (cron/CI usable)
+rc thread <id>                  # rootcause-side trace of one thread/session: runs, what the agent did, callback delivery
 rc config get                   # effective settings + box defaults
 rc config set max_run_usd=5 default_tier=pro
 rc env keys                     # key NAMES of the project's PRODUCTION grounding .env (log-safe)  (GET /api/v1/env)
 rc env pull                     # write that env to a 0600 ./.env (so brain-dev --live can run grounding locally)
 rc env diff                     # names-only drift: local ./.env vs the server (nonzero exit on drift)
-rc login                        # store THIS brain's API key in a gitignored .rootcause.secret.toml (0600)
-rc whoami                       # which project will rc hit from here, and why (brain binding + key source)
+rc login                        # OAuth sign-in (browser PKCE; --device for headless) — token stored 0600, per profile
+rc whoami                       # which project/tenant will rc hit from here, and why (brain binding + sign-in status)
 ```
+
+- **Scope is automatic, and it's the audience switch.** Your token only sees its own project (a global
+  admin's all-projects token sees the fleet) — `rc fleet` / `rc patterns` / `rc health` need no project
+  arg, and a project-scoped run-UUID lookup 404s other projects' runs (no existence leak). `rc whoami`
+  shows the resolved scope.
+- **Every command has `-o json`** for scripting (`rc runs -o json | jq …`); the thin endpoints return
+  raw rows, so `-o json` is a verbatim passthrough you can roll up yourself.
 
 - **`rc ask` is the high-fidelity loop test.** It runs the *real* prod loop (model, egress, `/brain:ro`,
   `/mirrors`, KB) — `--brain-ref dev/x` fetches a pushed `dev/*` branch so a brain change is tested on
@@ -41,49 +56,50 @@ rc whoami                       # which project will rc hit from here, and why (
 - **Output is TTY-aware** — pretty table on a terminal, **JSON when piped** (`rc runs | jq …`); force
   with `-o json|table`.
 
-### Auth — the brain checkout selects the project (no `--profile`, no env wrangling)
+### Auth — OAuth, and the brain checkout selects the project (no `--profile`, no env wrangling)
 
-A brain repo **is** one project, so `rc` binds to it by convention: run `rc` anywhere inside a brain
-clone and it targets *that* project. Two files make this work — one committed, one not:
+`rc` is **OAuth-only**. `rc login` runs the browser PKCE flow (`--device` for a headless/SSH box) and
+stores the tokens in **`~/.config/rootcause/tokens.json` (0600)**, keyed per *profile*; every later `rc`
+refreshes the access token transparently. **There is no API key in any file** — the old
+`.rootcause.secret.toml` / `ROOTCAUSE_API_KEY` are gone. The **scope** (one project, or — for an
+admin — all projects) is chosen on the **browser consent screen**, not the CLI.
+
+A brain repo **is** one project, so `rc` binds to it by convention via one committed, non-secret marker:
 
 | File | Committed? | Holds | Role |
 |---|---|---|---|
-| **`.rootcause.toml`** | ✅ yes | `project = "<slug>"`, `base_url = "…"` | the binding — ships with the clone, so the project + endpoint are known out of the box |
-| **`.rootcause.secret.toml`** | ❌ gitignored | `api_key = "…"` | the token, written by `rc login`, never committed |
+| **`.rootcause.toml`** | ✅ yes | `project = "<slug>"`, `base_url = "…"`, optionally `tenant = "<slug>"` | the binding — ships with the clone, so the project + endpoint (+ tenant) are known out of the box. It carries **no secret**. |
 
-Resolution precedence (per field; an env var always wins as a one-off override):
+Run `rc` anywhere inside a brain clone and it auto-targets *that* project — the auto-profile. Resolution
+(per field; an env var always wins as a one-off override):
 
 ```
-explicit --profile <name>        → that profile only (AWS-style override; no brain binding)
-otherwise, inside a brain:         env > .rootcause.secret.toml > [profiles.<slug>] > LOUD ERROR
-otherwise, outside any brain:      env > [default] > built-in default
+explicit --profile <name>        → that profile's stored token (no brain binding)
+otherwise, inside a brain:         the brain's .rootcause.toml selects project + base_url (+ tenant)
+otherwise, outside any brain:      [default] profile / built-in default
+base_url:  ROOTCAUSE_BASE_URL > .rootcause.toml base_url > [profiles.<name>] base_url > built-in default
 ```
 
-The **loud error** is the point: inside a brain with no key, `rc` names the project and refuses —
-it will **never** silently fall back to a global `[default]` (the footgun where running `rc` in the
-Momentum repo quietly hit a different project). `rc whoami` shows what it resolved (and confirms the
-project with the server); `rc env pull`/`ask`/`run` all honor the same binding.
+`rc whoami` shows what it resolved (profile · project · tenant · signed-in?) — locally, no server call.
+`rc env pull` / `ask` / `run` all honor the same binding.
 
 **Onboard a brain (incl. an external customer who just cloned):**
 
 ```bash
 git clone …/rootcause-brain-<project> && cd rootcause-brain-<project>   # .rootcause.toml already inside
-rc login            # paste the project's Prompt-API key once → writes .rootcause.secret.toml (0600)
-rc whoami           # confirms: project, base URL, key source, server agrees
+rc login            # opens a browser; pick the project (or all-projects, if admin) on the consent screen
+rc whoami           # confirms: profile, project, base URL, signed-in
 rc ask "…"          # just works — no --profile, no export
 ```
 
-`rc login` verifies the key against the server and **refuses** to store it if it resolves to a
-different project than `.rootcause.toml` names (catches a pasted wrong key). The committed
-`.rootcause.toml` carries `base_url`, so a customer hits the right endpoint with zero env setup; only
-the secret key is theirs to add. The global `~/.config/rootcause/config.toml` (env vars / named
-profiles) still works as an override and for non-brain use — same bearer key, **never committed**.
+The committed `.rootcause.toml` carries `base_url`, so a customer hits the right endpoint with zero env
+setup; the OAuth token they mint on the consent screen is scoped to their project. A headless box uses
+`rc login --device` (a short code approved in any browser).
 
 **Tenant brains.** A delta repo over a tenant-enabled project (e.g. a single clinic under DentAI) adds
 a `tenant` field to its marker — `project = "dentai"`, `tenant = "de-kies"`. `rc` then defaults
 `--tenant` for `ask`/`env`/`whoami` to that tenant, so the checkout resolves the **project ∪ tenant**
-scope without repeating the flag. The key is the *project* key (`rc login` with DentAI's key); the
-tenant just scopes it.
+scope without repeating the flag.
 
 ## Install
 
@@ -143,7 +159,7 @@ tune config to what's actually live rather than to assumptions.
 
 A brain's grounding scripts read their credentials (the `*_DSN`s, API keys) from a **gitignored
 `./.env`** at the brain root. `rc env` lets a **project dev self-serve** that env — the same role the
-operator-only `scripts/rc_env.py --pull` plays, but over the **Prompt API key** instead of AWS/SSM, so
+operator-only `scripts/rc_env.py --pull` plays, but over your **OAuth token** instead of AWS/SSM, so
 no operator access is needed:
 
 ```bash

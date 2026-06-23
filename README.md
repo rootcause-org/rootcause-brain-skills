@@ -85,6 +85,8 @@ fixtures**, under `skills/<name>/`.)
 |---|---|
 | `skills/brain-dev/SKILL.md` | The skill: brief → run a grounding script / test tiers → report, in `uv` or `docker` mode. |
 | `skills/brain-dev/scripts/brain_env.py` · `brain_run.py` · `brain_test.py` | The engine, inside the skill — shared core + run one script + the pytest tiers; both modes, brain-dir-relative. |
+| `skills/observability/SKILL.md` | Watch & triage this project's real prod runs with the `rc` CLI (trigger+verify, inspect a run, health, patterns, thread). Read-only over the public API; OAuth-scoped to your project. |
+| `commands/` | Slash commands: `/brain-dev`, `/brain-debug`, and the `rc`-driven `/rc-run` · `/rc-inspect` · `/rc-health` · `/rc-fleet` · `/rc-thread`. |
 | `runtime/` | The **`rootcause-runtime`** package (`lib/`: db, stripe, cloudwatch, fs, http, html, livecheck). Canonical home. |
 | `docker/Dockerfile` | The workspace image (installs `rootcause-runtime`); published to ghcr for `docker` mode. |
 | `.claude-plugin/marketplace.json`, `plugin.json` | Claude Code plugin catalog + manifest. |

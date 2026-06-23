@@ -167,9 +167,9 @@ green local loop against a stale copy is a false green). So the high-fidelity lo
 
 > **`rc` auto-targets the brain you're in.** A brain commits a `.rootcause.toml` (project + base_url),
 > so `rc` run from inside the checkout hits *this* project — no `--profile`, no env export. One-time:
-> `rc login` (writes the gitignored `.rootcause.secret.toml`); confirm with `rc whoami`. If the key is
-> missing, `rc` fails **loudly** naming the project — it never silently falls back to another. See
-> [rc-cli.md → Auth](../../docs/rc-cli.md#auth--the-brain-checkout-selects-the-project-no---profile-no-env-wrangling).
+> `rc login` (OAuth browser sign-in; the token is stored 0600 under `~/.config/rootcause`, no key in any
+> file); confirm with `rc whoami`. See
+> [rc-cli.md → Auth](../../docs/rc-cli.md#auth--oauth-and-the-brain-checkout-selects-the-project-no---profile-no-env-wrangling).
 
 ```bash
 # 1) trigger a run from a customer-style question (against main HEAD):
@@ -192,7 +192,7 @@ jq -r 'select(.disp=="3").command' .rootcause/dump/<run8>-<proj>.jsonl
 > repo ignores it, and the brain-repo scaffold (`brain-authoring` SKILL) bakes it in for new brains.
 
 `brain_dump.py` shells `rc run <id> --full -o json` (the bundle) → the **shared** `run_dump` renderer
-in `rootcause-runtime` → both files. It's the same renderer the operator's `rc_agent_debug.py` uses,
+in `rootcause-runtime` → both files. It's the same renderer the operator's `rc run <id> --debug` uses,
 so the output is byte-identical regardless of which side dumped the run.
 
 Playbook beats:
@@ -256,7 +256,7 @@ of that silently drops those guarantees.
   missing — degrade gracefully, don't treat it as a brain bug.
 - **No `.env`?** uv-offline tests and `--brief` run without one; a script run and the live tier need
   it. **Project devs self-serve it: `rc env pull`** from inside the brain — fetches that project's
-  PRODUCTION grounding `.env` over your `ROOTCAUSE_API_KEY` and writes a `0600 ./.env` (no operator/SSM
+  PRODUCTION grounding `.env` over your `rc login` OAuth token and writes a `0600 ./.env` (no operator/SSM
   access needed; tenant-enabled projects pass `--tenant <slug>`). See
   [`rc-cli.md`](../../docs/rc-cli.md#sync-the-grounding-env-rc-env). Operators can still recover it the
   privileged way with rootcause's `rc_env.py <project> --pull` (SSM).

@@ -4,8 +4,8 @@ argument-hint: "<run_id>  |  \"<question>\" [--brain-ref dev/x]"
 ---
 
 Use the **brain-dev** skill to dump and read one production run of the current brain. The engine is at
-`${CLAUDE_PLUGIN_ROOT}/skills/brain-dev/scripts`; the public-API path needs only the project's
-`ROOTCAUSE_API_KEY` + the `rc` CLI (no SSM, no operator access).
+`${CLAUDE_PLUGIN_ROOT}/skills/brain-dev/scripts`; the public-API path needs only `rc login` (the
+project's OAuth token) + the `rc` CLI (no SSM, no operator access).
 
 `$ARGUMENTS` is **either** a run UUID (dump it directly) **or** a quoted question (trigger a run first,
 then dump it). If empty, ask for one and stop.
