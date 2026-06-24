@@ -11,15 +11,16 @@
 # `.claude/skills/` discovery dirs. One source of truth, per-repo discovery, zero /brain footprint.
 #
 #   curl -fsSL .../install.sh | bash -s -- [BRAIN_DIR]      # or: ./install.sh [BRAIN_DIR]
-#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.11 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
+#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.12 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
 set -euo pipefail
 
 BRAIN="${1:-$PWD}"
 BRAIN="$(cd "$BRAIN" && pwd)"
 KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}"
-TAG="${RC_BRAIN_KIT_TAG:-v0.1.11}"
+TAG="${RC_BRAIN_KIT_TAG:-v0.1.12}"
 REPO="https://github.com/rootcause-org/rootcause-brain-skills"
 KIT_OVERRIDE="${RC_BRAIN_KIT+x}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Sanity-check this is a brain checkout. Accept all layouts: legacy (skills/), the projection-based
 # PROJECT layout (playbooks/ + projection.yaml), and a nested TENANT brain — which holds only a free-form
@@ -28,9 +29,10 @@ KIT_OVERRIDE="${RC_BRAIN_KIT+x}"
 [ -d "$BRAIN/skills" ] || [ -d "$BRAIN/playbooks" ] || [ -f "$BRAIN/projection.yaml" ] || [ -f "$BRAIN/.rootcause.toml" ] || {
   echo "error: $BRAIN has no skills/ or playbooks/ or projection.yaml or .rootcause.toml — not a brain checkout?" >&2; exit 1; }
 
-# 1. One pinned clone on disk (shared by every brain). Pin the default clone to a tag, never float main.
-#    If RC_BRAIN_KIT is explicitly set, treat it as a developer/local override and do not mutate it.
-if [ -n "$KIT_OVERRIDE" ]; then
+# 1. One pinned clone on disk (shared by every brain). Pin the shared clone to a tag, never float main.
+#    If RC_BRAIN_KIT points at the checkout running this install.sh, treat it as a developer/local
+#    override and do not mutate it.
+if [ -n "$KIT_OVERRIDE" ] && [ -d "$KIT" ] && [ "$(cd "$KIT" && pwd)" = "$SCRIPT_DIR" ]; then
   [ -d "$KIT/skills" ] || { echo "error: RC_BRAIN_KIT=$KIT has no skills/" >&2; exit 1; }
   echo "kit: using RC_BRAIN_KIT=$KIT"
 elif [ -d "$KIT/.git" ]; then
