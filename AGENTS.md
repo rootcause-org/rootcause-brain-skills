@@ -8,6 +8,15 @@ brain you're `cd`'d into — killing the per-brain copy/drift problem.
 The code + the shipped `SKILL.md` are the durable record; release mechanics live in
 [RELEASING.md](RELEASING.md).
 
+## Default close-out
+
+For this repo, a completed agent change should be **released and pushed by default** after the focused
+checks pass. Use best judgment to hold instead when there is a concrete reason: failing verification,
+unrelated dirty worktree state that would be swept into the release, secrets or irreversible external
+effects, missing runtime/image access, or the user explicitly asked not to push/release. Skill/doc-only
+changes still get the standard patch release (`./refresh-brains.sh --release patch`) so local brains
+can actually fetch the new tag.
+
 ## What a "brain" is (the consumer)
 
 A **brain** = `rootcause-org/rootcause-brain-<project>` — a private git repo of markdown **skills** +
