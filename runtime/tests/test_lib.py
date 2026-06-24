@@ -116,8 +116,16 @@ class Introspection(unittest.TestCase):
         sql, params = q.call_args.args[0], q.call_args.args[1]
         self.assertIn("information_schema.columns", sql)
         self.assertIn("table_name = %s", sql)
-        self.assertEqual(params, ["public", "users"])
+        # Default schema is NULL → coalesced to current_schema() so a scoped run sees its scope_<id>
+        # views (public is revoked there); a flat run still resolves to public.
+        self.assertIn("current_schema()", sql)
+        self.assertEqual(params, [None, "users"])
         self.assertEqual(q.call_args.kwargs["db"], "ruby")
+
+    def test_columns_explicit_schema_overrides(self):
+        with mock.patch.object(db, "query", return_value=[]) as q:
+            db.columns("users", schema="public", db="ruby")
+        self.assertEqual(q.call_args.args[1], ["public", "users"])
 
     def test_tables_with_column_delegates(self):
         with mock.patch.object(db, "query", return_value=[]) as q:
@@ -126,6 +134,13 @@ class Introspection(unittest.TestCase):
         self.assertIn("column_name ilike %s", sql)
         self.assertEqual(params, ["app", "%email%"])
         self.assertEqual(q.call_args.kwargs["db"], "powertools")
+
+    def test_tables_with_column_default_schema_is_current(self):
+        with mock.patch.object(db, "query", return_value=[]) as q:
+            db.tables_with_column("%email%", db="powertools")
+        sql, params = q.call_args.args[0], q.call_args.args[1]
+        self.assertIn("current_schema()", sql)
+        self.assertEqual(params, [None, "%email%"])
 
 
 class DurationParsing(unittest.TestCase):

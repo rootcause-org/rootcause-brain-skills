@@ -229,25 +229,36 @@ def query_one(sql: str, params: list | tuple | None = None, db: str | None = Non
     return rows[0] if rows else None
 
 
-def columns(table: str, schema: str = "public", db: str | None = None) -> list[dict]:
-    """Column names + types for one table — schema introspection when the layout is unknown."""
+def columns(table: str, schema: str | None = None, db: str | None = None) -> list[dict]:
+    """Column names + types for one table — schema introspection when the layout is unknown.
+
+    ``schema=None`` (default) introspects the run's EFFECTIVE schema via ``current_schema()`` — the
+    same resolution an unqualified table reference uses. On a tenant-scoped run that is the per-run
+    ``scope_<id>`` schema of projected views (``public`` is revoked, so a hard-coded ``"public"``
+    would see nothing); on a flat project it resolves to ``public`` exactly as before. Pass an
+    explicit ``schema`` to override.
+    """
     return query(
         "select column_name, data_type from information_schema.columns "
-        "where table_schema = %s and table_name = %s order by ordinal_position",
+        "where table_schema = coalesce(%s::text, current_schema()) and table_name = %s "
+        "order by ordinal_position",
         [schema, table],
         db=db,
     )
 
 
-def tables_with_column(name_like: str, schema: str = "public", db: str | None = None) -> list[dict]:
+def tables_with_column(name_like: str, schema: str | None = None, db: str | None = None) -> list[dict]:
     """Find (table, column) pairs whose column name matches an ILIKE pattern, e.g. ``%email%``.
 
     The entry point for locating where data lives (an account email, a usage column) when the
     schema isn't pinned down — discover the identifier here, never take it from the ticket.
+    ``schema=None`` (default) searches the run's EFFECTIVE schema (``current_schema()``) — the
+    ``scope_<id>`` views on a scoped run, ``public`` on a flat project (see `columns`).
     """
     return query(
         "select table_name, column_name, data_type from information_schema.columns "
-        "where table_schema = %s and column_name ilike %s order by table_name, column_name",
+        "where table_schema = coalesce(%s::text, current_schema()) and column_name ilike %s "
+        "order by table_name, column_name",
         [schema, name_like],
         db=db,
     )
