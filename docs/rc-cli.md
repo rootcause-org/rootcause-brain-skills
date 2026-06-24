@@ -19,7 +19,7 @@ token sees the whole fleet — the SAME commands serve both.
 ```bash
 rc ask "<customer-style question>"      # trigger a REAL prod run, wait for the answer; prints the run_id   (POST /api/v1/runs)
 rc ask "<q>" --brain-ref dev/x          # …against a pushed dev/* branch — NO main push, main stays live
-rc --profile default ask --project dentai "<q>"  # all-projects admin token: select a project explicitly
+rc ask --project dentai "<q>"           # outside a brain: all-projects admin token selects a project
 rc run <id>                     # one run, high level: status, category, draft?/note?, cost, duration (+ kind/outcome/turns/bash/created/finished/trace)
 rc run <id> --events            # full detail: per-event trace — bash command + stdout/stderr, exit code, timing
 rc run <id> --brain-diff        # the journal commit this run wrote to the brain (SHA + files + diff)  (GET …/brain-diff)
@@ -40,11 +40,12 @@ rc login                        # OAuth sign-in (browser PKCE; --device for head
 rc whoami                       # which project/tenant will rc hit from here, and why (brain binding + sign-in status)
 ```
 
-- **Scope is automatic, and it's the audience switch.** Your token only sees its own project (a global
-  admin's all-projects token sees the fleet). In a brain checkout, the brain marker selects the default
-  profile/project; with an all-projects token, use `--profile default --project <id-or-name>` for
-  per-project commands like `rc ask`/`rc status`, or `--all` for fleet digests. A project-scoped run-UUID
-  lookup 404s other projects' runs (no existence leak). `rc whoami` shows the resolved local binding.
+- **Scope is automatic, and it's the audience switch.** Main intent: a brain checkout chooses the
+  project context; the profile only chooses which local token to use. `rc` first tries a profile with
+  the brain project's name; if absent, it uses `default` and sends the brain project as `?project=` on
+  supported endpoints. Use explicit `--project <id-or-name>` when outside a brain checkout or overriding
+  it, and `--all` for fleet digests. A project-scoped run-UUID lookup 404s other projects' runs (no
+  existence leak). `rc whoami` shows the resolved local binding.
 - **Every command has `-o json`** for scripting (`rc runs -o json | jq …`); the thin endpoints return
   raw rows, so `-o json` is a verbatim passthrough you can roll up yourself.
 
@@ -72,13 +73,14 @@ A brain repo **is** one project, so `rc` binds to it by convention via one commi
 |---|---|---|---|
 | **`.rootcause.toml`** | ✅ yes | `project = "<slug>"`, `base_url = "…"`, optionally `tenant = "<slug>"` | the binding — ships with the clone, so the project + endpoint (+ tenant) are known out of the box. It carries **no secret**. |
 
-Run `rc` anywhere inside a brain clone and it auto-targets *that* project — the auto-profile. Resolution
-(per field; an env var always wins as a one-off override):
+Run `rc` anywhere inside a brain clone and it auto-targets *that* project. Resolution (per field; an env
+var always wins as a one-off override):
 
 ```
-explicit --profile <name>        → that profile's stored token (no brain binding)
-otherwise, inside a brain:         the brain's .rootcause.toml selects project + base_url (+ tenant)
-otherwise, outside any brain:      [default] profile / built-in default
+explicit --profile <name>          → that profile's stored token (no brain profile fallback)
+inside a brain + project token     → profile named by .rootcause.toml project
+inside a brain + no project token  → default profile + .rootcause.toml project as ?project=
+outside any brain                  → default profile / built-in default
 base_url:  ROOTCAUSE_BASE_URL > .rootcause.toml base_url > [profiles.<name>] base_url > built-in default
 ```
 
@@ -87,10 +89,10 @@ base_url:  ROOTCAUSE_BASE_URL > .rootcause.toml base_url > [profiles.<name>] bas
 
 `--project <id-or-name>` is **not** a token/profile selector. It is a server-side `?project=` selector
 for supported endpoints. Use it with an all-projects admin profile when you want to act on one project
-from outside its brain checkout, or from inside a brain while forcing `--profile default`:
+from outside its brain checkout, or to override the checkout's project:
 
 ```bash
-rc --profile default ask --project dentai --tenant belgium-staging "Run the real loop for this question"
+rc ask --project dentai --tenant belgium-staging "Run the real loop for this question"
 ```
 
 A pinned project token ignores `--project` server-side; it cannot widen to another project.
@@ -106,7 +108,9 @@ rc ask "…"          # just works — no --profile, no export
 
 The committed `.rootcause.toml` carries `base_url`, so a customer hits the right endpoint with zero env
 setup; the OAuth token they mint on the consent screen is scoped to their project. A headless box uses
-`rc login --device` (a short code approved in any browser).
+`rc login --device` (a short code approved in any browser). A superadmin who already has an all-projects
+token in `default` does not need to log in per project; `rc whoami` will show `profile=default` plus the
+brain's project.
 
 **Tenant brains.** A delta repo over a tenant-enabled project (e.g. a single clinic under DentAI) adds
 a `tenant` field to its marker — `project = "dentai"`, `tenant = "de-kies"`. `rc` then defaults

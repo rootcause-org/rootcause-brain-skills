@@ -172,13 +172,15 @@ green local loop against a stale copy is a false green). So the high-fidelity lo
 / SSM access** — only the [`rc` CLI](../../docs/rc-cli.md) and an OAuth token from `rc login`.
 
 > **`rc` auto-targets the brain you're in.** A brain commits a `.rootcause.toml` (project + base_url),
-> so `rc` run from inside the checkout hits *this* project — no `--profile`, no env export. One-time:
-> `rc login` (OAuth browser sign-in; the token is stored 0600 under `~/.config/rootcause`, no key in any
-> file); confirm with `rc whoami`. See
+> so `rc` run from inside the checkout hits *this* project — no `--profile`, no env export. It first
+> tries a token profile with the project name; if that token is missing, it uses `default` and sends the
+> checkout's project as `?project=` on supported endpoints. One-time project dev path: `rc login`
+> (OAuth browser sign-in; the token is stored 0600 under `~/.config/rootcause`, no key in any file);
+> confirm with `rc whoami`. See
 > [rc-cli.md → Auth](../../docs/rc-cli.md#auth--oauth-and-the-brain-checkout-selects-the-project-no---profile-no-env-wrangling).
-> If you're using a superadmin/all-projects token instead of the brain's project profile, keep that
-> profile explicit and select the project on the request:
-> `rc --profile default ask --project <project> [--tenant <slug>] "<question>"`.
+> If you're a superadmin with one all-projects token in `default`, plain `rc ask` from inside this brain
+> uses that token and auto-scopes to this project. Outside a brain checkout, or to override it, pass
+> `--project <project>` explicitly.
 
 ```bash
 # 1) trigger a run from a customer-style question (against main HEAD):
