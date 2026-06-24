@@ -22,7 +22,7 @@ commit anything to the brain or reach `/brain`.
 
 **A — Local, gitignored (recommended; any agent).**
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/v0.1.12/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/v0.1.13/install.sh)
 ```
 Clones the kit once to `~/.rootcause-brain-skills` and symlinks every skill into this brain's
 gitignored `.agents/skills/<name>` (Codex auto-discovers) + `.claude/skills/<name>` (Claude Code).
