@@ -8,6 +8,11 @@ lists what this run has. ``--list`` (or a bad ``db=``) shows each database's pur
 descriptions come from project metadata in the ``RC_DB_DESCRIPTIONS`` env var (a JSON object keyed
 by the exact DSN env-var name), so the agent learns which DB is which without trial-and-error.
 
+On a data-scoped project, `query` AUTO-HEALS: if you SELECT a column the project hides (standard
+single-table shape), it's dropped, the trimmed query runs, and a warning names what was dropped — so
+one extra field doesn't fail the whole query. A column that ISN'T hidden (a typo) still raises, with a
+scoping-aware hint. The hidden-column map comes from the ``RC_DB_EXCLUDED_COLUMNS`` env var.
+
 Read-only by provisioning; this module adds a belt-and-suspenders ``READ ONLY``
 transaction plus a ``statement_timeout`` so a stray write fails loudly and a runaway query can't
 hang the run. ``psycopg`` is imported lazily, so the module — its DSN resolution, and the CLI's
@@ -253,6 +258,131 @@ def _undefined_hint(exc) -> str:
     return " ".join(parts)
 
 
+def _excluded_columns() -> dict:
+    """Parse ``RC_DB_EXCLUDED_COLUMNS`` (JSON: exact DSN env name → the columns the project's
+    data-scoping hides). Shape per env: ``{"global_exclude": [...], "tables": {"<t>": {"exclude":
+    [...]}|{"include": [...]}}}``. Host-injected from the scope_manifest. Absent/malformed → ``{}``
+    (never raise — auto-heal is best-effort, a query must never break because this is missing)."""
+    import json
+
+    raw = os.environ.get("RC_DB_EXCLUDED_COLUMNS")
+    if not raw or not raw.strip():
+        return {}
+    try:
+        val = json.loads(raw)
+    except (ValueError, TypeError):
+        return {}
+    return val if isinstance(val, dict) else {}
+
+
+def _env_name_for_dsn(dsn: str) -> str | None:
+    """The ``*_DSN`` env var whose value is this resolved DSN — the key `RC_DB_EXCLUDED_COLUMNS` uses.
+    A raw DSN passed straight to ``db=`` has no env name (→ no heal data, which is fine)."""
+    for k, v in os.environ.items():
+        if k.endswith("_DSN") and v == dsn:
+            return k
+    return None
+
+
+def _is_hidden(emap: dict, table: str, col: str) -> bool:
+    """Does the scope_manifest hide ``col`` on ``table``? True iff it's in the global blacklist, the
+    table's exclude list, or (whitelist mode) NOT in the table's include list. The whitelist case is
+    why we can't enumerate hidden columns up front — we test per requested column."""
+    if col in (emap.get("global_exclude") or []):
+        return True
+    t = (emap.get("tables") or {}).get(table)
+    if not isinstance(t, dict):
+        return False
+    if "exclude" in t:
+        return col in (t["exclude"] or [])
+    if "include" in t:
+        return col not in (t["include"] or [])
+    return False
+
+
+def _split_top_level_commas(s: str) -> list[str]:
+    """Split a SELECT list on commas that aren't inside double-quoted identifiers. Callers only reach
+    here for the simple shape (no parens/subqueries — `_parse_simple_select` already bailed on those)."""
+    out, buf, in_q = [], [], False
+    for ch in s:
+        if ch == '"':
+            in_q = not in_q
+            buf.append(ch)
+        elif ch == "," and not in_q:
+            out.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+    out.append("".join(buf))
+    return out
+
+
+def _bare_column(item: str) -> str | None:
+    """The plain column name of a SELECT item, or None if it's not a bare column (alias/AS/expression/
+    function/star) — those we never auto-drop. ``t.col`` → ``col``; ``"Weird"`` → ``Weird``."""
+    it = item.strip()
+    if not it or it == "*" or "(" in it or " " in it:  # space ⇒ alias or AS ⇒ not a bare column
+        return None
+    if "." in it:
+        it = it.rsplit(".", 1)[-1]
+    if it.startswith('"') and it.endswith('"') and len(it) >= 2:
+        it = it[1:-1]
+    return it or None
+
+
+def _parse_simple_select(sql: str):
+    """Match the standard shape ``SELECT <plain col list> FROM <one table> [rest]`` and return
+    ``(items, table, list_start, list_end)`` where ``sql[list_start:list_end]`` is exactly the column
+    list (so the rebuild preserves the ``FROM`` keyword + everything after). None for anything else
+    (``SELECT *``, joins, multiple tables, expressions, subqueries) — a non-match just means "don't heal"."""
+    import re
+
+    m = re.match(r"(?is)\s*select\s+(.*?)\s+from\s+(.+)", sql)
+    if not m:
+        return None
+    list_str = m.group(1)
+    if "(" in list_str or "*" in list_str:  # expression/subquery/star ⇒ not the simple shape
+        return None
+    rest = m.group(2).lstrip()
+    # First token after FROM is the table; bail on a join or a comma (multiple tables) anywhere after.
+    tbl_m = re.match(r'([A-Za-z0-9_."]+)(\s|$)', rest)
+    if not tbl_m:
+        return None
+    table = tbl_m.group(1)
+    tail = rest[tbl_m.end():]
+    if re.search(r"(?is)\bjoin\b", " " + rest) or "," in rest.split(None, 1)[0] or tail.lstrip().startswith(","):
+        return None
+    if "." in table:
+        table = table.rsplit(".", 1)[-1]
+    table = table.strip('"')
+    items = _split_top_level_commas(list_str)
+    return items, table, m.start(1), m.end(1)
+
+
+def _strip_excluded(sql: str, emap: dict):
+    """Pre-flight heal: drop SELECT-list columns the manifest hides for the FROM table, returning
+    ``(new_sql, dropped)``. No-op (``(sql, [])``) unless the query is the simple shape AND names a
+    genuinely-hidden column AND at least one column survives — so a working query, a typo (not in the
+    manifest), or a query we can't safely parse is left untouched for Postgres to handle."""
+    if not emap:
+        return sql, []
+    parsed = _parse_simple_select(sql)
+    if not parsed:
+        return sql, []
+    items, table, list_start, list_end = parsed
+    keep, dropped = [], []
+    for it in items:
+        col = _bare_column(it)
+        if col is not None and _is_hidden(emap, table, col):
+            dropped.append(col)
+        else:
+            keep.append(it)
+    if not dropped or not keep:  # nothing hidden, or stripping would empty the SELECT ⇒ don't heal
+        return sql, []
+    new_sql = sql[:list_start] + ", ".join(s.strip() for s in keep) + sql[list_end:]
+    return new_sql, dropped
+
+
 def query(
     sql: str,
     params: list | tuple | None = None,
@@ -263,13 +393,26 @@ def query(
 
     Opens a fresh read-only connection per call (the container is disposable, so pooling buys
     nothing). Use ``%s`` placeholders with ``params`` — never string-format input into ``sql``.
-    ``db`` selects the database (see module docstring); ``timeout_ms`` caps the statement. An
-    undefined column/table raises with a scoping-aware hint (see `_undefined_hint`) so one
-    projected-away column doesn't send the agent back to a blank query.
+    ``db`` selects the database (see module docstring); ``timeout_ms`` caps the statement.
+
+    Auto-heal: if the project's data-scoping hides a column you SELECT (standard single-table shape),
+    that column is dropped, the trimmed query runs, and a warning names what was dropped — so one extra
+    field doesn't fail the whole query. A column that ISN'T manifest-hidden (a typo) is left in and
+    raises with a scoping-aware hint (`_undefined_hint`) rather than being silently swallowed.
     """
     import psycopg
 
     dsn = _resolve_dsn(db)
+    emap = _excluded_columns().get(_env_name_for_dsn(dsn) or "", {})
+    sql, dropped = _strip_excluded(sql, emap)
+    if dropped:
+        import warnings
+
+        warnings.warn(
+            f"data-scoping: dropped column(s) {dropped} from your SELECT — hidden by this project's "
+            f"scope_manifest. Ran the trimmed query; the rest of your result is intact.",
+            stacklevel=2,
+        )
     with psycopg.connect(dsn, autocommit=False) as conn:
         # Read-only transaction: a write attempt errors instead of mutating customer data.
         conn.read_only = True
@@ -279,8 +422,9 @@ def query(
             try:
                 cur.execute(sql, params or [])
             except (psycopg.errors.UndefinedColumn, psycopg.errors.UndefinedTable) as e:
-                # A projected-away column/table reads as "does not exist"; enrich so the agent fixes
-                # the one bad name instead of rewriting. `from e` keeps the original traceback.
+                # Still undefined after the pre-flight heal ⇒ a typo, a hidden column used in WHERE/
+                # ORDER BY (which we don't rewrite), or a shape we couldn't parse. Enrich so the agent
+                # fixes the one bad name instead of rewriting. `from e` keeps the original traceback.
                 raise RuntimeError(f"{e}\n\n{_undefined_hint(e)}") from e
             if cur.description is None:
                 return []

@@ -251,6 +251,70 @@ class UndefinedHint(unittest.TestCase):
         self.assertNotIn("None", msg)
 
 
+class ExcludedColumnHeal(unittest.TestCase):
+    """_strip_excluded auto-drops manifest-hidden SELECT columns on the simple shape, leaves typos and
+    non-simple queries alone, and never empties the SELECT."""
+
+    EMAP = {
+        "global_exclude": ["encrypted_password"],
+        "tables": {
+            "mail_senders": {"exclude": ["smtp_password"]},
+            "admins": {"include": ["id", "tenant_id"]},
+        },
+    }
+
+    def test_drops_table_excluded_column(self):
+        sql, dropped = db._strip_excluded(
+            "SELECT id, smtp_password, host FROM mail_senders WHERE id = 5", self.EMAP
+        )
+        self.assertEqual(dropped, ["smtp_password"])
+        self.assertEqual(sql, "SELECT id, host FROM mail_senders WHERE id = 5")
+
+    def test_drops_global_excluded_column(self):
+        sql, dropped = db._strip_excluded("SELECT id, encrypted_password FROM admins", self.EMAP)
+        self.assertEqual(dropped, ["encrypted_password"])
+        self.assertEqual(sql, "SELECT id FROM admins")
+
+    def test_whitelist_drops_non_included(self):
+        # admins is include-only [id, tenant_id]; `email` isn't whitelisted ⇒ hidden ⇒ dropped.
+        sql, dropped = db._strip_excluded("SELECT id, email FROM admins", self.EMAP)
+        self.assertEqual(dropped, ["email"])
+        self.assertEqual(sql, "SELECT id FROM admins")
+
+    def test_typo_is_left_for_postgres(self):
+        # `hostt` is not manifest-hidden ⇒ NOT dropped (Postgres will raise → enriched hint).
+        sql, dropped = db._strip_excluded("SELECT id, hostt FROM mail_senders", self.EMAP)
+        self.assertEqual(dropped, [])
+        self.assertEqual(sql, "SELECT id, hostt FROM mail_senders")
+
+    def test_qualified_column_dropped(self):
+        sql, dropped = db._strip_excluded("SELECT m.id, m.smtp_password FROM mail_senders m", self.EMAP)
+        self.assertEqual(dropped, ["smtp_password"])
+        self.assertEqual(sql, "SELECT m.id FROM mail_senders m")
+
+    def test_select_star_not_touched(self):
+        sql, dropped = db._strip_excluded("SELECT * FROM mail_senders", self.EMAP)
+        self.assertEqual((sql, dropped), ("SELECT * FROM mail_senders", []))
+
+    def test_join_not_touched(self):
+        q = "SELECT a.smtp_password FROM mail_senders a JOIN admins b ON a.id = b.id"
+        self.assertEqual(db._strip_excluded(q, self.EMAP), (q, []))
+
+    def test_would_empty_select_not_healed(self):
+        # Only column is hidden → stripping would leave an empty SELECT → bail (Postgres errors → hint).
+        q = "SELECT smtp_password FROM mail_senders"
+        self.assertEqual(db._strip_excluded(q, self.EMAP), (q, []))
+
+    def test_no_map_is_noop(self):
+        q = "SELECT id, smtp_password FROM mail_senders"
+        self.assertEqual(db._strip_excluded(q, {}), (q, []))
+
+    def test_aliased_expression_item_kept(self):
+        # `smtp_password AS pw` is not a bare column ⇒ never auto-dropped (would change result shape).
+        q = "SELECT id, smtp_password AS pw FROM mail_senders"
+        self.assertEqual(db._strip_excluded(q, self.EMAP), (q, []))
+
+
 class DurationParsing(unittest.TestCase):
     def test_units(self):
         self.assertEqual(db._parse_duration_ms("500ms"), 500)
