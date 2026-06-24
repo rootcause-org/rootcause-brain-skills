@@ -14,3 +14,21 @@ build/
 
 # Local rc/kit artifacts (rc CLI debug dumps, brain_dump run dumps) — gitignored wholesale, regenerable.
 /.rootcause/
+/.agents/skills/brain-debug
+/.claude/skills/brain-debug
+/.agents/skills/brain-dev
+/.claude/skills/brain-dev
+/.agents/skills/brain-dev-upgrade
+/.claude/skills/brain-dev-upgrade
+/.agents/skills/observability
+/.claude/skills/observability
+/.agents/skills/rc-fleet
+/.claude/skills/rc-fleet
+/.agents/skills/rc-health
+/.claude/skills/rc-health
+/.agents/skills/rc-inspect
+/.claude/skills/rc-inspect
+/.agents/skills/rc-run
+/.claude/skills/rc-run
+/.agents/skills/rc-thread
+/.claude/skills/rc-thread

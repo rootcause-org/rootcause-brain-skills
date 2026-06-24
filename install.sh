@@ -10,23 +10,128 @@
 # Model: ONE pinned clone on disk, SYMLINKED into each brain's gitignored `.agents/skills/` +
 # `.claude/skills/` discovery dirs. One source of truth, per-repo discovery, zero /brain footprint.
 #
-#   curl -fsSL .../install.sh | bash -s -- [BRAIN_DIR]      # or: ./install.sh [BRAIN_DIR]
-#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.14 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
+#   bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh) [BRAIN_DIR]
+#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.15 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
+#   ./install.sh --latest-version
 set -euo pipefail
 
-BRAIN="${1:-$PWD}"
-BRAIN="$(cd "$BRAIN" && pwd)"
 KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}"
-TAG="${RC_BRAIN_KIT_TAG:-v0.1.14}"
+TAG="${RC_BRAIN_KIT_TAG:-v0.1.15}"
 REPO="https://github.com/rootcause-org/rootcause-brain-skills"
+LATEST_TAG_ENDPOINT="https://api.github.com/repos/rootcause-org/rootcause-brain-skills/git/matching-refs/tags/v"
 KIT_OVERRIDE="${RC_BRAIN_KIT+x}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+  cat <<EOF
+usage: install.sh [--tag vX.Y.Z] [BRAIN_DIR]
+       install.sh --latest-version
+
+No BRAIN_DIR: auto-detect the current brain checkout from \$PWD or its parents.
+Outside a brain checkout, pass BRAIN_DIR explicitly.
+EOF
+}
+
+latest_tag() {
+  ENDPOINT="$LATEST_TAG_ENDPOINT" python3 - <<'PY'
+import json
+import os
+import re
+import sys
+import urllib.request
+
+url = os.environ["ENDPOINT"]
+try:
+    with urllib.request.urlopen(url, timeout=10) as response:
+        refs = json.load(response)
+except Exception as exc:
+    print(f"error: could not fetch {url}: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+tags = []
+for item in refs:
+    tag = item.get("ref", "").rsplit("/", 1)[-1]
+    if re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+        tags.append(tag)
+
+if not tags:
+    print(f"error: no semver tags found at {url}", file=sys.stderr)
+    sys.exit(1)
+
+def version_key(tag):
+    return tuple(int(part) for part in tag[1:].split("."))
+
+print(max(tags, key=version_key))
+PY
+}
+
+BRAIN_ARG=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --latest-version|--print-latest-version)
+      latest_tag
+      exit 0
+      ;;
+    --tag)
+      TAG="${2:?--tag needs vX.Y.Z}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -*)
+      echo "error: unknown flag: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+    *)
+      if [ -n "$BRAIN_ARG" ]; then
+        echo "error: expected at most one BRAIN_DIR" >&2
+        usage >&2
+        exit 1
+      fi
+      BRAIN_ARG="$1"
+      shift
+      ;;
+  esac
+done
+
+is_brain_dir() {
+  local dir="$1"
+  [ -d "$dir/skills" ] || [ -d "$dir/playbooks" ] || [ -f "$dir/projection.yaml" ] || [ -f "$dir/.rootcause.toml" ]
+}
+
+find_brain_dir() {
+  local dir
+  dir="$(cd "${1:-$PWD}" && pwd)"
+  while :; do
+    if is_brain_dir "$dir"; then
+      echo "$dir"
+      return 0
+    fi
+    [ "$dir" = "/" ] && return 1
+    dir="$(dirname "$dir")"
+  done
+}
+
+if [ -n "$BRAIN_ARG" ]; then
+  BRAIN="$(cd "$BRAIN_ARG" && pwd)"
+else
+  BRAIN="$(find_brain_dir "$PWD" || true)"
+fi
+
+if [ -z "${BRAIN:-}" ]; then
+  echo "error: not inside a brain checkout; pass BRAIN_DIR explicitly" >&2
+  usage >&2
+  exit 1
+fi
 
 # Sanity-check this is a brain checkout. Accept all layouts: legacy (skills/), the projection-based
 # PROJECT layout (playbooks/ + projection.yaml), and a nested TENANT brain — which holds only a free-form
 # NL delta + sealed .env now (its values live in the rootcause DB record, no tenant.json), so its marker
 # is the committed .rootcause.toml (project∪tenant binding).
-[ -d "$BRAIN/skills" ] || [ -d "$BRAIN/playbooks" ] || [ -f "$BRAIN/projection.yaml" ] || [ -f "$BRAIN/.rootcause.toml" ] || {
+is_brain_dir "$BRAIN" || {
   echo "error: $BRAIN has no skills/ or playbooks/ or projection.yaml or .rootcause.toml — not a brain checkout?" >&2; exit 1; }
 
 # 1. One pinned clone on disk (shared by every brain). Pin the shared clone to a tag, never float main.
@@ -37,13 +142,37 @@ if [ -n "$KIT_OVERRIDE" ] && [ -d "$KIT" ] && [ "$(cd "$KIT" && pwd)" = "$SCRIPT
   echo "kit: using RC_BRAIN_KIT=$KIT"
 elif [ -d "$KIT/.git" ]; then
   echo "kit: updating $KIT -> $TAG"
-  git -C "$KIT" fetch -q --tags origin || true
-  git -C "$KIT" checkout -q "$TAG" || echo "  (tag $TAG not found; using current checkout)" >&2
+  if ! git -C "$KIT" fetch -q --tags origin; then
+    if git -C "$KIT" rev-parse -q --verify "$TAG^{commit}" >/dev/null; then
+      echo "  (warning: fetch failed; using already-local $TAG)" >&2
+    else
+      echo "error: could not fetch tags and $TAG is not available locally" >&2
+      exit 1
+    fi
+  fi
+  git -C "$KIT" checkout -q "$TAG" || {
+    echo "error: tag $TAG not found in $KIT" >&2
+    exit 1
+  }
+  INSTALLED_TAG="$(git -C "$KIT" describe --tags --exact-match 2>/dev/null || true)"
+  if [ "$INSTALLED_TAG" != "$TAG" ]; then
+    echo "error: expected $KIT to be at $TAG, got ${INSTALLED_TAG:-non-tag checkout}" >&2
+    exit 1
+  fi
 elif [ -d "$KIT/skills" ]; then
   echo "kit: using existing non-git kit at $KIT"
 else
   echo "kit: cloning $REPO@$TAG -> $KIT"
-  git clone -q --branch "$TAG" --depth 1 "$REPO" "$KIT"
+  git clone -q "$REPO" "$KIT"
+  git -C "$KIT" checkout -q "$TAG" || {
+    echo "error: tag $TAG not found in $KIT" >&2
+    exit 1
+  }
+  INSTALLED_TAG="$(git -C "$KIT" describe --tags --exact-match 2>/dev/null || true)"
+  if [ "$INSTALLED_TAG" != "$TAG" ]; then
+    echo "error: expected $KIT to be at $TAG, got ${INSTALLED_TAG:-non-tag checkout}" >&2
+    exit 1
+  fi
 fi
 
 # 2. Gitignored symlinks into the brain: every shipped skill at the standard discovery paths.

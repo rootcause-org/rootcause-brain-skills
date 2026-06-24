@@ -22,13 +22,17 @@ commit anything to the brain or reach `/brain`.
 
 **A — Local, gitignored (recommended; any agent).**
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/v0.1.14/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh)
 ```
 Clones the kit once to `~/.rootcause-brain-skills` and symlinks every skill into this brain's
 gitignored `.agents/skills/<name>` (Codex auto-discovers) + `.claude/skills/<name>` (Claude Code).
 Engine then at
-`SKILL="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/skills/brain-dev"`. Update: re-run the installer
-(or, to release + update every local brain at once, the maintainer's standard flow `./refresh-brains.sh`).
+`SKILL="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/skills/brain-dev"`. With no `BRAIN_DIR`, the
+installer auto-detects the current brain from `$PWD` or its parents; from elsewhere, pass the brain
+path. Update: re-run the same moving `main/install.sh` command. Check newest tag:
+`bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh) --latest-version`.
+To release + update every local brain at once, use the maintainer's standard flow
+`./refresh-brains.sh`.
 
 **B — Claude Code plugin (user scope).** `/plugin marketplace add rootcause-org/rootcause-brain-skills`
 then `/plugin install brain-dev` (update: `/plugin marketplace update`). Engine at

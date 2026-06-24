@@ -223,6 +223,26 @@ host-owned `rootcause` commands, not this read-only local engine). The lean play
 action-iteration gotchas (digest re-propose, push-only brain, the two feedback modes), is here:
 [ship-and-verify.md](ship-and-verify.md).
 
+## Keep the installed skill current
+
+These skills do not auto-update inside existing local, Codex, or Claude installs. For the local
+gitignored install, update one brain by running the moving installer URL from the brain root or any
+subdirectory inside it:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh)
+```
+
+From outside the brain, pass the brain path. To check the newest released tag without installing:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh) --latest-version
+```
+
+For plugin installs, update explicitly: Claude Code `/plugin marketplace update`; Codex
+`codex plugin marketplace upgrade`. The dedicated `brain-dev-upgrade` skill carries the short
+upgrade playbook.
+
 ## Reaching the database — the `lib` way (no raw DSNs)
 
 A brain script reads the customer DB **only through `lib.db`** — never by reading a `*_DSN` env var

@@ -23,7 +23,7 @@ every skill is symlinked into the brain's gitignored `.agents/skills/<name>` (Co
 
 ```bash
 cd ~/code/rootcause-org/rootcause-brain-<project>
-bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/v0.1.14/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh)
 # then, from the brain root — the engine ships inside the skill:
 SKILL="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/skills/brain-dev"
 uv run "$SKILL/scripts/brain_run.py" --brief        # map the brain
@@ -31,8 +31,16 @@ uv run "$SKILL/scripts/brain_test.py" --live        # run the tiers (read-only p
 ```
 
 `install.sh` clones the kit once to `~/.rootcause-brain-skills` (override with `RC_BRAIN_KIT` /
-`RC_BRAIN_KIT_TAG`), symlinks all shipped skills in, and appends the ignore rules. To update **one** brain,
-re-run it. To cut a release and update **every** local brain at once, use the standard flow
+`RC_BRAIN_KIT_TAG`), symlinks all shipped skills in, and appends the ignore rules. With no `BRAIN_DIR`
+it auto-detects the current brain from `$PWD` or its parents; from elsewhere, pass the brain path. To
+update **one** brain, re-run the same moving `main/install.sh` command. To check the newest released
+tag without installing:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh) --latest-version
+```
+
+To cut a release and update **every** local brain at once, use the standard flow
 [`./refresh-brains.sh`](refresh-brains.sh) (see [RELEASING.md](RELEASING.md)).
 
 **B — Claude Code plugin (user scope).**
@@ -85,6 +93,7 @@ fixtures**, under `skills/<name>/`.)
 |---|---|
 | `skills/brain-dev/SKILL.md` | Local engine skill: brief → run a grounding script / test tiers → report, in `uv` or `docker` mode. |
 | `skills/brain-dev/scripts/brain_env.py` · `brain_run.py` · `brain_test.py` | The engine, inside the skill — shared core + run one script + the pytest tiers; both modes, brain-dir-relative. |
+| `skills/brain-dev-upgrade/SKILL.md` | Update/check the installed local kit and explain Codex/Claude plugin update commands. |
 | `skills/observability/SKILL.md` | Watch & triage this project's real prod runs with the `rc` CLI (trigger+verify, inspect a run, health, patterns, thread). Read-only over the public API; OAuth-scoped to your project. |
 | `skills/brain-debug/SKILL.md` | Dump/replay one prod run through `brain_dump.py`, then drill the generated JSONL selectively. |
 | `skills/rc-run` · `rc-inspect` · `rc-health` · `rc-fleet` · `rc-thread` | Native Codex/Claude skills for the former slash-command workflows. |
@@ -100,12 +109,12 @@ fixtures**, under `skills/<name>/`.)
 
 The plugin versions, the `rootcause-runtime` pin, the workspace image tag, and rootcause's prod
 Dockerfile pin **move together** so local and prod can't diverge — one bump point, see
-[RELEASING.md](RELEASING.md). Current line: **`v0.1.14`**.
+[RELEASING.md](RELEASING.md). Current line: **`v0.1.15`**.
 
 - `lib` dependency (brain scripts + CI):
-  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.14#subdirectory=runtime`
+  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.15#subdirectory=runtime`
   — **always pin a tag, never float `main`** (a push would silently break green local tests).
-- workspace image: `ghcr.io/rootcause-org/workspace:v0.1.14`.
+- workspace image: `ghcr.io/rootcause-org/workspace:v0.1.15`.
 
 ## Develop on the kit itself
 
