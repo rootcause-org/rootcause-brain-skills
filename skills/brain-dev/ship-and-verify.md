@@ -177,6 +177,8 @@ You're looking for `action_id=<id>` with sane `params`. (A run **proposes**; it 
 > shows whether (and with what params) the run reached for the action. See the
 > [brain-dev test-run loop](SKILL.md#test-a-brain-change-on-real-prod-infra--without-pushing-main-rc-ask--brain_dumppy)
 > and [`rc run <id> --events`](../../docs/rc-cli.md) for the operator-free read path.
+> With a superadmin/all-projects token, keep the profile explicit and select the project on submit:
+> `rc --profile default ask --project <project> --brain-ref dev/x "<symptom>"`.
 
 **Mode B — does the script actually work end-to-end against prod's gem?** Take the `action_runs.id`
 from Mode A and execute it headlessly (same confirm→execute POST the reviewer's email button fires):

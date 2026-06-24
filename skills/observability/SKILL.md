@@ -1,14 +1,15 @@
 ---
 name: observability
-description: Watch and triage your project's rootcause runs from inside the brain — trigger and verify a run, inspect one run by UUID, spot rotting mirrors / dead-letters, find recurring failures, and explain why a thread got no draft. Uses the `rc` CLI over the public API (OAuth token, no operator/SSM access); scope is automatic — your token only sees your project. Use when asked "did my brain change work?", "is anything broken?", "what keeps failing?", or "why no reply for this email?".
+description: Watch and triage your project's rootcause runs from inside the brain — trigger and verify a run, inspect one run by UUID, spot rotting mirrors / dead-letters, find recurring failures, and explain why a thread got no draft. Uses the `rc` CLI over the public API (OAuth token, no operator/SSM access); project-token scope is automatic, while all-projects admin tokens pass --project. Use when asked "did my brain change work?", "is anything broken?", "what keeps failing?", or "why no reply for this email?".
 ---
 
 # observability — watch your project's runs with `rc`
 
 The [`rc` CLI](../../docs/rc-cli.md) is your project's self-service window into its own rootcause runs.
 Everything here is **read-only over the public `/api/v1`** with your `rc login` OAuth token — **no
-operator/SSM access**. **Scope is automatic:** your token only ever sees your own project, so no command
-takes a project arg. **Every command has `-o json`** for scripting.
+operator/SSM access**. **Scope is automatic for a project token:** your token only ever sees its own
+project. With a superadmin/all-projects token, use `--profile default --project <project>` for
+per-project commands such as `rc ask`. **Every command has `-o json`** for scripting.
 
 One short playbook per question. Start with the one that matches; each links the deeper command doc.
 

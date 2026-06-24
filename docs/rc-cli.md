@@ -19,6 +19,7 @@ token sees the whole fleet — the SAME commands serve both.
 ```bash
 rc ask "<customer-style question>"      # trigger a REAL prod run, wait for the answer; prints the run_id   (POST /api/v1/runs)
 rc ask "<q>" --brain-ref dev/x          # …against a pushed dev/* branch — NO main push, main stays live
+rc --profile default ask --project dentai "<q>"  # all-projects admin token: select a project explicitly
 rc run <id>                     # one run, high level: status, category, draft?/note?, cost, duration (+ kind/outcome/turns/bash/created/finished/trace)
 rc run <id> --events            # full detail: per-event trace — bash command + stdout/stderr, exit code, timing
 rc run <id> --brain-diff        # the journal commit this run wrote to the brain (SHA + files + diff)  (GET …/brain-diff)
@@ -40,9 +41,10 @@ rc whoami                       # which project/tenant will rc hit from here, an
 ```
 
 - **Scope is automatic, and it's the audience switch.** Your token only sees its own project (a global
-  admin's all-projects token sees the fleet) — `rc fleet` / `rc patterns` / `rc health` need no project
-  arg, and a project-scoped run-UUID lookup 404s other projects' runs (no existence leak). `rc whoami`
-  shows the resolved scope.
+  admin's all-projects token sees the fleet). In a brain checkout, the brain marker selects the default
+  profile/project; with an all-projects token, use `--profile default --project <id-or-name>` for
+  per-project commands like `rc ask`/`rc status`, or `--all` for fleet digests. A project-scoped run-UUID
+  lookup 404s other projects' runs (no existence leak). `rc whoami` shows the resolved local binding.
 - **Every command has `-o json`** for scripting (`rc runs -o json | jq …`); the thin endpoints return
   raw rows, so `-o json` is a verbatim passthrough you can roll up yourself.
 
@@ -82,6 +84,16 @@ base_url:  ROOTCAUSE_BASE_URL > .rootcause.toml base_url > [profiles.<name>] bas
 
 `rc whoami` shows what it resolved (profile · project · tenant · signed-in?) — locally, no server call.
 `rc env pull` / `ask` / `run` all honor the same binding.
+
+`--project <id-or-name>` is **not** a token/profile selector. It is a server-side `?project=` selector
+for supported endpoints. Use it with an all-projects admin profile when you want to act on one project
+from outside its brain checkout, or from inside a brain while forcing `--profile default`:
+
+```bash
+rc --profile default ask --project dentai --tenant belgium-staging "Run the real loop for this question"
+```
+
+A pinned project token ignores `--project` server-side; it cannot widen to another project.
 
 **Onboard a brain (incl. an external customer who just cloned):**
 

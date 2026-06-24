@@ -163,13 +163,16 @@ gateway, KB tenant-scoping). That loop is host code in `rootcause` and — by th
 — is **not** vendored here; running it locally would recreate the lib-drift trap as *loop-drift* (a
 green local loop against a stale copy is a false green). So the high-fidelity loop test is to run on
 **real prod infra against a pushed `dev/*` branch**, then dump the run here. This needs **no operator
-/ SSM access** — only the [`rc` CLI](../../docs/rc-cli.md) and this brain's API key.
+/ SSM access** — only the [`rc` CLI](../../docs/rc-cli.md) and an OAuth token from `rc login`.
 
 > **`rc` auto-targets the brain you're in.** A brain commits a `.rootcause.toml` (project + base_url),
 > so `rc` run from inside the checkout hits *this* project — no `--profile`, no env export. One-time:
 > `rc login` (OAuth browser sign-in; the token is stored 0600 under `~/.config/rootcause`, no key in any
 > file); confirm with `rc whoami`. See
 > [rc-cli.md → Auth](../../docs/rc-cli.md#auth--oauth-and-the-brain-checkout-selects-the-project-no---profile-no-env-wrangling).
+> If you're using a superadmin/all-projects token instead of the brain's project profile, keep that
+> profile explicit and select the project on the request:
+> `rc --profile default ask --project <project> [--tenant <slug>] "<question>"`.
 
 ```bash
 # 1) trigger a run from a customer-style question (against main HEAD):
