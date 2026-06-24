@@ -520,7 +520,7 @@ def _main(argv=None) -> int:
     if not args.sql:
         p.error("provide SQL, or --list")
     rows = query(args.sql, db=args.db, timeout_ms=_parse_duration_ms(args.timeout))
-    _output.emit(_output.render(rows, args.format), label="db")
+    _output.emit_rows(rows, args.format, label="db")
     return 0
 
 

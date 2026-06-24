@@ -7,9 +7,12 @@ The live paths (real query / real Insights call) are covered by the host's Go wo
 tests; here we lock down the logic that decides *what* gets run.
 """
 
+import io
 import os
+import re
 import sys
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -328,6 +331,17 @@ class DurationParsing(unittest.TestCase):
 class Rendering(unittest.TestCase):
     rows = [{"id": 1, "email": "a@b.com", "meta": {"k": "v"}}, {"id": 2, "email": "c@d.com", "meta": None}]
 
+    def _capture_emit_rows(self, rows, fmt="csv", label="t"):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            _output.emit_rows(rows, fmt, label=label)
+        return buf.getvalue()
+
+    def _spilled_path(self, preview: str) -> Path:
+        m = re.search(r"saved to (\S+) \(", preview)
+        self.assertIsNotNone(m, preview)
+        return Path(m.group(1))
+
     def test_csv(self):
         out = _output.render(self.rows, "csv")
         self.assertIn("id,email,meta", out)
@@ -346,15 +360,66 @@ class Rendering(unittest.TestCase):
     def test_empty(self):
         self.assertEqual(_output.render([], "csv"), "")
 
-    def test_spill(self):
-        with mock.patch.object(_output, "SPILL_BYTES", 10):
-            import io
-            from contextlib import redirect_stdout
+    def test_emit_rows_small_inline_no_spill(self):
+        out = self._capture_emit_rows(self.rows, "csv")
+        self.assertIn("id,email,meta", out)
+        self.assertIn("a@b.com", out)
+        self.assertNotIn("saved to", out)
 
-            buf = io.StringIO()
-            with redirect_stdout(buf):
-                _output.emit("x" * 100, label="t")
-            self.assertIn("spilled to", buf.getvalue())
+    def test_emit_rows_large_spills_with_structural_preview(self):
+        rows = [{"id": i, "email": f"user{i}@example.com", "payload": "x" * 300} for i in range(30)]
+        rendered = _output.render(rows, "csv")
+        self.assertGreater(len(rendered.encode()), _output.SPILL_BYTES)
+
+        preview = self._capture_emit_rows(rows, "csv", label="rows")
+        path = self._spilled_path(preview)
+
+        self.assertIn("30 rows × 3 cols", preview)
+        self.assertIn("columns: id, email, payload", preview)
+        self.assertIn("query it:", preview)
+        self.assertIn("awk -F','", preview)
+        self.assertLess(len(preview.encode()), 6000)
+        self.assertEqual(path.suffix, ".csv")
+        self.assertTrue(path.exists())
+        self.assertEqual(path.read_bytes().decode("utf-8"), rendered)
+
+    def test_spilled_file_is_complete_not_preview_sample(self):
+        rows = [{"id": i, "payload": "x" * 300} for i in range(40)]
+        preview = self._capture_emit_rows(rows, "csv", label="complete")
+        path = self._spilled_path(preview)
+
+        self.assertEqual(len(path.read_text(encoding="utf-8").splitlines()), len(rows) + 1)
+
+    def test_emit_rows_spills_between_new_and_old_thresholds(self):
+        rows = [{"id": i, "payload": "x" * 225} for i in range(25)]
+        rendered_bytes = len(_output.render(rows, "csv").encode())
+        self.assertGreater(rendered_bytes, _output.SPILL_BYTES)
+        self.assertLess(rendered_bytes, 50_000)
+
+        preview = self._capture_emit_rows(rows, "csv", label="threshold")
+
+        self.assertIn("saved to", preview)
+        self.assertLess(len(preview.encode()), 6000)
+
+    def test_wide_json_cell_hard_truncates_preview(self):
+        rows = [{"id": 1, "payload": "x" * 20_000}]
+        preview = self._capture_emit_rows(rows, "json", label="wide")
+
+        self.assertIn("1 rows × 2 cols", preview)
+        self.assertIn("jq '.[] | select(...)'", preview)
+        self.assertIn("truncated", preview)
+        self.assertLess(len(preview.encode()), 6000)
+
+    def test_emit_text_small_and_large_back_compat(self):
+        small = io.StringIO()
+        with redirect_stdout(small):
+            _output.emit("hello", label="text")
+        self.assertEqual(small.getvalue(), "hello\n")
+
+        large = io.StringIO()
+        with redirect_stdout(large):
+            _output.emit("x" * (_output.SPILL_BYTES + 1), label="text")
+        self.assertIn("spilled to", large.getvalue())
 
 
 class CloudWatchTimeRange(unittest.TestCase):

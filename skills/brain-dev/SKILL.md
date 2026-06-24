@@ -275,6 +275,11 @@ of that silently drops those guarantees.
   `db=` defaults) — e.g. kampadmin's `skills/records/scripts/ka.py` `rows()`/`row_one()`, momentum's
   `scripts/_db.py`. Copy that shape; don't write a new connector.
 - **`%s` placeholders + a params list, never f-string SQL** — `lib.db` passes them through to psycopg.
+- **Large `lib.db` / `lib.cloudwatch` results are row-aware before the host spill.** The CLIs now spill
+  large rendered rows to `/tmp/rootcause-out/...` before bash would spill them, and print a structural
+  preview instead: row/column counts, column names, first rows, and query hints. Use that preview as
+  the map, then inspect the saved path with targeted tools (`jq`, `awk`, `rg`, `sed -n`, `wc -l`).
+  Do not `cat` or re-print the whole spill file; it will just trigger another blunt host bash spill.
 
 ## Gotchas
 

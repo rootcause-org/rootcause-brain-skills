@@ -189,7 +189,7 @@ def _main(argv=None) -> int:
         )
     else:
         p.error("give a log group + query, or use --list / --tail / --search")
-    _output.emit(_output.render(rows, args.format), label="cw")
+    _output.emit_rows(rows, args.format, label="cw")
     return 0
 
 
