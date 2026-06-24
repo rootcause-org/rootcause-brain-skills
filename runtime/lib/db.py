@@ -4,7 +4,9 @@ A project usually has SEVERAL databases — Momentum Tools has powertools / ruby
 injected as its own ``*_DSN`` env var. Pick one with the ``db`` argument, which accepts a short
 name (``"powertools"``), the exact env-var name (``"MOMENTUM_POWERTOOLS_DSN"``), or a raw DSN.
 With a single database configured (or ``PG_DSN`` set) ``db`` may be omitted. ``databases()``
-lists what this run has.
+lists what this run has. ``--list`` (or a bad ``db=``) shows each database's purpose — the
+descriptions come from project metadata in the ``RC_DB_DESCRIPTIONS`` env var (a JSON object keyed
+by the exact DSN env-var name), so the agent learns which DB is which without trial-and-error.
 
 Read-only by provisioning; this module adds a belt-and-suspenders ``READ ONLY``
 transaction plus a ``statement_timeout`` so a stray write fails loudly and a runaway query can't
@@ -123,6 +125,54 @@ def databases() -> list[str]:
     )
 
 
+def _short_name(env: str) -> str:
+    """Short name for a DSN env var = its trailing segment, lowercased.
+
+    ``MOMENTUM_POWERTOOLS_DSN`` → ``powertools``; ``MOMENTUM_ELSA_REPLICA_DSN`` → ``replica``. The
+    single source for both the user-facing listing and `_resolve_dsn`'s exact short-name match
+    (which compares case-consistently, uppercased)."""
+    return env[: -len("_DSN")].rsplit("_", 1)[-1].lower()
+
+
+def _descriptions() -> dict[str, str]:
+    """Parse ``RC_DB_DESCRIPTIONS`` (JSON: exact DSN env-var name → one-sentence purpose).
+
+    Best-effort metadata, host-filtered to this run's DSNs; absent/blank/malformed → ``{}`` (never
+    raise — a bad description must never break a query)."""
+    import json
+
+    raw = os.environ.get("RC_DB_DESCRIPTIONS")
+    if not raw or not raw.strip():
+        return {}
+    try:
+        val = json.loads(raw)
+    except (ValueError, TypeError):
+        return {}
+    if not isinstance(val, dict):
+        return {}
+    return {str(k): str(v) for k, v in val.items()}
+
+
+def _format_catalog() -> str:
+    """Human listing of this run's databases: short name, exact env var, and purpose when known.
+
+    One line each, ``  - <short>  <ENV_VAR> — <description>`` (the ``— …`` omitted when no
+    description); ``  (none configured)`` when there are none."""
+    avail = databases()
+    if not avail:
+        return "  (none configured)"
+    descs = _descriptions()
+    width = max(len(_short_name(c)) for c in avail)
+    lines = []
+    for env in avail:
+        line = f"  - {_short_name(env):<{width}}  {env}"
+        desc = descs.get(env)
+        if desc:
+            line += f" — {desc}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def _resolve_dsn(db: str | None) -> str:
     """Resolve ``db`` to a DSN: raw DSN → exact env name → exact short name → substring fallback.
 
@@ -142,15 +192,15 @@ def _resolve_dsn(db: str | None) -> str:
         # Exact short name: match the env var's trailing segment exactly — "powertools" →
         # MOMENTUM_POWERTOOLS_DSN, "elsa" → MOMENTUM_ELSA_DSN (NOT MOMENTUM_ELSA_REPLICA_DSN, whose
         # trailing segment is "replica"). This is the intended path and wins over any substring, so a
-        # short name can't silently bind a longer, differently-named database.
-        def _trailing(c: str) -> str:
-            return c[: -len("_DSN")].rsplit("_", 1)[-1]  # MOMENTUM_POWERTOOLS_DSN → POWERTOOLS
-
-        named = [c for c in avail if c == key or c == f"{key}_DSN" or _trailing(c) == key]
+        # short name can't silently bind a longer, differently-named database. `_short_name` lowercases,
+        # so compare uppercased to stay consistent with `key`.
+        named = [c for c in avail if c == key or c == f"{key}_DSN" or _short_name(c).upper() == key]
         if len(named) == 1:
             return os.environ[named[0]]
         if len(named) > 1:
-            raise RuntimeError(f"db={db!r} is ambiguous (matches {named}); use an exact name from databases()")
+            raise RuntimeError(
+                f"db={db!r} is ambiguous (matches {named}); pick an exact one:\n{_format_catalog()}"
+            )
         # Substring fallback — convenient but lossy, so warn: it can bind a name the caller didn't
         # mean (e.g. "elsa" → MOMENTUM_ELSA_REPLICA_DSN). Ambiguity here still raises.
         sub = [c for c in avail if key in c]
@@ -164,8 +214,10 @@ def _resolve_dsn(db: str | None) -> str:
             )
             return os.environ[sub[0]]
         if len(sub) > 1:
-            raise RuntimeError(f"db={db!r} is ambiguous (matches {sub}); use an exact name from databases()")
-        raise RuntimeError(f"no database matches db={db!r}; available: {avail or 'none'}")
+            raise RuntimeError(
+                f"db={db!r} is ambiguous (matches {sub}); pick an exact one:\n{_format_catalog()}"
+            )
+        raise RuntimeError(f"unknown db={db!r}. Valid databases:\n{_format_catalog()}")
     if os.environ.get("PG_DSN"):
         return os.environ["PG_DSN"]
     avail = databases()
@@ -173,7 +225,32 @@ def _resolve_dsn(db: str | None) -> str:
         return os.environ[avail[0]]
     if not avail:
         raise RuntimeError("no project database configured for this run (no *_DSN env var set)")
-    raise RuntimeError(f"multiple databases available {avail}; pass db=... to pick one")
+    raise RuntimeError(
+        "multiple databases available — pass db= to pick one (short name, env var, or raw DSN):\n"
+        f"{_format_catalog()}"
+    )
+
+
+def _undefined_hint(exc) -> str:
+    """Guidance suffix for an undefined-column/table error — the data-scoping footgun, defused.
+
+    On a scoped run the agent queries the per-run ``scope_<id>`` **views**, so a column (or table)
+    the project's data-scoping projected away simply "does not exist" — at the wire level it's
+    indistinguishable from a typo, and the bare Postgres error tempts the LLM to rewrite the whole
+    query from scratch. Instead, point it at the introspection helper so it drops just the one
+    unavailable name and re-runs. Best-effort: prepends Postgres's own HINT when present."""
+    parts = []
+    diag = getattr(exc, "diag", None)
+    pg_hint = getattr(diag, "message_hint", None) if diag is not None else None
+    if pg_hint:
+        parts.append(pg_hint)
+    parts.append(
+        "This column/table may be intentionally hidden by this project's data-scoping — you query "
+        "projected views, not the base tables, so a hidden column reads as 'does not exist' (NOT "
+        "necessarily a typo). Run lib.db.columns('<table>') to list exactly what's queryable, then "
+        "drop the unavailable name and re-run — no need to rewrite the whole query."
+    )
+    return " ".join(parts)
 
 
 def query(
@@ -186,7 +263,9 @@ def query(
 
     Opens a fresh read-only connection per call (the container is disposable, so pooling buys
     nothing). Use ``%s`` placeholders with ``params`` — never string-format input into ``sql``.
-    ``db`` selects the database (see module docstring); ``timeout_ms`` caps the statement.
+    ``db`` selects the database (see module docstring); ``timeout_ms`` caps the statement. An
+    undefined column/table raises with a scoping-aware hint (see `_undefined_hint`) so one
+    projected-away column doesn't send the agent back to a blank query.
     """
     import psycopg
 
@@ -197,7 +276,12 @@ def query(
         with conn.cursor() as cur:
             if timeout_ms:
                 cur.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
-            cur.execute(sql, params or [])
+            try:
+                cur.execute(sql, params or [])
+            except (psycopg.errors.UndefinedColumn, psycopg.errors.UndefinedTable) as e:
+                # A projected-away column/table reads as "does not exist"; enrich so the agent fixes
+                # the one bad name instead of rewriting. `from e` keeps the original traceback.
+                raise RuntimeError(f"{e}\n\n{_undefined_hint(e)}") from e
             if cur.description is None:
                 return []
             cols = cur.description
@@ -287,8 +371,7 @@ def _main(argv=None) -> int:
     args = p.parse_args(argv)
 
     if args.list:
-        for name in databases():
-            print(name)
+        print(_format_catalog())
         return 0
     if not args.sql:
         p.error("provide SQL, or --list")

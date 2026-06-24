@@ -107,6 +107,93 @@ class DSNResolution(unittest.TestCase):
             db._resolve_dsn(None)
 
 
+class DatabaseCatalog(unittest.TestCase):
+    """Listing + error messages must surface the valid SHORT names and each DB's purpose
+    (RC_DB_DESCRIPTIONS), so a weak model learns which DB is which at the moment of confusion."""
+
+    def setUp(self):
+        self._clean = {
+            k: v
+            for k, v in os.environ.items()
+            if k.endswith("_DSN") or k in ("PG_DSN", "DATABASE_URL", "RC_DB_DESCRIPTIONS")
+        }
+        for k in self._clean:
+            del os.environ[k]
+
+    def tearDown(self):
+        for k in list(os.environ):
+            if k.endswith("_DSN") or k in ("PG_DSN", "DATABASE_URL", "RC_DB_DESCRIPTIONS"):
+                del os.environ[k]
+        os.environ.update(self._clean)
+
+    def test_descriptions_parses_valid_json(self):
+        os.environ["RC_DB_DESCRIPTIONS"] = (
+            '{"MOMENTUM_RUBY_DSN":"Subscriptions and plans.","MOMENTUM_POWERTOOLS_DSN":"Credits metering."}'
+        )
+        self.assertEqual(
+            db._descriptions(),
+            {
+                "MOMENTUM_RUBY_DSN": "Subscriptions and plans.",
+                "MOMENTUM_POWERTOOLS_DSN": "Credits metering.",
+            },
+        )
+
+    def test_descriptions_absent_blank_malformed_return_empty(self):
+        self.assertEqual(db._descriptions(), {})  # absent
+        os.environ["RC_DB_DESCRIPTIONS"] = "   "
+        self.assertEqual(db._descriptions(), {})  # blank
+        os.environ["RC_DB_DESCRIPTIONS"] = "{not json"
+        self.assertEqual(db._descriptions(), {})  # malformed
+        os.environ["RC_DB_DESCRIPTIONS"] = "[1, 2, 3]"
+        self.assertEqual(db._descriptions(), {})  # valid JSON, wrong shape
+
+    def test_format_catalog_includes_description_and_omits_dash_when_absent(self):
+        os.environ["MOMENTUM_RUBY_DSN"] = "postgres://ruby"
+        os.environ["MOMENTUM_POWERTOOLS_DSN"] = "postgres://pt"
+        os.environ["RC_DB_DESCRIPTIONS"] = '{"MOMENTUM_RUBY_DSN":"Subscriptions, plans, customers."}'
+        cat = db._format_catalog()
+        # ruby has a description → the em-dash + text is present on its line.
+        ruby_line = next(ln for ln in cat.splitlines() if "MOMENTUM_RUBY_DSN" in ln)
+        self.assertIn("ruby", ruby_line)
+        self.assertIn("— Subscriptions, plans, customers.", ruby_line)
+        # powertools has none → no dash on its line.
+        pt_line = next(ln for ln in cat.splitlines() if "MOMENTUM_POWERTOOLS_DSN" in ln)
+        self.assertIn("powertools", pt_line)
+        self.assertNotIn("—", pt_line)
+
+    def test_format_catalog_none_configured(self):
+        self.assertEqual(db._format_catalog(), "  (none configured)")
+
+    def test_bad_db_lists_short_names_and_descriptions(self):
+        os.environ["MOMENTUM_RUBY_DSN"] = "postgres://ruby"
+        os.environ["MOMENTUM_POWERTOOLS_DSN"] = "postgres://pt"
+        os.environ["RC_DB_DESCRIPTIONS"] = (
+            '{"MOMENTUM_RUBY_DSN":"Subscriptions and plans.","MOMENTUM_POWERTOOLS_DSN":"Credits metering."}'
+        )
+        with self.assertRaises(RuntimeError) as cm:
+            db._resolve_dsn("nope")
+        msg = str(cm.exception)
+        self.assertIn("ruby", msg)
+        self.assertIn("powertools", msg)
+        self.assertIn("Subscriptions and plans.", msg)
+
+    def test_multi_db_no_pick_lists_catalog_and_does_not_guess(self):
+        os.environ["MOMENTUM_RUBY_DSN"] = "postgres://ruby"
+        os.environ["MOMENTUM_POWERTOOLS_DSN"] = "postgres://pt"
+        os.environ["RC_DB_DESCRIPTIONS"] = (
+            '{"MOMENTUM_RUBY_DSN":"Subscriptions and plans.","MOMENTUM_POWERTOOLS_DSN":"Credits metering."}'
+        )
+        with self.assertRaises(RuntimeError) as cm:
+            db._resolve_dsn(None)  # no db=, several *_DSN, no PG_DSN → must raise, never auto-pick
+        msg = str(cm.exception)
+        self.assertIn("ruby", msg)
+        self.assertIn("powertools", msg)
+        self.assertIn("Credits metering.", msg)
+        # Must not silently bind one of the DSNs.
+        self.assertNotIn("postgres://ruby", msg)
+        self.assertNotIn("postgres://pt", msg)
+
+
 class Introspection(unittest.TestCase):
     """columns / tables_with_column build the right information_schema query and pass db= through."""
 
@@ -141,6 +228,27 @@ class Introspection(unittest.TestCase):
         sql, params = q.call_args.args[0], q.call_args.args[1]
         self.assertIn("current_schema()", sql)
         self.assertEqual(params, [None, "%email%"])
+
+
+class UndefinedHint(unittest.TestCase):
+    """_undefined_hint turns a projected-away column into actionable guidance, not a rewrite-from-scratch."""
+
+    def test_points_at_columns_helper_and_scoping(self):
+        msg = db._undefined_hint(Exception("boom"))  # no .diag → just the guidance
+        self.assertIn("lib.db.columns('<table>')", msg)
+        self.assertIn("data-scoping", msg)
+        self.assertIn("no need to rewrite", msg)
+
+    def test_prepends_postgres_hint_when_present(self):
+        diag = mock.Mock(message_hint="Perhaps you meant to reference the column \"x.email\".")
+        msg = db._undefined_hint(mock.Mock(diag=diag))
+        self.assertTrue(msg.startswith("Perhaps you meant"))
+        self.assertIn("lib.db.columns", msg)  # guidance still appended
+
+    def test_missing_pg_hint_is_omitted(self):
+        diag = mock.Mock(message_hint=None)
+        msg = db._undefined_hint(mock.Mock(diag=diag))
+        self.assertNotIn("None", msg)
 
 
 class DurationParsing(unittest.TestCase):
