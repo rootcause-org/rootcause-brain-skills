@@ -10,7 +10,8 @@ Everything here is **read-only over the public `/api/v1`** with your `rc login` 
 operator/SSM access**. **Scope is automatic in a brain checkout:** `rc` uses the project profile if it
 exists; otherwise it uses the `default` token and sends this brain's project as `?project=`. That means
 a superadmin/all-projects token in `default` can still run plain `rc ask` here. Use explicit `--project`
-only outside a brain checkout or to override it. **Every command has `-o json`** for scripting.
+only outside a brain checkout or to override it. If a RootCause MCP is installed, ignore it unless the
+user explicitly asks for MCP; this skill uses `rc`. **Every command has `-o json`** for scripting.
 
 One short playbook per question. Start with the one that matches; each links the deeper command doc.
 

@@ -7,6 +7,8 @@ description: Check whether a rootcause project is quietly unhealthy using `rc he
 
 Use the `rc` CLI from inside the brain checkout. Scope comes from the logged-in OAuth token and brain
 metadata; no project argument, SSM, or operator access.
+If a RootCause MCP is installed, ignore it unless the user explicitly asks for MCP; this workflow uses
+`rc`.
 
 ## Workflow
 

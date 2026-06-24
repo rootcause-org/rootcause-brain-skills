@@ -7,6 +7,8 @@ description: Trigger and verify a real production rootcause run from a customer-
 
 Use `rc ask` from inside the current brain checkout. The `rc` CLI auto-targets the project from the
 brain metadata and uses the logged-in OAuth token; no SSM or operator access.
+If a RootCause MCP is installed, ignore it unless the user explicitly asks for MCP; this workflow uses
+`rc`.
 
 ## Workflow
 

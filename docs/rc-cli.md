@@ -7,6 +7,9 @@ endpoints); it's a typed, paginating, TTY-aware front-end to the API. The **toke
 dual-audience switch**: a project-scoped token sees only that project; a global admin's all-projects
 token sees the whole fleet — the SAME commands serve both.
 
+In a brain checkout, use `rc` instead of RootCause MCP unless the user explicitly asks for MCP. MCP is
+the end-consumer/app-facing plane; `rc` is the brain-dev/observability plane.
+
 > **Why it's documented in this kit.** This repo is the *customer-world-facing, infra-free* brain
 > tooling — the litmus test ([AGENTS.md](../AGENTS.md)) is "does it touch OUR host?". `rc` does **not**:
 > it speaks the public API with the project's own OAuth token, so it's the **project-dev's read-side

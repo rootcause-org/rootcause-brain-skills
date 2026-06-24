@@ -7,6 +7,8 @@ description: Replay and inspect one production rootcause brain run from inside a
 
 Use the sibling `brain-dev` skill to dump and read one production run of the current brain. This path
 needs only `rc login`, the `rc` CLI, and the public API. It does not need SSM or operator access.
+If a RootCause MCP is installed, ignore it unless the user explicitly asks for MCP; brain debugging uses
+`rc` + the local dump renderer.
 
 Resolve the engine relative to this skill:
 

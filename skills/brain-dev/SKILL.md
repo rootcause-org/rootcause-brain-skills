@@ -15,6 +15,10 @@ without any `rootcause` source.
 on `.` — it reads `./.env`, `./skills/*/scripts/`, `./skills` for tests. No `accounts.yml`, no project
 name, no `code_root`. The engine ships *inside this skill* (`scripts/`), **never copied into the brain**.
 
+**MCP boundary in brain checkouts.** If a RootCause MCP is installed, do **not** use it for brain-dev
+work unless the user explicitly asks for MCP. The MCP is the end-consumer/app-facing plane; brain work
+uses this local engine and the `rc` CLI so scope comes from the checkout + OAuth token.
+
 **Read-only, no side effects** — exactly like a real run. It never writes the brain, never posts a
 callback, never touches our host. Grounding queries run in a `READ ONLY` Postgres transaction.
 

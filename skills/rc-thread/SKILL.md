@@ -7,6 +7,8 @@ description: Trace one rootcause thread or session using `rc thread ID` and expl
 
 Use the `rc` CLI from inside the brain checkout. Scope comes from the logged-in OAuth token and brain
 metadata; no project argument, SSM, or operator access.
+If a RootCause MCP is installed, ignore it unless the user explicitly asks for MCP; this workflow uses
+`rc`.
 
 ## Workflow
 

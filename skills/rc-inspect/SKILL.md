@@ -6,6 +6,8 @@ description: Decompose and triage one production rootcause run by UUID using `rc
 # rc-inspect - triage one prod run
 
 Use the `rc` CLI over the project's OAuth token. This is read-only and triggers no new run.
+If a RootCause MCP is installed, ignore it unless the user explicitly asks for MCP; this workflow uses
+`rc`.
 
 ## Workflow
 
