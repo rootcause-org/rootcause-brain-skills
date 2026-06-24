@@ -11,13 +11,13 @@
 # `.claude/skills/` discovery dirs. One source of truth, per-repo discovery, zero /brain footprint.
 #
 #   curl -fsSL .../install.sh | bash -s -- [BRAIN_DIR]      # or: ./install.sh [BRAIN_DIR]
-#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.13 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
+#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.14 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
 set -euo pipefail
 
 BRAIN="${1:-$PWD}"
 BRAIN="$(cd "$BRAIN" && pwd)"
 KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}"
-TAG="${RC_BRAIN_KIT_TAG:-v0.1.13}"
+TAG="${RC_BRAIN_KIT_TAG:-v0.1.14}"
 REPO="https://github.com/rootcause-org/rootcause-brain-skills"
 KIT_OVERRIDE="${RC_BRAIN_KIT+x}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -51,7 +51,10 @@ If the harness already provides the absolute path of `skills/brain-dev`, use tha
    Use `// ""` for string matching because the `{type:"run"}` header lacks event fields.
 
 5. If the dump exposes a brain bug, fix the brain, not the run. The index's "Files the run read" list
-   points at likely culprit files. Edit there, then push, sync, and re-run per
+   points at likely culprit files. Edit there, verify, and commit.
+
+6. After committing the fix, do not leave publish as an implicit human follow-up. Ask explicitly:
+   `Can I now publish them?` If approved, push/sync/re-run via
    `skills/brain-dev/ship-and-verify.md`.
 
 This skill is read-only unless you pass a question, which intentionally triggers a new test run.

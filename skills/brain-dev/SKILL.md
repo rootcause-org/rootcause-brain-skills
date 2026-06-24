@@ -97,6 +97,12 @@ All commands below use `"$SKILL/scripts/…"`. (`lib` is resolved automatically 
 
 5. **Report** the grounded result, the mode used, and — for a uv-mode result — the fidelity caveat.
 
+6. **After a committed brain change, ask to publish.** Once you have edited, verified, and committed a
+   brain change, do not leave the human to remember the prod step. Ask explicitly:
+   `Can I now publish them?` If approved, run the appropriate publish loop in
+   [ship-and-verify.md](ship-and-verify.md): usually `/rc-brain-ship` for grounding/playbook/tenant
+   changes, or the action loop there for actions.
+
 ## Testing a hosted Python action locally (`brain_action.py`)
 
 The one state-changing plane. A **hosted** Python action (`actions/<id>/{manifest.yaml, script.py,
