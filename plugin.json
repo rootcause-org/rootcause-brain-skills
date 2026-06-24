@@ -1,6 +1,6 @@
 {
   "name": "brain-dev",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Iterate and verify a rootcause project's BRAIN locally — run grounding scripts and the pytest tiers the way the workspace container does, in fast uv mode or faithful docker mode. Brain-dir-relative; no rootcause source needed.",
   "author": { "name": "rootcause" }
 }
