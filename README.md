@@ -1,10 +1,10 @@
 # rootcause-brain-skills
 
-One kit to iterate on a project's **brain** locally and verify it works the way production does. It's
-a **single self-contained skill** (`brain-dev`, engine in its own `scripts/`) that installs
-natively in **Claude Code** *and* **OpenAI Codex** — as a plugin in either, or a local gitignored
-symlink. Plus a pinned Python package (**`rootcause-runtime`**, the `lib` helpers brain scripts
-import). No `rootcause` source needed.
+One kit to iterate on a project's **brain** locally and verify it works the way production does. It is
+a **skill collection** for **Claude Code** and **OpenAI Codex**: `brain-dev` carries the local engine
+in its own `scripts/`, while `brain-debug` and the `rc-*` skills expose the prod-run workflows
+natively in both agents. Plus a pinned Python package (**`rootcause-runtime`**, the `lib` helpers brain
+scripts import). No `rootcause` source needed.
 
 A *brain* is `rootcause-org/rootcause-brain-<project>`: markdown skills + Python grounding scripts that
 do `from lib import db` to read a customer's data read-only. In prod those run in a workspace
@@ -13,13 +13,13 @@ env**.
 
 ## Use it against a brain
 
-Three install paths, one skill — pick by agent. All run read-only; none commit anything to the brain
+Three install paths, same skills — pick by agent. All run read-only; none commit anything to the brain
 or reach `/brain` (see below). After installing, `cd` into the brain (which needs its gitignored
-`./.env`) and invoke the **brain-dev** skill, or call the engine directly.
+`./.env`) and invoke the relevant skill, or call the `brain-dev` engine directly.
 
 **A — Local, per-repo, gitignored (recommended; works with any agent).** One pinned clone on disk;
-the skill is symlinked into the brain's gitignored `.agents/skills/brain-dev` (Codex auto-discovers) +
-`.claude/skills/brain-dev` (Claude Code). Nothing committed.
+every skill is symlinked into the brain's gitignored `.agents/skills/<name>` (Codex auto-discovers) +
+`.claude/skills/<name>` (Claude Code). Nothing committed.
 
 ```bash
 cd ~/code/rootcause-org/rootcause-brain-<project>
@@ -31,7 +31,7 @@ uv run "$SKILL/scripts/brain_test.py" --live        # run the tiers (read-only p
 ```
 
 `install.sh` clones the kit once to `~/.rootcause-brain-skills` (override with `RC_BRAIN_KIT` /
-`RC_BRAIN_KIT_TAG`), symlinks the skill in, and appends the ignore rules. To update **one** brain,
+`RC_BRAIN_KIT_TAG`), symlinks all shipped skills in, and appends the ignore rules. To update **one** brain,
 re-run it. To cut a release and update **every** local brain at once, use the standard flow
 [`./refresh-brains.sh`](refresh-brains.sh) (see [RELEASING.md](RELEASING.md)).
 
@@ -83,10 +83,11 @@ fixtures**, under `skills/<name>/`.)
 
 | Path | What |
 |---|---|
-| `skills/brain-dev/SKILL.md` | The skill: brief → run a grounding script / test tiers → report, in `uv` or `docker` mode. |
+| `skills/brain-dev/SKILL.md` | Local engine skill: brief → run a grounding script / test tiers → report, in `uv` or `docker` mode. |
 | `skills/brain-dev/scripts/brain_env.py` · `brain_run.py` · `brain_test.py` | The engine, inside the skill — shared core + run one script + the pytest tiers; both modes, brain-dir-relative. |
 | `skills/observability/SKILL.md` | Watch & triage this project's real prod runs with the `rc` CLI (trigger+verify, inspect a run, health, patterns, thread). Read-only over the public API; OAuth-scoped to your project. |
-| `commands/` | Slash commands: `/brain-dev`, `/brain-debug`, and the `rc`-driven `/rc-run` · `/rc-inspect` · `/rc-health` · `/rc-fleet` · `/rc-thread`. |
+| `skills/brain-debug/SKILL.md` | Dump/replay one prod run through `brain_dump.py`, then drill the generated JSONL selectively. |
+| `skills/rc-run` · `rc-inspect` · `rc-health` · `rc-fleet` · `rc-thread` | Native Codex/Claude skills for the former slash-command workflows. |
 | `runtime/` | The **`rootcause-runtime`** package (`lib/`: db, stripe, cloudwatch, fs, http, html, livecheck). Canonical home. |
 | `docker/Dockerfile` | The workspace image (installs `rootcause-runtime`); published to ghcr for `docker` mode. |
 | `.claude-plugin/marketplace.json`, `plugin.json` | Claude Code plugin catalog + manifest. |

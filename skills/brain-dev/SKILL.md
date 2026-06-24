@@ -1,6 +1,6 @@
 ---
 name: brain-dev
-description: Iterate on and verify a rootcause project's BRAIN locally — run its grounding scripts (skills/*/scripts/*.py, which do `from lib import db`) and its pytest tiers the way the production workspace container does, without rootcause source. Use when working inside a `rootcause-brain-<project>` checkout to test a grounding script, debug a `from lib import db` import, run the offline/live test tiers, reproduce a run's database grounding read-only, or check a brain change before pushing. Two modes: fast `uv` (inner loop) and faithful `docker` (pre-push gate).
+description: Iterate on and verify a rootcause project's BRAIN locally — run its grounding scripts (skills/*/scripts/*.py, which do `from lib import db`) and its pytest tiers the way the production workspace container does, without rootcause source. Use when working inside a rootcause-brain project checkout to test a grounding script, debug a `from lib import db` import, run the offline/live test tiers, reproduce a run's database grounding read-only, or check a brain change before pushing. Two modes are fast `uv` (inner loop) and faithful `docker` (pre-push gate).
 ---
 
 # brain-dev — run a brain locally, the way prod does

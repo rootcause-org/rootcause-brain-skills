@@ -44,7 +44,7 @@ was retired). Only `db.py`/`logs.py` (true host/SSM access) stay in rootcause.
 
 | Concern | Mechanism | Update |
 |---|---|---|
-| **Skill + engine** | one self-contained skill (`skills/brain-dev/`, engine in its `scripts/`), shipped three ways: Claude Code plugin (`.claude-plugin/marketplace.json`), Codex plugin (`.agents/plugins/marketplace.json` + `.codex-plugin/plugin.json`), local symlink (`install.sh`) | `/plugin marketplace update` · `codex plugin marketplace upgrade` · the local-symlink fleet updates via the standard flow [`./refresh-brains.sh`](refresh-brains.sh) (release + re-run `install.sh` per brain) |
+| **Skills + engine** | a skill collection (`skills/*`), with the engine inside `skills/brain-dev/scripts/`, shipped three ways: Claude Code plugin (`.claude-plugin/marketplace.json`), Codex plugin (`.agents/plugins/marketplace.json` + `.codex-plugin/plugin.json`), local symlink (`install.sh`) | `/plugin marketplace update` · `codex plugin marketplace upgrade` · the local-symlink fleet updates via the standard flow [`./refresh-brains.sh`](refresh-brains.sh) (release + re-run `install.sh` per brain) |
 | **`lib` → `rootcause-runtime`** | pinned Python package, consumed by git tag | bump the tag |
 
 **The trap:** vendoring/copying `lib` here creates *`lib` drift* — a green local test against a stale
@@ -85,15 +85,13 @@ removes its duplicate copy ([docs/migration-rootcause.md](docs/migration-rootcau
 ## Layout
 
 ```
-skills/brain-dev/SKILL.md             # the install-once brain-dev/test skill (self-contained)
+skills/*/SKILL.md                     # install-once skills for local brain dev, run debugging, and rc observability
 skills/brain-dev/scripts/             # ENGINE inside the skill: brain_env.py · brain_run.py · brain_test.py · brain_dump.py
 .claude-plugin/marketplace.json       # Claude Code plugin catalog
 plugin.json                           # Claude Code plugin manifest
 .agents/plugins/marketplace.json      # Codex plugin catalog
 .codex-plugin/plugin.json             # Codex plugin manifest (skills: ./skills/)
-commands/brain-dev.md                 # Claude-Code-only /brain-dev sugar (Codex needs none — SKILL.md is self-sufficient)
-commands/brain-debug.md               # Claude-Code-only /brain-debug sugar — dump+replay one prod run (brain_dump.py, public-API path)
-install.sh                            # per-brain primitive: pin the shared clone + symlink it in (gitignored)
+install.sh                            # per-brain primitive: pin the shared clone + symlink all skills in (gitignored)
 refresh-brains.sh                     # STANDARD FLOW: cut a release (RELEASING.md) + fan install.sh out to every local brain
 runtime/                              # rootcause-runtime package (lib: db, stripe, cloudwatch, fs, http, livecheck, run_dump…)
 docker/Dockerfile                     # workspace image (or published-tag ref)
@@ -101,9 +99,10 @@ docs/rc-cli.md                        # the project's `rc` CLI (sibling rootcaus
 README.md  AGENTS.md  RELEASING.md
 ```
 
-The skill is self-contained (engine in its own `scripts/`) so the SAME directory installs natively in
-Claude Code (`.claude/skills`) and Codex (`.agents/skills`). SKILL.md references its scripts relative
-to itself — never `${CLAUDE_PLUGIN_ROOT}` or a clone path (those don't port to Codex).
+The skills install natively in Claude Code (`.claude/skills`) and Codex (`.agents/skills`). The
+`brain-dev` skill is self-contained (engine in its own `scripts/`), and every SKILL.md references
+scripts or sibling skills relatively — never `${CLAUDE_PLUGIN_ROOT}` or a clone path (those don't port
+to Codex).
 
 ## Tooling
 

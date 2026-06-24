@@ -31,8 +31,8 @@ git push origin dev/refund-rework
 rc ask "<customer question>" --brain-ref dev/refund-rework
 ```
 
-To dump the run's full reasoning/tool-trail too, see [brain-debug](../../commands/brain-debug.md) /
-`rc run <id> --debug` (next).
+To dump the run's full reasoning/tool-trail too, use the
+[`brain-debug`](../brain-debug/SKILL.md) skill / `rc run <id> --debug` (next).
 
 ## Triage one run by UUID — `rc run <id> --debug`
 

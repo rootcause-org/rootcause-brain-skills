@@ -1,6 +1,6 @@
 {
   "name": "rootcause-brain-skills",
-  "interface": { "displayName": "rootcause brain-dev kit" },
+  "interface": { "displayName": "rootcause brain skills" },
   "plugins": [
     {
       "name": "brain-dev",

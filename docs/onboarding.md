@@ -16,16 +16,17 @@ can still use the privileged `rc_env.py <project> --pull` (SSM) path.
 
 ## 2. Install the kit — pick one path
 
-The `brain-dev` skill is self-contained (engine in its own `scripts/`), so the same skill installs
-natively in any of these. All are read-only; none commit anything to the brain or reach `/brain`.
+The kit installs native skills in both agents. `brain-dev` is self-contained (engine in its own
+`scripts/`); `brain-debug` and the `rc-*` skills wrap the prod-run workflows. All are read-only; none
+commit anything to the brain or reach `/brain`.
 
 **A — Local, gitignored (recommended; any agent).**
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/v0.1.11/install.sh)
 ```
-Clones the kit once to `~/.rootcause-brain-skills` and symlinks the skill into this brain's gitignored
-`.agents/skills/brain-dev` (Codex auto-discovers) + `.claude/skills/brain-dev` (Claude Code, plus the
-`/brain-dev` command). Engine then at
+Clones the kit once to `~/.rootcause-brain-skills` and symlinks every skill into this brain's
+gitignored `.agents/skills/<name>` (Codex auto-discovers) + `.claude/skills/<name>` (Claude Code).
+Engine then at
 `SKILL="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/skills/brain-dev"`. Update: re-run the installer
 (or, to release + update every local brain at once, the maintainer's standard flow `./refresh-brains.sh`).
 
@@ -42,7 +43,7 @@ then `codex plugin install brain-dev` (update: `codex plugin marketplace upgrade
 
 ## 3. Run
 
-Invoke the **brain-dev** skill (or `/brain-dev` in Claude Code), or call the engine directly. With the
+Invoke the **brain-dev** skill, or call the engine directly. With the
 plugin, the agent knows the skill's path; for path A set `SKILL` to the shared clone's skill dir:
 
 ```bash

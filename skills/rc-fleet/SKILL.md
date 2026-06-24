@@ -1,0 +1,41 @@
+---
+name: rc-fleet
+description: Review a rootcause project's recent production run fleet using `rc fleet`, then mine systemic failure patterns with `rc patterns`. Use inside a brain checkout for at-a-glance run health, failure-rate review, worst-offender triage, recurring bash/egress failures, or when no single run/thread is known yet.
+---
+
+# rc-fleet - recent run digest
+
+Use the `rc` CLI from inside the brain checkout. Scope comes from the logged-in OAuth token and brain
+metadata; no project argument, SSM, or operator access.
+
+## Workflow
+
+1. Digest first:
+   ```bash
+   rc fleet --days 7
+   rc fleet --format agent
+   rc fleet --kind email --days 14
+   ```
+   Pass through supplied `--days <n>` and `--kind email|prompt|mcp|analysis`. Read the per-run flag
+   table, aggregate rates, and worst offenders. `--format agent` is the token-lean shortlist.
+
+2. Interpret flags:
+   - `ERRxn`: bash failures.
+   - `EGRxn`: blocked egress.
+   - `$!`: cost spike.
+   - `CTX.Nk`: context rot.
+   - `GD`: grounding discarded.
+
+3. Drill two to five flagged runs with the `rc-inspect` skill. The worst-offenders section gives full
+   UUIDs.
+
+4. Confirm systemic failures:
+   ```bash
+   rc patterns --days 14
+   rc patterns --days 30
+   ```
+   Each ranked cluster is a candidate brain fix: missing runbook, wrong query, or a domain to
+   allowlist. Author from evidence, then verify with `rc-run`.
+
+Use this as the entry point for periodic fleet review and for "something is off, but I do not have a
+specific UUID yet."
