@@ -8,7 +8,7 @@
         "source": "git-subdir",
         "url": "https://github.com/rootcause-org/rootcause-brain-skills.git",
         "path": ".",
-        "ref": "v0.1.17"
+        "ref": "v0.1.18"
       },
       "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
       "category": "Productivity"
