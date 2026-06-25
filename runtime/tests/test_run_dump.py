@@ -168,6 +168,36 @@ class RenderIndex(unittest.TestCase):
         self.assertIn("Test run", md)
         self.assertIn("dev/refund-rework", md)
 
+    def test_projection_inputs_rendered_when_present(self):
+        settings = {
+            "source": "cli",
+            "synced_at": "2026-06-22T00:00:00Z",
+            "version": "sha256:abc",
+            "settings": {
+                "header_short_name": "De Kies",
+                "newpatient_method": "waitlist",
+                "existingpatient_method": "book_via_link",
+                "reschedule_method": "propose_options_confirm",
+                "booking_hygienist_dentist_interaction": "Tandarts",
+            },
+        }
+        md = render_index(_bundle(
+            brain_resolved="channel:stable @ abc1234",
+            tenant="de-kies",
+            tenant_settings=json.dumps(settings),
+        ))
+        self.assertIn("## Projection inputs", md)
+        self.assertIn("**Brain resolved:** `channel:stable @ abc1234`", md)
+        self.assertIn("**Tenant:** `de-kies`", md)
+        self.assertIn("source `cli`", md)
+        self.assertIn("synced_at `2026-06-22T00:00:00Z`", md)
+        self.assertIn("version `sha256:abc`", md)
+        self.assertIn("newpatient_method=`waitlist`", md)
+        self.assertIn("existingpatient_method=`book_via_link`", md)
+        self.assertIn("reschedule_method=`propose_options_confirm`", md)
+        self.assertIn("booking_hygienist_dentist_interaction=`Tandarts`", md)
+        self.assertNotIn("header_short_name", md)  # index stays concise; full snapshot is in JSONL
+
     def test_no_callback(self):
         md = render_index(_bundle(draft=None, notes=[], metadata=None))
         self.assertIn("no stored callback", md)
@@ -200,6 +230,20 @@ class EmitJsonl(unittest.TestCase):
         header = json.loads(lines[0])
         self.assertEqual(header["brain_ref"], "dev/x")
         self.assertEqual(header["trigger"], "test")
+
+    def test_projection_inputs_in_header(self):
+        settings = {"source": "cli", "settings": {"header_short_name": "De Kies"}}
+        lines = list(emit_jsonl(_bundle(
+            brain_ref="dev/x",
+            brain_resolved="dev/x @ abc1234",
+            tenant="de-kies",
+            tenant_settings=json.dumps(settings),
+        )))
+        header = json.loads(lines[0])
+        self.assertEqual(header["brain_ref"], "dev/x")
+        self.assertEqual(header["brain_resolved"], "dev/x @ abc1234")
+        self.assertEqual(header["tenant"], "de-kies")
+        self.assertEqual(json.loads(header["tenant_settings"]), settings)
 
     def test_non_bash_carries_args(self):
         lines = list(emit_jsonl(_bundle()))

@@ -55,7 +55,8 @@ mask a missing `.env` entry into a false green.
 ## Locate the engine
 
 The engine ships **inside this skill**, in `scripts/` next to this `SKILL.md`:
-`brain_env.py` · `brain_run.py` · `brain_test.py` · `brain_action.py` · `brain_dump.py`. This is the
+`brain_env.py` · `brain_run.py` · `brain_test.py` · `brain_action.py` · `brain_projection.py` ·
+`brain_dump.py`. This is the
 same on every install path (Claude Code plugin, Codex plugin, local symlink) and in both agents — no
 `${CLAUDE_PLUGIN_ROOT}`, no clone path to track.
 
@@ -148,6 +149,12 @@ A project may serve many **tenants** (e.g. DentAI → dental practices). Two thi
   rootcause DB settings record, edited via the operator Configuration form / `rc`.) `cd` into whichever
   repo you're editing — this kit is brain-dir-relative either way. The
   grounding scripts + their live tiers live in the **project** brain, so run `brain_test.py` from there.
+- **Templated project brains are rendered before the model sees them.** If the project brain has a
+  `projection.yaml`, prod mounts an ephemeral per-tenant compiled view at `/brain`: placeholders filled,
+  branches collapsed, gated files kept/dropped. The committed templates + `projection.yaml` are source;
+  the tenant-specific values live in rootcause DB; `tenant.schema.json` is the schema/form contract,
+  not the values. Short authoring/debug reference: [projection.md](projection.md); quick audit:
+  `uv run "$SKILL/scripts/brain_projection.py" --tenant <slug>`.
 - **Shared-DB RLS makes grounding tenant-blind.** When one DB holds all tenants keyed by a column, the
   host scopes each run **in the engine** (a per-run login role over filtered views) — so grounding
   scripts carry **no** `tenant_id` filter; they read "the current tenant" implicitly. The live tier's

@@ -95,7 +95,7 @@ removes its duplicate copy ([docs/migration-rootcause.md](docs/migration-rootcau
 
 ```
 skills/*/SKILL.md                     # install-once skills for local brain dev, run debugging, and rc observability
-skills/brain-dev/scripts/             # ENGINE inside the skill: brain_env.py · brain_run.py · brain_test.py · brain_dump.py
+skills/brain-dev/scripts/             # ENGINE inside the skill: brain_env.py · brain_run.py · brain_test.py · brain_projection.py · brain_dump.py
 .claude-plugin/marketplace.json       # Claude Code plugin catalog
 plugin.json                           # Claude Code plugin manifest
 .agents/plugins/marketplace.json      # Codex plugin catalog

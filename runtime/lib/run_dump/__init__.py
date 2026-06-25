@@ -23,6 +23,7 @@ Bundle contract (what this renderer reads — see the server spec for the produc
     bundle = {
       "run": {
         "run_id", "project", "status", "kind", "trigger", "brain_ref", "error",
+        "brain_resolved", "tenant", "tenant_settings",
         "thread_id", "session_id", "topic", "question",
         "warm_start_digest", "grounding_seed", "system_prompt",   # untrimmed
         "created_at", "finished_at",                              # ISO str or datetime

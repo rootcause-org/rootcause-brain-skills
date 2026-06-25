@@ -16,6 +16,12 @@ from datetime import datetime
 from typing import Iterable
 
 PUBLIC_BASE_URL = "https://rootcause.probackup.io"
+PROJECTION_BRANCH_KEYS = (
+    "newpatient_method",
+    "existingpatient_method",
+    "reschedule_method",
+    "booking_hygienist_dentist_interaction",
+)
 
 
 # ---------------------------------------------------------------- shared formatting helpers
@@ -93,6 +99,60 @@ def _as_dt(v):
         except ValueError:
             return v
     return v
+
+
+def _tenant_settings_record(raw) -> tuple[dict, str | None]:
+    """Return (record, error). The API/operator bundle may carry tenant_settings as the raw JSON string
+    stamped on the run row, or as a decoded dict in synthetic tests/future callers."""
+    if raw in (None, ""):
+        return {}, None
+    if isinstance(raw, dict):
+        return raw, None
+    if isinstance(raw, str):
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            return {}, str(exc)
+        if isinstance(data, dict):
+            return data, None
+        return {}, "tenant_settings JSON is not an object"
+    return {}, f"unexpected tenant_settings type {type(raw).__name__}"
+
+
+def _projection_input_lines(run: dict) -> list[str]:
+    """Concise, non-exhaustive projection provenance for the index. The full operator-scoped snapshot
+    stays in JSONL; the index surfaces just enough to answer "what /brain did prod mount?"."""
+    if not (run.get("brain_resolved") or run.get("tenant") or run.get("tenant_settings")):
+        return []
+
+    lines = ["", "## Projection inputs", ""]
+    if run.get("brain_resolved"):
+        lines.append(f"- **Brain resolved:** `{run['brain_resolved']}`")
+    if run.get("tenant"):
+        lines.append(f"- **Tenant:** `{run['tenant']}`")
+
+    rec, err = _tenant_settings_record(run.get("tenant_settings"))
+    if err:
+        lines.append(f"- **Tenant settings:** unparseable snapshot ({_cell(err, 80)}); see JSONL header")
+        return lines
+    if not rec:
+        return lines
+
+    meta = []
+    for key in ("source", "synced_at", "version"):
+        if rec.get(key):
+            meta.append(f"{key} `{rec[key]}`")
+    if meta:
+        lines.append("- **Tenant settings:** " + " · ".join(meta))
+
+    settings = rec.get("settings") if isinstance(rec.get("settings"), dict) else {}
+    selectors = [(k, settings[k]) for k in PROJECTION_BRANCH_KEYS if k in settings]
+    if selectors:
+        rendered = " · ".join(f"{k}=`{v}`" for k, v in selectors)
+        lines.append(f"- **Branch selectors:** {rendered}")
+    else:
+        lines.append("- **Branch selectors:** none present in snapshot")
+    return lines
 
 
 # Nearly every workspace command opens with `cd <dir> && ` — strip it wherever we classify or
@@ -409,6 +469,7 @@ def render_index(bundle: dict) -> str:
     ]
     if run.get("topic"):
         L += ["## Topic", "", run["topic"], ""]
+    L += _projection_input_lines(run)
     L += [
         "## Question",
         "",
@@ -596,6 +657,9 @@ def emit_jsonl(bundle: dict) -> Iterable[str]:
         # NEW vs the legacy operator dump: test-run provenance so a dev-ref run is self-describing.
         "trigger": run.get("trigger"),
         "brain_ref": run.get("brain_ref"),
+        "brain_resolved": run.get("brain_resolved"),
+        "tenant": run.get("tenant"),
+        "tenant_settings": run.get("tenant_settings"),
         "error": run.get("error"),
         "thread_id": str(run["thread_id"]) if run.get("thread_id") else None,
         "session_id": run.get("session_id"),
