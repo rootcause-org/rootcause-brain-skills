@@ -1,6 +1,6 @@
 # Tenant projection — what `/brain` will look like
 
-This is the short brain-dev view of tenant projection for an agent working inside a brain checkout. For
+This is the short Local Brain Work view of tenant projection for an agent working inside a brain checkout. For
 the broader model, read [docs/brain-model.md](../../docs/brain-model.md).
 
 ## The invariant

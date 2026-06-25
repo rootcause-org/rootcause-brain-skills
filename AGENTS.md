@@ -5,7 +5,7 @@ Reusable brain-development kit for **external project developers and their AI ag
 This repo is the kit, not a brain:
 
 - shipped agent skills in `skills/*/SKILL.md`;
-- the local brain-dev engine in `skills/brain-dev/scripts/`;
+- the Local Brain Work engine in `skills/local-brain-work/scripts/`;
 - the `rootcause-runtime` Python package in `runtime/` (`lib` helpers imported by brain scripts);
 - the workspace image in `docker/`;
 - installer/plugin/release plumbing.
@@ -53,7 +53,7 @@ Read these before changing product-facing docs/skills:
 
 Only these are first-class:
 
-- `brain-dev` (Local Brain Work) — local scripts/tests/projection/action checks; broad router.
+- `local-brain-work` — local scripts/tests/projection/action checks; broad router.
 - `brain-ask` — last-mile prod/test run validation with `rc ask`.
 - `rc-debug` — one run/thread/session trace; inspect/propose/stop before edits.
 - `rc-health` — stale mirrors and dead-lettered runs.
@@ -88,7 +88,7 @@ executes writes, and `brain_action.py --commit` writes to whatever `.env.action`
 One version line moves together:
 
 - plugin manifests;
-- `skills/brain-dev/scripts/brain_env.py`;
+- `skills/local-brain-work/scripts/brain_env.py`;
 - `runtime/pyproject.toml`;
 - install docs;
 - workspace image tag;
@@ -112,7 +112,7 @@ missing image/runtime access, secrets/irreversible effects, or explicit user ins
 Use the smallest checks that cover the change:
 
 ```bash
-uv run --no-project python -m py_compile skills/brain-dev/scripts/*.py
+uv run --no-project python -m py_compile skills/local-brain-work/scripts/*.py
 cd runtime && uv run --with . --with pytest --no-project pytest tests -q
 ./check-release-coherence.sh
 ```

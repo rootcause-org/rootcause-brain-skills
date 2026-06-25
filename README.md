@@ -16,7 +16,7 @@ From a brain checkout:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh)
-SKILL="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/skills/brain-dev"
+SKILL="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/skills/local-brain-work"
 uv run "$SKILL/scripts/brain_run.py" --brief
 uv run "$SKILL/scripts/brain_test.py" --live
 ```
@@ -34,7 +34,7 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 
 | Skill | Job |
 |---|---|
-| `brain-dev` (Local Brain Work) | Map a brain, run local/live/docker tests, projection, mirror checks, and action dry-runs. |
+| `local-brain-work` | Map a brain, run local/live/docker tests, projection, mirror checks, and action dry-runs. |
 | `brain-ask` | Last-mile production-loop `rc ask` validation, usually against a pushed `dev/*` ref. |
 | `rc-debug` | One run/thread/session to trace/debug/index/JSONL drilldown; analysis-first before edits. |
 | `rc-health` | Stale mirrors plus dead-lettered runs. |
@@ -81,11 +81,11 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 ## Single Version Line
 
 The plugin versions, `rootcause-runtime` pin, workspace image tag, and production runtime pin move
-together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.28`**.
+together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.29`**.
 
 - Runtime pin:
-  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.28#subdirectory=runtime`
-- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.28`
+  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.29#subdirectory=runtime`
+- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.29`
 
 Check coherence:
 

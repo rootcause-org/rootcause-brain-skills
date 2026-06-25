@@ -5,7 +5,7 @@ description: "Publish, ship, deploy, sync, or promote rootcause brain changes fr
 
 # brain-publish - make a brain change live
 
-Use this as the shared final step after local brain edits from `brain-dev`, `brain-ask`, `rc-debug`,
+Use this as the shared final step after local brain edits from `local-brain-work`, `brain-ask`, `rc-debug`,
 `rc-health`, `rc-fleet`, or manual authoring.
 
 The current public `rc` CLI has `ask`, `run`, `fleet`, `health`, `thread`, `config`, `env`, and

@@ -22,6 +22,8 @@ build/
 /.claude/skills/brain-dev
 /.agents/skills/brain-dev-upgrade
 /.claude/skills/brain-dev-upgrade
+/.agents/skills/local-brain-work
+/.claude/skills/local-brain-work
 /.agents/skills/observability
 /.claude/skills/observability
 /.agents/skills/rc-fleet

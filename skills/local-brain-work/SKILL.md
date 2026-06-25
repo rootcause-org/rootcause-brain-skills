@@ -1,9 +1,9 @@
 ---
-name: brain-dev
+name: local-brain-work
 description: "Local Brain Work for a rootcause project's BRAIN: map a brain checkout, run grounding scripts, run offline/live/docker test tiers, preview tenant projection, test hosted Python actions locally, route broad did-it-work/is-anything-broken prompts to focused rc skills, and check a brain change before pushing. Use inside a rootcause-brain checkout before production-loop validation; no private RootCause source required."
 ---
 
-# Local Brain Work (`brain-dev`)
+# Local Brain Work (`local-brain-work`)
 
 A brain is markdown knowledge plus Python grounding/action scripts that production mounts read-only at
 `/brain`. This skill runs the reusable local engine shipped in `scripts/` against the current brain
@@ -24,7 +24,7 @@ mounts.
 
 | User intent | Use |
 |---|---|
-| Run a grounding script, local/live/docker tests, projection preview, mirror-dependent check, or hosted-Python action dry-run | Local Brain Work (`brain-dev`) |
+| Run a grounding script, local/live/docker tests, projection preview, mirror-dependent check, or hosted-Python action dry-run | Local Brain Work (`local-brain-work`) |
 | "Does this change work on prod infra?" or "simulate this customer email" | Brain Ask (`brain-ask`) |
 | Debug one run/thread/session, read full trace, or explain why a draft/action happened | `rc-debug` |
 | "Is anything broken?" stale mirrors or dead letters | `rc-health` |
@@ -37,7 +37,7 @@ mounts.
 Set `SKILL` to the directory containing this `SKILL.md`:
 
 ```bash
-SKILL=<absolute path to skills/brain-dev>
+SKILL=<absolute path to skills/local-brain-work>
 ```
 
 The engine files are `brain_env.py`, `brain_run.py`, `brain_test.py`, `brain_action.py`,

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# THE standard flow: cut a brain-dev release and refresh every local brain to it.
+# THE standard flow: cut a Brain Dev kit release and refresh every local brain to it.
 #
 # Why this exists: all local brains symlink ONE shared clone (~/.rootcause-brain-skills) at a pinned
 # TAG (see install.sh). The skill ships strictly tag-pinned — every skill/doc change is a release — so
@@ -29,7 +29,7 @@ set -euo pipefail
 
 # ── repo + tooling ──────────────────────────────────────────────────────────
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-[ -d "$ROOT/skills/brain-dev" ] || { echo "error: run from the rootcause-brain-skills repo root" >&2; exit 1; }
+[ -d "$ROOT/skills/local-brain-work" ] || { echo "error: run from the rootcause-brain-skills repo root" >&2; exit 1; }
 KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}"
 BRAINS_ROOT="${RC_BRAINS_ROOT:-$(dirname "$ROOT")}"   # where the sibling rootcause-brain-* repos live
 IMAGE="ghcr.io/rootcause-org/workspace"
@@ -52,7 +52,7 @@ done
 run() { echo "  + $*"; [ "$DRY" = 1 ] || "$@"; }   # echo every mutating step; skip it on --dry-run
 say() { echo; echo "▸ $*"; }
 
-CUR="$(grep -E '^VERSION = ' "$ROOT/skills/brain-dev/scripts/brain_env.py" | sed -E 's/.*"([0-9.]+)".*/\1/')"
+CUR="$(grep -E '^VERSION = ' "$ROOT/skills/local-brain-work/scripts/brain_env.py" | sed -E 's/.*"([0-9.]+)".*/\1/')"
 
 # ── 1. release (optional) ───────────────────────────────────────────────────
 if [ -n "$RELEASE" ]; then
@@ -74,7 +74,7 @@ if [ -n "$RELEASE" ]; then
   # 1a. bump every literal RELEASING.md lists (all $CUR hits in these files are OUR version).
   say "Bump version literals"
   FILES=(
-    skills/brain-dev/scripts/brain_env.py
+    skills/local-brain-work/scripts/brain_env.py
     plugin.json .claude-plugin/marketplace.json
     .codex-plugin/plugin.json .agents/plugins/marketplace.json
     runtime/pyproject.toml install.sh

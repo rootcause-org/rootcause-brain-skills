@@ -40,7 +40,7 @@ actions/<id>/
 ## Local Hosted-Python Checks
 
 ```bash
-SKILL=<brain-dev skill dir>
+SKILL=<local-brain-work skill dir>
 uv run "$SKILL/scripts/brain_action.py" --list
 uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --preflight-only
 uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>'
@@ -67,5 +67,5 @@ RootCause commands here; use `brain-publish` to prepare the support request when
 
 ## Triage
 
-Use [`skills/brain-dev/action-run-triage.md`](../skills/brain-dev/action-run-triage.md) when a run
+Use [`skills/local-brain-work/action-run-triage.md`](../skills/local-brain-work/action-run-triage.md) when a run
 mentions an action, a preflight, or apparent mutation.

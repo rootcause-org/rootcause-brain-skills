@@ -417,7 +417,7 @@ def files_read(events: list[dict]) -> list[str]:
 def _run_url(run: dict) -> str:
     """The human run-page link (merged trace + feedback + retry): prefer the one minted at callback
     time (metadata.run_url / metadata.trace_url); else mint locally when RUN_SIGNING_KEY is in the env
-    (same recipe as internal/runpage/token.go). In the brain-dev context the key is absent → ""."""
+    (same recipe as internal/runpage/token.go). In the Local Brain Work context the key is absent → ""."""
     meta = run.get("metadata") or {}
     if meta.get("run_url"):
         return meta["run_url"]

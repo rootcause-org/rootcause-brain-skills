@@ -3,9 +3,9 @@
 A run-dump turns ONE agent run into two files: a concise markdown **index** (sized for an agent or a
 hurried human deciding WHERE to look) and a jq-queryable **JSONL** event log (the drill-down target,
 one untruncated JSON object per tool call). This module is the single source of truth for that
-rendering, imported by public `rc`/brain-dev consumers so their output stays stable:
+rendering, imported by public `rc`/Local Brain Work consumers so their output stays stable:
 
-  * the project-dev path — `skills/brain-dev/scripts/brain_dump.py` here, fed by the public-API
+  * the project-dev path — `skills/local-brain-work/scripts/brain_dump.py` here, fed by the public-API
     bundle (`rc run <id> --full -o json`);
 
 The producer normalizes its source to the **bundle dict** (`{"run": {...}, "events": [...]}`) and hands

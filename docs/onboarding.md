@@ -42,7 +42,7 @@ Update later with `brain-dev-upgrade`.
 ## 3. Run Local Checks
 
 ```bash
-SKILL="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/skills/brain-dev"
+SKILL="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/skills/local-brain-work"
 uv run "$SKILL/scripts/brain_run.py" --brief
 uv run "$SKILL/scripts/brain_run.py" skills/databases/scripts/lookup_customer.py --email a@b.com
 uv run "$SKILL/scripts/brain_test.py"

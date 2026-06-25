@@ -60,4 +60,4 @@ Default to evidence-first. A single run is signal, not permission to oversteer t
    - publish path, usually `brain-publish` after the fix is committed
 
 Only edit files when the user explicitly asks to implement the proposed fix. After edits, verify with
-Local Brain Work (`brain-dev`)/`brain-ask`, then use `brain-publish` for the live/support step.
+Local Brain Work (`local-brain-work`)/`brain-ask`, then use `brain-publish` for the live/support step.

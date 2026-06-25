@@ -1,0 +1,4 @@
+interface:
+  display_name: "Local Brain Work"
+  short_description: "Run local brain checks before prod validation"
+  default_prompt: "Use $local-brain-work to inspect and verify local brain edits before production-loop validation."

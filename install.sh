@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the brain-dev kit LOCALLY into a brain repo — gitignored, never committed.
+# Install the Brain Dev kit LOCALLY into a brain repo — gitignored, never committed.
 #
 # Why local + gitignored (not a global plugin, not committed):
 #   - Prod builds /brain with `git worktree --detach HEAD` (a checkout of committed `main`) and the
@@ -11,12 +11,12 @@
 # `.claude/skills/` discovery dirs. One source of truth, per-repo discovery, zero /brain footprint.
 #
 #   bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh) [BRAIN_DIR]
-#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.28 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
+#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.29 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
 #   ./install.sh --latest-version
 set -euo pipefail
 
 KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}"
-TAG="${RC_BRAIN_KIT_TAG:-v0.1.28}"
+TAG="${RC_BRAIN_KIT_TAG:-v0.1.29}"
 REPO="https://github.com/rootcause-org/rootcause-brain-skills"
 LATEST_TAG_ENDPOINT="https://api.github.com/repos/rootcause-org/rootcause-brain-skills/git/matching-refs/tags/v"
 KIT_OVERRIDE="${RC_BRAIN_KIT+x}"
@@ -177,7 +177,7 @@ fi
 
 # 2. Gitignored symlinks into the brain: every shipped skill at the standard discovery paths.
 #    `.agents/skills/<name>` is vendor-neutral and Codex auto-discovers it; `.claude/skills/<name>` is
-#    Claude Code's skill discovery path. The engine ships INSIDE the brain-dev skill (scripts/), so the
+#    Claude Code's skill discovery path. The engine ships INSIDE the Local Brain Work skill (scripts/), so the
 #    symlink carries it along; the canonical runtime/ stays in the shared clone (resolved via the link).
 mkdir -p "$BRAIN/.agents/skills" "$BRAIN/.claude/skills"
 
@@ -205,6 +205,8 @@ done
 # Retired symlinks. Remove only symlinks; leave real user files alone.
 for old in \
   "$BRAIN/.claude/commands/brain-dev.md" \
+  "$BRAIN/.agents/skills/brain-dev" \
+  "$BRAIN/.claude/skills/brain-dev" \
   "$BRAIN/.claude/commands/brain-debug.md" \
   "$BRAIN/.agents/skills/brain-debug" \
   "$BRAIN/.claude/skills/brain-debug" \
@@ -242,8 +244,8 @@ for src in "$KIT"/skills/*; do
   [ -f "$src/SKILL.md" ] || continue
   echo "  $(basename "$src")"
 done
-echo "The engine ships inside the brain-dev skill:"
-echo "  SKILL=$KIT/skills/brain-dev"
+echo "The engine ships inside the Local Brain Work skill:"
+echo "  SKILL=$KIT/skills/local-brain-work"
 echo "  uv run \"\$SKILL/scripts/brain_run.py\" --brief"
 echo "  uv run \"\$SKILL/scripts/brain_test.py\" --live"
 echo "Claude Code auto-discovers .claude/skills; Codex auto-discovers .agents/skills."

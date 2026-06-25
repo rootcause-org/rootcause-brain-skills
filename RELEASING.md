@@ -23,7 +23,7 @@ commit, then tag + push:
 
 | What | Where | Field |
 |---|---|---|
-| Engine version + image tag | `skills/brain-dev/scripts/brain_env.py` | `VERSION` (drives `DEFAULT_IMAGE`) |
+| Engine version + image tag | `skills/local-brain-work/scripts/brain_env.py` | `VERSION` (drives `DEFAULT_IMAGE`) |
 | `rootcause-runtime` package | `runtime/pyproject.toml` | `version` |
 | Dep lockfile (regen on any dep change) | `runtime/requirements.lock` | `uv pip compile runtime/pyproject.toml --universal --python-version 3.12 -o runtime/requirements.lock` |
 | Claude Code plugin | `plugin.json` + `.claude-plugin/marketplace.json` | `version` |

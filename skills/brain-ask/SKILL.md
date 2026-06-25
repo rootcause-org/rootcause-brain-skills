@@ -7,7 +7,7 @@ description: Ask a real production rootcause brain using `rc ask`, then verify t
 
 Use Brain Ask for production-loop `rc ask` validation, usually after a pushed `dev/*` ref. If
 validating local/unpushed brain edits, running grounding scripts, tenant projection, local tests,
-mirror-dependent checks, or action dry-runs, use Local Brain Work (`brain-dev`) first.
+mirror-dependent checks, or action dry-runs, use Local Brain Work (`local-brain-work`) first.
 
 Run `rc ask` from inside the current brain checkout. The `rc` CLI auto-targets the project from the
 brain metadata and uses the logged-in OAuth token; no SSM or operator access.
@@ -53,7 +53,7 @@ Read:
    ```
    Distinguish "draft text said it happened" from the action lifecycle: preflight failed ⇒ no proposal
    and no mutation; proposed action ⇒ pending human confirm; succeeded/failed action ⇒ post-loop
-   execution happened. Use `../brain-dev/action-run-triage.md` for the decision table.
+   execution happened. Use `../local-brain-work/action-run-triage.md` for the decision table.
 
 4. Show what the run wrote to the brain:
    ```bash

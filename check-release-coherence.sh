@@ -8,7 +8,7 @@ ROOTCAUSE_DIR="${ROOTCAUSE_DIR:-$ROOT/../rootcause}"
 SKIP_IMAGE="${SKIP_IMAGE:-0}"
 SKIP_PROD="${SKIP_PROD:-0}"
 
-version="$(grep -E '^VERSION = ' "$ROOT/skills/brain-dev/scripts/brain_env.py" | sed -E 's/.*"([0-9.]+)".*/\1/')"
+version="$(grep -E '^VERSION = ' "$ROOT/skills/local-brain-work/scripts/brain_env.py" | sed -E 's/.*"([0-9.]+)".*/\1/')"
 tag="v$version"
 fail=0
 

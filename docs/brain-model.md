@@ -9,7 +9,7 @@ is required to work on it.
 | Path | Purpose |
 |---|---|
 | `.rootcause.toml` | Committed non-secret binding: project slug, base URL, and sometimes tenant metadata. `rc` uses this to scope commands. |
-| `.env` | Gitignored grounding secrets for local `brain-dev` live checks. Pull with `rc env pull`. |
+| `.env` | Gitignored grounding secrets for Local Brain Work live checks. Pull with `rc env pull`. |
 | `.env.action` | Gitignored sealed write credentials for local hosted-Python action tests. Only `brain_action.py` uses it. |
 | `AGENTS.md` | Local instructions for agents working in that brain repo. |
 | `skills/` / `playbooks/` / notes | Durable knowledge and project-specific scripts a run may read. |
@@ -112,6 +112,6 @@ test artifacts stay on the laptop.
 
 ## Local Engine Boundary
 
-`brain-dev` reproduces grounding scripts, test tiers, action preflight/local hosted-Python execution,
+Local Brain Work (`local-brain-work`) reproduces grounding scripts, test tiers, action preflight/local hosted-Python execution,
 and projection previews. It does not run a private copy of the production LLM loop. Use `rc ask` and
 `rc run --debug` for full production-loop evidence.

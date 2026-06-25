@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.11"
 # ///
-"""Shared engine core for the brain-dev kit — env + PYTHONPATH + lib preflight + the two run modes.
+"""Shared engine core for the Brain Dev kit — env + PYTHONPATH + lib preflight + the two run modes.
 
 `brain_run.py` and `brain_test.py` are thin front-ends over this module. Everything here is
 **brain-dir-relative and `accounts.yml`-free**: the brain is just the cwd (or an explicit path), its
@@ -25,7 +25,7 @@ from pathlib import Path
 # ── version line ────────────────────────────────────────────────────────────────────────────────
 # The single version line: plugin tag == rootcause-runtime pin == workspace image tag == prod
 # Dockerfile pin. Bump all together (see RELEASING.md) so local and prod cannot diverge.
-VERSION = "0.1.28"
+VERSION = "0.1.29"
 REPO_URL = "https://github.com/rootcause-org/rootcause-brain-skills"
 
 # The interpreter prod runs (docker/Dockerfile `FROM python:3.12-slim`). uv mode pins to it with
@@ -33,7 +33,7 @@ REPO_URL = "https://github.com/rootcause-org/rootcause-brain-skills"
 # setup and a green uv run can't silently use a different Python than the box.
 PYTHON_VERSION = "3.12"
 
-# brain_env.py lives at <kit>/skills/brain-dev/scripts/ ; the canonical runtime/ package (holding
+# brain_env.py lives at <kit>/skills/local-brain-work/scripts/ ; the canonical runtime/ package (holding
 # lib/) sits at the kit root — three levels up. Present in every distribution that bundles the whole
 # kit (checkout, CC plugin, local symlink); absent only if the skill dir is shipped on its own.
 RUNTIME = (Path(__file__).resolve().parents[3] / "runtime").resolve()

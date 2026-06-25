@@ -96,6 +96,6 @@ Before changing a brain or action blindly:
 1. Find real cases with `rc runs`, `rc fleet`, or `rc patterns`.
 2. Inspect evidence with `rc run <id> --events` or `rc-debug`.
 3. Edit the brain from evidence.
-4. Verify locally with `brain-dev`.
+4. Verify locally with `local-brain-work`.
 5. Verify production behavior with `rc ask --brain-ref dev/<branch>` when needed.
 6. Finish with `brain-publish`.
