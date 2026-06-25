@@ -1,8 +1,7 @@
 # Tenant projection — what `/brain` will look like
 
-This is the short brain-dev view of rootcause's tenant projection. The authoritative host docs live in
-rootcause's `architecture/tenant-templating.md` and `features/tenant_settings.md`; this page is the
-operational memory for an agent working inside a brain checkout.
+This is the short brain-dev view of tenant projection for an agent working inside a brain checkout. For
+the broader model, read [docs/brain-model.md](../../docs/brain-model.md).
 
 ## The invariant
 
@@ -55,7 +54,7 @@ The useful mental model is:
 
 ```text
 templates + projection.yaml + tenant settings record
-  -> deterministic host compile
+  -> deterministic projection compile
   -> resolved /brain view for that one tenant
 ```
 
@@ -66,7 +65,7 @@ compiler routes it through the branch `default`.
 ## Local preview helper
 
 `brain_projection.py` is a **preview/audit helper**, not a new source of truth. Its job is to answer,
-for one tenant: "what would the host compile do?"
+for one tenant: "what would production compile?"
 
 ```bash
 uv run "$SKILL/scripts/brain_projection.py" --tenant <slug>

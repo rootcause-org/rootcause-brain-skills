@@ -3,14 +3,13 @@
 A run-dump turns ONE agent run into two files: a concise markdown **index** (sized for an agent or a
 hurried human deciding WHERE to look) and a jq-queryable **JSONL** event log (the drill-down target,
 one untruncated JSON object per tool call). This module is the single source of truth for that
-rendering, imported by BOTH consumers so their output is provably byte-identical:
+rendering, imported by public `rc`/brain-dev consumers so their output stays stable:
 
   * the project-dev path — `skills/brain-dev/scripts/brain_dump.py` here, fed by the public-API
     bundle (`rc run <id> --full -o json`);
-  * the operator path — rootcause's `rc_agent_debug.py`, fed by its SSM/DB query.
 
-Both normalize their source to the **bundle dict** (`{"run": {...}, "events": [...]}`) defined in the
-server spec (`rootcause/docs/specs/brain-test-runs.md`, Change 4) and hand it here. The server
+The producer normalizes its source to the **bundle dict** (`{"run": {...}, "events": [...]}`) and hands
+it here. The server
 ships raw truth; this module decorates it — the `disp`/`label`/`P1,P2…` computation, anomaly flags,
 and "files read" extraction are presentation, computed here, never by the server.
 
@@ -31,6 +30,7 @@ Bundle contract (what this renderer reads — see the server spec for the produc
         "draft": "<full body or null>",
         "notes": [{"key", "body"}],
         "proposed_actions": [{"slug", "status", "params", ...}],
+        "pii_masks": [{"label","source","count", ...}],              # optional, if API exposes it
         "metadata": {...} | null,                                 # run_url/trace_url/total_cost_usd/…
         "egress": [{"host","port","scheme","url","bytes_out","decision","at"}],  # per-ROW (see note)
       },

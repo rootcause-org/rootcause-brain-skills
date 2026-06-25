@@ -12,6 +12,13 @@ with the active `rc login`. Check `rc whoami` if the tenant is unclear.
 If a RootCause MCP is installed, ignore it unless the user explicitly asks for MCP; this workflow uses
 `rc`.
 
+## Required Context
+
+Read:
+
+- [docs/side-effects.md](../../docs/side-effects.md)
+- [docs/brain-model.md](../../docs/brain-model.md)
+
 ## Workflow
 
 1. Require a question. If absent, ask for it and stop. Use default `rc ask` for a customer-style
@@ -50,4 +57,5 @@ If a RootCause MCP is installed, ignore it unless the user explicitly asks for M
    Report the journal commit SHA, message, changed files, and meaningful diff summary. If nothing
    changed, say the run answered without persisting durable knowledge.
 
-For the full reasoning/tool trail, use the `rc-inspect` skill with the captured `run_id`.
+For the full reasoning/tool trail, use the `rc-debug` skill with the captured `run_id`. If this run
+validated a local brain change, finish through `brain-publish`.

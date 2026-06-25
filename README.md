@@ -1,124 +1,99 @@
 # rootcause-brain-skills
 
-One kit to iterate on a project's **brain** locally and verify it works the way production does. It is
-a **skill collection** for **Claude Code** and **OpenAI Codex**: `brain-dev` carries the local engine
-in its own `scripts/`, while `brain-debug` and the `rc-*` skills expose the prod-run workflows
-natively in both agents. Plus a pinned Python package (**`rootcause-runtime`**, the `lib` helpers brain
-scripts import). No `rootcause` source needed.
+One external-developer kit to iterate on a project's **brain** locally and verify production behavior
+through public `rc`/API surfaces. No RootCause private source, host credentials, SSM, or infrastructure
+shell is required.
 
-A *brain* is `rootcause-org/rootcause-brain-<project>`: markdown skills + Python grounding scripts that
-do `from lib import db` to read a customer's data read-only. In prod those run in a workspace
-container; this kit reproduces that loop on a laptop with the **same `lib`** and the **same per-project
-env**.
+A brain is `rootcause-org/rootcause-brain-<project>`: committed markdown knowledge, playbooks,
+grounding scripts, tests, projection templates, and optional actions. Production mounts committed
+brain refs read-only at `/brain`; local `.env`, installed skills, and `.rootcause/` artifacts never
+reach a run. Start with [docs/brain-model.md](docs/brain-model.md).
 
-## Use it against a brain
+## Install
 
-Three install paths, same skills — pick by agent. All run read-only; none commit anything to the brain
-or reach `/brain` (see below). After installing, `cd` into the brain (which needs its gitignored
-`./.env`) and invoke the relevant skill, or call the `brain-dev` engine directly.
-
-**A — Local, per-repo, gitignored (recommended; works with any agent).** One pinned clone on disk;
-every skill is symlinked into the brain's gitignored `.agents/skills/<name>` (Codex auto-discovers) +
-`.claude/skills/<name>` (Claude Code). Nothing committed.
+From a brain checkout:
 
 ```bash
-cd ~/code/rootcause-org/rootcause-brain-<project>
 bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh)
-# then, from the brain root — the engine ships inside the skill:
 SKILL="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}/skills/brain-dev"
-uv run "$SKILL/scripts/brain_run.py" --brief        # map the brain
-uv run "$SKILL/scripts/brain_test.py" --live        # run the tiers (read-only prod)
+uv run "$SKILL/scripts/brain_run.py" --brief
+uv run "$SKILL/scripts/brain_test.py" --live
 ```
 
-`install.sh` clones the kit once to `~/.rootcause-brain-skills` (override with `RC_BRAIN_KIT` /
-`RC_BRAIN_KIT_TAG`), symlinks all shipped skills in, and appends the ignore rules. With no `BRAIN_DIR`
-it auto-detects the current brain from `$PWD` or its parents; from elsewhere, pass the brain path. To
-update **one** brain, re-run the same moving `main/install.sh` command. To check the newest released
-tag without installing:
+Other paths:
 
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh) --latest-version
-```
-
-To cut a release and update **every** local brain at once, use the standard flow
-[`./refresh-brains.sh`](refresh-brains.sh) (see [RELEASING.md](RELEASING.md)).
-
-**B — Claude Code plugin (user scope).**
-
-```text
-/plugin marketplace add rootcause-org/rootcause-brain-skills
-/plugin install brain-dev                    # later: /plugin marketplace update
-# engine then lives at ${CLAUDE_PLUGIN_ROOT}/skills/brain-dev/scripts/
-```
-
-**C — Codex plugin (user scope).**
-
-```bash
-codex plugin marketplace add rootcause-org/rootcause-brain-skills
-codex plugin install brain-dev               # later: codex plugin marketplace upgrade
-```
+- Claude Code plugin: `/plugin marketplace add rootcause-org/rootcause-brain-skills`, then
+  `/plugin install brain-dev`.
+- Codex plugin: `codex plugin marketplace add rootcause-org/rootcause-brain-skills`, then
+  `codex plugin install brain-dev`.
 
 Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 
-## Why nothing lands in the brain repo
+## Canonical Skills
 
-The skill is **install-once, run-from-inside-any-brain** — deliberately *not* copied into each brain
-(that copy-drift is what this repo kills). It also must stay out of a real run: prod mounts the brain
-read-only at `/brain` and the agent treats everything there as knowledge, so a dev/test harness under
-the brain would pollute runs.
+| Skill | Job |
+|---|---|
+| `brain-dev` | Local front door: map a brain, run scripts/tests/projection/action local checks, and route broad prompts. |
+| `brain-ask` | Trigger one real prod/test run with `rc ask`, then report answer, accounting, trace, and brain diff. |
+| `rc-debug` | One run/thread/session to trace/debug/index/JSONL drilldown; analysis-first before edits. |
+| `rc-health` | Stale mirrors plus dead-lettered runs. |
+| `rc-fleet` | Recent fleet digest plus recurring failure patterns. |
+| `brain-dev-upgrade` | Update local kit and `rc` CLI. |
+| `brain-publish` | Post-edit publish/promote/support-request step using public surfaces only. |
 
-Both are guaranteed for free: prod builds `/brain` with `git worktree --detach HEAD` — a checkout of
-the brain's **committed** `main`. So **anything untracked or gitignored in the brain never reaches
-`/brain`.** The plugin installs (B, C) add nothing to the brain at all; the local install (A) is
-gitignored. No rootcause mirror/strip tricks are needed — only *committed* files travel, and you
-never commit the kit. (The one thing that legitimately lives in a brain is project-specific **test
-fixtures**, under `skills/<name>/`.)
+Older duplicate entrypoints are not shipped; use the canonical skills above.
 
-## The two modes
+## Side Effects
 
-- **`uv` (inner loop)** — fast, low-friction: no Docker daemon, warm runs in ~1s, needs only `uv`
-  (it fetches the pinned Python 3.12 — no mise/pyenv). Reproduces the import surface *faithfully* —
-  deps are lockfile-pinned (`runtime/requirements.lock`, the same lock the image builds under), the
-  interpreter is Python 3.12, and the script sees **only** the brain's `./.env`. Does **not** reproduce
-  egress allowlist / `:ro` mounts / container isolation / OS (runs on macOS, not the image's Linux —
-  same arm64 arch, but macOS wheels differ from prod's manylinux ones).
-  *A green uv run is not a guaranteed-green prod run.* Iterate here.
-- **`docker` (pre-push gate)** — `docker run` the published workspace image, brain + mirrors `:ro`,
-  full prod isolation. The honest "does it work in the box?" check — run once before pushing. (Egress
-  is left open by default and the runner says so.)
+Diagnosis is read-only by default. Test-run creation and action execution are explicit exceptions.
+Details: [docs/side-effects.md](docs/side-effects.md).
 
-## What's here
+| Surface | Side effect |
+|---|---|
+| `brain_run.py`, `brain_test.py`, `rc run`, `rc fleet`, `rc health`, `rc thread` | Read-only. |
+| `rc ask` against `main` | Creates a real production run; may create draft/journal/test artifacts and bill usage. |
+| `rc ask --brain-ref dev/<branch>` | Creates a test run; no callback or durable journal push; proposals are test artifacts. |
+| Action proposal | LLM proposes only; no mutation. |
+| Action confirmation / public dev-trigger when exposed | Real mutation path. |
+| `brain_action.py --commit` | Local real write to whatever `.env.action` targets. |
+
+## Fidelity
+
+- `uv` mode is the fast inner loop. It pins Python/runtime deps and uses only the brain's `.env`, but
+  it does not reproduce read-only mounts, container isolation, OS behavior, or production egress.
+- `docker` mode uses the published workspace image and read-only mounts. It still does not prove the
+  production egress allowlist.
+- `rc ask --brain-ref dev/<branch>` is the full production-loop confidence check without moving live
+  refs.
+
+## Docs
 
 | Path | What |
 |---|---|
-| `skills/brain-dev/SKILL.md` | Local engine skill: brief → run a grounding script / test tiers → report, in `uv` or `docker` mode. |
-| `skills/brain-dev/action-run-triage.md` | Quick decision table for `rc ask` runs that mention actions, preflights, or apparent mutations. |
-| `skills/brain-dev/scripts/brain_env.py` · `brain_run.py` · `brain_test.py` · `brain_projection.py` | The engine, inside the skill — shared core + run one script / test tiers / tenant projection summaries; brain-dir-relative. |
-| `skills/brain-dev-upgrade/SKILL.md` | Update/check the installed local kit, the `rc` CLI, and Codex/Claude plugin update commands. |
-| `skills/observability/SKILL.md` | Watch & triage this project's real prod runs with the `rc` CLI (trigger+verify, inspect a run, health, patterns, thread). Read-only over the public API; OAuth-scoped to your project. |
-| `skills/brain-debug/SKILL.md` | Dump/replay one prod run through `brain_dump.py`, then drill the generated JSONL selectively. |
-| `skills/brain-ask` · `rc-inspect` · `rc-health` · `rc-fleet` · `rc-thread` | Native Codex/Claude skills for the former slash-command workflows. |
-| `runtime/` | The **`rootcause-runtime`** package (`lib/`: db, stripe, cloudwatch, fs, http, html, livecheck). Canonical home. |
-| `docker/Dockerfile` | The workspace image (installs `rootcause-runtime`); published to ghcr for `docker` mode. |
-| `.claude-plugin/marketplace.json`, `plugin.json` | Claude Code plugin catalog + manifest. |
-| `.agents/plugins/marketplace.json`, `.codex-plugin/plugin.json` | Codex plugin catalog + manifest. |
-| `docs/actions.md` | The **action plane** concept (the one state-changing path) + the author→push→sync→resolve→execute loop. |
-| `docs/rc-cli.md` | The project's **`rc` CLI** (sibling `rootcause-cli`) — self-consume runs/config over the public API; the **ground-first** author→verify loop. |
-| `docs/migration-rootcause.md` | Ordered runbook to cut prod over to the package + published image. |
+| [docs/brain-model.md](docs/brain-model.md) | Brain layout, mounts, tenant/project refs, local engine boundary. |
+| [docs/run-trace-model.md](docs/run-trace-model.md) | How to read `rc run --debug` index/JSONL. |
+| [docs/mirrors.md](docs/mirrors.md) | Source mirrors and freshness/debug rules. |
+| [docs/support-boundary.md](docs/support-boundary.md) | Brain-change vs RootCause-support decision tree. |
+| [docs/actions.md](docs/actions.md) | Action plane and local hosted-Python action tests. |
+| [docs/rc-cli.md](docs/rc-cli.md) | Public `rc` CLI reference for this kit. |
 
-## Single version line
+## Single Version Line
 
-The plugin versions, the `rootcause-runtime` pin, the workspace image tag, and rootcause's prod
-Dockerfile pin **move together** so local and prod can't diverge — one bump point, see
-[RELEASING.md](RELEASING.md). Current line: **`v0.1.24`**.
+The plugin versions, `rootcause-runtime` pin, workspace image tag, and production runtime pin move
+together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.25`**.
 
-- `lib` dependency (brain scripts + CI):
-  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.24#subdirectory=runtime`
-  — **always pin a tag, never float `main`** (a push would silently break green local tests).
-- workspace image: `ghcr.io/rootcause-org/workspace:v0.1.24`.
+- Runtime pin:
+  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.25#subdirectory=runtime`
+- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.25`
 
-## Develop on the kit itself
+Check coherence:
 
 ```bash
-cd runtime && uv run --with . --with pytest --no-project pytest tests -q   # package unit tests
+./check-release-coherence.sh
+```
+
+## Develop
+
+```bash
+cd runtime && uv run --with . --with pytest --no-project pytest tests -q
 ```

@@ -6,8 +6,7 @@ Goal: tell whether the run only drafted text, proposed an action, or an action a
 ## First rule
 
 A run never executes an action. It can only propose `reply.actions`. Execution happens later when a
-reviewer clicks the confirm link, or when an operator uses `/rc-action-test` / `POST
-/api/v1/actions/execute`.
+reviewer clicks the confirm link, or when a public/support-gated trigger executes the action.
 
 ## Quick checks
 
@@ -25,7 +24,7 @@ Read the events around `preflight`, `reply`, and any proposed actions.
 | `reply.actions` / proposed action exists | Human still has to confirm. No mutation yet. | "Action proposed, pending reviewer confirm." |
 | Action status `succeeded` / result note after confirm | Post-loop execution happened. | "Action executed; result says ..." |
 | Action status `failed` / error result | Post-loop execution was attempted and failed. | "Action execution failed; hold draft." |
-| `/rc-action-test` output | Operator dev-trigger executed the action for real, usually runless. | "Dev-trigger executed; not just a run proposal." |
+| Public/support dev-trigger output | Dev-trigger executed the action for real, usually runless. | "Dev-trigger executed; not just a run proposal." |
 
 ## Optimistic drafts
 
@@ -42,8 +41,8 @@ needed.
   plane, with action credentials or the customer's app credentials.
 - For hosted Python actions, `brain_action.py <id> --params ... --preflight-only` reproduces Layer 1 +
   preflight locally. Without `--preflight-only`, it also runs the body in local dry-run mode by default.
-- For Embassy/gem actions, there is no local write-body dry run; use the operator dry-run/wire check
-  (`rc_action_doctor`) or real dev-trigger against a safe target.
+- For Embassy/gem actions, there is no local write-body dry run; use a public/support-gated wire check
+  or real dev-trigger against a safe target when available.
 
 ## Common diagnosis
 
@@ -52,5 +51,5 @@ needed.
 - "Preflight failed" is usually read-plane data/schema/permission/param grounding.
 - "Execution failed" is usually write-body code, action credentials, tenant scope, or the customer app.
 
-For concepts and authoring details, read `../../docs/actions.md`. For shipping and feedback loops, read
-`ship-and-verify.md`.
+For concepts and authoring details, read `../../docs/actions.md`. For publish/support handoff, use
+`../brain-publish/SKILL.md`.

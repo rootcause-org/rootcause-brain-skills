@@ -28,7 +28,7 @@ It gives the same feedback prod would, at the same points:
     uv run brain_action.py boost_powertools_credits --params '{"user_podio_id":613236,"extra_credits":1000}' --commit   # REAL write
 
 ⚠️ This is a LOCAL faithful reproduction, not the prod path. Authoring against a real run still goes
-through push → `/rc-sync-brain` → `/rc-action-test` (the operator dev-trigger). `--commit` here writes
+through `brain-publish` and public/support-gated publish mechanics. `--commit` here writes
 for real against whatever `.env.action` points at — point it at a local/staging DB, never a live customer.
 """
 
@@ -217,7 +217,7 @@ def run_body(brain_dir: Path, action_path: Path, manifest: dict, params: dict, *
     runtime = (manifest.get("runtime") or "python").lower()
     if runtime != "python":
         print(f"error: runtime {runtime!r} — only hosted PYTHON actions run in this local runner "
-              f"(gem/ruby actions run via /rc-action-test). See actions/README.md.", file=sys.stderr)
+              f"(gem/ruby actions run through the public/support-gated action plane). See actions/README.md.", file=sys.stderr)
         return 2
     script = action_path / "script.py"
     if not script.is_file():

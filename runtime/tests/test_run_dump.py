@@ -231,6 +231,19 @@ class RenderIndex(unittest.TestCase):
         self.assertIn("`subdivision_id=333`", md)
         self.assertIn("`type_id=404`", md)
 
+    def test_pii_masks_render_when_present(self):
+        md = render_index(_bundle(
+            pii_masks=[
+                {"label": "EMAIL_1", "source": "customers.email", "count": 2},
+                {"label": "PHONE_1", "table": "patients", "rows": 1},
+            ],
+        ))
+        self.assertIn("## Data shielded from the model", md)
+        self.assertIn("`EMAIL_1`", md)
+        self.assertIn("customers.email", md)
+        self.assertIn("2 occurrence(s)", md)
+        self.assertIn("`PHONE_1`", md)
+
     def test_blocked_egress_timestamp_normalized(self):
         # Byte-identity guard: a blocked-egress flag must print `at` via _as_dt, so an ISO-string `at`
         # (API path) renders the same as a datetime `at` (operator path) — no stray 'T'.
@@ -280,6 +293,12 @@ class EmitJsonl(unittest.TestCase):
         header = json.loads(lines[0])
         self.assertEqual(header["proposed_actions"], [action])
 
+    def test_pii_masks_in_header(self):
+        masks = [{"label": "EMAIL_1", "source": "customers.email", "count": 2}]
+        lines = list(emit_jsonl(_bundle(pii_masks=masks)))
+        header = json.loads(lines[0])
+        self.assertEqual(header["pii_masks"], masks)
+
     def test_non_bash_carries_args(self):
         lines = list(emit_jsonl(_bundle()))
         reply = next(json.loads(x) for x in lines[1:] if json.loads(x)["tool"] == "reply")
@@ -295,15 +314,13 @@ class EmitJsonl(unittest.TestCase):
 
 
 class ByteIdentity(unittest.TestCase):
-    """The headline DRY guarantee (spec acceptance #3 / server-spec #4): the renderer output is
-    byte-identical whether fed the API-shape bundle (`fetch_via_api` here: ISO-string timestamps,
-    float costs) or the operator-shape bundle (`fetch_via_db` in rc_agent_debug.py: datetime objects,
-    Decimal costs/tokens). Same run → same bytes, because BOTH go through this ONE renderer."""
+    """The renderer output is byte-identical across bundle timestamp/cost shapes: ISO-string
+    timestamps and float costs vs datetime objects and Decimal costs/tokens."""
 
     @staticmethod
     def _operator_shape(bundle: dict) -> dict:
-        """Re-cast an API-shape bundle the way the operator's SSM/DB fetch hands it over: datetimes for
-        every timestamp, Decimal for the money/token columns psycopg returns as Decimal."""
+        """Re-cast an API-shape bundle with datetimes for every timestamp and Decimal for money/token
+        columns, matching alternate producer shapes."""
         from copy import deepcopy
         from datetime import datetime
         from decimal import Decimal

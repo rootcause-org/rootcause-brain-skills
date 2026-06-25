@@ -24,8 +24,8 @@ Python **grounding scripts** (`from lib import db`) + **runbooks** + **actions**
 reads (mounted **read-only at `/brain`**) to draft a project's support replies. It's also the
 customer's read-only audit/trust artifact (human-readable notes + code, **never secrets**).
 
-- Brain git mechanics: [rootcause `.agents/skills/architecture/brain.md`](../rootcause/.agents/skills/architecture/brain.md)
-- Authoring brain content: [rootcause `.agents/skills/brain-authoring/SKILL.md`](../rootcause/.agents/skills/brain-authoring/SKILL.md)
+- Brain model: [docs/brain-model.md](docs/brain-model.md)
+- Run trace model: [docs/run-trace-model.md](docs/run-trace-model.md)
 
 A run never writes its brain; durable knowledge grows out-of-band (per-run journal → weekly
 consolidation PR an operator merges).
@@ -38,16 +38,15 @@ CloudWatch / the box over SSM)? If yes → it stays in `rootcause`, never here.
 
 | Ships here | Stays in rootcause |
 |---|---|
-| `brain_run.py`, `brain_test.py`, the `brain-dev` + `observability` skills | operator host-debug over SSM (`db.py`, `logs.py`) |
+| `brain_run.py`, `brain_test.py`, the `brain-dev`, `brain-ask`, `rc-debug`, `rc-health`, `rc-fleet`, `brain-publish` skills | operator host-debug over SSM (`db.py`, `logs.py`) |
 | `rootcause-runtime` (`lib`) package, incl. the `lib/run_dump` index+JSONL renderer | the operator raw-SQL escape hatch (`db.py` over the registry DB) |
-| `brain_dump.py` (run dump over the public API + OAuth token) | — (the operator run dump migrated to the public-API CLI: `rc run <id> --debug`) |
+| `brain_dump.py` (run dump over the public API + OAuth token) | — (the run dump path is public API: `rc run <id> --debug`) |
 | workspace Dockerfile / published image ref | anything reading `accounts.yml` or SSM |
 
 The run-dump split is the litmus test in action: the **renderer is shared** (one `rootcause-runtime`
 module, pulled by every consumer via the tag pin, so output is byte-identical), but the **fetch
-differs** — `brain_dump.py` shells `rc run <id> --full` (public API, OAuth token, infra-free → here);
-the operator's `rc run <id> --debug` likewise rides the public API now (the old SSM `rc_agent_debug.py`
-was retired). Only `db.py`/`logs.py` (true host/SSM access) stay in rootcause.
+differs** — `brain_dump.py` shells `rc run <id> --full` (public API, OAuth token, infra-free → here).
+Only `db.py`/`logs.py` (true host/SSM access) stay in rootcause.
 
 ## Two distribution concerns (keep separate)
 
@@ -94,7 +93,7 @@ removes its duplicate copy ([docs/migration-rootcause.md](docs/migration-rootcau
 ## Layout
 
 ```
-skills/*/SKILL.md                     # install-once skills for local brain dev, run debugging, and rc observability
+skills/*/SKILL.md                     # install-once skills: brain-dev, brain-ask, rc-debug, rc-health, rc-fleet, brain-publish, upgrade
 skills/brain-dev/scripts/             # ENGINE inside the skill: brain_env.py · brain_run.py · brain_test.py · brain_projection.py · brain_dump.py
 .claude-plugin/marketplace.json       # Claude Code plugin catalog
 plugin.json                           # Claude Code plugin manifest

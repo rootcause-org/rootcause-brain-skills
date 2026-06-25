@@ -24,7 +24,7 @@
 #   --dry-run     show every step without running it
 #   [BRAIN_DIR...]  explicit brains to refresh (default: auto-discover siblings)
 #
-# Prod (rootcause) is a SEPARATE, deploy-gated step — this script only PRINTS the follow-up.
+# Prod (rootcause) is a separate public/support-gated step; this script verifies coherence when possible.
 set -euo pipefail
 
 # ── repo + tooling ──────────────────────────────────────────────────────────
@@ -93,7 +93,16 @@ if [ -n "$RELEASE" ]; then
         -o "$ROOT/runtime/requirements.lock"
   fi
 
-  # 1c. one release commit (includes your pending skill/doc edits), then tag.
+  # 1c. local coherence before commit/tag. Image existence is checked after push/build; prod pin drift
+  #     is a separate follow-up unless the sibling rootcause checkout is already updated.
+  say "Check local release coherence"
+  if [ "$NO_IMAGE" = 1 ]; then
+    run env SKIP_IMAGE=1 SKIP_PROD=1 "$ROOT/check-release-coherence.sh"
+  else
+    run env SKIP_IMAGE=1 SKIP_PROD=1 "$ROOT/check-release-coherence.sh"
+  fi
+
+  # 1d. one release commit (includes your pending skill/doc edits), then tag.
   say "Commit + tag"
   run git -C "$ROOT" add -A
   if [ "$DRY" = 1 ]; then git -C "$ROOT" status --short; else
@@ -103,7 +112,7 @@ if [ -n "$RELEASE" ]; then
   run git -C "$ROOT" tag -a -m "v$NEW" "v$NEW"   # annotated: repo config forces signed/annotated tags
   [ "$NO_PUSH" = 1 ] || { run git -C "$ROOT" push origin HEAD; run git -C "$ROOT" push origin "v$NEW"; }
 
-  # 1d. workspace image for the tag. Rebuild only when runtime/ changed; else re-tag the prior image
+  # 1e. workspace image for the tag. Rebuild only when runtime/ changed; else re-tag the prior image
   #     (byte-identical — the image bakes runtime/ only, never the skill).
   if [ "$NO_IMAGE" = 1 ]; then
     echo "  (--no-image: skipping image; docker mode needs $IMAGE:v$NEW built before pre-push)"
@@ -134,6 +143,21 @@ else
 fi
 
 # ── 2. fan out to every local brain (install.sh is the per-brain primitive) ──
+if [ -n "$RELEASE" ] && [ "$NO_PUSH" = 1 ] && [ "$DRY" != 1 ]; then
+  say "Skip fan-out because --no-push leaves $TARGET unfetchable by the shared clone"
+  echo; echo "done — release commit/tag created locally at $TARGET; push it before refreshing brains"
+  exit 0
+fi
+
+# Verify the single version line after the release image/tag exists, before local brains fan out.
+if [ -n "$RELEASE" ]; then
+  say "Check release image coherence"
+  if [ "$NO_IMAGE" = 1 ]; then
+    run env SKIP_IMAGE=1 SKIP_PROD=1 "$ROOT/check-release-coherence.sh"
+  else
+    run env SKIP_PROD=1 "$ROOT/check-release-coherence.sh"
+  fi
+fi
 if [ "${#BRAINS[@]}" -eq 0 ]; then
   while IFS= read -r d; do BRAINS+=("$d"); done < <(
     find "$BRAINS_ROOT" -maxdepth 1 -type d -name 'rootcause-brain-*' ! -name '*-skills' | sort
@@ -150,13 +174,19 @@ for b in "${BRAINS[@]}"; do
   [ "$DRY" = 1 ] || RC_BRAIN_KIT="$KIT" RC_BRAIN_KIT_TAG="$TARGET" "$ROOT/install.sh" "$b" >/dev/null
 done
 
-# ── 3. prod (rootcause) — separate, deploy-gated; we only remind ───────
-if [ -n "$RELEASE" ] && [ "$RELOCK" = 1 ]; then
-  say "Prod follow-up (deps changed → rootcause needs the new lib):"
+# ── 3. prod (rootcause) — separate, public/support-gated; we only remind ───────
+if [ -n "$RELEASE" ]; then
+  RUNTIME_CHANGED=0
+  if [ "$RELOCK" = 1 ] || ! git -C "$ROOT" diff --quiet "v$CUR" HEAD -- runtime/ 2>/dev/null; then
+    RUNTIME_CHANGED=1
+  fi
+  if [ "$RUNTIME_CHANGED" = 1 ]; then
+    say "Prod follow-up (runtime changed; public/support publish step required):"
   cat <<EOF
   cp runtime/requirements.lock ../rootcause/runtime/requirements.lock
-  # bump the pin in rootcause/runtime/Dockerfile to @${TARGET}, then deploy (push its stable branch)
+  # bump the pin in rootcause/runtime/Dockerfile to @${TARGET}, then follow the RootCause app deploy path
   # see docs/migration-rootcause.md
 EOF
+  fi
 fi
 echo; echo "✅ done — brains now run $TARGET"

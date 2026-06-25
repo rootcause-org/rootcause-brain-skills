@@ -1,6 +1,6 @@
 ---
 name: brain-dev-upgrade
-description: Update or check the installed rootcause brain skills kit and the rootcause `rc` CLI on a local brain checkout. Use when a user asks how to get the newest brain-dev, brain-debug, or rc-* skills, asks whether Codex/Claude auto-updates them, asks to run install.sh again, wants to check the latest released kit version, or wants to check/update the rootcause CLI used by the skills.
+description: Update or check the installed rootcause brain skills kit and the rootcause `rc` CLI on a local brain checkout. Use when a user asks how to get the newest brain-dev, brain-ask, rc-debug, rc-health, rc-fleet, brain-publish, or other shipped brain skills, asks whether Codex/Claude auto-updates them, asks to run install.sh again, wants to check the latest released kit version, or wants to check/update the rootcause CLI used by the skills.
 ---
 
 # brain-dev-upgrade - update the local kit + `rc`

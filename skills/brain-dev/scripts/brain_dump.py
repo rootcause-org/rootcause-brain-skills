@@ -2,16 +2,14 @@
 # requires-python = ">=3.11"
 # ///
 """Dump ONE brain run to two local files — a concise markdown index + a jq-queryable JSONL — over the
-PUBLIC API. The infra-free twin of rootcause's operator-only `rc_agent_debug.py`: it needs only
-the project's `ROOTCAUSE_API_KEY` (+ optional `ROOTCAUSE_BASE_URL`) and the `rc` CLI on PATH — never
-SSM, the registry DB, or the box. So it rightfully ships HERE, not in rootcause.
+PUBLIC API. It needs only `rc login` plus the `rc` CLI on PATH — never SSM, a registry DB shell, or a
+private RootCause checkout.
 
     uv run brain_dump.py <run_id>                 # writes .rootcause/dump/<run8>-<proj>.{md,jsonl}
     uv run brain_dump.py <run_id> --out-dir /tmp
 
 `fetch_via_api()` shells `rc run <id> --full -o json` → the run-dump **bundle** (`{run, events}`) →
-the SHARED `run_dump` renderer in `rootcause-runtime` (the SAME renderer `rc_agent_debug.py` uses, so
-the output is byte-identical to the operator path) → both files. Get a <run_id> from default
+the SHARED `run_dump` renderer in `rootcause-runtime` → both files. Get a <run_id> from default
 email-simulation `rc ask "<q>"`, or from `rc ask "<q>" --scenario raw` for a direct investigation.
 Add `--brain-ref dev/x` to either scenario to test a pushed dev branch without moving `main`.
 
@@ -53,7 +51,8 @@ def _load_renderer():
 
 def fetch_via_api(run_id: str) -> dict:
     """The run-dump bundle (`{run, events}`) = `rc run <id> --full -o json`. `rc` carries the auth
-    (`ROOTCAUSE_API_KEY`/`ROOTCAUSE_BASE_URL`); we only parse its output. Raises on a CLI/parse failure.
+    from `rc login` and the current brain checkout; we only parse its output. Raises on a CLI/parse
+    failure.
 
     `rc run --full -o json` emits the bundle as **NDJSON** for progressive disclosure — one
     `{"type":"run",…}` header line, then one `{"type":"event",…}` line per tool call (the same shape

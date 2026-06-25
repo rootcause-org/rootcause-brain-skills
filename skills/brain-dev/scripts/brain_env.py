@@ -25,7 +25,7 @@ from pathlib import Path
 # ── version line ────────────────────────────────────────────────────────────────────────────────
 # The single version line: plugin tag == rootcause-runtime pin == workspace image tag == prod
 # Dockerfile pin. Bump all together (see RELEASING.md) so local and prod cannot diverge.
-VERSION = "0.1.24"
+VERSION = "0.1.25"
 REPO_URL = "https://github.com/rootcause-org/rootcause-brain-skills"
 
 # The interpreter prod runs (docker/Dockerfile `FROM python:3.12-slim`). uv mode pins to it with
@@ -127,7 +127,7 @@ def brain_secrets(brain_dir: Path, *, required: bool) -> dict[str, str] | None:
     if required:
         print(
             f"error: no .env at {env_file} — the live tier / a real run needs the project secrets. "
-            "Operators recover it with rootcause's `rc_env.py <project> --pull`.",
+            "Run `rc env pull` from this brain checkout.",
             file=sys.stderr,
         )
         return None

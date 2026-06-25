@@ -1,10 +1,7 @@
 """Implementation of the shared run-dump renderer. See the package docstring for the bundle contract.
 
-Ported verbatim from rootcause's `rc_agent_debug.py` (the operator script that pioneered this
-output) so the rendered bytes stay identical; the ONLY change is the data-access layer — the
-formatting/decoration logic reads the normalized **bundle dict** instead of raw DB rows. Keep this in
-lockstep with `rc_agent_debug.py`'s fetch normalization: both must feed the same bundle for the
-byte-identical guarantee to hold.
+The renderer is data-source agnostic: public `rc run --full` hands it a normalized **bundle dict**,
+and this module owns only formatting/decoration.
 """
 
 from __future__ import annotations
@@ -152,6 +149,29 @@ def _projection_input_lines(run: dict) -> list[str]:
         lines.append(f"- **Branch selectors:** {rendered}")
     else:
         lines.append("- **Branch selectors:** none present in snapshot")
+    return lines
+
+
+def _pii_mask_lines(run: dict) -> list[str]:
+    masks = run.get("pii_masks") or run.get("shielded_data") or run.get("data_shielded")
+    if not isinstance(masks, list) or not masks:
+        return []
+    lines = ["", "## Data shielded from the model", ""]
+    for item in masks[:20]:
+        if not isinstance(item, dict):
+            lines.append(f"- `{_cell(str(item), 120)}`")
+            continue
+        label = item.get("label") or item.get("token") or item.get("kind") or "masked"
+        source = item.get("source") or item.get("table") or item.get("column") or ""
+        count = item.get("count") or item.get("rows") or item.get("occurrences")
+        bits = [f"`{label}`"]
+        if source:
+            bits.append(str(source))
+        if count is not None:
+            bits.append(f"{count} occurrence(s)")
+        lines.append("- " + " · ".join(bits))
+    if len(masks) > 20:
+        lines.append(f"- ... {len(masks) - 20} more in JSONL header")
     return lines
 
 
@@ -470,6 +490,7 @@ def render_index(bundle: dict) -> str:
     if run.get("topic"):
         L += ["## Topic", "", run["topic"], ""]
     L += _projection_input_lines(run)
+    L += _pii_mask_lines(run)
     L += [
         "## Question",
         "",
@@ -723,6 +744,7 @@ def emit_jsonl(bundle: dict) -> Iterable[str]:
         "draft": run.get("draft") or None,
         "notes": [{"key": n.get("key"), "body": n.get("body") or ""} for n in run.get("notes") or []],
         "proposed_actions": run.get("proposed_actions") if "proposed_actions" in run else None,
+        "pii_masks": run.get("pii_masks") if "pii_masks" in run else None,
         "metadata": meta or None,
         "egress": [{"host": g.get("host"), "port": g.get("port"), "scheme": g.get("scheme"),
                     "url": g.get("url"), "bytes_out": g.get("bytes_out"),

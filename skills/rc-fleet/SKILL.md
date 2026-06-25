@@ -10,6 +10,10 @@ metadata; no project argument, SSM, or operator access.
 If a RootCause MCP is installed, ignore it unless the user explicitly asks for MCP; this workflow uses
 `rc`.
 
+## Required Context
+
+Read [docs/mirrors.md](../../docs/mirrors.md) when failures involve mirrors or source freshness.
+
 ## Workflow
 
 1. Digest first:
@@ -28,7 +32,7 @@ If a RootCause MCP is installed, ignore it unless the user explicitly asks for M
    - `CTX.Nk`: context rot.
    - `GD`: grounding discarded.
 
-3. Drill two to five flagged runs with the `rc-inspect` skill. The worst-offenders section gives full
+3. Drill two to five flagged runs with the `rc-debug` skill. The worst-offenders section gives full
    UUIDs.
 
 4. Confirm systemic failures:
@@ -37,7 +41,8 @@ If a RootCause MCP is installed, ignore it unless the user explicitly asks for M
    rc patterns --days 30
    ```
    Each ranked cluster is a candidate brain fix: missing runbook, wrong query, or a domain to
-   allowlist. Author from evidence, then verify with `brain-ask`.
+   allowlist. Author from evidence, then verify with `brain-ask` and finish through `brain-publish`
+   when files changed.
 
 Use this as the entry point for periodic fleet review and for "something is off, but I do not have a
 specific UUID yet."
