@@ -1,120 +1,122 @@
 # rootcause-brain-skills
 
-**This repo produces the reusable skills (Agent Skills) + engine + `rootcause-runtime` package that get
-imported into our project BRAIN repositories.** It is the *kit*, not a brain itself. Skills authored
-here are installed once (Claude Code / Codex plugin, or a local symlink) and run against whatever
-brain you're `cd`'d into — killing the per-brain copy/drift problem.
+Reusable brain-development kit for **external project developers and their AI agents**.
 
-The code + the shipped `SKILL.md` are the durable record; release mechanics live in
-[RELEASING.md](RELEASING.md).
+This repo is the kit, not a brain:
 
-## Default close-out
+- shipped agent skills in `skills/*/SKILL.md`;
+- the local brain-dev engine in `skills/brain-dev/scripts/`;
+- the `rootcause-runtime` Python package in `runtime/` (`lib` helpers imported by brain scripts);
+- the workspace image in `docker/`;
+- installer/plugin/release plumbing.
 
-For this repo, a completed agent change should be **released and pushed by default** after the focused
-checks pass. Use best judgment to hold instead when there is a concrete reason: failing verification,
-unrelated dirty worktree state that would be swept into the release, secrets or irreversible external
-effects, missing runtime/image access, or the user explicitly asked not to push/release. Skill/doc-only
-changes still get the standard patch release (`./refresh-brains.sh --release patch`) so local brains
-can actually fetch the new tag.
+Brains consume this kit from a brain checkout (`rootcause-brain-<project>`). Skills install once and
+run from inside any brain; never copy this kit into a brain's committed `skills/`.
 
-## What a "brain" is (the consumer)
+## Audience
 
-A **brain** = `rootcause-org/rootcause-brain-<project>` — a private git repo of markdown **skills** +
-Python **grounding scripts** (`from lib import db`) + **runbooks** + **actions** that an agent loop
-reads (mounted **read-only at `/brain`**) to draft a project's support replies. It's also the
-customer's read-only audit/trust artifact (human-readable notes + code, **never secrets**).
+One audience only: project developers and their agents.
 
-- Brain model: [docs/brain-model.md](docs/brain-model.md)
-- Run trace model: [docs/run-trace-model.md](docs/run-trace-model.md)
+They have:
 
-A run never writes its brain; durable knowledge grows out-of-band (per-run journal → weekly
-consolidation PR an operator merges).
+- a brain checkout;
+- `rc login`;
+- maybe Docker and local `.env` via `rc env pull`.
 
-## What ships from HERE (and what must NOT)
+They do **not** have:
 
-Only **brain-author/test tooling** that is *infra-free and customer-world-facing* belongs here. The
-litmus test: **does it touch OUR host** (Postgres registry / River / `run_events` / Frankfurt
-CloudWatch / the box over SSM)? If yes → it stays in `rootcause`, never here.
+- private RootCause app source;
+- host shells, SSM, registry DB access, `accounts.yml`;
+- private operator scripts.
 
-| Ships here | Stays in rootcause |
-|---|---|
-| `brain_run.py`, `brain_test.py`, the `brain-dev`, `brain-ask`, `rc-debug`, `rc-health`, `rc-fleet`, `brain-publish` skills | operator host-debug over SSM (`db.py`, `logs.py`) |
-| `rootcause-runtime` (`lib`) package, incl. the `lib/run_dump` index+JSONL renderer | the operator raw-SQL escape hatch (`db.py` over the registry DB) |
-| `brain_dump.py` (run dump over the public API + OAuth token) | — (the run dump path is public API: `rc run <id> --debug`) |
-| workspace Dockerfile / published image ref | anything reading `accounts.yml` or SSM |
+If a workflow is not exposed through public `rc`/API, produce a RootCause support request. Do not leak
+private mechanics into shipped docs or skills.
 
-The run-dump split is the litmus test in action: the **renderer is shared** (one `rootcause-runtime`
-module, pulled by every consumer via the tag pin, so output is byte-identical), but the **fetch
-differs** — `brain_dump.py` shells `rc run <id> --full` (public API, OAuth token, infra-free → here).
-Only `db.py`/`logs.py` (true host/SSM access) stay in rootcause.
+## Core Model
 
-## Two distribution concerns (keep separate)
+Read these before changing product-facing docs/skills:
 
-| Concern | Mechanism | Update |
-|---|---|---|
-| **Skills + engine** | a skill collection (`skills/*`), with the engine inside `skills/brain-dev/scripts/`, shipped three ways: Claude Code plugin (`.claude-plugin/marketplace.json`), Codex plugin (`.agents/plugins/marketplace.json` + `.codex-plugin/plugin.json`), local symlink (`install.sh`) | `/plugin marketplace update` · `codex plugin marketplace upgrade` · the local-symlink fleet updates via the standard flow [`./refresh-brains.sh`](refresh-brains.sh) (release + re-run `install.sh` per brain) |
-| **`lib` → `rootcause-runtime`** | pinned Python package, consumed by git tag | bump the tag |
+- [docs/brain-model.md](docs/brain-model.md) — brain layout, refs, mounts, tenant/project model.
+- [docs/run-trace-model.md](docs/run-trace-model.md) — how to read `rc run --debug`.
+- [docs/side-effects.md](docs/side-effects.md) — read-only vs explicit side effects.
+- [docs/support-boundary.md](docs/support-boundary.md) — brain fix vs support escalation.
+- [docs/mirrors.md](docs/mirrors.md) — source mirror freshness and local/prod gaps.
 
-**The trap:** vendoring/copying `lib` here creates *`lib` drift* — a green local test against a stale
-`lib` is a *false* green. `lib` must have exactly **ONE** source of truth, pinned by tag. Both prod
-(`rootcause/runtime/Dockerfile`) and local installs pull identical versioned bytes, so "tested
-locally" provably equals "runs in prod". Keep the plugin tag, `rootcause-runtime` pin, image tag, and
-prod Dockerfile pin moving **together**.
+## Canonical Skills
 
-**The prod consumer (other end of the coupling).** `runtime/lib/` here is canonical; the only place
-that consumes it in production is **`rootcause/runtime/Dockerfile`**, which installs
-`rootcause-runtime @ git+…@v<TAG>#subdirectory=runtime` (NOT a `COPY lib/`). That repo builds its
-workspace image from `runtime/` on deploy (`deploy/bootstrap.sh`, triggered by a push to its `stable`
-branch). So a `lib` change is only *live* once you: edit it here → bump the version line per
-[RELEASING.md](RELEASING.md) + tag + publish the ghcr image → bump the pin in
-`rootcause/runtime/Dockerfile` → deploy. Never edit `lib` in `rootcause` — the cutover
-removes its duplicate copy ([docs/migration-rootcause.md](docs/migration-rootcause.md));
-`rootcause`'s devops skill carries the reciprocal note.
+Only these are first-class:
 
-## Two run modes (the engine offers both — fidelity vs. speed)
+- `brain-dev` — local scripts/tests/projection/action checks; broad router.
+- `brain-ask` — trigger one real prod/test run with `rc ask`.
+- `rc-debug` — one run/thread/session trace; inspect/propose/stop before edits.
+- `rc-health` — stale mirrors and dead-lettered runs.
+- `rc-fleet` — recent fleet and recurring failure patterns.
+- `brain-dev-upgrade` — update kit and `rc`.
+- `brain-publish` — post-edit publish/support-request step.
 
-- **Fast `uv` mode** — inner loop. Reproduces the import surface + per-project env + read-only DB
-  grounding. Does NOT reproduce the egress allowlist, `:ro` mounts (`EROFS`), or container isolation.
-  **Green `uv` run ≠ guaranteed-green prod.**
-- **Faithful `docker` mode** — pre-push gate. Runs the published workspace image with `/brain:ro` +
-  `/mirrors/<name>:ro`. Reproduces the exact dep set, mounts, isolation. The honest "does it work in
-  the box?" check.
+Do not reintroduce aliases such as `brain-debug`, `observability`, `rc-inspect`, or `rc-thread`.
 
-## Invariants
+## Boundaries
 
-- **No secrets, ever.** Env by **NAME** only; `.env` is gitignored and host-injected.
-- **Read-only by default.** The kit, like a real run, never writes a brain, posts a callback, or hits
-  the box. Diagnosis is always read-only; the only state-changing plane is a self-owned project's
-  `actions/`.
-- **Skills install once, run from inside any brain** — never copied into a brain's `skills/` (that's
-  the drift this repo exists to kill). Only project-specific test fixtures live in the brain.
-- **No ASCII diagrams** — Mermaid only.
+Ships here:
 
-## Layout
+- local brain engine: `brain_run.py`, `brain_test.py`, `brain_projection.py`, `brain_action.py`,
+  `brain_dump.py`;
+- public-API skills over `rc`;
+- `rootcause-runtime` (`runtime/lib`);
+- workspace Dockerfile/image.
 
+Stays out:
+
+- RootCause host/debug/operator mechanics;
+- registry/River/raw SQL/debug scripts;
+- secrets, credentials, private repo paths;
+- fake publish/promote wrappers for capabilities not public yet.
+
+Diagnosis is read-only by default. Exceptions must be explicit: `rc ask` creates runs, action confirm
+executes writes, and `brain_action.py --commit` writes to whatever `.env.action` targets.
+
+## Version Coherence
+
+One version line moves together:
+
+- plugin manifests;
+- `skills/brain-dev/scripts/brain_env.py`;
+- `runtime/pyproject.toml`;
+- install docs;
+- workspace image tag;
+- `rootcause/runtime/Dockerfile` pin.
+
+Run `./check-release-coherence.sh` before trusting a release. Runtime dependency changes require
+`runtime/requirements.lock` and the sibling `rootcause/runtime/requirements.lock` to match.
+
+## Default Close-Out
+
+After focused checks pass, release and push by default.
+
+Use `./refresh-brains.sh --release patch` for docs/skill changes too; local brains fetch tags, not
+floating `main`.
+
+Hold instead only for concrete blockers: failing checks, unrelated dirty files that would be swept in,
+missing image/runtime access, secrets/irreversible effects, or explicit user instruction.
+
+## Verification
+
+Use the smallest checks that cover the change:
+
+```bash
+uv run --no-project python -m py_compile skills/brain-dev/scripts/*.py
+cd runtime && uv run --with . --with pytest --no-project pytest tests -q
+./check-release-coherence.sh
 ```
-skills/*/SKILL.md                     # install-once skills: brain-dev, brain-ask, rc-debug, rc-health, rc-fleet, brain-publish, upgrade
-skills/brain-dev/scripts/             # ENGINE inside the skill: brain_env.py · brain_run.py · brain_test.py · brain_projection.py · brain_dump.py
-.claude-plugin/marketplace.json       # Claude Code plugin catalog
-plugin.json                           # Claude Code plugin manifest
-.agents/plugins/marketplace.json      # Codex plugin catalog
-.codex-plugin/plugin.json             # Codex plugin manifest (skills: ./skills/)
-install.sh                            # per-brain primitive: pin the shared clone + symlink all skills in (gitignored)
-refresh-brains.sh                     # STANDARD FLOW: cut a release (RELEASING.md) + fan install.sh out to every local brain
-runtime/                              # rootcause-runtime package (lib: db, stripe, cloudwatch, fs, http, livecheck, run_dump…)
-docker/Dockerfile                     # workspace image (or published-tag ref)
-docs/rc-cli.md                        # the project's `rc` CLI (sibling rootcause-cli) + ground-first author→verify loop
-README.md  AGENTS.md  RELEASING.md
-```
 
-The skills install natively in Claude Code (`.claude/skills`) and Codex (`.agents/skills`). The
-`brain-dev` skill is self-contained (engine in its own `scripts/`), and every SKILL.md references
-scripts or sibling skills relatively — never `${CLAUDE_PLUGIN_ROOT}` or a clone path (those don't port
-to Codex).
+For skill edits, validate each `skills/*/SKILL.md` with the skill-creator quick validator. For markdown
+changes, scan relative links and stale private references.
 
 ## Tooling
 
-`uv` for Python (`uv add|run|sync`), `pnpm` for any JS, `mise` for versions. Author/edit a `SKILL.md`
-with the `skill-creator` skill; mirror an example brain (`rootcause-brain-momentum-tools`,
-`rootcause-brain-pro-backup`) for exact frontmatter/format. QA every script with `py_compile` and the
-live test tiers before pushing.
+- Python: `uv` only.
+- Node/JS: `pnpm` only.
+- Versions/env: `mise`.
+- Shell search: prefer `rg`.
+- Skill authoring: use the `skill-creator` skill.
