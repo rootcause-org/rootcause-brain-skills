@@ -34,6 +34,15 @@ If a RootCause MCP is installed, ignore it unless the user explicitly asks for M
    `--scenario raw`; include caveats, run accounting (`status`, turns, cost, outcome), and trace URL.
    Capture the printed `run_id`. If status is `error`, surface the error and stop.
 
+   If the draft/note mentions a state-changing operation (booked, moved, cancelled, refunded, sent,
+   updated) or any action/preflight caveat, do a quick action sanity check before reporting:
+   ```bash
+   rc run <run_id> --events
+   ```
+   Distinguish "draft text said it happened" from the action lifecycle: preflight failed ⇒ no proposal
+   and no mutation; proposed action ⇒ pending human confirm; succeeded/failed action ⇒ post-loop
+   execution happened. Use `../brain-dev/action-run-triage.md` for the decision table.
+
 4. Show what the run wrote to the brain:
    ```bash
    rc run <run_id> --brain-diff

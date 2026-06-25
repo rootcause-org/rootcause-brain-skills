@@ -28,7 +28,8 @@ callback, never touches our host. Grounding queries run in a `READ ONLY` Postgre
 > (`actions/<id>/script.py`) DOES run locally, faithfully: `scripts/brain_action.py` mirrors
 > `HostedExecutor` (Layer-1 validation → `preflight.py` → the write body fed only the sealed
 > `.env.action`), **dry-run by default** (the body rolls back). See
-> [the local action loop](#testing-a-hosted-python-action-locally-brain_actionpy) below and
+> [action-run-triage.md](action-run-triage.md) when a prod run appears to have mutated state,
+> [the local action loop](#testing-a-hosted-python-action-locally-brain_actionpy) below, and
 > [docs/actions.md](../../docs/actions.md).
 
 ## The two modes (fidelity vs. speed)
