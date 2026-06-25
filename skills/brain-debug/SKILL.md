@@ -1,6 +1,6 @@
 ---
 name: brain-debug
-description: Replay and inspect one production rootcause brain run from inside a brain checkout. Use when given a run UUID, asked to debug a prod run, asked to trigger a customer-style question and inspect the resulting run, or asked for the full reasoning/tool trace. Dumps via the public API using `rc` plus the sibling `brain-dev` engine, then reads the markdown index first and drills into JSONL only as needed.
+description: Replay and inspect one production rootcause brain run from inside a brain checkout. Use when given a run UUID, asked to debug a prod run, asked to trigger a customer-style email simulation or direct raw investigation and inspect the resulting run, or asked for the full reasoning/tool trace. Dumps via the public API using `rc` plus the sibling `brain-dev` engine, then reads the markdown index first and drills into JSONL only as needed.
 ---
 
 # brain-debug - dump and read one prod run
@@ -23,14 +23,17 @@ If the harness already provides the absolute path of `skills/brain-dev`, use tha
 
 1. Get a run id.
    - If the input looks like a UUID, use it directly.
-   - If the input is a quoted question, trigger a run first:
+   - If the input is a quoted question, trigger a run first. Default `rc ask` is an email simulation;
+     use `--scenario raw` for direct investigations/debugging/schema/data questions:
      ```bash
      rc ask "<question>"
+     rc ask "<direct investigation>" --scenario raw
      rc ask "<question>" --brain-ref dev/<branch>
      rc ask "<question>" --effort pro
      ```
-     A `--brain-ref` run is side-effect-free: no callback or journal push; proposed actions are
-     flagged `test`. Use `--effort pro|max` only for an explicit stronger-tier retry.
+     A `--brain-ref` run is side-effect-light: no callback or journal push; proposed actions are
+     flagged `test`. Use it for verification against a pushed `dev/*` branch. Use `--effort pro|max`
+     only for an explicit stronger-tier retry.
    - If no run id or question was provided, ask for one and stop.
 
 2. Dump the run to gitignored `.rootcause/dump/<run8>-<project>.{md,jsonl}`:
@@ -39,9 +42,9 @@ If the harness already provides the absolute path of `skills/brain-dev`, use tha
    ```
    It prints both paths plus a one-line summary. On `error:`, surface the error and stop.
 
-3. Read the `.md` index first. Summarize status, question, flags/anomalies, and the gist of the final
-   draft or note. The index is the map: timeline, system prompt, grounding pre-pass, anomalies, and a
-   ready-made drill-down block.
+3. Read the `.md` index first. Summarize status, scenario if shown, question, flags/anomalies, and the
+   gist of the final draft/note or raw answer. The index is the map: timeline, system prompt,
+   grounding pre-pass, anomalies, and a ready-made drill-down block.
 
 4. Drill into the `.jsonl` only for a specific step or question. Do not read it top to bottom:
    ```bash

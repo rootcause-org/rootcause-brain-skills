@@ -171,10 +171,11 @@ You're looking for `action_id=<id>` with sane `params`. (A run **proposes**; it 
 `description` or the surrounding skill, not the script.)
 
 > **No operator/SSM access?** The `db.py` queries above are rootcause operator tools. A project
-> dev does the **entire** Mode A without them — and **without a `main` push**: `rc ask "<symptom>"
-> --brain-ref dev/x` triggers the real prod loop against a pushed dev branch (side-effect-free, action
-> flagged `test`), then `brain_dump.py <run_id>` renders the index + jq-queryable trace locally — which
-> shows whether (and with what params) the run reached for the action. See the
+> dev does the **entire** Mode A without them — and **without a `main` push**: default
+> email-simulation `rc ask "<symptom>" --brain-ref dev/x` triggers the real prod loop against a pushed
+> dev branch (side-effect-light, action flagged `test`), then `brain_dump.py <run_id>` renders the
+> index + jq-queryable trace locally — which shows whether (and with what params) the run reached for
+> the action. See the
 > [brain-dev test-run loop](SKILL.md#test-a-brain-change-on-real-prod-infra--without-pushing-main-rc-ask--brain_dumppy)
 > and [`rc run <id> --events`](../../docs/rc-cli.md) for the operator-free read path.
 > With a superadmin/all-projects token in `default`, run this plainly from inside the brain; the checkout

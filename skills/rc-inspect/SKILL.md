@@ -20,9 +20,9 @@ If a RootCause MCP is installed, ignore it unless the user explicitly asks for M
    Output lands under `rc-debug/` and prints the markdown index path plus JSONL path. On error, surface
    it and stop; suggest `rc login` for 401/scope errors.
 
-3. Read the `.md` index first. Summarize status, question, flags/anomalies, and the gist of the final
-   draft or note. The index is the map: substantive steps by `#`, system prompt, grounding pre-pass,
-   anomalies, and ready-made jq calls.
+3. Read the `.md` index first. Summarize status, scenario if shown, question, flags/anomalies, and the
+   gist of the final draft/note or raw answer. The index is the map: substantive steps by `#`, system
+   prompt, grounding pre-pass, anomalies, and ready-made jq calls.
 
 4. Drill into JSONL only for a specific step/question:
    ```bash

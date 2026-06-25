@@ -11,8 +11,9 @@ SSM, the registry DB, or the box. So it rightfully ships HERE, not in rootcause.
 
 `fetch_via_api()` shells `rc run <id> --full -o json` → the run-dump **bundle** (`{run, events}`) →
 the SHARED `run_dump` renderer in `rootcause-runtime` (the SAME renderer `rc_agent_debug.py` uses, so
-the output is byte-identical to the operator path) → both files. Get a <run_id> from `rc ask "<q>"`
-(optionally `rc ask "<q>" --brain-ref dev/x` to test a pushed dev branch without moving `main`).
+the output is byte-identical to the operator path) → both files. Get a <run_id> from default
+email-simulation `rc ask "<q>"`, or from `rc ask "<q>" --scenario raw` for a direct investigation.
+Add `--brain-ref dev/x` to either scenario to test a pushed dev branch without moving `main`.
 
 Then drill into any step with jq (the index prints ready-made queries):
 
@@ -99,7 +100,7 @@ def _reexec_under_uv() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="brain_dump.py", description=__doc__.split("\n")[0])
-    p.add_argument("run_id", help="the run UUID (from `rc ask \"<question>\"`).")
+    p.add_argument("run_id", help="the run UUID (from `rc ask`, optionally `--scenario raw`).")
     p.add_argument("--out-dir", help=f"output directory (default: {OUT_DIR}).")
     args = p.parse_args(sys.argv[1:] if argv is None else argv)
 

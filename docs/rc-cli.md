@@ -21,6 +21,7 @@ the end-consumer/app-facing plane; `rc` is the brain-dev/observability plane.
 
 ```bash
 rc ask "<customer-style question>"      # trigger a REAL prod run, wait for the answer; prints the run_id   (POST /api/v1/runs)
+rc ask "<direct investigation>" --scenario raw  # direct answer for debugging/schema/data questions
 rc ask "<q>" --brain-ref dev/x          # …against a pushed dev/* branch — NO main push, main stays live
 rc ask "<q>" --effort pro               # force a stronger rootcause tier for this run (default|pro|max)
 rc ask --project dentai "<q>"           # outside a brain: all-projects admin token selects a project
@@ -53,10 +54,15 @@ rc whoami                       # which project/tenant will rc hit from here, an
 - **Every command has `-o json`** for scripting (`rc runs -o json | jq …`); the thin endpoints return
   raw rows, so `-o json` is a verbatim passthrough you can roll up yourself.
 
-- **`rc ask` is the high-fidelity loop test.** It runs the *real* prod loop (model, egress, `/brain:ro`,
-  `/mirrors`, KB) — `--brain-ref dev/x` fetches a pushed `dev/*` branch so a brain change is tested on
-  real infra **without** moving `main` (which is live). The run is **side-effect-free**: no callback,
-  no journal push, and any proposed action/PR is flagged `test`. Dump it with the `brain-dev` skill's
+- **`rc ask` is the high-fidelity loop test.** By default it is an **email simulation**: the prompt is
+  treated like an inbound support email, and the result is rendered as the draft/note/actions/PRs the
+  agent would put in front of a human reviewer. Add `--scenario raw` for direct investigations,
+  debugging, schema/data questions, or downstream-AI answers where draft/note/rejection concepts get
+  in the way.
+- **`--brain-ref dev/x` is the side-effect-light verification path.** It fetches a pushed `dev/*`
+  branch so a brain change is tested on real infra **without** moving `main` (which is live). The run
+  posts no ReplyPen callback, pushes no durable journal, and any proposed action/PR is flagged `test`.
+  Dump it with the `brain-dev` skill's
   [`brain_dump.py`](../skills/brain-dev/SKILL.md#test-a-brain-change-on-real-prod-infra--without-pushing-main-rc-ask--brain_dumppy)
   (`rc run <id> --full` → the shared `run_dump` renderer → an index `.md` + jq-queryable `.jsonl`).
   `--effort pro|max` is an explicit escalation knob for a stronger retry; omit it for normal tier
@@ -98,7 +104,7 @@ for supported endpoints. Use it with an all-projects admin profile when you want
 from outside its brain checkout, or to override the checkout's project:
 
 ```bash
-rc ask --project dentai --tenant belgium-staging "Run the real loop for this question"
+rc ask --project dentai --tenant belgium-staging "Hi, can you check whether my appointment is confirmed?"
 ```
 
 A pinned project token ignores `--project` server-side; it cannot widen to another project.
@@ -109,7 +115,7 @@ A pinned project token ignores `--project` server-side; it cannot widen to anoth
 git clone …/rootcause-brain-<project> && cd rootcause-brain-<project>   # .rootcause.toml already inside
 rc login            # opens a browser; pick the project (or all-projects, if admin) on the consent screen
 rc whoami           # confirms: profile, project, base URL, signed-in
-rc ask "…"          # just works — no --profile, no export
+rc ask "…"          # email simulation; just works — no --profile, no export
 ```
 
 The committed `.rootcause.toml` carries `base_url`, so a customer hits the right endpoint with zero env

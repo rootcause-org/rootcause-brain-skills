@@ -18,20 +18,24 @@ One short playbook per question. Start with the one that matches; each links the
 ## Trigger & verify a brain change — `rc ask` → `rc run <id> --brain-diff`
 
 The high-fidelity loop test: run the *real* prod loop and read back both the answer and what the run
-wrote to the brain.
+wrote to the brain. Default `rc ask` is an email simulation. Use `--scenario raw` only when the task is
+a direct investigation/debugging/schema/data question rather than "what support draft would the agent
+produce?"
 
 ```bash
 rc ask "Hi, my account is sophie@coca-cola.com. Do I still have open invoices?"   # waits; prints run_id
+rc ask "Which tables hold invoice state for Sophie?" --scenario raw
 rc ask "<customer question>" --effort pro     # explicit stronger-tier retry (default|pro|max)
 rc run <run_id> --brain-diff       # the journal commit this run wrote (SHA · files · diff)
 ```
 
 Test a change **without** moving `main`: push a `dev/*` branch and run against it — the run is
-side-effect-free (no callback/journal push; proposed actions flagged `test`).
+side-effect-light (no callback/journal push; proposed actions flagged `test`).
 
 ```bash
 git push origin dev/refund-rework
 rc ask "<customer question>" --brain-ref dev/refund-rework
+rc ask "<direct investigation>" --scenario raw --brain-ref dev/refund-rework
 ```
 
 To dump the run's full reasoning/tool-trail too, use the

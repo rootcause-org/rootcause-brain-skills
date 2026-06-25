@@ -156,9 +156,10 @@ A project may serve many **tenants** (e.g. DentAI → dental practices). Two thi
 - **Private-DB live-test limitation — the honest part.** The live tiers need a **laptop-reachable**
   DSN. A tenant DB locked to the box (DentAI's RDS is SG-restricted to the prod box `/32`) is **not**
   reachable from your laptop, so `--live` **skips/fails** there. That is expected and not a brain bug.
-  When the DB isn't laptop-reachable, the **faithful test is a real prod run** — `rc ask` (next
-  section) or the operator's `rc_agent_run.sh` — which executes the real grounding against the real DB
-  under the real RLS scope. Offline (`brain_test.py`, no `--live`) still runs everywhere.
+  When the DB isn't laptop-reachable, the **faithful test is a real prod run** — `rc ask --scenario raw`
+  for a direct grounding/schema/data investigation, or default `rc ask` (next section) for an email
+  simulation — which executes the real grounding against the real DB under the real RLS scope. Offline
+  (`brain_test.py`, no `--live`) still runs everywhere.
 
 > **Channel trap (shipping, not testing).** A run sources the shared `/brain` at the tenant's pinned
 > `project_brain_ref` (default `stable`), **not `main`** — so pushing + syncing a shared-brain change is
@@ -187,13 +188,17 @@ green local loop against a stale copy is a false green). So the high-fidelity lo
 > `--project <project>` explicitly.
 
 ```bash
-# 1) trigger a run from a customer-style question (against main HEAD):
+# 1) trigger an email-simulation run from a customer-style question (against main HEAD):
 rc ask "Hi, my account is sophie@coca-cola.com. Do I still have open invoices?"
 rc ask "<same question>" --effort pro         # optional stronger-tier retry (default|pro|max)
+
+# …or ask for a direct Markdown answer to an investigation/debug/schema/data question:
+rc ask "Which tables hold open invoice state for Sophie?" --scenario raw
 
 # …or test a brain change WITHOUT touching main — push a dev branch, run against it:
 git push origin dev/refund-rework            # dev branch; main stays live
 rc ask "<customer question>" --brain-ref dev/refund-rework
+rc ask "<direct investigation>" --scenario raw --brain-ref dev/refund-rework
 
 # 2) dump the run to two local files (concise index + jq-queryable event log):
 uv run "$SKILL/scripts/brain_dump.py" <run_id>        # → .rootcause/dump/<run8>-<proj>.{md,jsonl}
@@ -212,7 +217,11 @@ in `rootcause-runtime` → both files. It's the same renderer the operator's `rc
 so the output is byte-identical regardless of which side dumped the run.
 
 Playbook beats:
-- **Side-effect-free.** A `--brain-ref` run posts no callback and pushes no journal; proposed
+- **Scenario choice.** Default `rc ask` is an email simulation: it exercises support tone, playbooks,
+  draft/note rendering, proposed actions, PRs, and the ReplyPen-shaped review flow. Use
+  `--scenario raw` for direct investigations, debugging, schema/data questions, and machine-readable
+  answers where a support draft would be noise.
+- **Side-effect-light dev refs.** A `--brain-ref` run posts no callback and pushes no journal; proposed
   actions/PRs are recorded but **flagged `test`** — so "did the agent reach for the action?" (**Mode
   A**) still works against a dev ref. The dump's header echoes `brain_ref` + `trigger=test`, so a test
   run is never mistaken for a live one.

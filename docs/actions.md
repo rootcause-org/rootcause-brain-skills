@@ -265,8 +265,9 @@ authoring.
 ## Related
 
 - [`rc` CLI](rc-cli.md) — the project's self-service window into its own runs; the **ground-first**
-  step (`rc runs`, `rc run <id> --events`) that should precede authoring any action. `rc ask "<symptom>"
-  --brain-ref dev/x` + [`brain_dump.py`](../skills/brain-dev/SKILL.md#test-a-brain-change-on-real-prod-infra--without-pushing-main-rc-ask--brain_dumppy)
+  step (`rc runs`, `rc run <id> --events`) that should precede authoring any action. Default
+  email-simulation `rc ask "<symptom>" --brain-ref dev/x` +
+  [`brain_dump.py`](../skills/brain-dev/SKILL.md#test-a-brain-change-on-real-prod-infra--without-pushing-main-rc-ask--brain_dumppy)
   is now the project-dev's **Mode A** ("did the agent reach for the action?") — real prod infra, action
   flagged `test`, **no operator/SSM access and no `main` push** required.
 - [`/rc-action-test`](../../rootcause/.agents/commands/rc-action-test.md) — the trigger command
