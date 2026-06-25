@@ -34,8 +34,8 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 
 | Skill | Job |
 |---|---|
-| `brain-dev` | Local front door: map a brain, run scripts/tests/projection/action local checks, and route broad prompts. |
-| `brain-ask` | Trigger one real prod/test run with `rc ask`, then report answer, accounting, trace, and brain diff. |
+| `brain-dev` (Local Brain Work) | Map a brain, run local/live/docker tests, projection, mirror checks, and action dry-runs. |
+| `brain-ask` | Last-mile production-loop `rc ask` validation, usually against a pushed `dev/*` ref. |
 | `rc-debug` | One run/thread/session to trace/debug/index/JSONL drilldown; analysis-first before edits. |
 | `rc-health` | Stale mirrors plus dead-lettered runs. |
 | `rc-fleet` | Recent fleet digest plus recurring failure patterns. |
@@ -81,11 +81,11 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 ## Single Version Line
 
 The plugin versions, `rootcause-runtime` pin, workspace image tag, and production runtime pin move
-together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.27`**.
+together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.28`**.
 
 - Runtime pin:
-  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.27#subdirectory=runtime`
-- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.27`
+  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.28#subdirectory=runtime`
+- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.28`
 
 Check coherence:
 

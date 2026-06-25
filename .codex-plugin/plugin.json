@@ -1,7 +1,7 @@
 {
   "name": "brain-dev",
-  "version": "0.1.27",
-  "description": "Rootcause brain skills for local brain-dev, rc production-run debugging, health/fleet review, and publish support workflows. Brain-dir-relative; no private RootCause source needed.",
+  "version": "0.1.28",
+  "description": "Rootcause Brain Dev skills for Local Brain Work, rc ask validation, production-run debugging, health/fleet review, and publish support workflows. Brain-dir-relative; no private RootCause source needed.",
   "author": { "name": "rootcause" },
   "repository": "https://github.com/rootcause-org/rootcause-brain-skills",
   "skills": "./skills/"

@@ -53,8 +53,8 @@ Read these before changing product-facing docs/skills:
 
 Only these are first-class:
 
-- `brain-dev` — local scripts/tests/projection/action checks; broad router.
-- `brain-ask` — trigger one real prod/test run with `rc ask`.
+- `brain-dev` (Local Brain Work) — local scripts/tests/projection/action checks; broad router.
+- `brain-ask` — last-mile prod/test run validation with `rc ask`.
 - `rc-debug` — one run/thread/session trace; inspect/propose/stop before edits.
 - `rc-health` — stale mirrors and dead-lettered runs.
 - `rc-fleet` — recent fleet and recurring failure patterns.

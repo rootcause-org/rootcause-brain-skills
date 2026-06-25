@@ -5,7 +5,11 @@ description: Ask a real production rootcause brain using `rc ask`, then verify t
 
 # brain-ask - ask a real prod brain
 
-Use `rc ask` from inside the current brain checkout. The `rc` CLI auto-targets the project from the
+Use Brain Ask for production-loop `rc ask` validation, usually after a pushed `dev/*` ref. If
+validating local/unpushed brain edits, running grounding scripts, tenant projection, local tests,
+mirror-dependent checks, or action dry-runs, use Local Brain Work (`brain-dev`) first.
+
+Run `rc ask` from inside the current brain checkout. The `rc` CLI auto-targets the project from the
 brain metadata and uses the logged-in OAuth token; no SSM or operator access.
 For tenant-enabled projects, do not pass `--tenant` by default: `rc` uses the tenant already associated
 with the active `rc login`. Check `rc whoami` if the tenant is unclear.
@@ -32,10 +36,11 @@ Read:
    rc ask "<question>" --brain-ref dev/<branch>
    rc ask "<question>" --effort pro
    ```
-   Use `--brain-ref dev/<branch>` only for an already-pushed dev branch. It keeps `main` live and the
-   run is flagged `test`: no ReplyPen callback, no durable journal push, and proposed actions/PRs are
-   test artifacts. Use `--effort pro|max` only when explicitly escalating a run; omitted/default keeps
-   normal tier selection.
+   Use `--brain-ref dev/<branch>` only for an already-pushed dev branch after Local Brain Work has
+   covered local checks that fit the change. It keeps `main` live and the run is flagged `test`: no
+   ReplyPen callback, no durable journal push, and proposed actions/PRs are test artifacts. Use
+   `--effort pro|max` only when explicitly escalating a run; omitted/default keeps normal tier
+   selection.
 
 3. Relay the result: draft/note/actions for the default email simulation, or the direct answer for
    `--scenario raw`; include caveats, run accounting (`status`, turns, cost, outcome), and trace URL.

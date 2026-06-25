@@ -1,9 +1,9 @@
 ---
 name: brain-dev
-description: "Iterate on and verify a rootcause project's BRAIN locally: map a brain checkout, run grounding scripts, run offline/live test tiers, preview tenant projection, test hosted Python actions locally, route broad did-it-work/is-anything-broken prompts to the focused rc skills, and check a brain change before pushing. Use inside a rootcause-brain checkout; no private RootCause source required."
+description: "Local Brain Work for a rootcause project's BRAIN: map a brain checkout, run grounding scripts, run offline/live/docker test tiers, preview tenant projection, test hosted Python actions locally, route broad did-it-work/is-anything-broken prompts to focused rc skills, and check a brain change before pushing. Use inside a rootcause-brain checkout before production-loop validation; no private RootCause source required."
 ---
 
-# brain-dev - local brain work
+# Local Brain Work (`brain-dev`)
 
 A brain is markdown knowledge plus Python grounding/action scripts that production mounts read-only at
 `/brain`. This skill runs the reusable local engine shipped in `scripts/` against the current brain
@@ -24,8 +24,8 @@ mounts.
 
 | User intent | Use |
 |---|---|
-| Run a grounding script, local tests, projection preview, or hosted-Python action dry-run | `brain-dev` |
-| "Does this change work on prod infra?" or "simulate this customer email" | `brain-ask` |
+| Run a grounding script, local/live/docker tests, projection preview, mirror-dependent check, or hosted-Python action dry-run | Local Brain Work (`brain-dev`) |
+| "Does this change work on prod infra?" or "simulate this customer email" | Brain Ask (`brain-ask`) |
 | Debug one run/thread/session, read full trace, or explain why a draft/action happened | `rc-debug` |
 | "Is anything broken?" stale mirrors or dead letters | `rc-health` |
 | "What keeps failing?" recent fleet/pattern review | `rc-fleet` |
@@ -109,7 +109,9 @@ same as making a shared-brain change live. Use `brain-publish` after committing.
 ## Production Confidence
 
 Local runners do not reproduce the full LLM loop, warm start, grounding pre-step, tenant scoping,
-production egress, callback delivery, or post-loop journal/action handling. For that, use `rc`:
+production egress, callback delivery, or post-loop journal/action handling. Brain Ask is last-mile
+production-loop validation, usually after a pushed `dev/*` ref; it is not a replacement for local brain
+checks. For that prod loop, use `rc`:
 
 ```bash
 rc ask "<customer-style question>"
