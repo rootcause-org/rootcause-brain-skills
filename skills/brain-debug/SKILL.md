@@ -21,6 +21,11 @@ If the harness already provides the absolute path of `skills/brain-dev`, use tha
 
 ## Workflow
 
+Default to an analysis-first stance. Be autonomous and thorough in finding the likely issue, but stop
+before changing files: inspect the dump, relevant JSONL slices, and likely culprit brain files, then
+propose the smallest fix that should move the needle. Do not edit files, commit, publish, or run a
+verification rerun for a proposed fix until the user confirms the proposal.
+
 1. Get a run id.
    - If the input looks like a UUID, use it directly.
    - If the input is a quoted question, trigger a run first. Default `rc ask` is an email simulation;
@@ -56,11 +61,22 @@ If the harness already provides the absolute path of `skills/brain-dev`, use tha
    ```
    Use `// ""` for string matching because the `{type:"run"}` header lacks event fields.
 
-5. If the dump exposes a brain bug, fix the brain, not the run. The index's "Files the run read" list
-   points at likely culprit files. Edit there, verify, and commit.
+5. If the dump exposes a likely brain bug, diagnose the brain, not the run. Use the index's "Files the
+   run read" list to inspect likely culprit files, plus focused `rg`/read-only checks as needed. Be
+   willing to keep digging until you can name the likely root cause or the remaining uncertainty.
 
-6. After committing the fix, do not leave publish as an implicit human follow-up. Ask explicitly:
+6. Before changing any brain file, report:
+   - root cause or best hypothesis
+   - evidence from the dump/files
+   - proposed file changes, scoped to the smallest useful fix
+   - verification plan
+
+   Ask for confirmation and stop.
+
+7. If the user confirms, implement the proposed fix, verify it, and commit. Do not leave publish as an
+   implicit human follow-up. Ask explicitly:
    `Can I now publish them?` If approved, push/sync/re-run via
    `skills/brain-dev/ship-and-verify.md`.
 
-This skill is read-only unless you pass a question, which intentionally triggers a new test run.
+This skill is read-only unless you pass a question, which intentionally triggers a new test run, or the
+user explicitly confirms the proposed file changes.
