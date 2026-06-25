@@ -94,7 +94,7 @@ fixtures**, under `skills/<name>/`.)
 | `skills/brain-dev/SKILL.md` | Local engine skill: brief → run a grounding script / test tiers → report, in `uv` or `docker` mode. |
 | `skills/brain-dev/action-run-triage.md` | Quick decision table for `rc ask` runs that mention actions, preflights, or apparent mutations. |
 | `skills/brain-dev/scripts/brain_env.py` · `brain_run.py` · `brain_test.py` · `brain_projection.py` | The engine, inside the skill — shared core + run one script / test tiers / tenant projection summaries; brain-dir-relative. |
-| `skills/brain-dev-upgrade/SKILL.md` | Update/check the installed local kit and explain Codex/Claude plugin update commands. |
+| `skills/brain-dev-upgrade/SKILL.md` | Update/check the installed local kit, the `rc` CLI, and Codex/Claude plugin update commands. |
 | `skills/observability/SKILL.md` | Watch & triage this project's real prod runs with the `rc` CLI (trigger+verify, inspect a run, health, patterns, thread). Read-only over the public API; OAuth-scoped to your project. |
 | `skills/brain-debug/SKILL.md` | Dump/replay one prod run through `brain_dump.py`, then drill the generated JSONL selectively. |
 | `skills/brain-ask` · `rc-inspect` · `rc-health` · `rc-fleet` · `rc-thread` | Native Codex/Claude skills for the former slash-command workflows. |
@@ -110,12 +110,12 @@ fixtures**, under `skills/<name>/`.)
 
 The plugin versions, the `rootcause-runtime` pin, the workspace image tag, and rootcause's prod
 Dockerfile pin **move together** so local and prod can't diverge — one bump point, see
-[RELEASING.md](RELEASING.md). Current line: **`v0.1.21`**.
+[RELEASING.md](RELEASING.md). Current line: **`v0.1.22`**.
 
 - `lib` dependency (brain scripts + CI):
-  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.21#subdirectory=runtime`
+  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.22#subdirectory=runtime`
   — **always pin a tag, never float `main`** (a push would silently break green local tests).
-- workspace image: `ghcr.io/rootcause-org/workspace:v0.1.21`.
+- workspace image: `ghcr.io/rootcause-org/workspace:v0.1.22`.
 
 ## Develop on the kit itself
 

@@ -9,7 +9,7 @@
       "name": "brain-dev",
       "source": ".",
       "description": "Install the rootcause brain skills: local brain-dev, prod run debugging, and rc observability workflows.",
-      "version": "0.1.21"
+      "version": "0.1.22"
     }
   ]
 }
