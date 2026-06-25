@@ -18,6 +18,62 @@ is required to work on it.
 | `actions/<id>/` | Optional action catalog: manifest plus script/preflight. Proposal is in-loop; execution is gated later. |
 | `.rootcause/` | Gitignored local artifacts: debug dumps, projection previews, run dumps. Never commit. |
 
+## Audience And Ownership
+
+This kit is for project developers and their AI agents working from a brain checkout. It should teach
+enough production context to let them improve the brain and recognize RootCause support boundaries,
+without requiring private RootCause source, host shells, SSM, registry database access, or operator
+scripts.
+
+The brain is the project's owned instruction layer. Put business context here: product vocabulary,
+support policies, escalation/playbook decisions, tone/voice choices, grounding scripts, tests,
+projection templates, and action manifests. Do not put private RootCause host mechanics, secrets, or
+generic system-prompt rules here.
+
+## Brain Versus External Context
+
+At runtime the main loop may receive several read-only sources. They are complementary, not
+interchangeable.
+
+| Source | Mounted as | What belongs there | What the brain should say about it |
+|---|---|---|---|
+| Project brain | `/brain` | Durable business context, routing, playbooks, scripts, fixtures, projection templates, action catalog. | Which brain files/scripts answer which classes of questions, and how to decide in project terms. |
+| Tenant brain/overlay | `/tenant` and/or compiled `/brain` | Tenant-specific overrides, labels, tone, local policies, settings-driven substitutions. | Shared rules that are safe for all tenants, plus projection templates when the shared brain compiles tenant views. |
+| Source mirrors | `/mirrors/<name>` | Customer application code, schemas, config, runbooks, or other source-controlled repositories mirrored by RootCause. | Which repo/file areas explain behaviors; do not copy code facts that should be read from mirrors. |
+| Knowledge base | `/kb` | External support docs or synced knowledge sources, when configured. | When to consult KB material and how it should rank against committed brain playbooks. |
+| Grounding databases/APIs | `lib.db`, `lib.http`, etc. | Live read-only facts: customers, orders, invoices, app state, remote API data. | How to query safely, which scripts encapsulate repeated lookups, and what findings mean for the customer. |
+| Actions | `actions/<id>/` plus host catalog | Vetted write intents, parameter schemas, read-only preflight, optional hosted execution script. | When an action is the right resolution, required evidence for params, and reviewer-facing caveats. |
+
+If a fact changes with the customer's app state or source code, prefer a grounding script or mirror
+lookup over copying it into prose. If a fact is a stable support policy, product concept, customer
+promise, or decision tree, put it in the brain with tests where practical.
+
+## Production Prompt Boundary
+
+The production loop also sends standing instructions from RootCause itself, currently in
+`rootcause/internal/agent/prompt.go`. Brain docs and shipped skills should stay consistent with that
+mindset instead of restating it.
+
+For email runs, `emailPreamble` already tells the model that it is drafting a grounded customer reply
+for human review; the draft is customer-facing plain language; technical internals stay out of the
+draft; the note is a short plain-language reviewer brief; and actions must not be claimed as done
+unless verified by the flow. The shared system prompt already covers the fresh container, read-only
+`/brain` and `/mirrors`, writable scratch, grounding mandate, journal path, and terminal-tool finish.
+Capability-gated prompt sections cover source PRs, actions/preflight, PII tokens, DB scoping, mirror
+rosters, DB helper usage, and run time.
+
+Brain content should therefore focus on project specifics:
+
+- product terms, names, and tone choices the generic prompt cannot know;
+- which evidence to gather and which scripts/playbooks to open;
+- customer promises, support policy, escalation criteria, and action-selection rules;
+- what belongs in the customer-facing reply versus what the reviewer needs to know for this project.
+
+Do not duplicate generic rails such as "be grounded", "do not invent", "finish with the tool", raw
+`lib.db` helper syntax, or the generic draft/note split unless the project has a narrower local rule.
+`queryPreamble` is a separate machine-facing/raw-data mode; mention it only when a brain rule would
+otherwise wrongly force customer tone, localization, or identifier hiding into raw investigations.
+
 ## Production Mounts
 
 ```mermaid
@@ -26,9 +82,11 @@ flowchart LR
     P --> B["/brain read-only"]
     T["tenant overlay/settings"] --> O["/tenant and projection inputs"]
     M["source mirrors"] --> R["/mirrors/<name> read-only"]
+    K["knowledge base sync"] --> KB["/kb read-only"]
     B --> W["workspace run"]
     O --> W
     R --> W
+    KB --> W
 ```
 
 Only committed files travel to `/brain`. Untracked or gitignored local kit installs, `.env`, dumps, and

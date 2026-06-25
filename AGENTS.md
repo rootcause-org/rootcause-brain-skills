@@ -32,11 +32,18 @@ They do **not** have:
 If a workflow is not exposed through public `rc`/API, produce a RootCause support request. Do not leak
 private mechanics into shipped docs or skills.
 
+Do not repeat RootCause's generic production prompt in brain docs. `emailPreamble` and capability-gated
+sections in `rootcause/internal/agent/prompt.go` already own the generic support-engineer role,
+draft/note split, read-only workspace, actions/preflight, PII, DB scoping, mirrors, and grounding
+mandate. Brain docs should add project business context, playbooks, source/KB pointers, and action
+rules.
+
 ## Core Model
 
 Read these before changing product-facing docs/skills:
 
-- [docs/brain-model.md](docs/brain-model.md) — brain layout, refs, mounts, tenant/project model.
+- [docs/brain-model.md](docs/brain-model.md) — audience, brain-vs-external context, prompt boundary,
+  layout, refs, mounts, tenant/project model.
 - [docs/run-trace-model.md](docs/run-trace-model.md) — how to read `rc run --debug`.
 - [docs/side-effects.md](docs/side-effects.md) — read-only vs explicit side effects.
 - [docs/support-boundary.md](docs/support-boundary.md) — brain fix vs support escalation.

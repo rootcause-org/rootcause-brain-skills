@@ -7,7 +7,8 @@ shell is required.
 A brain is `rootcause-org/rootcause-brain-<project>`: committed markdown knowledge, playbooks,
 grounding scripts, tests, projection templates, and optional actions. Production mounts committed
 brain refs read-only at `/brain`; local `.env`, installed skills, and `.rootcause/` artifacts never
-reach a run. Start with [docs/brain-model.md](docs/brain-model.md).
+reach a run. Source mirrors (`/mirrors/<name>`), optional knowledge-base sync (`/kb`), live grounding
+data, and actions are separate runtime inputs. Start with [docs/brain-model.md](docs/brain-model.md).
 
 ## Install
 
@@ -70,7 +71,7 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 
 | Path | What |
 |---|---|
-| [docs/brain-model.md](docs/brain-model.md) | Brain layout, mounts, tenant/project refs, local engine boundary. |
+| [docs/brain-model.md](docs/brain-model.md) | Audience, brain-vs-external context, prompt boundary, layout, mounts, refs. |
 | [docs/run-trace-model.md](docs/run-trace-model.md) | How to read `rc run --debug` index/JSONL. |
 | [docs/mirrors.md](docs/mirrors.md) | Source mirrors and freshness/debug rules. |
 | [docs/support-boundary.md](docs/support-boundary.md) | Brain-change vs RootCause-support decision tree. |
@@ -80,11 +81,11 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 ## Single Version Line
 
 The plugin versions, `rootcause-runtime` pin, workspace image tag, and production runtime pin move
-together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.26`**.
+together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.27`**.
 
 - Runtime pin:
-  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.26#subdirectory=runtime`
-- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.26`
+  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.27#subdirectory=runtime`
+- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.27`
 
 Check coherence:
 
