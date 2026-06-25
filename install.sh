@@ -11,12 +11,12 @@
 # `.claude/skills/` discovery dirs. One source of truth, per-repo discovery, zero /brain footprint.
 #
 #   bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh) [BRAIN_DIR]
-#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.19 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
+#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.20 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
 #   ./install.sh --latest-version
 set -euo pipefail
 
 KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}"
-TAG="${RC_BRAIN_KIT_TAG:-v0.1.19}"
+TAG="${RC_BRAIN_KIT_TAG:-v0.1.20}"
 REPO="https://github.com/rootcause-org/rootcause-brain-skills"
 LATEST_TAG_ENDPOINT="https://api.github.com/repos/rootcause-org/rootcause-brain-skills/git/matching-refs/tags/v"
 KIT_OVERRIDE="${RC_BRAIN_KIT+x}"
@@ -202,8 +202,13 @@ for src in "$KIT"/skills/*; do
   link_skill "$src"
 done
 
-# Retired legacy Claude slash-command symlinks. Remove only symlinks; leave real user files alone.
-for old in "$BRAIN/.claude/commands/brain-dev.md" "$BRAIN/.claude/commands/brain-debug.md"; do
+# Retired symlinks. Remove only symlinks; leave real user files alone.
+for old in \
+  "$BRAIN/.claude/commands/brain-dev.md" \
+  "$BRAIN/.claude/commands/brain-debug.md" \
+  "$BRAIN/.agents/skills/rc-run" \
+  "$BRAIN/.claude/skills/rc-run"
+do
   [ -L "$old" ] && rm "$old"
 done
 

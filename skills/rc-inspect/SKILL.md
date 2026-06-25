@@ -34,6 +34,6 @@ If a RootCause MCP is installed, ignore it unless the user explicitly asks for M
    Use `// ""` when string-matching because the `{type:"run"}` header lacks event fields.
 
 5. If the dump exposes a brain bug, fix the brain file the index points to, then verify with
-   `rc-run`.
+   `brain-ask`.
 
 For a high-level look only, use `rc run <uuid>`; for raw inline events, use `rc run <uuid> --events`.

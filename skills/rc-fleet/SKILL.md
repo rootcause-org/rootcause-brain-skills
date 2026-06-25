@@ -37,7 +37,7 @@ If a RootCause MCP is installed, ignore it unless the user explicitly asks for M
    rc patterns --days 30
    ```
    Each ranked cluster is a candidate brain fix: missing runbook, wrong query, or a domain to
-   allowlist. Author from evidence, then verify with `rc-run`.
+   allowlist. Author from evidence, then verify with `brain-ask`.
 
 Use this as the entry point for periodic fleet review and for "something is off, but I do not have a
 specific UUID yet."

@@ -14,6 +14,8 @@ build/
 
 # Local rc/kit artifacts (rc CLI debug dumps, brain_dump run dumps) — gitignored wholesale, regenerable.
 /.rootcause/
+/.agents/skills/brain-ask
+/.claude/skills/brain-ask
 /.agents/skills/brain-debug
 /.claude/skills/brain-debug
 /.agents/skills/brain-dev

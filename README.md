@@ -96,7 +96,7 @@ fixtures**, under `skills/<name>/`.)
 | `skills/brain-dev-upgrade/SKILL.md` | Update/check the installed local kit and explain Codex/Claude plugin update commands. |
 | `skills/observability/SKILL.md` | Watch & triage this project's real prod runs with the `rc` CLI (trigger+verify, inspect a run, health, patterns, thread). Read-only over the public API; OAuth-scoped to your project. |
 | `skills/brain-debug/SKILL.md` | Dump/replay one prod run through `brain_dump.py`, then drill the generated JSONL selectively. |
-| `skills/rc-run` · `rc-inspect` · `rc-health` · `rc-fleet` · `rc-thread` | Native Codex/Claude skills for the former slash-command workflows. |
+| `skills/brain-ask` · `rc-inspect` · `rc-health` · `rc-fleet` · `rc-thread` | Native Codex/Claude skills for the former slash-command workflows. |
 | `runtime/` | The **`rootcause-runtime`** package (`lib/`: db, stripe, cloudwatch, fs, http, html, livecheck). Canonical home. |
 | `docker/Dockerfile` | The workspace image (installs `rootcause-runtime`); published to ghcr for `docker` mode. |
 | `.claude-plugin/marketplace.json`, `plugin.json` | Claude Code plugin catalog + manifest. |
@@ -109,12 +109,12 @@ fixtures**, under `skills/<name>/`.)
 
 The plugin versions, the `rootcause-runtime` pin, the workspace image tag, and rootcause's prod
 Dockerfile pin **move together** so local and prod can't diverge — one bump point, see
-[RELEASING.md](RELEASING.md). Current line: **`v0.1.19`**.
+[RELEASING.md](RELEASING.md). Current line: **`v0.1.20`**.
 
 - `lib` dependency (brain scripts + CI):
-  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.19#subdirectory=runtime`
+  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.20#subdirectory=runtime`
   — **always pin a tag, never float `main`** (a push would silently break green local tests).
-- workspace image: `ghcr.io/rootcause-org/workspace:v0.1.19`.
+- workspace image: `ghcr.io/rootcause-org/workspace:v0.1.20`.
 
 ## Develop on the kit itself
 

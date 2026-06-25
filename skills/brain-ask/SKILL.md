@@ -1,9 +1,9 @@
 ---
-name: rc-run
-description: Trigger and verify a real production rootcause run using the `rc` CLI. Use inside a brain checkout when asked whether a brain change works on prod infra, when asked to simulate a customer support email, when asked for a direct raw investigation, or when asked to test a pushed `dev/*` brain ref without moving `main`. Captures the answer, run accounting, trace URL, and brain journal diff.
+name: brain-ask
+description: Ask a real production rootcause brain using `rc ask`, then verify the resulting run. Use inside a brain checkout when asked whether a brain change works on prod infra, when asked to simulate a customer support email, when asked for a direct raw investigation, or when asked to test a pushed `dev/*` brain ref without moving `main`. Captures the answer, run accounting, trace URL, and brain journal diff.
 ---
 
-# rc-run - trigger a real prod run
+# brain-ask - ask a real prod brain
 
 Use `rc ask` from inside the current brain checkout. The `rc` CLI auto-targets the project from the
 brain metadata and uses the logged-in OAuth token; no SSM or operator access.
