@@ -85,6 +85,12 @@ The agent only ever populates `reply.actions` with a *proposal*. A human clicks 
 Gmail draft; only then does execution happen — **post-loop, in a context distinct from the LLM run**.
 A run that proposes nothing changes nothing.
 
+Optimistic draft wording is valid only when the proposal survives validation/preflight and produces a
+confirmable action for the reviewer to run before sending. If `preflight.py` returns `ok:false`, crashes,
+or cannot be parsed, the host blocks the proposal: no `action_run`, no mutation, and any draft claiming
+success is unsafe. Triage future runs with
+[`action-run-triage.md`](../skills/brain-dev/action-run-triage.md).
+
 ## What the reviewer sees — return a result envelope
 
 By default rootcause has nothing human to show after an action runs, so it dumps the raw return value
