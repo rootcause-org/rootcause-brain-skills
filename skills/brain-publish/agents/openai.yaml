@@ -1,4 +1,4 @@
 interface:
-  display_name: "Publish"
+  display_name: "Brain Dev: Publish"
   short_description: "Prepare brain changes for release"
   default_prompt: "Use $brain-publish to make validated brain changes live or prepare the support handoff."
