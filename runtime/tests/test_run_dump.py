@@ -202,6 +202,35 @@ class RenderIndex(unittest.TestCase):
         md = render_index(_bundle(draft=None, notes=[], metadata=None))
         self.assertIn("no stored callback", md)
 
+    def test_proposed_actions_render_even_when_proposals_note_empty(self):
+        action = {
+            "slug": "create_appointment",
+            "status": "Awaiting approval",
+            "params": {
+                "patient_id": 482889,
+                "start_time": "2026-07-08 11:25",
+                "duration": 35,
+                "agenda_id": 301,
+                "subdivision_id": 333,
+                "type_id": 404,
+            },
+        }
+        md = render_index(_bundle(
+            notes=[{"key": "proposals", "body": ""}],
+            proposed_actions=[action],
+        ))
+        self.assertIn("**Note** `proposals`:", md)
+        self.assertIn("_(empty)_", md)
+        self.assertIn("**Proposed actions** (1):", md)
+        self.assertIn("`create_appointment`", md)
+        self.assertIn("Awaiting approval", md)
+        self.assertIn("`patient_id=482889`", md)
+        self.assertIn("`start_time=2026-07-08 11:25`", md)
+        self.assertIn("`duration=35`", md)
+        self.assertIn("`agenda_id=301`", md)
+        self.assertIn("`subdivision_id=333`", md)
+        self.assertIn("`type_id=404`", md)
+
     def test_blocked_egress_timestamp_normalized(self):
         # Byte-identity guard: a blocked-egress flag must print `at` via _as_dt, so an ISO-string `at`
         # (API path) renders the same as a datetime `at` (operator path) — no stray 'T'.
@@ -244,6 +273,12 @@ class EmitJsonl(unittest.TestCase):
         self.assertEqual(header["brain_resolved"], "dev/x @ abc1234")
         self.assertEqual(header["tenant"], "de-kies")
         self.assertEqual(json.loads(header["tenant_settings"]), settings)
+
+    def test_proposed_actions_in_header(self):
+        action = {"slug": "create_appointment", "status": "Awaiting approval", "params": {"patient_id": 482889}}
+        lines = list(emit_jsonl(_bundle(proposed_actions=[action])))
+        header = json.loads(lines[0])
+        self.assertEqual(header["proposed_actions"], [action])
 
     def test_non_bash_carries_args(self):
         lines = list(emit_jsonl(_bundle()))

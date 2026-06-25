@@ -30,6 +30,7 @@ Bundle contract (what this renderer reads — see the server spec for the produc
         "model", "run_cost_usd", "run_total_tokens",
         "draft": "<full body or null>",
         "notes": [{"key", "body"}],
+        "proposed_actions": [{"slug", "status", "params", ...}],
         "metadata": {...} | null,                                 # run_url/trace_url/total_cost_usd/…
         "egress": [{"host","port","scheme","url","bytes_out","decision","at"}],  # per-ROW (see note)
       },

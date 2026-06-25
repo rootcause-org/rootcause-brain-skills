@@ -306,9 +306,9 @@ def _benign_grep_miss(e: dict) -> bool:
 
 
 def _has_result(run: dict) -> bool:
-    """True when the run produced a callback (the bundle carries any of draft / notes / metadata).
+    """True when the run produced a callback (the bundle carries draft / notes / actions / metadata).
     The bundle pre-flattens the old `result` object, so 'no callback' = none of those present."""
-    return bool(run.get("draft") or run.get("notes") or run.get("metadata"))
+    return bool(run.get("draft") or run.get("notes") or _proposed_actions(run) or run.get("metadata"))
 
 
 def flags(bundle: dict) -> list[str]:
@@ -614,6 +614,51 @@ def _render_outcome(run: dict) -> list[str]:
         nbody = n.get("body") or ""
         key = f" `{n['key']}`" if n.get("key") else ""
         out += [f"**Note**{key}:", "", _fence(_gist(nbody, 400)), ""]
+    actions = _proposed_actions(run)
+    if actions:
+        out += [f"**Proposed actions** ({len(actions)}):", ""]
+        for action in actions:
+            out.append(f"- {_action_summary(action)}")
+        out.append("")
+    return out
+
+
+def _proposed_actions(run: dict) -> list[dict]:
+    """The public API uses `proposed_actions`; tolerate the older callback-ish `actions` key too."""
+    actions = run.get("proposed_actions")
+    if actions is None:
+        actions = run.get("actions")
+    return actions if isinstance(actions, list) else []
+
+
+def _action_summary(action: dict) -> str:
+    if not isinstance(action, dict):
+        return _cell(str(action), 240)
+    name = next((action.get(k) for k in ("slug", "action_id", "id", "name") if action.get(k)), "action")
+    parts = [f"`{name}`"]
+    if action.get("status"):
+        parts.append(str(action["status"]))
+    if action.get("id") and action.get("id") != name:
+        parts.append(f"id `{action['id']}`")
+    params = action.get("params")
+    if params is None:
+        params = action.get("parameters")
+    if isinstance(params, dict) and params:
+        parts.append("params " + ", ".join(_param_bits(params)))
+    elif params not in (None, "", {}):
+        parts.append(f"params `{_cell(json.dumps(params, ensure_ascii=False, default=str), 180)}`")
+    return " · ".join(parts)
+
+
+def _param_bits(params: dict) -> list[str]:
+    out = []
+    for key in sorted(params):
+        value = params[key]
+        if isinstance(value, (dict, list)):
+            rendered = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+        else:
+            rendered = str(value)
+        out.append(f"`{key}={_cell(rendered, 120)}`")
     return out
 
 
@@ -677,6 +722,7 @@ def emit_jsonl(bundle: dict) -> Iterable[str]:
         "run_total_tokens": _num(run.get("run_total_tokens")),
         "draft": run.get("draft") or None,
         "notes": [{"key": n.get("key"), "body": n.get("body") or ""} for n in run.get("notes") or []],
+        "proposed_actions": run.get("proposed_actions") if "proposed_actions" in run else None,
         "metadata": meta or None,
         "egress": [{"host": g.get("host"), "port": g.get("port"), "scheme": g.get("scheme"),
                     "url": g.get("url"), "bytes_out": g.get("bytes_out"),

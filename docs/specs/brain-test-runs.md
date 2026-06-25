@@ -52,7 +52,7 @@ Add `runtime/lib/run_dump/` (new submodule; **not** imported by any grounding/ru
   block, trimmed system-prompt block, grounding pre-step, timeline of substantive steps, auto-flags,
   egress summary, trace URL, jq drill-down block).
 - `emit_jsonl(bundle) -> Iterable[str]` — line 1 `{"type":"run",…}` header (untrimmed system_prompt +
-  full draft/notes + egress), then `{"type":"event",…}` per tool call keyed by `disp`.
+  full draft/notes/proposed_actions + egress), then `{"type":"event",…}` per tool call keyed by `disp`.
 - `decorate(events)`, `flags(bundle)`, `files_read(events)` — presentation helpers (the `disp`/`label`
   computation, `P1,P2…` grounding labels, anomaly detection, "files read" extraction). **The server
   ships raw truth; these decorate it.** Port verbatim from `rc_agent_debug.py` so output is identical.

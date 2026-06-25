@@ -110,12 +110,12 @@ fixtures**, under `skills/<name>/`.)
 
 The plugin versions, the `rootcause-runtime` pin, the workspace image tag, and rootcause's prod
 Dockerfile pin **move together** so local and prod can't diverge — one bump point, see
-[RELEASING.md](RELEASING.md). Current line: **`v0.1.23`**.
+[RELEASING.md](RELEASING.md). Current line: **`v0.1.24`**.
 
 - `lib` dependency (brain scripts + CI):
-  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.23#subdirectory=runtime`
+  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.24#subdirectory=runtime`
   — **always pin a tag, never float `main`** (a push would silently break green local tests).
-- workspace image: `ghcr.io/rootcause-org/workspace:v0.1.23`.
+- workspace image: `ghcr.io/rootcause-org/workspace:v0.1.24`.
 
 ## Develop on the kit itself
 
