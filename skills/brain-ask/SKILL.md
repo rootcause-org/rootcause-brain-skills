@@ -7,6 +7,8 @@ description: Ask a real production rootcause brain using `rc ask`, then verify t
 
 Use `rc ask` from inside the current brain checkout. The `rc` CLI auto-targets the project from the
 brain metadata and uses the logged-in OAuth token; no SSM or operator access.
+For tenant-enabled projects, do not pass `--tenant` by default: `rc` uses the tenant already associated
+with the active `rc login`. Check `rc whoami` if the tenant is unclear.
 If a RootCause MCP is installed, ignore it unless the user explicitly asks for MCP; this workflow uses
 `rc`.
 

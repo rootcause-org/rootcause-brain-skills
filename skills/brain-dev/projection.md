@@ -88,5 +88,6 @@ Bad behavior:
 - Committing tenant-specific values.
 - Teaching the model to choose variants itself.
 
-For production confidence, use `rc ask --tenant <slug> --brain-ref dev/x ...` and inspect the dump; that
-shows the actual loop and the exact settings snapshot the run rendered from.
+For production confidence, use `rc ask --brain-ref dev/x ...` with an `rc login` bound to the target
+tenant and inspect the dump; that shows the actual loop and the exact settings snapshot the run rendered
+from.

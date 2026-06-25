@@ -51,6 +51,9 @@ rc whoami                       # which project/tenant will rc hit from here, an
   supported endpoints. Use explicit `--project <id-or-name>` when outside a brain checkout or overriding
   it, and `--all` for fleet digests. A project-scoped run-UUID lookup 404s other projects' runs (no
   existence leak). `rc whoami` shows the resolved local binding.
+- **Tenant scope comes from login.** On tenant-enabled projects, plain `rc ask "…"` uses the tenant
+  attached to the active `rc login`; normally omit `--tenant`. `rc whoami` shows that tenant when one is
+  bound. Flat projects show no tenant.
 - **Every command has `-o json`** for scripting (`rc runs -o json | jq …`); the thin endpoints return
   raw rows, so `-o json` is a verbatim passthrough you can roll up yourself.
 
@@ -76,14 +79,14 @@ rc whoami                       # which project/tenant will rc hit from here, an
 `rc` is **OAuth-only**. `rc login` runs the browser PKCE flow (`--device` for a headless/SSH box) and
 stores the tokens in **`~/.config/rootcause/tokens.json` (0600)**, keyed per *profile*; every later `rc`
 refreshes the access token transparently. **There is no API key in any file** — the old
-`.rootcause.secret.toml` / `ROOTCAUSE_API_KEY` are gone. The **scope** (one project, or — for an
-admin — all projects) is chosen on the **browser consent screen**, not the CLI.
+`.rootcause.secret.toml` / `ROOTCAUSE_API_KEY` are gone. The **scope** (one project, one project tenant,
+or — for an admin — all projects) is chosen on the **browser consent screen**, not the CLI.
 
 A brain repo **is** one project, so `rc` binds to it by convention via one committed, non-secret marker:
 
 | File | Committed? | Holds | Role |
 |---|---|---|---|
-| **`.rootcause.toml`** | ✅ yes | `project = "<slug>"`, `base_url = "…"`, optionally `tenant = "<slug>"` | the binding — ships with the clone, so the project + endpoint (+ tenant) are known out of the box. It carries **no secret**. |
+| **`.rootcause.toml`** | ✅ yes | `project = "<slug>"`, `base_url = "…"` | the binding — ships with the clone, so the project + endpoint are known out of the box. It carries **no secret**. |
 
 Run `rc` anywhere inside a brain clone and it auto-targets *that* project. Resolution (per field; an env
 var always wins as a one-off override):
@@ -96,7 +99,7 @@ outside any brain                  → default profile / built-in default
 base_url:  ROOTCAUSE_BASE_URL > .rootcause.toml base_url > [profiles.<name>] base_url > built-in default
 ```
 
-`rc whoami` shows what it resolved (profile · project · tenant · signed-in?) — locally, no server call.
+`rc whoami` shows what it resolved (profile · project · login tenant · signed-in?).
 `rc env pull` / `ask` / `run` all honor the same binding.
 
 `--project <id-or-name>` is **not** a token/profile selector. It is a server-side `?project=` selector
@@ -104,7 +107,7 @@ for supported endpoints. Use it with an all-projects admin profile when you want
 from outside its brain checkout, or to override the checkout's project:
 
 ```bash
-rc ask --project dentai --tenant belgium-staging "Hi, can you check whether my appointment is confirmed?"
+rc ask --project dentai "Hi, can you check whether my appointment is confirmed?"
 ```
 
 A pinned project token ignores `--project` server-side; it cannot widen to another project.
@@ -113,8 +116,8 @@ A pinned project token ignores `--project` server-side; it cannot widen to anoth
 
 ```bash
 git clone …/rootcause-brain-<project> && cd rootcause-brain-<project>   # .rootcause.toml already inside
-rc login            # opens a browser; pick the project (or all-projects, if admin) on the consent screen
-rc whoami           # confirms: profile, project, base URL, signed-in
+rc login            # opens a browser; pick the project/tenant (or all-projects, if admin)
+rc whoami           # confirms: profile, project, tenant, base URL, signed-in
 rc ask "…"          # email simulation; just works — no --profile, no export
 ```
 
@@ -124,10 +127,9 @@ setup; the OAuth token they mint on the consent screen is scoped to their projec
 token in `default` does not need to log in per project; `rc whoami` will show `profile=default` plus the
 brain's project.
 
-**Tenant brains.** A delta repo over a tenant-enabled project (e.g. a single clinic under DentAI) adds
-a `tenant` field to its marker — `project = "dentai"`, `tenant = "de-kies"`. `rc` then defaults
-`--tenant` for `ask`/`env`/`whoami` to that tenant, so the checkout resolves the **project ∪ tenant**
-scope without repeating the flag.
+**Tenant brains.** On tenant-enabled projects (e.g. one clinic under DentAI), `rc login` is normally
+scoped to one tenant. `rc ask "…"` then uses that tenant automatically. Use `rc whoami` to confirm the
+tenant; use `--tenant` only as an explicit override/debug aid.
 
 ## Install
 
@@ -194,7 +196,7 @@ no operator access is needed:
 rc env keys                 # what keys exist (NAMES only — safe to paste/log)
 rc env pull                 # fetch the PRODUCTION grounding .env → write 0600 ./.env
 rc env diff                 # has my local ./.env drifted from prod? (names-only; exit≠0 on drift)
-rc env pull --tenant <slug> # tenant-enabled project (e.g. dentai): the project ∪ tenant env a run sees
+rc env pull                 # tenant-enabled project: uses the tenant bound to rc login
 ```
 
 Pull it once and `brain-dev`'s **`--live`** tier can run grounding scripts against real prod data

@@ -190,9 +190,10 @@ green local loop against a stale copy is a false green). So the high-fidelity lo
 > (OAuth browser sign-in; the token is stored 0600 under `~/.config/rootcause`, no key in any file);
 > confirm with `rc whoami`. See
 > [rc-cli.md → Auth](../../docs/rc-cli.md#auth--oauth-and-the-brain-checkout-selects-the-project-no---profile-no-env-wrangling).
-> If you're a superadmin with one all-projects token in `default`, plain `rc ask` from inside this brain
-> uses that token and auto-scopes to this project. Outside a brain checkout, or to override it, pass
-> `--project <project>` explicitly.
+> On tenant-enabled projects, plain `rc ask` uses the tenant attached to the active `rc login`; normally
+> do not pass `--tenant`. `rc whoami` shows the bound tenant. If you're a superadmin with one
+> all-projects token in `default`, plain `rc ask` from inside this brain uses that token and auto-scopes
+> to this project. Outside a brain checkout, or to override it, pass `--project <project>` explicitly.
 
 ```bash
 # 1) trigger an email-simulation run from a customer-style question (against main HEAD):
@@ -314,7 +315,7 @@ of that silently drops those guarantees.
 - **No `.env`?** uv-offline tests and `--brief` run without one; a script run and the live tier need
   it. **Project devs self-serve it: `rc env pull`** from inside the brain — fetches that project's
   PRODUCTION grounding `.env` over your `rc login` OAuth token and writes a `0600 ./.env` (no operator/SSM
-  access needed; tenant-enabled projects pass `--tenant <slug>`). See
+  access needed; tenant-enabled projects use the tenant bound to `rc login`). See
   [`rc-cli.md`](../../docs/rc-cli.md#sync-the-grounding-env-rc-env). Operators can still recover it the
   privileged way with rootcause's `rc_env.py <project> --pull` (SSM).
 - **Run from inside the brain** (cwd), or pass `--brain <dir>` to target another checkout.
