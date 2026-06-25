@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ask"
+  short_description: "Validate with production-loop rc ask"
+  default_prompt: "Use $brain-ask to validate a pushed brain ref with production-loop rc ask."
