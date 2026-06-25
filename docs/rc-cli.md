@@ -22,6 +22,7 @@ the end-consumer/app-facing plane; `rc` is the brain-dev/observability plane.
 ```bash
 rc ask "<customer-style question>"      # trigger a REAL prod run, wait for the answer; prints the run_id   (POST /api/v1/runs)
 rc ask "<q>" --brain-ref dev/x          # …against a pushed dev/* branch — NO main push, main stays live
+rc ask "<q>" --effort pro               # force a stronger rootcause tier for this run (default|pro|max)
 rc ask --project dentai "<q>"           # outside a brain: all-projects admin token selects a project
 rc run <id>                     # one run, high level: status, category, draft?/note?, cost, duration (+ kind/outcome/turns/bash/created/finished/trace)
 rc run <id> --events            # full detail: per-event trace — bash command + stdout/stderr, exit code, timing
@@ -58,6 +59,8 @@ rc whoami                       # which project/tenant will rc hit from here, an
   no journal push, and any proposed action/PR is flagged `test`. Dump it with the `brain-dev` skill's
   [`brain_dump.py`](../skills/brain-dev/SKILL.md#test-a-brain-change-on-real-prod-infra--without-pushing-main-rc-ask--brain_dumppy)
   (`rc run <id> --full` → the shared `run_dump` renderer → an index `.md` + jq-queryable `.jsonl`).
+  `--effort pro|max` is an explicit escalation knob for a stronger retry; omit it for normal tier
+  selection.
 
 - **Output is TTY-aware** — pretty table on a terminal, **JSON when piped** (`rc runs | jq …`); force
   with `-o json|table`.

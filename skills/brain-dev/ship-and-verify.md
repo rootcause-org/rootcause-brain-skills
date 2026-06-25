@@ -180,6 +180,7 @@ You're looking for `action_id=<id>` with sane `params`. (A run **proposes**; it 
 > With a superadmin/all-projects token in `default`, run this plainly from inside the brain; the checkout
 > auto-scopes the request. Outside a brain checkout, select the project explicitly:
 > `rc ask --project <project> --brain-ref dev/x "<symptom>"`.
+> For an explicit stronger retry, add `--effort pro` or `--effort max`; omit it for normal tier selection.
 
 **Mode B — does the script actually work end-to-end against prod's gem?** Take the `action_runs.id`
 from Mode A and execute it headlessly (same confirm→execute POST the reviewer's email button fires):

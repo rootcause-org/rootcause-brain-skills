@@ -27,9 +27,10 @@ If the harness already provides the absolute path of `skills/brain-dev`, use tha
      ```bash
      rc ask "<question>"
      rc ask "<question>" --brain-ref dev/<branch>
+     rc ask "<question>" --effort pro
      ```
      A `--brain-ref` run is side-effect-free: no callback or journal push; proposed actions are
-     flagged `test`.
+     flagged `test`. Use `--effort pro|max` only for an explicit stronger-tier retry.
    - If no run id or question was provided, ask for one and stop.
 
 2. Dump the run to gitignored `.rootcause/dump/<run8>-<project>.{md,jsonl}`:

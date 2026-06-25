@@ -22,6 +22,7 @@ wrote to the brain.
 
 ```bash
 rc ask "Hi, my account is sophie@coca-cola.com. Do I still have open invoices?"   # waits; prints run_id
+rc ask "<customer question>" --effort pro     # explicit stronger-tier retry (default|pro|max)
 rc run <run_id> --brain-diff       # the journal commit this run wrote (SHA · files · diff)
 ```
 

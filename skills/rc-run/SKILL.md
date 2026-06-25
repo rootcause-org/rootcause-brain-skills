@@ -18,9 +18,11 @@ If a RootCause MCP is installed, ignore it unless the user explicitly asks for M
    ```bash
    rc ask "<question>"
    rc ask "<question>" --brain-ref dev/<branch>
+   rc ask "<question>" --effort pro
    ```
    Use `--brain-ref dev/<branch>` only for an already-pushed dev branch. It keeps `main` live and the
-   run is flagged `test`.
+   run is flagged `test`. Use `--effort pro|max` only when explicitly escalating a run; omitted/default
+   keeps normal tier selection.
 
 3. Relay the answer, note/caveats, run accounting (`status`, turns, cost, outcome), and trace URL.
    Capture the printed `run_id`. If status is `error`, surface the error and stop.

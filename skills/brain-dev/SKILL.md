@@ -189,6 +189,7 @@ green local loop against a stale copy is a false green). So the high-fidelity lo
 ```bash
 # 1) trigger a run from a customer-style question (against main HEAD):
 rc ask "Hi, my account is sophie@coca-cola.com. Do I still have open invoices?"
+rc ask "<same question>" --effort pro         # optional stronger-tier retry (default|pro|max)
 
 # …or test a brain change WITHOUT touching main — push a dev branch, run against it:
 git push origin dev/refund-rework            # dev branch; main stays live
