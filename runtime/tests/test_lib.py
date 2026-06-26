@@ -12,6 +12,7 @@ import os
 import re
 import sys
 import unittest
+import warnings
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
@@ -200,6 +201,21 @@ class DatabaseCatalog(unittest.TestCase):
 class Introspection(unittest.TestCase):
     """columns / tables_with_column build the right information_schema query and pass db= through."""
 
+    def setUp(self):
+        self._clean = {
+            k: v
+            for k, v in os.environ.items()
+            if k.endswith("_DSN") or k in ("PG_DSN", "DATABASE_URL", "RC_DB_EXCLUDED_COLUMNS")
+        }
+        for k in self._clean:
+            del os.environ[k]
+
+    def tearDown(self):
+        for k in list(os.environ):
+            if k.endswith("_DSN") or k in ("PG_DSN", "DATABASE_URL", "RC_DB_EXCLUDED_COLUMNS"):
+                del os.environ[k]
+        os.environ.update(self._clean)
+
     def test_columns_delegates(self):
         with mock.patch.object(db, "query", return_value=[]) as q:
             db.columns("users", db="ruby")
@@ -231,6 +247,36 @@ class Introspection(unittest.TestCase):
         sql, params = q.call_args.args[0], q.call_args.args[1]
         self.assertIn("current_schema()", sql)
         self.assertEqual(params, [None, "%email%"])
+
+    def test_columns_warns_about_hidden_and_allowlisted_columns(self):
+        os.environ["APP_DSN"] = "postgres://app"
+        os.environ["RC_DB_EXCLUDED_COLUMNS"] = (
+            '{"APP_DSN":{"global_exclude":["encrypted_password"],'
+            '"tables":{"admins":{"include":["id","tenant_id"]},'
+            '"mail_senders":{"exclude":["smtp_password"]}}}}'
+        )
+        with mock.patch.object(db, "query", return_value=[]), warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            db.columns("admins", db="app")
+        messages = [str(w.message) for w in caught]
+        self.assertTrue(any("encrypted_password" in m and "hidden column names" in m for m in messages))
+        self.assertTrue(any("admins shows an allowlisted subset" in m for m in messages))
+        self.assertFalse(any("smtp_password" in m for m in messages))
+
+    def test_tables_with_column_warns_about_hidden_pattern_matches_and_allowlists(self):
+        os.environ["APP_DSN"] = "postgres://app"
+        os.environ["RC_DB_EXCLUDED_COLUMNS"] = (
+            '{"APP_DSN":{"global_exclude":["encrypted_password"],'
+            '"tables":{"admins":{"include":["id","tenant_id"]},'
+            '"mail_senders":{"exclude":["smtp_password"]}}}}'
+        )
+        with mock.patch.object(db, "query", return_value=[]), warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            db.tables_with_column("%password%", db="app")
+        messages = [str(w.message) for w in caught]
+        self.assertTrue(any("encrypted_password" in m and "hidden column names" in m for m in messages))
+        self.assertTrue(any("mail_senders.smtp_password" in m for m in messages))
+        self.assertTrue(any("admins shows an allowlisted subset" in m for m in messages))
 
 
 class UndefinedHint(unittest.TestCase):

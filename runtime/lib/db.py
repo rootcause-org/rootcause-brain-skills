@@ -26,6 +26,8 @@ CLI (token-efficient one-offs from bash):
 """
 
 import os
+import re
+import warnings
 
 DEFAULT_TIMEOUT_MS = 30_000
 
@@ -275,6 +277,15 @@ def _excluded_columns() -> dict:
     return val if isinstance(val, dict) else {}
 
 
+def _excluded_map_for_db(db: str | None) -> dict:
+    """Hidden-column metadata for this db, keyed like RC_DB_EXCLUDED_COLUMNS."""
+    excluded = _excluded_columns()
+    if not excluded:
+        return {}
+    dsn = _resolve_dsn(db)
+    return excluded.get(_env_name_for_dsn(dsn) or "", {})
+
+
 def _env_name_for_dsn(dsn: str) -> str | None:
     """The ``*_DSN`` env var whose value is this resolved DSN — the key `RC_DB_EXCLUDED_COLUMNS` uses.
     A raw DSN passed straight to ``db=`` has no env name (→ no heal data, which is fine)."""
@@ -282,6 +293,52 @@ def _env_name_for_dsn(dsn: str) -> str | None:
         if k.endswith("_DSN") and v == dsn:
             return k
     return None
+
+
+def _pattern_matches(pattern: str, value: str) -> bool:
+    """Postgres ILIKE-ish matcher for helper hints (% and _ wildcards only)."""
+    rx = "".join(".*" if ch == "%" else "." if ch == "_" else re.escape(ch) for ch in pattern)
+    return re.fullmatch(rx, value, flags=re.IGNORECASE) is not None
+
+
+def _hidden_column_notes(emap: dict, table: str | None = None, pattern: str | None = None) -> list[str]:
+    """Short warnings about manifest-hidden columns; never changes the visible schema result."""
+    if not emap:
+        return []
+    notes = []
+    globals_ = sorted(str(c) for c in (emap.get("global_exclude") or []) if isinstance(c, str))
+    if pattern:
+        globals_ = [c for c in globals_ if _pattern_matches(pattern, c)]
+    if globals_:
+        notes.append(f"data-scoping: hidden column names: {', '.join(globals_)} (where present).")
+
+    tables = emap.get("tables") or {}
+    if table:
+        rules = [(table, tables.get(table))]
+    else:
+        rules = sorted((str(t), rule) for t, rule in tables.items())
+    hidden = []
+    allowlisted = []
+    for t, rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        if "exclude" in rule:
+            for col in rule.get("exclude") or []:
+                if isinstance(col, str) and (pattern is None or _pattern_matches(pattern, col)):
+                    hidden.append(f"{t}.{col}")
+        if "include" in rule:
+            allowlisted.append(t)
+    if hidden:
+        notes.append(f"data-scoping: hidden columns omitted: {', '.join(hidden)}.")
+    if allowlisted:
+        target = ", ".join(sorted(allowlisted))
+        notes.append(f"data-scoping: {target} shows an allowlisted subset; only shown columns are queryable.")
+    return notes
+
+
+def _warn_hidden_column_notes(emap: dict, table: str | None = None, pattern: str | None = None) -> None:
+    for note in _hidden_column_notes(emap, table=table, pattern=pattern):
+        warnings.warn(note, stacklevel=2)
 
 
 def _is_hidden(emap: dict, table: str, col: str) -> bool:
@@ -406,8 +463,6 @@ def query(
     emap = _excluded_columns().get(_env_name_for_dsn(dsn) or "", {})
     sql, dropped = _strip_excluded(sql, emap)
     if dropped:
-        import warnings
-
         warnings.warn(
             f"data-scoping: dropped column(s) {dropped} from your SELECT — hidden by this project's "
             f"scope_manifest. Ran the trimmed query; the rest of your result is intact.",
@@ -466,13 +521,15 @@ def columns(table: str, schema: str | None = None, db: str | None = None) -> lis
     would see nothing); on a flat project it resolves to ``public`` exactly as before. Pass an
     explicit ``schema`` to override.
     """
-    return query(
+    rows = query(
         "select column_name, data_type from information_schema.columns "
         "where table_schema = coalesce(%s::text, current_schema()) and table_name = %s "
         "order by ordinal_position",
         [schema, table],
         db=db,
     )
+    _warn_hidden_column_notes(_excluded_map_for_db(db), table=table)
+    return rows
 
 
 def tables_with_column(name_like: str, schema: str | None = None, db: str | None = None) -> list[dict]:
@@ -483,13 +540,15 @@ def tables_with_column(name_like: str, schema: str | None = None, db: str | None
     ``schema=None`` (default) searches the run's EFFECTIVE schema (``current_schema()``) — the
     ``scope_<id>`` views on a scoped run, ``public`` on a flat project (see `columns`).
     """
-    return query(
+    rows = query(
         "select table_name, column_name, data_type from information_schema.columns "
         "where table_schema = coalesce(%s::text, current_schema()) and column_name ilike %s "
         "order by table_name, column_name",
         [schema, name_like],
         db=db,
     )
+    _warn_hidden_column_notes(_excluded_map_for_db(db), pattern=name_like)
+    return rows
 
 
 def _parse_duration_ms(s: str) -> int:
