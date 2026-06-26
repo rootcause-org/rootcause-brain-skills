@@ -48,6 +48,33 @@ If a fact changes with the customer's app state or source code, prefer a groundi
 lookup over copying it into prose. If a fact is a stable support policy, product concept, customer
 promise, or decision tree, put it in the brain with tests where practical.
 
+## Author For Navigation
+
+Brains work best when the first useful file routes by the customer's words, then points to concrete
+evidence. Keep routing docs short and usually read-only for orientation: they should tell the run what
+to open next, but the selected/baked context should normally be the exact runbook, action doc, source
+file, KB article, script, or fixture that proves the answer.
+
+For each common area, prefer compact tables over prose:
+
+| Customer symptom language | Check | Evidence to open | Action / no-action rule |
+|---|---|---|---|
+| Customer-facing phrase plus internal name | Script, query, log/event, or source search | Runbook, source mirror path, KB article, fixture, trace event | Reply, escalate, or propose a specific action |
+
+Useful brain conventions:
+
+- Add a short routing index: symptom phrases -> exact runbook/action/source areas.
+- In runbooks, name source mirror paths, source files, log events, DB/helper scripts, and `rg` terms
+  where known.
+- Maintain a small source map when source mirrors are important: product area -> `/mirrors/<name>/...`
+  paths -> useful search terms, classes, jobs, routes, or log events.
+- If KB snapshot filenames are opaque, add searchable titles/frontmatter or an index that maps customer
+  article titles to `/kb` paths.
+- Put customer symptom language beside internal feature names so support emails and source searches
+  meet in the same doc.
+- For action-backed outcomes, route to the action doc's safety guards and verification checks before
+  suggesting proposal.
+
 ## Production Prompt Boundary
 
 The production loop also sends standing instructions from RootCause itself, currently in

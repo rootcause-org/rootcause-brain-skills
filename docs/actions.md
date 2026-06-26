@@ -37,6 +37,10 @@ actions/<id>/
 - `script.rb` is customer-hosted Embassy mode.
 - `script.py` is hosted Python mode and can be dry-run locally with `brain_action.py`.
 
+Action docs/runbooks should put exact safety guards and verification checks near the top: required
+evidence, disqualifying states, preflight expectations, post-execution proof, and when to refuse or
+escalate. Other runbooks should link to those guard lines instead of restating looser action rules.
+
 ## Local Hosted-Python Checks
 
 ```bash
