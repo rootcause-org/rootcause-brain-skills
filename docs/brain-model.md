@@ -55,11 +55,14 @@ evidence. Keep routing docs short and usually read-only for orientation: they sh
 to open next, but the selected/baked context should normally be the exact runbook, action doc, source
 file, KB article, script, or fixture that proves the answer.
 
-For each common area, prefer compact tables over prose:
+For each common area, prefer compact tables over prose. `Check` is what the run should do next;
+`Evidence to open` is the concrete file/path/event that should be selected or cited.
 
 | Customer symptom language | Check | Evidence to open | Action / no-action rule |
 |---|---|---|---|
-| Customer-facing phrase plus internal name | Script, query, log/event, or source search | Runbook, source mirror path, KB article, fixture, trace event | Reply, escalate, or propose a specific action |
+| "I was charged twice" / duplicate payment | Run the charge lookup script; search payment logs for duplicate capture events | Billing runbook, `/mirrors/app/.../payments/`, refund KB article, `actions/refund/` guards | Propose refund only when the duplicate-settlement guard passes; otherwise explain pending auth or escalate |
+| "I cannot log in" / expired invite or SSO failure | Query user/invite state; search auth logs for invite or SAML errors | Access runbook, `/mirrors/app/.../auth/`, KB article for SSO reset, trace events from the failed run | Send reset steps for normal expiry; escalate tenant SSO config or source bug evidence |
+| "The report total looks wrong" / revenue dashboard mismatch | Run the report fixture or query; source-search the metric definition and freshness job | Reporting runbook, `/mirrors/warehouse/.../revenue.sql`, dashboard source, fixture with expected totals | Usually no action: explain freshness/definition, or file a support/source issue with exact evidence |
 
 Useful brain conventions:
 
