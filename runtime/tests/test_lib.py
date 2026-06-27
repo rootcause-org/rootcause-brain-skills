@@ -20,7 +20,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # make `lib` importable
 
 from lib import _output, cloudwatch, db, oauth  # noqa: E402
-from lib.connectors import sentry  # noqa: E402
+from lib.connectors import appsignal, postmark, sentry  # noqa: E402
 from lib import stripe as lib_stripe  # noqa: E402
 
 
@@ -239,6 +239,74 @@ class SentryConnector(unittest.TestCase):
         self.assertIn("# Checkout failed", md)
         self.assertIn("Short ID: SHOP-1", md)
         self.assertIn("Events: 42", md)
+
+
+class AppSignalConnector(unittest.TestCase):
+    def test_samples_to_markdown(self):
+        md = appsignal.samples_to_markdown(
+            {
+                "count": 1,
+                "log_entries": [
+                    {
+                        "id": "sample-1",
+                        "action": "Avo::ActionsController#handle",
+                        "exception": {"name": "RedisClient::OutOfMemoryError"},
+                    }
+                ],
+            }
+        )
+        self.assertIn("# AppSignal error samples (1)", md)
+        self.assertIn("sample-1: RedisClient::OutOfMemoryError", md)
+
+    def test_sample_to_markdown(self):
+        md = appsignal.sample_to_markdown(
+            {
+                "id": "sample-1",
+                "action": "Avo::ActionsController#handle",
+                "path": "/admin",
+                "exception": {"name": "NoMethodError", "message": "undefined method x", "backtrace": ["app/a.rb:1"]},
+            }
+        )
+        self.assertIn("# NoMethodError", md)
+        self.assertIn("Message: undefined method x", md)
+        self.assertIn("app/a.rb:1", md)
+
+
+class PostmarkConnector(unittest.TestCase):
+    def test_messages_to_markdown(self):
+        md = postmark.messages_to_markdown(
+            {
+                "TotalCount": 1,
+                "Messages": [
+                    {
+                        "MessageID": "msg-1",
+                        "Status": "Sent",
+                        "ReceivedAt": "2026-06-27T07:00:00Z",
+                        "Recipients": ["customer@example.com"],
+                        "Subject": "Welkom",
+                    }
+                ],
+            },
+            title="Postmark outbound messages",
+        )
+        self.assertIn("# Postmark outbound messages (1)", md)
+        self.assertIn("msg-1: Sent", md)
+        self.assertIn("customer@example.com", md)
+
+    def test_suppressions_to_markdown(self):
+        md = postmark.suppressions_to_markdown(
+            {
+                "Suppressions": [
+                    {
+                        "EmailAddress": "customer@example.com",
+                        "SuppressionReason": "ManualSuppression",
+                        "Origin": "Recipient",
+                    }
+                ]
+            }
+        )
+        self.assertIn("# Postmark suppressions (1)", md)
+        self.assertIn("customer@example.com: ManualSuppression", md)
 
 
 class Introspection(unittest.TestCase):

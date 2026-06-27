@@ -1,0 +1,9 @@
+key: postmark
+name: Postmark
+kinds: [token]
+connector_module: lib.connectors.postmark
+env_var: RC_CONN_POSTMARK
+egress_hosts:
+  - api.postmarkapp.com
+help_md: |
+  Reads Postmark message and suppression state for mail-delivery diagnosis. Use a server token; connector helpers expose read-only GET calls.

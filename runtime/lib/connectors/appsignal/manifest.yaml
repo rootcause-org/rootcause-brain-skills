@@ -1,0 +1,10 @@
+key: appsignal
+name: AppSignal
+kinds: [token]
+connector_module: lib.connectors.appsignal
+env_var: RC_CONN_APPSIGNAL
+egress_hosts:
+  - appsignal.com
+  - "*.appsignal.com"
+help_md: |
+  Reads AppSignal samples/incidents for support diagnosis. Use a personal API token scoped for read-only investigation where possible.
