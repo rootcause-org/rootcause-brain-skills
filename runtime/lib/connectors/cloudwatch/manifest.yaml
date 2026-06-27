@@ -1,0 +1,9 @@
+key: cloudwatch
+name: AWS CloudWatch Logs
+kinds: [aws]
+connector_module: lib.connectors.cloudwatch
+env_var: RC_CONN_CLOUDWATCH
+egress_hosts:
+  []
+help_md: |
+  Reads AWS CloudWatch Logs Insights for support diagnosis. Seed an IAM access key with read-only Logs permissions and the target region; the host derives the regional Logs egress host from that region.
