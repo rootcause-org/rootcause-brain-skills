@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prod Console"
+  short_description: "Direct guarded production rc access"
+  default_prompt: "Use $prod-console to discover and run the right guarded production primitive with rc."

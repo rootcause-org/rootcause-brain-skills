@@ -58,6 +58,7 @@ Only these are first-class:
 - `rc-debug` — one run/thread/session trace; inspect/propose/stop before edits.
 - `rc-health` — stale mirrors and dead-lettered runs.
 - `rc-fleet` — recent fleet and recurring failure patterns.
+- `prod-console` — direct guarded production primitives through `rc capabilities`, `rc db`, `rc bash`, and `rc action`.
 - `brain-dev-upgrade` — update kit and `rc`.
 - `brain-publish` — post-edit publish/support-request step.
 
