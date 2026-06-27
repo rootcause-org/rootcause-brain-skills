@@ -1,0 +1,14 @@
+key: sentry
+name: Sentry
+kinds: [token, oauth]
+connector_module: lib.connectors.sentry
+env_var: RC_CONN_SENTRY
+egress_hosts:
+  - sentry.io
+  - "*.sentry.io"
+oauth:
+  auth_url: https://sentry.io/oauth/authorize/
+  token_url: https://sentry.io/oauth/token/
+  default_scopes: [event:read, org:read, project:read]
+help_md: |
+  Reads Sentry issues/events for support diagnosis. Use a token or OAuth app with read-only scopes.

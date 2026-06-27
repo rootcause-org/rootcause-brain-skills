@@ -1,7 +1,7 @@
 """rootcause sandbox helper library.
 
 Thin, READ-ONLY helpers the agent's Python grounding code imports inside the disposable
-container: `db`, `stripe`, `cloudwatch`, `fs`, `http`, `html`. Each is configured from the per-project
+container: `db`, `stripe`, `cloudwatch`, `fs`, `http`, `html`, `oauth`. Each is configured from the per-project
 secrets injected as env (read-only PG DSN, Stripe restricted key, least-priv AWS creds, GitHub
 read token) and the read-only mounts: the brain at /brain and source mirrors at /mirrors/<repo>,
 both `:ro` (a write returns EROFS). Only /tmp is writable scratch.
@@ -25,7 +25,7 @@ Typical use from a `bash` Python script:
 
 # Submodules are imported on demand (`from lib import db`), not eagerly here: eager imports make
 # `python -m lib.db` double-import the module it's running and emit a RuntimeWarning on every call.
-__all__ = ["db", "stripe", "cloudwatch", "fs", "http", "html", "telemetry"]
+__all__ = ["db", "stripe", "cloudwatch", "fs", "http", "html", "oauth", "telemetry"]
 
 # Auto-wire best-effort PostHog error tracking (no-op without POSTHOG_PROJECT_API_KEY). Swallow any
 # failure here — importing `lib` must never fail because telemetry couldn't initialize.

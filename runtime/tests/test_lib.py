@@ -19,7 +19,8 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # make `lib` importable
 
-from lib import _output, cloudwatch, db  # noqa: E402
+from lib import _output, cloudwatch, db, oauth  # noqa: E402
+from lib.connectors import sentry  # noqa: E402
 from lib import stripe as lib_stripe  # noqa: E402
 
 
@@ -196,6 +197,48 @@ class DatabaseCatalog(unittest.TestCase):
         # Must not silently bind one of the DSNs.
         self.assertNotIn("postgres://ruby", msg)
         self.assertNotIn("postgres://pt", msg)
+
+
+class OAuthConnections(unittest.TestCase):
+    def setUp(self):
+        self._clean = {k: v for k, v in os.environ.items() if k.startswith("RC_CONN_")}
+        for k in self._clean:
+            del os.environ[k]
+
+    def tearDown(self):
+        for k in list(os.environ):
+            if k.startswith("RC_CONN_"):
+                del os.environ[k]
+        os.environ.update(self._clean)
+
+    def test_env_var_maps_connector_key(self):
+        self.assertEqual(oauth.env_var("sentry"), "RC_CONN_SENTRY")
+        self.assertEqual(oauth.env_var("hubspot-eu"), "RC_CONN_HUBSPOT_EU")
+        self.assertEqual(oauth.env_var("RC_CONN_CUSTOM"), "RC_CONN_CUSTOM")
+
+    def test_token_reads_injected_env(self):
+        os.environ["RC_CONN_SENTRY"] = "secret-token"
+        self.assertEqual(oauth.token("sentry"), "secret-token")
+
+    def test_token_missing_raises_named_env(self):
+        with self.assertRaisesRegex(RuntimeError, "RC_CONN_SENTRY"):
+            oauth.token("sentry")
+
+
+class SentryConnector(unittest.TestCase):
+    def test_issue_to_markdown(self):
+        md = sentry.issue_to_markdown(
+            {
+                "title": "Checkout failed",
+                "shortId": "SHOP-1",
+                "status": "unresolved",
+                "count": "42",
+                "permalink": "https://sentry.io/issues/1/",
+            }
+        )
+        self.assertIn("# Checkout failed", md)
+        self.assertIn("Short ID: SHOP-1", md)
+        self.assertIn("Events: 42", md)
 
 
 class Introspection(unittest.TestCase):
