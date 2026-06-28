@@ -1,0 +1,410 @@
+"""Unit tests for lib.api — the generic read-only REST client. No network: every HTTP call is
+mocked with the `responses` library. These lock down the logic that decides *what* gets sent and
+*how* failures/pages/rate-limits are handled.
+
+    cd runtime && uv run --with . --with pytest --with responses --no-project pytest tests/test_api.py -q
+"""
+
+import random
+import sys
+import time
+import unittest
+from pathlib import Path
+from unittest import mock
+
+import responses
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # make `lib` importable
+
+from lib import api  # noqa: E402
+
+
+def _manifest(**kw) -> api.Manifest:
+    base = dict(key="demo", base_url="https://api.demo.test/v1")
+    base.update(kw)
+    return api.Manifest(**base)
+
+
+def _client(manifest=None, **kw):
+    """A client with a fixed RNG + recording sleeper so jitter/backoff are deterministic in tests."""
+    sleeps: list[float] = []
+    c = api.Client(
+        manifest=manifest or _manifest(),
+        credential="sekret",
+        _sleeper=sleeps.append,
+        _rng=random.Random(1234),
+        **kw,
+    )
+    return c, sleeps
+
+
+class AuthPlacement(unittest.TestCase):
+    """Each auth strategy puts the credential in the right place; api keys never hit the query string."""
+
+    @responses.activate
+    def test_bearer_header(self):
+        responses.add(responses.GET, "https://api.demo.test/v1/ping", json={"ok": True})
+        c, _ = _client(_manifest(auth=api.Auth(strategy="bearer")))
+        c.get("ping")
+        self.assertEqual(responses.calls[0].request.headers["Authorization"], "Bearer sekret")
+
+    @responses.activate
+    def test_basic_header(self):
+        import base64
+
+        responses.add(responses.GET, "https://api.demo.test/v1/ping", json={"ok": True})
+        c, _ = _client(_manifest(auth=api.Auth(strategy="basic")))
+        c.credential = "user:pass"
+        c.get("ping")
+        expect = "Basic " + base64.b64encode(b"user:pass").decode()
+        self.assertEqual(responses.calls[0].request.headers["Authorization"], expect)
+
+    @responses.activate
+    def test_basic_username_only(self):
+        responses.add(responses.GET, "https://api.demo.test/v1/ping", json={"ok": True})
+        c, _ = _client(_manifest(auth=api.Auth(strategy="basic")))
+        c.credential = "keyonly"  # no colon ⇒ username with empty password
+        c.get("ping")
+        self.assertTrue(responses.calls[0].request.headers["Authorization"].startswith("Basic "))
+
+    @responses.activate
+    def test_api_key_header_named(self):
+        responses.add(responses.GET, "https://api.demo.test/v1/ping", json={"ok": True})
+        c, _ = _client(_manifest(auth=api.Auth(strategy="api_key_header", name="X-Api-Key")))
+        c.get("ping")
+        self.assertEqual(responses.calls[0].request.headers["X-Api-Key"], "sekret")
+        # Must NOT leak into the query string.
+        self.assertNotIn("sekret", responses.calls[0].request.url)
+
+    @responses.activate
+    def test_query_param(self):
+        responses.add(responses.GET, "https://api.demo.test/v1/ping", json={"ok": True})
+        c, _ = _client(_manifest(auth=api.Auth(strategy="query_param", name="api_key")))
+        c.get("ping")
+        self.assertIn("api_key=sekret", responses.calls[0].request.url)
+
+    @responses.activate
+    def test_oauth2_client_credentials_is_bearer(self):
+        responses.add(responses.GET, "https://api.demo.test/v1/ping", json={"ok": True})
+        c, _ = _client(_manifest(auth=api.Auth(strategy="oauth2_client_credentials")))
+        c.get("ping")
+        self.assertEqual(responses.calls[0].request.headers["Authorization"], "Bearer sekret")
+
+    @responses.activate
+    def test_none_strategy_sends_no_auth(self):
+        responses.add(responses.GET, "https://api.demo.test/v1/ping", json={"ok": True})
+        c = api.Client(manifest=_manifest(auth=api.Auth(strategy="none")), credential="")
+        c.get("ping")
+        self.assertNotIn("Authorization", responses.calls[0].request.headers)
+
+
+class ErrorNormalization(unittest.TestCase):
+    @responses.activate
+    def test_4xx_raises_apierror_with_body(self):
+        responses.add(
+            responses.GET, "https://api.demo.test/v1/x",
+            json={"error": {"message": "no such customer"}}, status=404,
+        )
+        c, _ = _client()
+        with self.assertRaises(api.ApiError) as cm:
+            c.get("x")
+        self.assertEqual(cm.exception.status, 404)
+        self.assertIn("no such customer", cm.exception.body)
+        self.assertFalse(cm.exception.retryable)
+
+    @responses.activate
+    def test_non_json_body_raises(self):
+        responses.add(responses.GET, "https://api.demo.test/v1/x", body="<html>nope</html>", status=200)
+        c, _ = _client()
+        with self.assertRaises(api.ApiError):
+            c.get("x")
+
+    @responses.activate
+    def test_404_is_not_retried(self):
+        responses.add(responses.GET, "https://api.demo.test/v1/x", json={"e": 1}, status=404)
+        c, sleeps = _client()
+        with self.assertRaises(api.ApiError):
+            c.get("x")
+        self.assertEqual(len(responses.calls), 1)  # no retries on a non-retryable status
+        self.assertEqual(sleeps, [])
+
+
+class RetryBackoff(unittest.TestCase):
+    @responses.activate
+    def test_retries_5xx_then_succeeds(self):
+        responses.add(responses.GET, "https://api.demo.test/v1/x", json={"e": 1}, status=503)
+        responses.add(responses.GET, "https://api.demo.test/v1/x", json={"e": 1}, status=503)
+        responses.add(responses.GET, "https://api.demo.test/v1/x", json={"ok": True}, status=200)
+        c, sleeps = _client()
+        self.assertEqual(c.get("x"), {"ok": True})
+        self.assertEqual(len(responses.calls), 3)
+        self.assertEqual(len(sleeps), 2)  # two retries ⇒ two backoff sleeps
+
+    @responses.activate
+    def test_full_jitter_within_bounds(self):
+        # Each sleep must be in [0, min(cap, base*2**attempt)] — full jitter, never exceeding ceiling.
+        for _ in range(6):
+            responses.add(responses.GET, "https://api.demo.test/v1/x", json={"e": 1}, status=500)
+        c, sleeps = _client(max_retries=5, backoff_base=0.5, backoff_cap=30.0)
+        with self.assertRaises(api.ApiError):
+            c.get("x")
+        for attempt, slept in enumerate(sleeps):
+            ceiling = min(30.0, 0.5 * (2 ** attempt))
+            self.assertGreaterEqual(slept, 0.0)
+            self.assertLessEqual(slept, ceiling)
+
+    @responses.activate
+    def test_exhausts_retries_then_raises(self):
+        for _ in range(10):
+            responses.add(responses.GET, "https://api.demo.test/v1/x", json={"e": 1}, status=502)
+        c, sleeps = _client(max_retries=3)
+        with self.assertRaises(api.ApiError):
+            c.get("x")
+        self.assertEqual(len(responses.calls), 4)  # 1 initial + 3 retries
+        self.assertEqual(len(sleeps), 3)
+
+    @responses.activate
+    def test_post_not_retried_by_default(self):
+        responses.add(responses.POST, "https://api.demo.test/v1/x", json={"e": 1}, status=503)
+        c, _ = _client()
+        with self.assertRaises(api.ApiError):
+            c.request("POST", "x")
+        self.assertEqual(len(responses.calls), 1)  # non-idempotent ⇒ no blind retry
+
+
+class RetryAfterParsing(unittest.TestCase):
+    def test_seconds_form(self):
+        self.assertEqual(api.parse_retry_after("120"), 120.0)
+        self.assertEqual(api.parse_retry_after("0"), 0.0)
+
+    def test_http_date_form(self):
+        # A date 60s in the future ⇒ ~60s delay (RFC 9110 §10.2.3 date form — the commonly-missed one).
+        now = 1_700_000_000.0
+        future = "Tue, 14 Nov 2023 22:13:20 GMT"  # = 1700000000 + 0; build a known offset instead
+        # Use a date we compute so the test is timezone-stable:
+        from email.utils import formatdate
+
+        hdr = formatdate(now + 60, usegmt=True)
+        self.assertAlmostEqual(api.parse_retry_after(hdr, now=now), 60.0, delta=1.0)
+        # And a clearly-parseable fixed string still parses to a float (>=0).
+        self.assertIsNotNone(api.parse_retry_after(future, now=now))
+
+    def test_past_date_clamps_to_zero(self):
+        from email.utils import formatdate
+
+        hdr = formatdate(1_700_000_000.0 - 99, usegmt=True)
+        self.assertEqual(api.parse_retry_after(hdr, now=1_700_000_000.0), 0.0)
+
+    def test_absent_or_garbage_is_none(self):
+        self.assertIsNone(api.parse_retry_after(None))
+        self.assertIsNone(api.parse_retry_after(""))
+        self.assertIsNone(api.parse_retry_after("not-a-date"))
+
+    @responses.activate
+    def test_429_honours_retry_after_seconds(self):
+        responses.add(responses.GET, "https://api.demo.test/v1/x", json={"e": 1}, status=429,
+                      headers={"Retry-After": "7"})
+        responses.add(responses.GET, "https://api.demo.test/v1/x", json={"ok": True}, status=200)
+        c, sleeps = _client()
+        self.assertEqual(c.get("x"), {"ok": True})
+        self.assertEqual(sleeps, [7.0])  # exact Retry-After, not jittered backoff
+
+    @responses.activate
+    def test_429_without_retry_after_uses_backoff(self):
+        responses.add(responses.GET, "https://api.demo.test/v1/x", json={"e": 1}, status=429)
+        responses.add(responses.GET, "https://api.demo.test/v1/x", json={"ok": True}, status=200)
+        c, sleeps = _client(backoff_base=0.5, backoff_cap=30.0)
+        c.get("x")
+        self.assertEqual(len(sleeps), 1)
+        self.assertLessEqual(sleeps[0], 0.5)  # falls back to jittered backoff (attempt 0 ceiling)
+
+    def test_long_retry_after_is_sliced(self):
+        # A hostile multi-minute Retry-After is split into MAX_RETRY_AFTER chunks, not one giant sleep.
+        chunks: list[float] = []
+        api._sleep(300.0, chunks.append)
+        self.assertTrue(all(ch <= api.MAX_RETRY_AFTER for ch in chunks))
+        self.assertAlmostEqual(sum(chunks), 300.0, places=3)
+
+
+class CursorPagination(unittest.TestCase):
+    @responses.activate
+    def test_stitches_pages(self):
+        m = _manifest(pagination=api.Pagination(
+            style="cursor", cursor_field="next", cursor_param="cursor",
+            has_more_field="has_more", items_field="data",
+        ))
+        responses.add(responses.GET, "https://api.demo.test/v1/list",
+                      json={"data": [{"id": 1}, {"id": 2}], "has_more": True, "next": "c1"}, status=200)
+        responses.add(responses.GET, "https://api.demo.test/v1/list",
+                      json={"data": [{"id": 3}], "has_more": False, "next": None}, status=200)
+        c, _ = _client(m)
+        result = c.collect("list")
+        self.assertEqual([it["id"] for it in result["items"]], [1, 2, 3])
+        self.assertFalse(result["incomplete"])
+        # Page 2 carried the cursor from page 1.
+        self.assertIn("cursor=c1", responses.calls[1].request.url)
+
+    @responses.activate
+    def test_has_more_false_stops_even_with_cursor(self):
+        m = _manifest(pagination=api.Pagination(
+            style="cursor", cursor_field="next", has_more_field="has_more", items_field="data",
+        ))
+        responses.add(responses.GET, "https://api.demo.test/v1/list",
+                      json={"data": [{"id": 1}], "has_more": False, "next": "still-here"}, status=200)
+        c, _ = _client(m)
+        result = c.collect("list")
+        self.assertEqual(len(result["items"]), 1)
+        self.assertEqual(len(responses.calls), 1)
+
+
+class OffsetPagination(unittest.TestCase):
+    @responses.activate
+    def test_advances_offset_until_short_page(self):
+        m = _manifest(pagination=api.Pagination(
+            style="offset", offset_param="offset", limit_param="limit", page_size=2, items_field="rows",
+        ))
+        responses.add(responses.GET, "https://api.demo.test/v1/list", json={"rows": [{"i": 0}, {"i": 1}]})
+        responses.add(responses.GET, "https://api.demo.test/v1/list", json={"rows": [{"i": 2}, {"i": 3}]})
+        responses.add(responses.GET, "https://api.demo.test/v1/list", json={"rows": [{"i": 4}]})
+        c, _ = _client(m)
+        result = c.collect("list")
+        self.assertEqual([it["i"] for it in result["items"]], [0, 1, 2, 3, 4])
+        self.assertIn("offset=2", responses.calls[1].request.url)
+        self.assertIn("offset=4", responses.calls[2].request.url)
+
+
+class LinkPagination(unittest.TestCase):
+    @responses.activate
+    def test_follows_rfc8288_next(self):
+        m = _manifest(pagination=api.Pagination(style="link"))
+        responses.add(
+            responses.GET, "https://api.demo.test/v1/list",
+            json=[{"id": 1}],
+            headers={"Link": '<https://api.demo.test/v1/list?page=2>; rel="next"'},
+        )
+        responses.add(responses.GET, "https://api.demo.test/v1/list?page=2", json=[{"id": 2}])
+        c, _ = _client(m)
+        result = c.collect("list")
+        self.assertEqual([it["id"] for it in result["items"]], [1, 2])
+        self.assertFalse(result["incomplete"])
+
+    def test_parse_link_next(self):
+        hdr = '<https://x/y?a=1>; rel="prev", <https://x/y?a=3>; rel="next"'
+        self.assertEqual(api._parse_link_next(hdr), "https://x/y?a=3")
+        self.assertIsNone(api._parse_link_next(None))
+        self.assertIsNone(api._parse_link_next('<https://x>; rel="prev"'))
+
+
+class NonePagination(unittest.TestCase):
+    @responses.activate
+    def test_single_page(self):
+        m = _manifest(pagination=api.Pagination(style="none", items_field="data"))
+        responses.add(responses.GET, "https://api.demo.test/v1/list", json={"data": [{"id": 1}]})
+        c, _ = _client(m)
+        result = c.collect("list")
+        self.assertEqual(len(result["items"]), 1)
+        self.assertEqual(len(responses.calls), 1)
+
+
+class PartialFailure(unittest.TestCase):
+    @responses.activate
+    def test_mid_stream_error_returns_partial_with_flag(self):
+        m = _manifest(pagination=api.Pagination(
+            style="cursor", cursor_field="next", has_more_field="has_more", items_field="data",
+        ))
+        responses.add(responses.GET, "https://api.demo.test/v1/list",
+                      json={"data": [{"id": 1}], "has_more": True, "next": "c1"}, status=200)
+        responses.add(responses.GET, "https://api.demo.test/v1/list", json={"e": 1}, status=500)
+        c, _ = _client(m, max_retries=0)  # don't retry, fail straight to partial
+        result = c.collect("list")
+        self.assertEqual([it["id"] for it in result["items"]], [1])  # what we had
+        self.assertTrue(result["incomplete"])  # never masquerades as complete
+        self.assertIn("failed", result["reason"])
+
+    @responses.activate
+    def test_max_items_marks_incomplete(self):
+        m = _manifest(pagination=api.Pagination(
+            style="cursor", cursor_field="next", has_more_field="has_more", items_field="data",
+        ))
+        responses.add(responses.GET, "https://api.demo.test/v1/list",
+                      json={"data": [{"id": 1}, {"id": 2}, {"id": 3}], "has_more": True, "next": "c1"})
+        c, _ = _client(m)
+        result = c.collect("list", max_items=2)
+        self.assertEqual(len(result["items"]), 2)
+        self.assertTrue(result["incomplete"])
+
+    @responses.activate
+    def test_max_pages_marks_incomplete(self):
+        m = _manifest(pagination=api.Pagination(
+            style="cursor", cursor_field="next", has_more_field="has_more", items_field="data",
+        ))
+        for _ in range(3):
+            responses.add(responses.GET, "https://api.demo.test/v1/list",
+                          json={"data": [{"id": 1}], "has_more": True, "next": "c"})
+        c, _ = _client(m)
+        result = c.collect("list", max_pages=2)
+        self.assertEqual(len(responses.calls), 2)
+        self.assertTrue(result["incomplete"])
+        self.assertIn("max_pages", result["reason"])
+
+
+class Pick(unittest.TestCase):
+    def test_simple_paths(self):
+        obj = {"id": "x", "customer": {"email": "a@b.com"}, "n": 3}
+        self.assertEqual(api.pick(obj, "id,customer.email"), {"id": "x", "customer.email": "a@b.com"})
+
+    def test_missing_path_omitted(self):
+        self.assertEqual(api.pick({"id": "x"}, "id,nope.deep"), {"id": "x"})
+
+    def test_list_index_and_wildcard(self):
+        obj = {"data": [{"v": 1}, {"v": 2}]}
+        self.assertEqual(api.pick(obj, "data.0.v"), {"data.0.v": 1})
+        self.assertEqual(api.pick(obj, "data.*.v"), {"data.*.v": [1, 2]})
+
+    def test_list_of_paths(self):
+        self.assertEqual(api.pick({"a": 1, "b": 2}, ["a", "b"]), {"a": 1, "b": 2})
+
+
+class Join(unittest.TestCase):
+    def test_absolute_url_overrides_base(self):
+        self.assertEqual(api._join("https://b/v1", "https://other/x"), "https://other/x")
+
+    def test_base_prefix_preserved(self):
+        # base_url path must survive the join (urljoin footgun: it drops the base path otherwise).
+        self.assertEqual(api._join("https://b/api/0", "issues/1/"), "https://b/api/0/issues/1/")
+
+    def test_no_base(self):
+        self.assertEqual(api._join("", "https://x/y"), "https://x/y")
+
+
+class Timeouts(unittest.TestCase):
+    @responses.activate
+    def test_both_timeouts_set(self):
+        captured = {}
+
+        def cb(request):
+            return (200, {}, '{"ok": true}')
+
+        responses.add_callback(responses.GET, "https://api.demo.test/v1/x", callback=cb)
+        c, _ = _client(connect_timeout=3.0, read_timeout=9.0)
+        with mock.patch("requests.request", wraps=__import__("requests").request) as spy:
+            c.get("x")
+        self.assertEqual(spy.call_args.kwargs["timeout"], (3.0, 9.0))
+
+
+class ClientCredentialResolution(unittest.TestCase):
+    def test_client_resolves_token_from_oauth(self):
+        with mock.patch.object(api.oauth, "token", return_value="resolved") as t:
+            c = api.client(_manifest(key="demo", auth=api.Auth(strategy="bearer")))
+        t.assert_called_once_with("demo")
+        self.assertEqual(c.credential, "resolved")
+
+    def test_none_strategy_skips_credential(self):
+        with mock.patch.object(api.oauth, "token") as t:
+            c = api.client(_manifest(auth=api.Auth(strategy="none")))
+        t.assert_not_called()
+        self.assertEqual(c.credential, "")
+
+
+if __name__ == "__main__":
+    unittest.main()

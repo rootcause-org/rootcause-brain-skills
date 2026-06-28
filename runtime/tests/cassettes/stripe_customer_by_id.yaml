@@ -1,0 +1,139 @@
+# Hand-built vcrpy cassette from Stripe's DOCUMENTED example payloads (test mode shapes), trimmed to
+# the fields the support connector reads. No real secrets: the Authorization header is scrubbed to
+# DUMMY at record time (filter_headers), so a recorded run would look identical here.
+interactions:
+- request:
+    method: GET
+    uri: https://api.stripe.com/v1/customers/cus_NffrFeUfNV2Hib
+    body: null
+    headers:
+      Authorization:
+      - DUMMY
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: |
+        {
+          "id": "cus_NffrFeUfNV2Hib",
+          "object": "customer",
+          "email": "jenny.rosen@example.com",
+          "name": "Jenny Rosen",
+          "balance": 0,
+          "currency": "usd",
+          "delinquent": false
+        }
+- request:
+    method: GET
+    uri: https://api.stripe.com/v1/subscriptions?customer=cus_NffrFeUfNV2Hib&status=all&limit=10
+    body: null
+    headers:
+      Authorization:
+      - DUMMY
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: |
+        {
+          "object": "list",
+          "url": "/v1/subscriptions",
+          "has_more": false,
+          "data": [
+            {
+              "id": "sub_1MowQVLkdIwHu7ixeRlqHVzs",
+              "object": "subscription",
+              "status": "active",
+              "current_period_end": 1683893990,
+              "cancel_at_period_end": false,
+              "plan": {
+                "id": "price_1MowQULkdIwHu7ixraBm864M",
+                "object": "plan",
+                "nickname": "Standard Monthly",
+                "amount": 1500,
+                "currency": "usd",
+                "interval": "month"
+              }
+            }
+          ]
+        }
+- request:
+    method: GET
+    uri: https://api.stripe.com/v1/invoices?customer=cus_NffrFeUfNV2Hib&limit=1
+    body: null
+    headers:
+      Authorization:
+      - DUMMY
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: |
+        {
+          "object": "list",
+          "url": "/v1/invoices",
+          "has_more": false,
+          "data": [
+            {
+              "id": "in_1MtHbELkdIwHu7ixl4OzzPMv",
+              "object": "invoice",
+              "number": "AB12345-0001",
+              "status": "open",
+              "amount_due": 1500,
+              "amount_paid": 0,
+              "currency": "usd",
+              "created": 1680644467,
+              "hosted_invoice_url": "https://invoice.stripe.com/i/acct_x/test_y"
+            }
+          ]
+        }
+- request:
+    method: GET
+    uri: https://api.stripe.com/v1/charges?customer=cus_NffrFeUfNV2Hib&limit=10
+    body: null
+    headers:
+      Authorization:
+      - DUMMY
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: |
+        {
+          "object": "list",
+          "url": "/v1/charges",
+          "has_more": false,
+          "data": [
+            {
+              "id": "ch_3MtwBwLkdIwHu7ix0FAILED",
+              "object": "charge",
+              "amount": 1500,
+              "currency": "usd",
+              "created": 1683892800,
+              "paid": false,
+              "status": "failed",
+              "failure_code": "card_declined",
+              "failure_message": "Your card was declined.",
+              "outcome": {
+                "seller_message": "The bank returned the decline code insufficient_funds."
+              }
+            }
+          ]
+        }
+version: 1

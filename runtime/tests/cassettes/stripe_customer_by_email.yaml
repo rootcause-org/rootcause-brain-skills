@@ -1,0 +1,87 @@
+# Email-resolution path: the connector lists customers filtered by email, then reuses the same
+# join calls. Secrets scrubbed (Authorization -> DUMMY).
+interactions:
+- request:
+    method: GET
+    uri: https://api.stripe.com/v1/customers?email=jenny.rosen%40example.com&limit=1
+    body: null
+    headers:
+      Authorization:
+      - DUMMY
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: |
+        {
+          "object": "list",
+          "url": "/v1/customers",
+          "has_more": false,
+          "data": [
+            {
+              "id": "cus_NffrFeUfNV2Hib",
+              "object": "customer",
+              "email": "jenny.rosen@example.com",
+              "name": "Jenny Rosen",
+              "balance": 0,
+              "currency": "usd",
+              "delinquent": false
+            }
+          ]
+        }
+- request:
+    method: GET
+    uri: https://api.stripe.com/v1/subscriptions?customer=cus_NffrFeUfNV2Hib&status=all&limit=10
+    body: null
+    headers:
+      Authorization:
+      - DUMMY
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: |
+        {"object": "list", "url": "/v1/subscriptions", "has_more": false, "data": []}
+- request:
+    method: GET
+    uri: https://api.stripe.com/v1/invoices?customer=cus_NffrFeUfNV2Hib&limit=1
+    body: null
+    headers:
+      Authorization:
+      - DUMMY
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: |
+        {"object": "list", "url": "/v1/invoices", "has_more": false, "data": []}
+- request:
+    method: GET
+    uri: https://api.stripe.com/v1/charges?customer=cus_NffrFeUfNV2Hib&limit=10
+    body: null
+    headers:
+      Authorization:
+      - DUMMY
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: |
+        {"object": "list", "url": "/v1/charges", "has_more": false, "data": []}
+version: 1

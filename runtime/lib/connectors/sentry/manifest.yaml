@@ -6,6 +6,16 @@ env_var: RC_CONN_SENTRY
 egress_hosts:
   - sentry.io
   - "*.sentry.io"
+# Generic lib.api caller fields. Sentry needs no bespoke connector beyond the existing issue helper —
+# the manifest row + `python -m lib.api get sentry api/0/...` covers ad-hoc reads.
+base_url: https://sentry.io/api/0
+auth:
+  strategy: bearer
+pagination:
+  style: link             # Sentry paginates with RFC 8288 Link: rel="next" headers
+  items_field: ""
+rate_limit:
+  remaining_header: X-Sentry-Rate-Limit-Remaining
 oauth:
   auth_url: https://sentry.io/oauth/authorize/
   token_url: https://sentry.io/oauth/token/

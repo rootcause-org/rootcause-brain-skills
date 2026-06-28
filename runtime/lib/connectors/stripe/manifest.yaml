@@ -1,0 +1,25 @@
+key: stripe
+name: Stripe
+kinds: [token]
+connector_module: lib.connectors.stripe
+env_var: RC_CONN_STRIPE
+egress_hosts:
+  - api.stripe.com
+# Generic lib.api caller fields (the compact declarative row). A connector exists here only because
+# Stripe trips the force-code triggers: multi-call join + field pre-selection.
+base_url: https://api.stripe.com/v1
+auth:
+  strategy: bearer        # bearer | basic | api_key_header | query_param | oauth2_client_credentials
+pagination:
+  style: cursor           # none | cursor | offset | link
+  cursor_param: starting_after
+  has_more_field: has_more
+  items_field: data
+  page_size: 100
+rate_limit:
+  # Stripe paces with 429 + Retry-After (honoured by lib.api), not a remaining-count header.
+  remaining_header: ""
+help_md: |
+  Reads Stripe customers/subscriptions/invoices/charges for billing-support diagnosis. Use a
+  RESTRICTED read-only key (rk_…), test mode for validation. The connector renders a concise
+  per-customer support summary (subscription status, plan, latest invoice, last failed payment).

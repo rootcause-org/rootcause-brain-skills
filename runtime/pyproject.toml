@@ -27,7 +27,9 @@ dependencies = [
 
 [project.optional-dependencies]
 # Pulled in by the kit's brain_test.py runner; the livecheck pytest plugin lives in lib/.
-test = ["pytest>=8"]
+# `responses` mocks requests at the transport layer for lib.api unit tests (no network); `vcrpy`
+# records/replays HTTP cassettes for the Stripe connector with secrets scrubbed at record time.
+test = ["pytest>=8", "responses>=0.25", "vcrpy>=6"]
 
 [build-system]
 requires = ["hatchling"]
