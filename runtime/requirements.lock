@@ -32,6 +32,8 @@ psycopg-binary==3.2.3 ; implementation_name != 'pypy'
     # via psycopg
 python-dateutil==2.9.0.post0
     # via botocore
+pyyaml==6.0.3
+    # via rootcause-runtime (runtime/pyproject.toml)
 requests==2.32.3
     # via
     #   rootcause-runtime (runtime/pyproject.toml)

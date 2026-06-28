@@ -25,7 +25,6 @@ manifest helpers and CLI ``--help`` work on a bare host).
 
 from __future__ import annotations
 
-import os
 import random
 import time
 from dataclasses import dataclass, field
@@ -611,10 +610,117 @@ def _parse_link_next(header: str | None) -> str | None:
 # `python -m lib.api get <key> ...` works for any catalogued integration without a per-key script.
 MANIFESTS: dict[str, Manifest] = {}
 
+# Keys populated from a connectors/*/manifest.yaml. Tracked so loading is idempotent (re-running
+# load_manifests never duplicates) and so an explicit register() always WINS: the YAML loader fills
+# only keys not already present, and a later register() overwrites the dict entry outright.
+_YAML_LOADED_KEYS: set[str] = set()
+
 
 def register(manifest: Manifest) -> Manifest:
     MANIFESTS[manifest.key] = manifest
+    _YAML_LOADED_KEYS.discard(manifest.key)  # an explicit registration is no longer YAML-owned
     return manifest
+
+
+def load_manifests(*, force: bool = False) -> dict[str, Manifest]:
+    """Discover and register every ``lib/connectors/*/manifest.yaml`` into ``MANIFESTS``.
+
+    This is what makes "a manifest row IS the integration" true at runtime: a catalogued connector
+    with NO bespoke Python is still drivable via ``python -m lib.api get <key> ...``. Idempotent —
+    only fills keys not already present, so an explicit ``register()`` (e.g. a Python connector that
+    needs a richer Manifest than the YAML expresses) is the source of truth and is never clobbered.
+
+    Discovery walks the package's ``connectors`` directory (works from the baked/installed wheel, not
+    only the source tree). A single malformed manifest raises ``ManifestError`` naming the file rather
+    than silently skipping — a broken catalog row must fail loudly, not vanish.
+    """
+    from pathlib import Path
+
+    connectors_dir = Path(__file__).resolve().parent / "connectors"
+    for manifest_path in sorted(connectors_dir.glob("*/manifest.yaml")):
+        key_hint = manifest_path.parent.name
+        if not force and key_hint in MANIFESTS and key_hint not in _YAML_LOADED_KEYS:
+            continue  # an explicit register() owns this key — leave it
+        mani = _parse_manifest_file(manifest_path)
+        MANIFESTS[mani.key] = mani
+        _YAML_LOADED_KEYS.add(mani.key)
+    return MANIFESTS
+
+
+class ManifestError(RuntimeError):
+    """A manifest.yaml could not be parsed into a Manifest — names the offending file."""
+
+
+def _parse_manifest_file(path) -> Manifest:
+    """Parse one connector ``manifest.yaml`` into a ``Manifest``.
+
+    Maps only the fields that DRIVE a REST call (base_url, auth, pagination, rate_limit,
+    default_headers). The catalog-only blocks (``oauth:``, ``mcp_url_template``, ``kinds``,
+    ``help_md``, …) are read leniently and ignored here — they belong to the host catalog, not the
+    runtime caller — so an unknown key never breaks loading (forward-compatible)."""
+    import yaml
+
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as e:
+        raise ManifestError(f"failed to read/parse manifest {path}: {e}") from e
+    if not isinstance(raw, dict):
+        raise ManifestError(f"manifest {path} is not a YAML mapping")
+    try:
+        return _manifest_from_dict(raw)
+    except (KeyError, TypeError, ValueError) as e:
+        raise ManifestError(f"invalid manifest {path}: {e}") from e
+
+
+def _manifest_from_dict(raw: dict) -> Manifest:
+    key = raw.get("key")
+    if not key or not isinstance(key, str):
+        raise ValueError("missing required 'key'")
+    base_url = raw.get("base_url") or ""
+    if not isinstance(base_url, str):
+        raise ValueError("'base_url' must be a string")
+
+    auth_raw = raw.get("auth") or {}
+    if not isinstance(auth_raw, dict):
+        raise ValueError("'auth' must be a mapping")
+    auth = Auth(
+        strategy=str(auth_raw.get("strategy", "bearer")),
+        name=str(auth_raw.get("name", "Authorization")),
+    )
+
+    pg_raw = raw.get("pagination") or {}
+    if not isinstance(pg_raw, dict):
+        raise ValueError("'pagination' must be a mapping")
+    defaults = Pagination()
+    pagination = Pagination(
+        style=str(pg_raw.get("style", defaults.style)),
+        cursor_field=str(pg_raw.get("cursor_field", defaults.cursor_field)),
+        cursor_param=str(pg_raw.get("cursor_param", defaults.cursor_param)),
+        has_more_field=str(pg_raw.get("has_more_field", defaults.has_more_field)),
+        items_field=str(pg_raw.get("items_field", defaults.items_field)),
+        offset_param=str(pg_raw.get("offset_param", defaults.offset_param)),
+        limit_param=str(pg_raw.get("limit_param", defaults.limit_param)),
+        page_size=int(pg_raw.get("page_size", defaults.page_size)),
+    )
+
+    rl_raw = raw.get("rate_limit") or {}
+    if not isinstance(rl_raw, dict):
+        raise ValueError("'rate_limit' must be a mapping")
+    rate_limit_remaining_header = str(rl_raw.get("remaining_header", "") or "")
+
+    dh_raw = raw.get("default_headers") or {}
+    if not isinstance(dh_raw, dict):
+        raise ValueError("'default_headers' must be a mapping")
+    default_headers = {str(k): str(v) for k, v in dh_raw.items()}
+
+    return Manifest(
+        key=key,
+        base_url=base_url,
+        auth=auth,
+        pagination=pagination,
+        rate_limit_remaining_header=rate_limit_remaining_header,
+        default_headers=default_headers,
+    )
 
 
 def _main(argv: list[str] | None = None) -> int:
@@ -635,6 +741,7 @@ def _main(argv: list[str] | None = None) -> int:
 
     if args.cmd != "get":
         p.error("unknown command")
+    load_manifests()  # discover catalogued manifests so any zero-Python integration is drivable
     mani = MANIFESTS.get(args.key)
     if mani is None:
         p.error(f"no manifest registered for {args.key!r}; known: {sorted(MANIFESTS) or '(none)'}")
