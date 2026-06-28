@@ -9,9 +9,9 @@ Force-code triggers that fire:
 Auth: ``oauth2_client_credentials`` — the host mints the access token via the client_credentials
 grant with client_id+secret; the workspace receives a ready bearer as ``RC_CONN_PAYPAL``.
 
-PayPal uses page-number pagination (page=1,2,3...) not item-count offsets, so the generic
-lib.api ``offset`` paginator can't express it. List calls that need to page use ``_paginate``
-below, which advances the ``page`` query param manually.
+PayPal uses 1-based page-number pagination (page=1,2,3...), driven by lib.api's ``page`` style.
+List calls go through ``_paginate`` below, which builds a per-call Manifest (the ``items_field``
+varies per endpoint) and delegates the while-has-more loop to lib.api's ``collect``.
 
 CLI:
     python -m lib.connectors.paypal order 5O190127TN364715T
@@ -39,32 +39,27 @@ def _client() -> api.Client:
 
 
 def _paginate(path: str, items_field: str, query: dict, *, page_size: int = 20) -> list[dict]:
-    """Page through a PayPal list endpoint that uses page-number pagination (page=1,2,3...).
+    """Page through a PayPal list endpoint that uses 1-based page-number pagination (page=1,2,3...).
 
-    PayPal's list endpoints use ``page`` (1-based page number) and ``page_size``; the list stops
-    when a page returns fewer items than the page_size or ``total_pages`` is reached. The generic
-    lib.api offset paginator can't express this (it sends item-count offsets, not page numbers).
+    Driven by lib.api's ``page`` style (``page`` query arg from 1, ``page_size`` limit, short-page
+    termination). ``items_field`` is per-call (e.g. "items" for disputes), so we build a per-call
+    Manifest with the right items_field rather than relying on the shared manifest row.
     """
-    c = _client()
-    out: list[dict] = []
-    page_num = 1
-    while True:
-        q = dict(query, page=page_num, page_size=page_size)
-        body = c.get(path, query=q)
-        items = body.get(items_field) or []
-        out.extend(items)
-        total_pages = body.get("total_pages")
-        # total_pages is authoritative when present: advance until we've fetched every page.
-        if total_pages is not None:
-            if page_num >= total_pages:
-                break
-            page_num += 1
-            continue
-        # No total_pages: stop when the server returns a short (or empty) page.
-        if not items or len(items) < page_size:
-            break
-        page_num += 1
-    return out
+    manifest = api.Manifest(
+        key="paypal",
+        base_url=API_BASE,
+        auth=MANIFEST.auth,
+        pagination=api.Pagination(
+            style="page",
+            page_param="page",
+            page_start=1,
+            limit_param="page_size",
+            page_size=page_size,
+            items_field=items_field,
+        ),
+    )
+    c = api.client(manifest, token_key="paypal")
+    return c.collect(path, query=dict(query))["items"]
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +130,7 @@ def get_dispute(dispute_id: str) -> dict | None:
 
 def list_disputes(*, dispute_state: str = "") -> list[dict]:
     """List disputes, optionally filtered by state (REQUIRED_ACTION, UNDER_PAYPAL_REVIEW, etc.)."""
-    q: dict[str, Any] = {"page_size": 20}
+    q: dict[str, Any] = {}
     if dispute_state:
         q["dispute_state"] = dispute_state
     return _paginate("v1/customer/disputes", "items", q, page_size=20)

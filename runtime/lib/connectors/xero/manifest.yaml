@@ -16,11 +16,15 @@ base_url: https://api.xero.com/api.xro/2.0
 auth:
   strategy: bearer        # OAuth2 access token, injected from the oauth row's fresh bearer
 pagination:
-  # Xero's 1-based page number can't be expressed by the generic offset (which increments by item
-  # count) or cursor (no token in the response body). Set style=none so a naive manifest-only caller
-  # gets page 1 correctly; the script's _xero_pages() handles the while-has-more loop.
-  style: none
-  items_field: ""          # varies per endpoint (Invoices, Contacts, etc.); the script knows each
+  # Xero uses 1-based page-number paging (page=1,2,3…), a fixed 100-item ceiling, no has-more flag —
+  # lib.api's `page` style. The script's _xero_pages() drives it with a per-call items_field because
+  # each endpoint wraps its rows under a different key (Invoices, Contacts, …). The manifest row
+  # below documents the real style but leaves items_field empty: a single key can't paginate every
+  # endpoint, so generic `--paginate` collapses to one page (use the connector CLI for multi-page).
+  style: page
+  page_param: page
+  page_start: 1
+  items_field: ""          # varies per endpoint (Invoices, Contacts, etc.); the script sets it per call
   page_size: 100           # Xero's fixed maximum — cannot be overridden
 rate_limit:
   remaining_header: X-MinLimit-Remaining   # advisory; Xero also sends 429 + Retry-After

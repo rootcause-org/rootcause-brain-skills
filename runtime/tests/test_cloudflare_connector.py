@@ -3,8 +3,8 @@ bespoke Python is drivable end-to-end through `lib.api`'s YAML loader + CLI.
 
 No live creds, no network: HTTP is mocked with `responses`. Fixture bodies match Cloudflare's
 DOCUMENTED example payloads (developers.cloudflare.com), trimmed to support-relevant fields.
-Cloudflare paginates with offset (`page`/`per_page` params) and a `result_info` envelope, so two
-mocked pages exercise the real `offset` pagination style end-to-end.
+Cloudflare paginates by 1-based PAGE NUMBER (`page`/`per_page` params) with a `result_info`
+envelope, so two mocked pages exercise the real `page` pagination style end-to-end.
 
     cd runtime && uv run --with . --with pytest --with responses --no-project pytest tests/test_cloudflare_connector.py -q
 """
@@ -84,15 +84,16 @@ class CloudflareManifestOnly(unittest.TestCase):
         else:
             os.environ["RC_CONN_CLOUDFLARE"] = self._saved
 
-    def test_manifest_loaded_from_yaml_with_offset_pagination(self):
+    def test_manifest_loaded_from_yaml_with_page_pagination(self):
         """YAML loader creates a Manifest with every field mapped correctly."""
         m = api.load_manifests()
         self.assertIn("cloudflare", m)
         cf = m["cloudflare"]
         self.assertEqual(cf.base_url, "https://api.cloudflare.com/client/v4")
         self.assertEqual(cf.auth.strategy, "bearer")
-        self.assertEqual(cf.pagination.style, "offset")
-        self.assertEqual(cf.pagination.offset_param, "page")
+        self.assertEqual(cf.pagination.style, "page")
+        self.assertEqual(cf.pagination.page_param, "page")
+        self.assertEqual(cf.pagination.page_start, 1)  # 1-based
         self.assertEqual(cf.pagination.limit_param, "per_page")
         self.assertEqual(cf.pagination.items_field, "result")
         self.assertEqual(cf.pagination.page_size, 50)
@@ -102,11 +103,9 @@ class CloudflareManifestOnly(unittest.TestCase):
         self.assertNotIn("X-Cloudflare-Version", cf.default_headers)
 
     @responses_lib.activate
-    def test_offset_pagination_stitches_two_pages(self):
-        """Two offset pages are fetched and merged; bearer token rides both requests."""
-        # Page 1: page_size=50 but we return 1 item — offset loop checks len < page_size to stop,
-        # so we need the page to be "full" (same count as page_size) to trigger page 2.
-        # Build a page that is full (50 items) by repeating the zone fixture.
+    def test_page_number_pagination_stitches_two_pages(self):
+        """Two pages are fetched by 1-based page NUMBER (page=1,2); bearer rides both requests."""
+        # Page 1 must be "full" (len == page_size=50) to trigger page 2; page 2 is short → stop.
         page1_zones = [_ZONE_1] * 50
         page2_zones = [_ZONE_2]   # partial page → signals last page
 
@@ -128,6 +127,11 @@ class CloudflareManifestOnly(unittest.TestCase):
         self.assertFalse(result["incomplete"], result["reason"])
         # 50 from page 1 + 1 from page 2
         self.assertEqual(len(result["items"]), 51)
+
+        # Page NUMBER advances 1 → 2 (NOT an item-count offset like 0 → 50).
+        self.assertEqual(len(responses_lib.calls), 2)
+        self.assertIn("page=1", responses_lib.calls[0].request.url)
+        self.assertIn("page=2", responses_lib.calls[1].request.url)
 
         # Bearer token on both requests
         for call in responses_lib.calls:

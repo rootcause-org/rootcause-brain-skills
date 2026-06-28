@@ -3,8 +3,8 @@ bespoke Python is drivable end-to-end through `lib.api`'s YAML loader + CLI.
 
 No live creds, no network: HTTP is mocked with `responses`. The fixture bodies are
 Statuspage's own documented example payloads, trimmed to the fields relevant to support diagnosis.
-Statuspage paginates with offset-style (page / per_page), so two mocked pages exercise the real
-`offset` pagination style end-to-end.
+Statuspage paginates by 1-based PAGE NUMBER (page / per_page), so two mocked pages exercise the
+real `page` pagination style end-to-end.
 
 Auth uses `api_key_header` with name `Authorization`. The injected credential value includes the
 `OAuth ` prefix (the operator stores the full header value), and the tests verify that prefix
@@ -101,54 +101,23 @@ class StatuspageManifestOnly(unittest.TestCase):
         self.assertEqual(sp.base_url, "https://api.statuspage.io/v1")
         self.assertEqual(sp.auth.strategy, "api_key_header")
         self.assertEqual(sp.auth.name, "Authorization")
-        self.assertEqual(sp.pagination.style, "offset")
-        self.assertEqual(sp.pagination.offset_param, "page")
+        self.assertEqual(sp.pagination.style, "page")
+        self.assertEqual(sp.pagination.page_param, "page")
+        self.assertEqual(sp.pagination.page_start, 1)  # 1-based
         self.assertEqual(sp.pagination.limit_param, "per_page")
         self.assertEqual(sp.pagination.page_size, 100)
         self.assertEqual(sp.pagination.items_field, "")  # bare array responses
         self.assertEqual(sp.rate_limit_remaining_header, "")
 
     @responses_lib.activate
-    def test_offset_pagination_stitches_two_pages(self):
-        # Page 1: full page (1 item, page_size=1 for test isolation — we drive page_size via query)
-        # We override page_size to 1 via query so two pages are fetched with minimal fixture data.
-        responses_lib.add(
-            responses_lib.GET,
-            INCIDENTS_URL,
-            json=_INCIDENTS_PAGE_1,
-            status=200,
-            match_querystring=False,
-        )
-        # Page 2: partial page (fewer items than page_size=1? No — lib.api stops when len(items) < page_size)
-        # Since page_size from manifest is 100 and our page has 1 item, page 1 would stop immediately.
-        # So instead: mock with two pages each having 1 item using per_page=1 in the query.
-        # Reset and redo with explicit per_page=1 limit so two full pages → stop on empty page 3.
-        responses_lib.reset()
-
-        responses_lib.add(
-            responses_lib.GET,
-            INCIDENTS_URL,
-            json=_INCIDENTS_PAGE_1,   # 1 item, matches per_page=1 → fetch next page
-            status=200,
-            match_querystring=False,
-        )
-        responses_lib.add(
-            responses_lib.GET,
-            INCIDENTS_URL,
-            json=_INCIDENTS_PAGE_2,   # 1 item, matches per_page=1 → fetch next page
-            status=200,
-            match_querystring=False,
-        )
-        responses_lib.add(
-            responses_lib.GET,
-            INCIDENTS_URL,
-            json=[],                   # empty → lib.api offset loop stops
-            status=200,
-            match_querystring=False,
-        )
+    def test_page_number_pagination_stitches_two_pages(self):
+        # page_size overridden to 1 so each fixture page is "full" → page=1 (full), page=2 (full),
+        # page=3 (empty) → stop. The page NUMBER advances 1→2→3, NOT an item-count offset.
+        responses_lib.add(responses_lib.GET, INCIDENTS_URL, json=_INCIDENTS_PAGE_1, status=200)
+        responses_lib.add(responses_lib.GET, INCIDENTS_URL, json=_INCIDENTS_PAGE_2, status=200)
+        responses_lib.add(responses_lib.GET, INCIDENTS_URL, json=[], status=200)
 
         api.load_manifests()
-        # Drive with per_page=1 so each mocked page is "full" and triggers the next fetch.
         sp = api.MANIFESTS["statuspage"]
         import dataclasses
         sp_small = dataclasses.replace(
@@ -156,11 +125,17 @@ class StatuspageManifestOnly(unittest.TestCase):
             pagination=dataclasses.replace(sp.pagination, page_size=1),
         )
         c = api.Client(manifest=sp_small, credential=_CRED)
-        result = c.collect(f"pages/{PAGE_ID}/incidents", query={"per_page": 1})
+        result = c.collect(f"pages/{PAGE_ID}/incidents")
 
         self.assertFalse(result["incomplete"], result["reason"])
         ids = [it["id"] for it in result["items"]]
         self.assertEqual(ids, ["cp3dhx28j8k5", "7k4z1m9t6b2x"])  # both pages stitched
+
+        # Page NUMBER advances 1 → 2 → 3 (not 0 → 1 → 2 offsets).
+        self.assertEqual(len(responses_lib.calls), 3)
+        self.assertIn("page=1", responses_lib.calls[0].request.url)
+        self.assertIn("page=2", responses_lib.calls[1].request.url)
+        self.assertIn("page=3", responses_lib.calls[2].request.url)
 
         # The credential rode on every request — including the page-2 and page-3 fetches.
         for call in responses_lib.calls:
@@ -169,8 +144,7 @@ class StatuspageManifestOnly(unittest.TestCase):
     @responses_lib.activate
     def test_credential_header_format(self):
         """The full `OAuth <key>` value must appear verbatim as the Authorization header."""
-        responses_lib.add(responses_lib.GET, INCIDENTS_URL, json=_INCIDENTS_PAGE_1, status=200,
-                          match_querystring=False)
+        responses_lib.add(responses_lib.GET, INCIDENTS_URL, json=_INCIDENTS_PAGE_1, status=200)
 
         api.load_manifests()
         c = api.client(api.MANIFESTS["statuspage"])
@@ -182,8 +156,7 @@ class StatuspageManifestOnly(unittest.TestCase):
     @responses_lib.activate
     def test_pick_selects_support_fields(self):
         """api.pick extracts the four key support fields from an incident."""
-        responses_lib.add(responses_lib.GET, INCIDENTS_URL, json=_INCIDENTS_PAGE_1, status=200,
-                          match_querystring=False)
+        responses_lib.add(responses_lib.GET, INCIDENTS_URL, json=_INCIDENTS_PAGE_1, status=200)
 
         api.load_manifests()
         c = api.client(api.MANIFESTS["statuspage"])
@@ -199,8 +172,7 @@ class StatuspageManifestOnly(unittest.TestCase):
     @responses_lib.activate
     def test_components_single_page(self):
         """A page with fewer items than page_size stops pagination immediately."""
-        responses_lib.add(responses_lib.GET, COMPONENTS_URL, json=_COMPONENTS_PAGE_1, status=200,
-                          match_querystring=False)
+        responses_lib.add(responses_lib.GET, COMPONENTS_URL, json=_COMPONENTS_PAGE_1, status=200)
 
         api.load_manifests()
         c = api.client(api.MANIFESTS["statuspage"])
@@ -216,8 +188,7 @@ class StatuspageManifestOnly(unittest.TestCase):
     @responses_lib.activate
     def test_cli_get_incidents(self):
         """CLI `python -m lib.api get statuspage …` round-trips through the manifest and auth."""
-        responses_lib.add(responses_lib.GET, INCIDENTS_URL, json=_INCIDENTS_PAGE_1, status=200,
-                          match_querystring=False)
+        responses_lib.add(responses_lib.GET, INCIDENTS_URL, json=_INCIDENTS_PAGE_1, status=200)
 
         rc = api._main([
             "get", "statuspage", f"pages/{PAGE_ID}/incidents",
@@ -231,8 +202,7 @@ class StatuspageManifestOnly(unittest.TestCase):
     @responses_lib.activate
     def test_cli_paginate_incidents(self):
         """CLI --paginate auto-collects all pages."""
-        responses_lib.add(responses_lib.GET, INCIDENTS_URL, json=_INCIDENTS_PAGE_1, status=200,
-                          match_querystring=False)
+        responses_lib.add(responses_lib.GET, INCIDENTS_URL, json=_INCIDENTS_PAGE_1, status=200)
         # Second call: empty → stops (manifest page_size=100, first page has 1 item < 100)
         # Actually: 1 < 100 means it already stops. So one call is enough for paginate test.
         rc = api._main([

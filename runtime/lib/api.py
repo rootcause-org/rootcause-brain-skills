@@ -91,15 +91,24 @@ class Auth:
 class Pagination:
     """Manifest-driven paging. The framework runs the while-has-more loop, not the connector.
 
-    - ``none``   : single page.
-    - ``cursor`` : response carries an opaque next token at ``cursor_field`` (dotted path); sent back
-                   as the ``cursor_param`` query arg. ``has_more_field`` (optional) gates the loop;
-                   absent ⇒ loop until the cursor field is empty.
-    - ``offset`` : send ``offset_param`` advancing by the page length, ``limit_param`` = ``page_size``.
-    - ``link``   : follow RFC 8288 ``Link: <url>; rel="next"`` headers; opaque server URL.
+    - ``none``    : single page.
+    - ``cursor``  : response carries an opaque next token at ``cursor_field`` (dotted path); sent back
+                    as the ``cursor_param`` query arg. ``has_more_field`` (optional) gates the loop;
+                    absent ⇒ loop until the cursor field is empty.
+    - ``offset``  : send ``offset_param`` advancing by the page length, ``limit_param`` = ``page_size``.
+    - ``link``    : follow RFC 8288 ``Link: <url>; rel="next"`` headers; opaque server URL.
+    - ``body_url``: like ``link`` but the next URL lives INSIDE the JSON body at ``next_url_field``
+                    (e.g. ``meta.pagination.next``, ``links.next``, ``@odata.nextLink``) instead of a
+                    header. The value may be absolute (used verbatim) or relative (``_join``ed onto
+                    ``base_url``). Generalises the header-based ``link`` style to the body.
+    - ``page``    : numeric page-number paging — ``page_param`` starts at ``page_start`` and increments
+                    by 1 (NOT by item count, unlike ``offset``); ``limit_param`` = ``page_size``. Stops
+                    on a short/empty page, or on ``has_more_field``=false when the API declares one
+                    (some APIs clamp/repeat the last full page past the end). ``page_start`` is 0 for
+                    0-based APIs (e.g. ClickUp).
     """
 
-    style: str = "none"  # none | cursor | offset | link
+    style: str = "none"  # none | cursor | offset | link | body_url | page
     cursor_field: str = ""
     cursor_param: str = "cursor"
     has_more_field: str = ""
@@ -107,6 +116,9 @@ class Pagination:
     offset_param: str = "offset"
     limit_param: str = "limit"
     page_size: int = 100
+    next_url_field: str = ""  # body_url: dotted path (or whole-key literal) to the next URL/path
+    page_param: str = "page"  # page: the page-number query arg
+    page_start: int = 1  # page: first page number (0 for 0-based APIs like ClickUp)
 
 
 @dataclass(frozen=True)
@@ -201,6 +213,17 @@ def _dotted(obj: Any, path: str) -> Any:
         return obj
     found, value = _dget(obj, path.split("."))
     return value if found else None
+
+
+def _next_url_in_body(body: Any, field: str) -> Any:
+    """Resolve the body_url next-page field. Tries the WHOLE field as a single literal key first so
+    a dotted-but-not-nested key like ``@odata.nextLink`` resolves, then falls back to dotted
+    traversal (``meta.pagination.next``)."""
+    if not field:
+        return None
+    if isinstance(body, dict) and field in body:  # literal key (e.g. "@odata.nextLink")
+        return body[field]
+    return _dotted(body, field)
 
 
 # ---------------------------------------------------------------------------
@@ -424,11 +447,31 @@ class Client:
                     return
                 offset += len(page.items)
             return
-        # cursor / link both drive off page.next (an opaque token or URL).
+        if p.style == "page":
+            # Page-NUMBER paging: advance page_param by 1 from page_start (not by item count).
+            base_query.setdefault(p.limit_param, p.page_size)
+            page_num = int(base_query.get(p.page_param, p.page_start) or p.page_start)
+            while seen < cap:
+                q = dict(base_query, **{p.page_param: page_num})
+                page = self.fetch_page(path, query=q, headers=headers)
+                yield page
+                seen += 1
+                # Stop on a short/empty page; or, when the API declares one, an explicit
+                # has_more_field=false — some page-number APIs clamp/repeat the last FULL page past
+                # the end instead of returning a short page, so the size check alone wouldn't fire.
+                if not page.items or len(page.items) < p.page_size:
+                    return
+                if p.has_more_field and not _truthy(_dotted(page.body, p.has_more_field)):
+                    return
+                page_num += 1
+            return
+        # cursor / link / body_url all drive off page.next (an opaque token or URL). For link and
+        # body_url, page.next is a URL/path we follow directly (a relative path is _joined to base_url
+        # inside _send_url); for cursor it's a token re-sent as a query param.
         next_token: Any | None = None
         next_url: str | None = None
         while seen < cap:
-            if next_url is not None:  # link style: follow the absolute URL verbatim
+            if next_url is not None:  # link / body_url: follow the URL (absolute verbatim, relative joined)
                 resp = self._send_url("GET", next_url, headers=headers)
                 body = _parse_json(resp)
                 page = Page(body=body, items=self._extract_items(body), next=self._next_token(body, resp))
@@ -441,7 +484,7 @@ class Client:
             seen += 1
             if page.next is None:
                 return
-            if p.style == "link":
+            if p.style in ("link", "body_url"):
                 next_url = page.next
             else:
                 next_token = page.next
@@ -485,9 +528,14 @@ class Client:
         return {"items": items, "incomplete": incomplete, "reason": reason}
 
     def _send_url(self, method: str, url: str, *, headers=None):
-        """Send to an ABSOLUTE url (link-header pagination follows the server's opaque next URL)."""
+        """Follow a next-page URL from a Link header or JSON body (link / body_url styles).
+
+        An absolute URL is used verbatim; a relative path (e.g. recurly ``/sites/.../accounts?cursor=…``,
+        twilio ``/2010-04-01/…``) is ``_join``ed onto ``base_url`` so the host/scheme survive the follow.
+        """
         import requests
 
+        url = _join(self.manifest.base_url, url)
         req_headers = dict(self.manifest.default_headers)
         req_headers.update(headers or {})
         empty: dict[str, Any] = {}
@@ -528,6 +576,8 @@ class Client:
             return token if token else None
         if p.style == "link":
             return _parse_link_next(resp.headers.get("Link"))
+        if p.style == "body_url":
+            return _next_url_in_body(body, p.next_url_field) or None
         return None
 
 
@@ -701,6 +751,9 @@ def _manifest_from_dict(raw: dict) -> Manifest:
         offset_param=str(pg_raw.get("offset_param", defaults.offset_param)),
         limit_param=str(pg_raw.get("limit_param", defaults.limit_param)),
         page_size=int(pg_raw.get("page_size", defaults.page_size)),
+        next_url_field=str(pg_raw.get("next_url_field", defaults.next_url_field)),
+        page_param=str(pg_raw.get("page_param", defaults.page_param)),
+        page_start=int(pg_raw.get("page_start", defaults.page_start)),
     )
 
     rl_raw = raw.get("rate_limit") or {}

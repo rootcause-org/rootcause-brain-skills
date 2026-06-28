@@ -1,26 +1,30 @@
 key: clickup
 name: ClickUp
 kinds: [token, oauth]
-# Script connector: ClickUp pagination uses a 0-based PAGE NUMBER (page=0,1,2,…) rather than
-# an item-count offset, so lib.api's generic offset style (which advances offset by len(items))
-# cannot express it. Force-code trigger (d): pagination the generic styles can't express.
+# Manifest-only integration: NO connector_module. ClickUp task lists page with a 0-based PAGE NUMBER
+# (page=0,1,2,…), expressed natively by lib.api's `page` style with page_start=0 — the paginator
+# increments the page number (not an item-count offset) and stops on a short/empty page. The agent
+# drives it via `python -m lib.api get clickup …`.
 #
 # Auth note: ClickUp personal tokens (pk_…) ride raw in the Authorization header with NO "Bearer"
 # prefix — api_key_header strategy places the credential value verbatim. OAuth access tokens also
 # use the same header; the host injects either as the env var value, so the strategy is consistent.
-connector_module: lib.connectors.clickup
+connector_module: ""
 env_var: RC_CONN_CLICKUP
 egress_hosts:
   - api.clickup.com
-# --- Generic lib.api caller fields (required for catalog + auth; the script owns pagination) ---
+# --- Generic lib.api caller fields (the compact declarative row) ---
 base_url: https://api.clickup.com/api/v2
 auth:
   strategy: api_key_header   # places the credential value verbatim as Authorization: <token>
   name: Authorization        # personal token (pk_…) has no "Bearer" prefix; OAuth host-injects bearer
 pagination:
-  # The script handles pagination manually (page-number loop); manifest style is `none` so the
-  # generic paginator doesn't interfere. page_size=100 is the server-enforced ceiling.
-  style: none
+  # ClickUp task-list endpoints use 0-based page numbers (page=0,1,2,…); there is no has_more field
+  # or cursor — a page returning fewer than page_size items signals exhaustion. page_size=100 is the
+  # server-enforced ceiling.
+  style: page
+  page_param: page
+  page_start: 0              # ClickUp is 0-based
   items_field: tasks         # list-tasks response envelope: {"tasks": [...]}
   page_size: 100
 rate_limit:
@@ -36,20 +40,22 @@ help_md: |
   token (pk_…) or OAuth, both read-only — only ever issues GETs.
 
   Pagination uses 0-based page numbers (page=0,1,2,…); ClickUp caps at 100 tasks/page and stops
-  when a page returns fewer items. The script handles this loop automatically.
+  when a page returns fewer items. The `--paginate` flag drives this automatically.
 
-  Use the connector CLI for structured task lists with field pre-selection:
-
-      python -m lib.connectors.clickup tasks list/{list_id}
-      python -m lib.connectors.clickup tasks team/{team_id} --max-pages 5
-      python -m lib.connectors.clickup task {task_id}
-      python -m lib.connectors.clickup comments {task_id}
-      python -m lib.connectors.clickup spaces {team_id}
-
-  Or drive single (non-paginated) reads directly via lib.api for one-shot lookups:
+  Common paths (the agent supplies {team_id}/{space_id}/{list_id}/{task_id} from prior calls or
+  context — start with `team` to discover workspace IDs, then drill into spaces → lists → tasks):
 
       # List all workspaces the token can access
       python -m lib.api get clickup team
+
+      # Tasks in a list (paginated over all pages)
+      python -m lib.api get clickup list/{list_id}/task --paginate \
+        --pick tasks.*.id,tasks.*.name,tasks.*.status.status,tasks.*.assignees.*.username,tasks.*.due_date,tasks.*.url,tasks.*.list.name
+
+      # Cross-workspace task search (paginated)
+      python -m lib.api get clickup team/{team_id}/task --paginate \
+        --query statuses[]=open \
+        --pick tasks.*.id,tasks.*.name,tasks.*.status.status,tasks.*.url
 
       # Get a single task
       python -m lib.api get clickup task/{task_id} \
@@ -58,5 +64,6 @@ help_md: |
       # Get task comments (25 most recent, newest first by default)
       python -m lib.api get clickup task/{task_id}/comment
 
-  The agent must supply the {team_id}/{space_id}/{list_id}/{task_id} from prior calls or context.
-  Start with `team` to discover workspace IDs, then drill into spaces → lists → tasks.
+      # List spaces in a workspace
+      python -m lib.api get clickup team/{team_id}/space --query archived=false \
+        --pick spaces.*.id,spaces.*.name,spaces.*.features.due_dates.enabled

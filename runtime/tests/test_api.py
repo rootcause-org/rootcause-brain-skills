@@ -7,7 +7,6 @@ mocked with the `responses` library. These lock down the logic that decides *wha
 
 import random
 import sys
-import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -295,6 +294,163 @@ class LinkPagination(unittest.TestCase):
         self.assertIsNone(api._parse_link_next('<https://x>; rel="prev"'))
 
 
+class BodyUrlPagination(unittest.TestCase):
+    """body_url: the next-page URL lives inside the JSON body (not a Link header, not a cursor token)."""
+
+    @responses.activate
+    def test_absolute_next_url_stitches_pages(self):
+        m = _manifest(pagination=api.Pagination(
+            style="body_url", next_url_field="meta.pagination.next", items_field="data",
+        ))
+        responses.add(
+            responses.GET, "https://api.demo.test/v1/list",
+            json={"data": [{"id": 1}], "meta": {"pagination": {"next": "https://api.demo.test/v1/list?after=p2"}}},
+        )
+        responses.add(
+            responses.GET, "https://api.demo.test/v1/list?after=p2",
+            json={"data": [{"id": 2}], "meta": {"pagination": {"next": None}}},
+        )
+        c, _ = _client(m)
+        result = c.collect("list")
+        self.assertEqual([it["id"] for it in result["items"]], [1, 2])
+        self.assertFalse(result["incomplete"])
+        # Page 2 followed the absolute URL verbatim.
+        self.assertIn("after=p2", responses.calls[1].request.url)
+
+    @responses.activate
+    def test_relative_next_path_joins_base_url(self):
+        # Recurly-shape: next is a RELATIVE path that must be joined onto base_url before the follow.
+        m = _manifest(pagination=api.Pagination(
+            style="body_url", next_url_field="next", items_field="data",
+        ))
+        responses.add(
+            responses.GET, "https://api.demo.test/v1/accounts",
+            json={"data": [{"id": 1}], "next": "accounts?cursor=abc&limit=200"},
+        )
+        responses.add(
+            responses.GET, "https://api.demo.test/v1/accounts?cursor=abc&limit=200",
+            json={"data": [{"id": 2}], "next": None},
+        )
+        c, _ = _client(m)
+        result = c.collect("accounts")
+        self.assertEqual([it["id"] for it in result["items"]], [1, 2])
+        # The relative path joined onto base_url (scheme + host + base path preserved).
+        self.assertTrue(responses.calls[1].request.url.startswith("https://api.demo.test/v1/accounts?cursor=abc"))
+
+    @responses.activate
+    def test_odata_nextlink_literal_key(self):
+        # @odata.nextLink has dots that are NOT path segments — must resolve as a whole literal key.
+        m = _manifest(pagination=api.Pagination(
+            style="body_url", next_url_field="@odata.nextLink", items_field="value",
+        ))
+        responses.add(
+            responses.GET, "https://api.demo.test/v1/items",
+            json={"value": [{"id": 1}], "@odata.nextLink": "https://api.demo.test/v1/items?$skiptoken=x"},
+        )
+        responses.add(
+            responses.GET, "https://api.demo.test/v1/items?$skiptoken=x",
+            json={"value": [{"id": 2}]},  # no nextLink ⇒ exhausted
+        )
+        c, _ = _client(m)
+        result = c.collect("items")
+        self.assertEqual([it["id"] for it in result["items"]], [1, 2])
+        self.assertFalse(result["incomplete"])
+
+    @responses.activate
+    def test_partial_result_through_body_url(self):
+        # The collect() partial/incomplete contract still holds when a body_url page mid-stream errors.
+        m = _manifest(pagination=api.Pagination(
+            style="body_url", next_url_field="links.next", items_field="data",
+        ))
+        responses.add(
+            responses.GET, "https://api.demo.test/v1/list",
+            json={"data": [{"id": 1}], "links": {"next": "https://api.demo.test/v1/list?page=2"}},
+        )
+        responses.add(responses.GET, "https://api.demo.test/v1/list?page=2", json={"e": 1}, status=500)
+        c, _ = _client(m, max_retries=0)
+        result = c.collect("list")
+        self.assertEqual([it["id"] for it in result["items"]], [1])
+        self.assertTrue(result["incomplete"])
+        self.assertIn("failed", result["reason"])
+
+
+class PagePagination(unittest.TestCase):
+    """page: numeric page-number paging — increments page_param by 1, terminates on a short page."""
+
+    @responses.activate
+    def test_one_based_stitches_and_terminates(self):
+        m = _manifest(pagination=api.Pagination(
+            style="page", page_param="page", page_start=1, limit_param="per_page",
+            page_size=2, items_field="result",
+        ))
+        responses.add(responses.GET, "https://api.demo.test/v1/list", json={"result": [{"i": 0}, {"i": 1}]})
+        responses.add(responses.GET, "https://api.demo.test/v1/list", json={"result": [{"i": 2}, {"i": 3}]})
+        responses.add(responses.GET, "https://api.demo.test/v1/list", json={"result": [{"i": 4}]})
+        c, _ = _client(m)
+        result = c.collect("list")
+        self.assertEqual([it["i"] for it in result["items"]], [0, 1, 2, 3, 4])
+        self.assertFalse(result["incomplete"])
+        # page increments by 1 (NOT by item count) from page_start=1.
+        self.assertIn("page=1", responses.calls[0].request.url)
+        self.assertIn("page=2", responses.calls[1].request.url)
+        self.assertIn("page=3", responses.calls[2].request.url)
+
+    @responses.activate
+    def test_zero_based_start(self):
+        # ClickUp-shape: 0-based page numbers.
+        m = _manifest(pagination=api.Pagination(
+            style="page", page_param="page", page_start=0, page_size=2, items_field="tasks",
+        ))
+        responses.add(responses.GET, "https://api.demo.test/v1/list", json={"tasks": [{"i": 0}, {"i": 1}]})
+        responses.add(responses.GET, "https://api.demo.test/v1/list", json={"tasks": [{"i": 2}]})
+        c, _ = _client(m)
+        result = c.collect("list")
+        self.assertEqual([it["i"] for it in result["items"]], [0, 1, 2])
+        self.assertIn("page=0", responses.calls[0].request.url)
+        self.assertIn("page=1", responses.calls[1].request.url)
+
+    @responses.activate
+    def test_empty_first_page_stops(self):
+        m = _manifest(pagination=api.Pagination(
+            style="page", page_param="page", page_start=1, page_size=2, items_field="result",
+        ))
+        responses.add(responses.GET, "https://api.demo.test/v1/list", json={"result": []})
+        c, _ = _client(m)
+        result = c.collect("list")
+        self.assertEqual(result["items"], [])
+        self.assertEqual(len(responses.calls), 1)
+
+    @responses.activate
+    def test_has_more_false_stops_even_on_full_page(self):
+        # An API that clamps/repeats the last FULL page past the end must terminate on has_more=false
+        # rather than looping to max_pages (the short-page check alone would never fire).
+        m = _manifest(pagination=api.Pagination(
+            style="page", page_param="page", page_start=1, page_size=2,
+            items_field="result", has_more_field="has_more",
+        ))
+        responses.add(responses.GET, "https://api.demo.test/v1/list",
+                      json={"result": [{"i": 0}, {"i": 1}], "has_more": True})
+        responses.add(responses.GET, "https://api.demo.test/v1/list",
+                      json={"result": [{"i": 2}, {"i": 3}], "has_more": False})
+        c, _ = _client(m)
+        result = c.collect("list")
+        self.assertEqual([it["i"] for it in result["items"]], [0, 1, 2, 3])
+        self.assertEqual(len(responses.calls), 2)  # stopped on has_more=false despite a full page
+
+    @responses.activate
+    def test_partial_result_through_page(self):
+        m = _manifest(pagination=api.Pagination(
+            style="page", page_param="page", page_start=1, page_size=2, items_field="result",
+        ))
+        responses.add(responses.GET, "https://api.demo.test/v1/list", json={"result": [{"i": 0}, {"i": 1}]})
+        responses.add(responses.GET, "https://api.demo.test/v1/list", json={"e": 1}, status=500)
+        c, _ = _client(m, max_retries=0)
+        result = c.collect("list")
+        self.assertEqual([it["i"] for it in result["items"]], [0, 1])
+        self.assertTrue(result["incomplete"])
+        self.assertIn("failed", result["reason"])
+
+
 class NonePagination(unittest.TestCase):
     @responses.activate
     def test_single_page(self):
@@ -380,8 +536,6 @@ class Join(unittest.TestCase):
 class Timeouts(unittest.TestCase):
     @responses.activate
     def test_both_timeouts_set(self):
-        captured = {}
-
         def cb(request):
             return (200, {}, '{"ok": true}')
 

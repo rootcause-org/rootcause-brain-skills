@@ -17,10 +17,12 @@ auth:
   strategy: api_key_header
   name: Authorization
 pagination:
-  # Statuspage uses page-number + per_page offset pagination. The API returns a flat JSON array
-  # per page; the loop exits when a page returns fewer items than page_size (no has_more field).
-  style: offset
-  offset_param: page
+  # Statuspage pages by 1-based PAGE NUMBER (page=1,2,3,…) + per_page, NOT an item-count offset.
+  # The API returns a flat JSON array per page; the loop exits when a page returns fewer items than
+  # page_size (no has_more field).
+  style: page
+  page_param: page
+  page_start: 1
   limit_param: per_page
   items_field: ""      # list endpoints return a bare JSON array (the page IS the list)
   page_size: 100

@@ -76,20 +76,31 @@ _DISPUTE_BODY = {
     ],
 }
 
-# Two pages of dispute summaries (list endpoint).
+# Two pages of dispute summaries (list endpoint). PayPal's `page` style terminates on a short page
+# (len < page_size), so page 1 must be a FULL page (page_size=20) to trigger the page-2 fetch.
+_DISPUTE_ROW_1 = {
+    "dispute_id": "PP-D-27803",
+    "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+    "status": "OPEN",
+    "dispute_amount": {"currency_code": "USD", "value": "95.00"},
+    "create_time": "2019-04-11T04:31:59.000Z",
+    "update_time": "2019-04-11T04:31:59.000Z",
+    "links": [],
+}
+_DISPUTE_ROW_LAST = {
+    "dispute_id": "PP-D-99999",
+    "reason": "UNAUTHORISED",
+    "status": "RESOLVED",
+    "dispute_amount": {"currency_code": "USD", "value": "50.00"},
+    "create_time": "2019-05-01T10:00:00.000Z",
+    "update_time": "2019-05-02T10:00:00.000Z",
+    "links": [],
+}
+
+# Page 1: a full page of 20 rows → triggers page 2 (first row is PP-D-27803).
 _DISPUTES_PAGE_1 = {
-    "items": [
-        {
-            "dispute_id": "PP-D-27803",
-            "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
-            "status": "OPEN",
-            "dispute_amount": {"currency_code": "USD", "value": "95.00"},
-            "create_time": "2019-04-11T04:31:59.000Z",
-            "update_time": "2019-04-11T04:31:59.000Z",
-            "links": [],
-        }
-    ],
-    "total_items": 2,
+    "items": [_DISPUTE_ROW_1] + [dict(_DISPUTE_ROW_1, dispute_id=f"PP-D-fill{i}") for i in range(19)],
+    "total_items": 21,
     "total_pages": 2,
     "links": [
         {
@@ -100,19 +111,10 @@ _DISPUTES_PAGE_1 = {
     ],
 }
 
+# Page 2: a short page (1 row) → ends pagination.
 _DISPUTES_PAGE_2 = {
-    "items": [
-        {
-            "dispute_id": "PP-D-99999",
-            "reason": "UNAUTHORISED",
-            "status": "RESOLVED",
-            "dispute_amount": {"currency_code": "USD", "value": "50.00"},
-            "create_time": "2019-05-01T10:00:00.000Z",
-            "update_time": "2019-05-02T10:00:00.000Z",
-            "links": [],
-        }
-    ],
-    "total_items": 2,
+    "items": [_DISPUTE_ROW_LAST],
+    "total_items": 21,
     "total_pages": 2,
     "links": [],
 }
@@ -168,7 +170,12 @@ class PayPalManifest(unittest.TestCase):
         self.assertEqual(m.key, "paypal")
         self.assertEqual(m.base_url, "https://api-m.paypal.com")
         self.assertEqual(m.auth.strategy, "oauth2_client_credentials")
-        self.assertEqual(m.pagination.style, "none")
+        # 1-based page-number pagination (page=1,2,3...) via the generic `page` style.
+        self.assertEqual(m.pagination.style, "page")
+        self.assertEqual(m.pagination.page_param, "page")
+        self.assertEqual(m.pagination.page_start, 1)
+        self.assertEqual(m.pagination.limit_param, "page_size")
+        self.assertEqual(m.pagination.items_field, "items")
         # No remaining-count header — PayPal uses 429 + Retry-After only.
         self.assertEqual(m.rate_limit_remaining_header, "")
 
@@ -297,9 +304,9 @@ class PayPalDisputeSummary(unittest.TestCase):
             status=200,
         )
         disputes = pp.list_disputes()
-        self.assertEqual(len(disputes), 2)
+        self.assertEqual(len(disputes), 21)  # 20 (full page 1) + 1 (short page 2)
         self.assertEqual(disputes[0]["dispute_id"], "PP-D-27803")
-        self.assertEqual(disputes[1]["dispute_id"], "PP-D-99999")
+        self.assertEqual(disputes[-1]["dispute_id"], "PP-D-99999")
         # Verify page numbers were sent (not item-count offsets).
         call1_params = rsps.calls[0].request.url
         call2_params = rsps.calls[1].request.url

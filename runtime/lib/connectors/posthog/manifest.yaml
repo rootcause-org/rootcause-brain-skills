@@ -1,12 +1,12 @@
 key: posthog
 name: PostHog
 kinds: [token, oauth]
-# Script connector: force-code trigger (d) — PostHog embeds the next-page URL in the JSON body
-# ({"next": "<full URL>", "results": [...]}), not in an HTTP Link header. lib.api's built-in
-# `link` style reads only RFC 8288 HTTP headers; `cursor` style would incorrectly send the full URL
-# as a query param. The connector owns the while-has-next loop via _send_url (same approach as
-# lib.connectors.honeybadger).
-connector_module: lib.connectors.posthog
+# Manifest-only integration driven via `python -m lib.api get posthog <path>`. PostHog embeds the
+# next-page URL at body `next` (a full ABSOLUTE URL, or null when exhausted) in its
+# {"count": N, "next": "<url>", "previous": "…", "results": [...]} envelope — NOT an HTTP Link
+# header and NOT an opaque cursor token. lib.api's `body_url` style follows `next` directly via
+# `_send_url` (absolute URL used verbatim, auth re-applied), so no per-key Python is needed.
+connector_module: ""
 env_var: RC_CONN_POSTHOG
 egress_hosts:
   - us.posthog.com
@@ -17,7 +17,10 @@ base_url: https://us.posthog.com
 auth:
   strategy: bearer        # Personal API key or OAuth access token, both presented as Bearer
 pagination:
-  style: none             # script owns the loop; this row informs manifest consumers only
+  # PostHog envelope: {"count": N, "next": "<absolute url|null>", "previous": "…", "results": [...]}.
+  # body_url follows `next` (absolute URL) until it is null; items live under `results`.
+  style: body_url
+  next_url_field: next
   items_field: results    # list lives under `results` in every paginated envelope
   page_size: 100          # advisory; passed as `limit` query param
 rate_limit:
@@ -40,23 +43,27 @@ help_md: |
   Read-only — only ever issues GETs against the private cloud endpoints.
 
   Most paths require a numeric project_id (find it in PostHog -> Project Settings -> Project ID).
-  Use the connector CLI for paginated list queries:
 
-      python -m lib.connectors.posthog persons 12345 --query search=user@example.com \
+  **Read + auto-paginate via lib.api** (stitches all pages by following the body `next` URL):
+
+      python -m lib.api get posthog api/projects/12345/persons --paginate \
+        --query search=user@example.com \
         --pick id,distinct_ids,properties.email,properties.plan,created_at
 
-      python -m lib.connectors.posthog feature-flags 12345 \
+      python -m lib.api get posthog api/projects/12345/feature_flags --paginate \
         --pick id,key,name,active,filters
 
-      python -m lib.connectors.posthog session-recordings 12345 \
+      python -m lib.api get posthog api/projects/12345/session_recordings --paginate \
         --query person_id=<uuid> \
         --pick id,distinct_id,start_time,recording_duration,console_error_count,start_url
 
-      python -m lib.connectors.posthog events 12345 \
+      python -m lib.api get posthog api/projects/12345/events --paginate \
         --query distinct_id=<id> --query limit=50 \
         --pick id,event,timestamp,distinct_id
 
-  EU Cloud users: set env var POSTHOG_BASE_URL=https://eu.posthog.com or pass absolute paths.
+  Drop `--paginate` for a single-page (or single-item) read.
+
+  EU Cloud users: target eu.posthog.com directly (pass an absolute URL path).
 
   Common paths (for single-item GETs via python -m lib.api get posthog <path>):
   - api/projects/{project_id}/persons/{id}/         -- single person detail

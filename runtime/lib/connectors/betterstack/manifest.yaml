@@ -1,14 +1,12 @@
 key: betterstack
 name: Better Stack
 kinds: [token]
-# Script connector: Better Stack Uptime API paginates via ``pagination.next`` — a full absolute URL
-# (or null) inside the JSON response body. This is NOT an HTTP ``Link:`` header (lib.api's ``link``
-# style) and NOT a standalone opaque cursor token. The ``link`` style reads
-# ``Link: <…>; rel="next"`` HTTP response headers; there are none here. The ``cursor`` style
-# would send the full next URL as a query parameter — also wrong. Force-code trigger (d) fired:
-# the connector owns the pagination loop via ``_betterstack_pages()``, delegating all HTTP concerns
-# (auth, retry, rate-limit, timeouts) to ``lib.api``.
-connector_module: lib.connectors.betterstack
+# Manifest-only integration driven via `python -m lib.api get betterstack <path>`. Better Stack
+# Uptime list endpoints embed the next-page URL at body `pagination.next` (a full ABSOLUTE URL, or
+# null when exhausted) — NOT an HTTP `Link:` header and NOT an opaque cursor token. lib.api's
+# `body_url` style follows it directly via `_send_url` (absolute URL used verbatim, auth re-applied),
+# so no per-key Python is needed.
+connector_module: ""
 env_var: RC_CONN_BETTERSTACK
 egress_hosts:
   - uptime.betterstack.com
@@ -17,10 +15,10 @@ base_url: https://uptime.betterstack.com/api/v2
 auth:
   strategy: bearer        # API token presented as `Authorization: Bearer <token>`
 pagination:
-  # Better Stack returns { "data": [...], "pagination": { "next": "<url>|null", ... } }.
-  # ``pagination.next`` is a full URL (body-embedded), not an HTTP Link header. The script owns the
-  # while-has-more loop; these fields document the envelope so manifest-only single-page reads work.
-  style: none             # script-owned; `none` so naive manifest-only callers get the first page
+  # Better Stack returns { "data": [...], "pagination": { "next": "<absolute url>|null", ... } }.
+  # body_url follows `pagination.next` (absolute URL) until it is null; items live under `data`.
+  style: body_url
+  next_url_field: pagination.next
   items_field: data       # items live under "data" in every list response
   page_size: 50           # Better Stack default page size (undocumented max; 50 is safe)
 rate_limit:
@@ -34,21 +32,15 @@ help_md: |
   Auth: Better Stack API token, generated at https://betterstack.com/team/api-tokens (scoped to
   the team you want to ground). Inject as RC_CONN_BETTERSTACK.
 
-  **Connector commands (recommended — stitches pages, renders markdown):**
+  **Read + auto-paginate via lib.api** (stitches all pages by following `pagination.next`):
 
-      # Uptime status of all monitors
-      python -m lib.connectors.betterstack monitors
+      python -m lib.api get betterstack monitors --paginate \
+        --pick data.*.id,data.*.attributes.pronounceable_name,data.*.attributes.status,data.*.attributes.url
+      python -m lib.api get betterstack incidents --paginate \
+        --pick data.*.attributes.name,data.*.attributes.status,data.*.attributes.started_at,data.*.attributes.resolved_at,data.*.attributes.cause
+      python -m lib.api get betterstack monitors/<id>/incidents --paginate
 
-      # Open (unresolved) incidents across all monitors
-      python -m lib.connectors.betterstack incidents
-
-      # Incidents for a specific monitor by id
-      python -m lib.connectors.betterstack incidents --monitor-id <id>
-
-  **Direct single-page reads via lib.api (no auto-paging):**
-
-      python -m lib.api get betterstack monitors --pick data.*.attributes.pronounceable_name,data.*.attributes.status,data.*.attributes.url
-      python -m lib.api get betterstack incidents --pick data.*.attributes.name,data.*.attributes.status,data.*.attributes.started_at,data.*.attributes.resolved_at,data.*.attributes.cause
+  Drop `--paginate` for a single-page read.
 
   **Common paths (v2 base):**
     monitors, monitors/{id}, monitors/{monitor_id}/incidents,

@@ -1,10 +1,11 @@
 key: msoutlookcalendar
 name: Microsoft Outlook Calendar
 kinds: [token, oauth]
-# Script connector: Microsoft Graph paginates with @odata.nextLink in the JSON body (an absolute
-# URL), which is neither RFC 8288 Link headers (lib.api `link` style) nor a plain cursor token
-# (lib.api `cursor` style sends the value as a query param). Force-code trigger (d) fires.
-connector_module: lib.connectors.msoutlookcalendar
+# Manifest-only integration, driven via `python -m lib.api get msoutlookcalendar`. Microsoft Graph
+# paginates with @odata.nextLink: an absolute next-page URL in the JSON body. lib.api's `body_url`
+# style follows it directly — next_url_field tries the whole field as a literal dict key first, so
+# the dotted-but-not-nested "@odata.nextLink" resolves; the URL is absolute and used verbatim.
+connector_module: ""
 env_var: RC_CONN_MSOUTLOOKCALENDAR
 egress_hosts:
   - graph.microsoft.com
@@ -13,10 +14,11 @@ egress_hosts:
 base_url: https://graph.microsoft.com/v1.0
 auth:
   strategy: bearer        # Bearer token from RC_CONN_MSOUTLOOKCALENDAR (delegated or app-only)
-# Pagination is handled in the connector script (OData @odata.nextLink in body = absolute next URL).
-# The manifest row below is set to `none` so lib.api does not attempt its own paging loop.
 pagination:
-  style: none
+  style: body_url
+  next_url_field: "@odata.nextLink"  # literal key (dots are NOT path segments); absolute URL in body
+  items_field: value                 # all Graph collection endpoints put items under "value"
+  page_size: 200                     # Graph default page cap for calendar/event collections
 rate_limit:
   remaining_header: ""    # Graph uses 429 + Retry-After (honoured by lib.api); no remaining header
 oauth:
@@ -26,36 +28,33 @@ oauth:
     - Calendars.ReadBasic    # minimal: read calendar names + free/busy only
     - offline_access         # required to get a refresh token for long-lived access
 help_md: |
-  Reads Microsoft Outlook Calendar (via Microsoft Graph v1.0): calendars list, events (with
-  subject, time, organizer, attendees, location), calendar view (expanded recurring events over a
-  date range), and free/busy schedules. Read-only — only ever issues GETs and a POST for the
-  getSchedule endpoint (free/busy query, no writes).
+  Reads Microsoft Outlook Calendar (via Microsoft Graph v1.0): calendars list and events (with
+  subject, time, organizer, attendees, location). Read-only — only ever issues GETs.
 
   Credential: a bearer token from RC_CONN_MSOUTLOOKCALENDAR — either a delegated OAuth2 token
   (Calendars.ReadBasic or Calendars.Read scope) or an application token (admin-consented).
 
-  The connector handles Graph's OData pagination (@odata.nextLink in the JSON body is an absolute
-  URL; the generic lib.api cursor/link styles can't express this pattern directly).
+  Graph paginates with @odata.nextLink (an absolute next-page URL in the JSON body); `--paginate`
+  follows it automatically and collects items from the "value" array across all pages.
 
-  **Connector CLI** (preferred — handles pagination + field pre-selection):
+      # List the current user's calendars (paginated)
+      python -m lib.api get msoutlookcalendar me/calendars --paginate \
+        --pick id,name,isDefaultCalendar,owner.address
 
-      # List the current user's calendars
-      python -m lib.connectors.msoutlookcalendar calendars
+      # List events from the primary calendar, picking support fields
+      python -m lib.api get msoutlookcalendar me/events --paginate \
+        --query '$select=subject,start,end,organizer,location,isAllDay' \
+        --pick subject,start.dateTime,end.dateTime,organizer.emailAddress.address
 
-      # List upcoming events from the primary calendar
-      python -m lib.connectors.msoutlookcalendar events --top 20
-
-      # Calendar view (expanded recurring events) for a date range
-      python -m lib.connectors.msoutlookcalendar calview \
-        --start 2026-06-01T00:00:00Z --end 2026-06-30T23:59:59Z
+      # Calendar view (expanded recurring events) over a date range
+      python -m lib.api get msoutlookcalendar me/calendarView --paginate \
+        --query 'startDateTime=2026-06-01T00:00:00Z' \
+        --query 'endDateTime=2026-06-30T23:59:59Z'
 
       # Events for a specific user (application token)
-      python -m lib.connectors.msoutlookcalendar events --user someone@example.com
+      python -m lib.api get msoutlookcalendar users/someone@example.com/events --paginate
 
-  **Generic lib.api single-page reads** (for one-off lookups, no auto-pagination):
-
-      python -m lib.api get msoutlookcalendar me/calendars \
-        --pick id,name,isDefaultCalendar,owner.address
+  For one-off single-page reads, drop `--paginate`:
 
       python -m lib.api get msoutlookcalendar me/events \
         --query '$select=subject,start,end,organizer,location,isAllDay' \

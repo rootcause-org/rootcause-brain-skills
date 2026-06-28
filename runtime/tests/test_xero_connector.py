@@ -143,8 +143,10 @@ class TestXeroManifestLoad(unittest.TestCase):
         self.assertEqual(m.key, "xero")
         self.assertEqual(m.base_url, "https://api.xero.com/api.xro/2.0")
         self.assertEqual(m.auth.strategy, "bearer")
-        # Pagination style is none (script handles it).
-        self.assertEqual(m.pagination.style, "none")
+        # 1-based page-number pagination via the generic `page` style.
+        self.assertEqual(m.pagination.style, "page")
+        self.assertEqual(m.pagination.page_param, "page")
+        self.assertEqual(m.pagination.page_start, 1)
         self.assertEqual(m.pagination.page_size, 100)
         self.assertEqual(m.rate_limit_remaining_header, "X-MinLimit-Remaining")
 
@@ -184,7 +186,6 @@ class TestXeroPagination(unittest.TestCase):
             json=_INVOICES_PAGE_1,
             status=200,
             headers={"X-MinLimit-Remaining": "59"},
-            match_querystring=False,
         )
         responses_lib.add(
             responses_lib.GET,
@@ -192,28 +193,23 @@ class TestXeroPagination(unittest.TestCase):
             json=_INVOICES_PAGE_2,
             status=200,
             headers={"X-MinLimit-Remaining": "58"},
-            match_querystring=False,
         )
 
-        c = xero._client()
-        items = xero._xero_pages(
-            c, "Invoices", tenant_id=TENANT_ID, items_key="Invoices"
-        )
+        items = xero._xero_pages("Invoices", tenant_id=TENANT_ID, items_key="Invoices")
         self.assertEqual(len(items), 103)  # 100 + 3
 
     @responses_lib.activate
     def test_tenant_id_header_on_every_page(self):
         responses_lib.add(
             responses_lib.GET, f"{BASE}/Invoices",
-            json=_INVOICES_PAGE_1, status=200, match_querystring=False,
+            json=_INVOICES_PAGE_1, status=200,
         )
         responses_lib.add(
             responses_lib.GET, f"{BASE}/Invoices",
-            json=_INVOICES_PAGE_2, status=200, match_querystring=False,
+            json=_INVOICES_PAGE_2, status=200,
         )
 
-        c = xero._client()
-        xero._xero_pages(c, "Invoices", tenant_id=TENANT_ID, items_key="Invoices")
+        xero._xero_pages("Invoices", tenant_id=TENANT_ID, items_key="Invoices")
 
         for call in responses_lib.calls:
             self.assertEqual(
@@ -226,15 +222,14 @@ class TestXeroPagination(unittest.TestCase):
     def test_bearer_token_on_every_page(self):
         responses_lib.add(
             responses_lib.GET, f"{BASE}/Invoices",
-            json=_INVOICES_PAGE_1, status=200, match_querystring=False,
+            json=_INVOICES_PAGE_1, status=200,
         )
         responses_lib.add(
             responses_lib.GET, f"{BASE}/Invoices",
-            json=_INVOICES_PAGE_2, status=200, match_querystring=False,
+            json=_INVOICES_PAGE_2, status=200,
         )
 
-        c = xero._client()
-        xero._xero_pages(c, "Invoices", tenant_id=TENANT_ID, items_key="Invoices")
+        xero._xero_pages("Invoices", tenant_id=TENANT_ID, items_key="Invoices")
 
         for call in responses_lib.calls:
             auth = call.request.headers.get("Authorization", "")
@@ -248,10 +243,9 @@ class TestXeroPagination(unittest.TestCase):
         # Only 3 items on the first page → no second request made.
         responses_lib.add(
             responses_lib.GET, f"{BASE}/Invoices",
-            json={"Invoices": [_INVOICE_1] * 3}, status=200, match_querystring=False,
+            json={"Invoices": [_INVOICE_1] * 3}, status=200,
         )
-        c = xero._client()
-        items = xero._xero_pages(c, "Invoices", tenant_id=TENANT_ID, items_key="Invoices")
+        items = xero._xero_pages("Invoices", tenant_id=TENANT_ID, items_key="Invoices")
         self.assertEqual(len(items), 3)
         self.assertEqual(len(responses_lib.calls), 1)
 
@@ -260,15 +254,14 @@ class TestXeroPagination(unittest.TestCase):
         """Verify page=1, page=2 are sent (1-based), not page=0 / offset style."""
         responses_lib.add(
             responses_lib.GET, f"{BASE}/Invoices",
-            json=_INVOICES_PAGE_1, status=200, match_querystring=False,
+            json=_INVOICES_PAGE_1, status=200,
         )
         responses_lib.add(
             responses_lib.GET, f"{BASE}/Invoices",
-            json=_INVOICES_PAGE_2, status=200, match_querystring=False,
+            json=_INVOICES_PAGE_2, status=200,
         )
 
-        c = xero._client()
-        xero._xero_pages(c, "Invoices", tenant_id=TENANT_ID, items_key="Invoices")
+        xero._xero_pages("Invoices", tenant_id=TENANT_ID, items_key="Invoices")
 
         from urllib.parse import parse_qs, urlparse
         page_nums = []
@@ -344,7 +337,7 @@ class TestXeroHighLevel(unittest.TestCase):
         )
         responses_lib.add(
             responses_lib.GET, f"{BASE}/Contacts",
-            json=_CONTACTS_BODY, status=200, match_querystring=False,
+            json=_CONTACTS_BODY, status=200,
         )
         c = xero.find_contact(TENANT_ID, "Acme Corp")
         self.assertIsNotNone(c)
@@ -360,7 +353,7 @@ class TestXeroHighLevel(unittest.TestCase):
         # Outstanding invoices page (single partial page)
         responses_lib.add(
             responses_lib.GET, f"{BASE}/Invoices",
-            json=_INVOICES_SINGLE, status=200, match_querystring=False,
+            json=_INVOICES_SINGLE, status=200,
         )
         s = xero.contact_summary(TENANT_ID, "c1-0000")
         self.assertTrue(s["found"])
@@ -389,7 +382,7 @@ class TestXeroHighLevel(unittest.TestCase):
         )
         responses_lib.add(
             responses_lib.GET, f"{BASE}/Contacts",
-            json={"Contacts": []}, status=200, match_querystring=False,
+            json={"Contacts": []}, status=200,
         )
         s = xero.contact_summary(TENANT_ID, "nobody")
         self.assertFalse(s["found"])
@@ -454,7 +447,7 @@ class TestXeroCLI(unittest.TestCase):
     def test_cli_invoices(self):
         responses_lib.add(
             responses_lib.GET, f"{BASE}/Invoices",
-            json=_INVOICES_SINGLE, status=200, match_querystring=False,
+            json=_INVOICES_SINGLE, status=200,
         )
         buf = io.StringIO()
         with patch("sys.stdout", buf):
@@ -473,7 +466,7 @@ class TestXeroCLI(unittest.TestCase):
         )
         responses_lib.add(
             responses_lib.GET, f"{BASE}/Contacts",
-            json={"Contacts": []}, status=200, match_querystring=False,
+            json={"Contacts": []}, status=200,
         )
         buf = io.StringIO()
         with patch("sys.stdout", buf):

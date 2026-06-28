@@ -5,7 +5,7 @@ No live creds, no network: HTTP is mocked with `responses`. Bodies mirror Typefo
 example payloads (typeform.com/developers), trimmed to support-relevant fields.
 
 Pagination coverage:
-- /forms uses offset (page/page_size) with an `items` envelope — two pages stitched.
+- /forms uses 1-based page-number paging (page/page_size) with an `items` envelope — pages stitched.
 - /forms/{id}/responses is single-page (page_size≤1000 covers most support queries).
 
     cd runtime && uv run --with . --with pytest --with responses --no-project pytest tests/test_typeform_connector.py -q
@@ -114,8 +114,9 @@ class TypeformManifestOnly(unittest.TestCase):
         tf = m["typeform"]
         self.assertEqual(tf.base_url, "https://api.typeform.com")
         self.assertEqual(tf.auth.strategy, "bearer")
-        self.assertEqual(tf.pagination.style, "offset")
-        self.assertEqual(tf.pagination.offset_param, "page")
+        self.assertEqual(tf.pagination.style, "page")
+        self.assertEqual(tf.pagination.page_param, "page")
+        self.assertEqual(tf.pagination.page_start, 1)  # 1-based
         self.assertEqual(tf.pagination.limit_param, "page_size")
         self.assertEqual(tf.pagination.items_field, "items")
         self.assertEqual(tf.pagination.page_size, 200)
@@ -124,18 +125,16 @@ class TypeformManifestOnly(unittest.TestCase):
         self.assertNotIn("X-Typeform-Version", tf.default_headers)
 
     @resp_lib.activate
-    def test_offset_pagination_stitches_two_pages(self):
-        """Two pages of /forms are stitched; bearer rides every request."""
-        # Page 1 returns one item (< page_size=1 in query → treated as full page here);
-        # We use page_size=1 explicitly so page 2 has items too, and page 3 is empty → stop.
+    def test_page_number_pagination_stitches_two_pages(self):
+        """Two pages of /forms are stitched by 1-based page NUMBER; bearer rides every request."""
+        # page_size overridden to 1 so each fixture page is "full" → page=1 (full), page=2 (full),
+        # page=3 (empty) → stop. The page NUMBER advances 1→2→3, NOT an item-count offset.
         resp_lib.add(resp_lib.GET, FORMS_URL, json=_FORMS_PAGE_1, status=200)
         resp_lib.add(resp_lib.GET, FORMS_URL, json=_FORMS_PAGE_2, status=200)
         resp_lib.add(resp_lib.GET, FORMS_URL, json=_FORMS_EMPTY, status=200)
 
         api.load_manifests()
-        # Override page_size to 1 to force multi-page (items per page == page_size triggers next).
         tf = api.MANIFESTS["typeform"]
-        # We need a client with page_size=1 to force page-2 fetch.
         import dataclasses
         mani_small = dataclasses.replace(
             tf,
@@ -149,7 +148,13 @@ class TypeformManifestOnly(unittest.TestCase):
         self.assertIn("abc123", ids)
         self.assertIn("def456", ids)
 
-        # Bearer rode EVERY request (both page fetches).
+        # Page NUMBER advances 1 → 2 → 3 (not 0 → 1 → 2 offsets).
+        self.assertEqual(len(resp_lib.calls), 3)
+        self.assertIn("page=1", resp_lib.calls[0].request.url)
+        self.assertIn("page=2", resp_lib.calls[1].request.url)
+        self.assertIn("page=3", resp_lib.calls[2].request.url)
+
+        # Bearer rode EVERY request (all page fetches).
         auth_headers = [call.request.headers.get("Authorization", "") for call in resp_lib.calls]
         self.assertTrue(all(h.startswith("Bearer ") for h in auth_headers))
         # Credential value rides through unchanged.

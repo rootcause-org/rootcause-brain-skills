@@ -1,11 +1,13 @@
 key: recurly
 name: Recurly
 kinds: [token]
-# Script connector: Recurly v3 returns pagination state as `has_more` + `next` (a relative path
-# like `/accounts?cursor=abc&limit=200`) inside the JSON response body — not in an HTTP Link header
-# and not as an opaque cursor token to re-send as a query param. Force-code triggers (a) field
-# pre-selection (account/subscription objects are large) and (d) non-standard pagination fired.
-connector_module: lib.connectors.recurly
+# Manifest-only integration driven via `python -m lib.api get recurly <path>`. Recurly v3 list
+# endpoints embed the next-page URL at body `next` — a RELATIVE path like
+# `/accounts?cursor=abc&limit=200` (null when exhausted), not an HTTP Link header and not an opaque
+# cursor token. lib.api's `body_url` style follows it via `_send_url`, which `_join`s a relative
+# path onto base_url (base_url has no path segment, so `/accounts?…` -> `https://v3.recurly.com/accounts?…`,
+# host preserved). No per-key Python is needed.
+connector_module: ""
 env_var: RC_CONN_RECURLY
 egress_hosts:
   - v3.recurly.com
@@ -15,9 +17,10 @@ base_url: https://v3.recurly.com
 auth:
   strategy: basic         # API key sent as HTTP Basic username; password is empty (key + ":")
 pagination:
-  # Pagination is handled by the script: `has_more` (bool) + `next` (relative path) in the
-  # response body. Set style=none so a naive manifest-only caller gets at least page 1 correctly.
-  style: none
+  # Recurly envelope: { "has_more": bool, "next": "<relative path|null>", "data": [...] }.
+  # body_url follows `next` (a relative path, _joined onto base_url) until it is null.
+  style: body_url
+  next_url_field: next
   items_field: data       # items live under `data` in the list envelope
   page_size: 200          # Recurly max page size
 default_headers:
@@ -28,24 +31,20 @@ help_md: |
   Reads Recurly subscription billing data for support diagnosis: accounts, subscriptions,
   invoices, transactions, and add-ons. Read-only; only ever issues GETs. Auth is a Recurly
   private API key (Admin → API Credentials → Private API Key) passed as HTTP Basic username
-  with an empty password — the connector handles the encoding automatically via RC_CONN_RECURLY.
+  with an empty password — lib.api handles the encoding automatically from RC_CONN_RECURLY.
 
-  Use the connector CLI for a joined account summary (subscription status + latest invoice +
-  recent transactions in one compact markdown block):
+  **Read + auto-paginate via lib.api** (stitches all pages by following the body `next` path):
 
-      python -m lib.connectors.recurly account <account-code-or-id>
+      python -m lib.api get recurly /accounts --paginate --query limit=200
+      python -m lib.api get recurly /accounts/<code>/subscriptions --paginate \
+        --pick id,state,plan.code,unit_amount,currency,current_period_ends_at
+      python -m lib.api get recurly /accounts/<code>/invoices --paginate
+      python -m lib.api get recurly /accounts/<code>/transactions --paginate
 
-  Or drive individual endpoints directly via lib.api (single-page, no auto-paging):
+  Drop `--paginate` for a single-page (or single-item) read, e.g. `/accounts/<code>`.
 
-      python -m lib.api get recurly /accounts --query limit=20
-      python -m lib.api get recurly /accounts/<code>
-      python -m lib.api get recurly /accounts/<code>/subscriptions
-      python -m lib.api get recurly /accounts/<code>/invoices
-      python -m lib.api get recurly /accounts/<code>/transactions
-
-  Pagination: Recurly returns `has_more` + `next` (relative path) in the response body. The
-  generic --paginate flag does not work for this integration; use the connector CLI for
-  paginated collection.
+  Pagination: Recurly returns `has_more` + `next` (a relative path) in the response body; lib.api's
+  body_url style follows `next` (joined onto base_url) until it is null.
 
   Common paths: /accounts, /subscriptions, /invoices, /transactions, /plans, /coupons,
   /add_ons. Filter by account: /accounts/{code}/subscriptions, /accounts/{code}/invoices.

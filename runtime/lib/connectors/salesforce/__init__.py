@@ -113,41 +113,30 @@ _instance_url._cached = ""  # type: ignore[attr-defined]
 
 
 def _client(instance: str) -> api.Client:
-    """Build a lib.api Client pointed at the org's instance URL."""
+    """Build a lib.api Client pointed at the org's instance URL.
+
+    SOQL paging is the ``body_url`` style: each page carries ``nextRecordsUrl`` (a path under the
+    instance) which lib.api follows verbatim, ``_join``ing the relative path onto ``base_url``. The
+    records live at ``records``. The framework drives the while-has-more loop — no hand-rolled loop.
+    """
     manifest = api.Manifest(
         key="salesforce",
         base_url=instance,
         auth=api.Auth(strategy="bearer"),
-        pagination=api.Pagination(style="none"),
+        pagination=api.Pagination(
+            style="body_url", next_url_field="nextRecordsUrl", items_field="records"
+        ),
         rate_limit_remaining_header="",
     )
     return api.client(manifest, token_key="salesforce")
 
 
 def _soql_query(soql: str, *, instance: str | None = None, max_records: int = 500) -> list[dict]:
-    """Execute a SOQL query and follow nextRecordsUrl pages up to ``max_records``.
-
-    This is the single place that drives Salesforce's non-standard JSON pagination:
-    each page's ``nextRecordsUrl`` is a path fetched verbatim on the same instance.
-    lib.api's generic styles can't express this, so we hand-roll the loop here and
-    nowhere else (retry/backoff/rate-limiting remain in lib.api's Client._send).
-    """
+    """Execute a SOQL query, collecting records across nextRecordsUrl pages up to ``max_records``."""
     base = instance or _instance_url()
     c = _client(base)
     path = f"/services/data/{_API_VERSION}/query"
-    page = c.get(path, query={"q": soql})
-    records: list[dict] = list(page.get("records") or [])
-
-    # Follow nextRecordsUrl pages until done=True or max_records reached.
-    # nextRecordsUrl is a path like /services/data/vXX.0/query/01gxx...
-    while not page.get("done", True) and page.get("nextRecordsUrl") and len(records) < max_records:
-        next_path = page["nextRecordsUrl"]
-        # nextRecordsUrl is a full path relative to the instance root (starts with /services/...).
-        # lib.api's _join treats a path starting with "/" as relative to base_url, which is correct.
-        page = c.get(next_path)
-        records.extend(page.get("records") or [])
-
-    return records[:max_records]
+    return c.collect(path, query={"q": soql}, max_items=max_records)["items"]
 
 
 # ---------------------------------------------------------------------------

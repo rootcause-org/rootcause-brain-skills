@@ -1,12 +1,22 @@
-"""Fixture test for the Microsoft OneDrive connector (script connector, force-code trigger d).
+"""Fixture tests for the Microsoft OneDrive integration (manifest-only, driven via lib.api).
 
-Graph paginates via ``@odata.nextLink`` — a full absolute URL in the JSON body. The connector's
-``collect_odata()`` follows those URLs directly via ``lib.api.Client._send_url``.
+OneDrive is a manifest-only integration: there is no per-key Python connector. Microsoft Graph
+paginates with ``@odata.nextLink`` — an absolute next-page URL embedded in the JSON body. lib.api's
+``body_url`` style follows it directly. The critical bit: ``@odata.nextLink`` has dots that are NOT
+path segments, so ``next_url_field`` resolution tries the WHOLE field as a literal dict key first
+(``field in body``) before any dotted traversal. These tests drive the generic path:
 
-No live creds, no network: HTTP is mocked with ``responses``. Bodies are Microsoft Graph's own
-DOCUMENTED example payloads (graph.microsoft.com), trimmed to support-relevant fields.
+  - the YAML manifest loads and maps every lib.api field (style=body_url, next_url_field literal
+    "@odata.nextLink", items_field=value, auth.strategy=bearer, base_url);
+  - ``client(m).collect()`` stitches ≥2 Graph-shaped fixture pages in order via @odata.nextLink;
+  - the bearer credential rides EVERY request, including the continuation page;
+  - ``api.pick`` selects the support-relevant fields;
+  - token-prefix hygiene: no real MS Graph token prefix lands in the connector dir.
 
-    cd runtime && uv run --with . --with pytest --with responses --with vcrpy --no-project \
+No live creds, no network. HTTP is mocked with ``responses``. Bodies mirror the real Graph response
+shape: {"@odata.context": ..., "value": [...], "@odata.nextLink": "https://graph.microsoft.com/..."}.
+
+    cd runtime && uv run --with . --with pytest --with responses --with vcrpy --no-project \\
         pytest tests/test_msonedrive_connector.py -q
 """
 
@@ -20,386 +30,211 @@ import responses as responses_lib
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # make `lib` importable
 
 from lib import api  # noqa: E402
-from lib.connectors import msonedrive  # noqa: E402
 
-GRAPH_BASE = "https://graph.microsoft.com/v1.0"
-CHILDREN_URL = f"{GRAPH_BASE}/me/drive/root/children"
-SEARCH_URL = f"{GRAPH_BASE}/me/drive/root/search(q='quarterly report')"
-RECENT_URL = f"{GRAPH_BASE}/me/drive/recent"
-DRIVE_URL = f"{GRAPH_BASE}/me/drive"
+GRAPH = "https://graph.microsoft.com/v1.0"
 
 # ---------------------------------------------------------------------------
-# Documented example DriveItem payloads (trimmed to support-relevant fields).
-# Shape mirrors the Graph "List DriveItem children" docs example.
+# Documented example payloads (real Graph driveItem shape, trimmed)
 # ---------------------------------------------------------------------------
 
-_FILE_1 = {
-    "id": "01BYE5RZY6DSDSZK37BFZLHGP2D4RQPMMX",
-    "name": "myfile.jpg",
-    "size": 2097152,
-    "lastModifiedDateTime": "2023-08-14T10:30:00Z",
-    "createdDateTime": "2023-07-01T09:00:00Z",
-    "webUrl": "https://onedrive.live.com/redir?resid=01BYE5RZY6DSDSZK37BFZLHGP2D4RQPMMX",
-    "file": {"mimeType": "image/jpeg"},
+_ITEM_1 = {
+    "id": "01ABCDEF1",
+    "name": "Q2 Report.docx",
+    "size": 24576,
+    "lastModifiedDateTime": "2026-06-01T10:00:00Z",
+    "webUrl": "https://contoso-my.sharepoint.com/personal/x/Documents/Q2%20Report.docx",
+    "file": {"mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
 }
-_FOLDER_1 = {
-    "id": "01BYE5RZY6DSDSZK37BFZLHGP2D4RQPMMY",
-    "name": "Documents",
-    "size": 0,
-    "lastModifiedDateTime": "2023-09-01T12:00:00Z",
-    "createdDateTime": "2023-01-01T00:00:00Z",
-    "webUrl": "https://onedrive.live.com/redir?resid=01BYE5RZY6DSDSZK37BFZLHGP2D4RQPMMY",
-    "folder": {"childCount": 4},
-}
-_FILE_2 = {
-    "id": "01BYE5RZY6DSDSZK37BFZLHGP2D4RQPMMZ",
-    "name": "quarterly report.xlsx",
-    "size": 1048576,
-    "lastModifiedDateTime": "2023-10-10T08:00:00Z",
-    "createdDateTime": "2023-10-01T00:00:00Z",
-    "webUrl": "https://onedrive.live.com/redir?resid=01BYE5RZY6DSDSZK37BFZLHGP2D4RQPMMZ",
+_ITEM_2 = {
+    "id": "01ABCDEF2",
+    "name": "Budget.xlsx",
+    "size": 81920,
+    "lastModifiedDateTime": "2026-06-15T09:30:00Z",
+    "webUrl": "https://contoso-my.sharepoint.com/personal/x/Documents/Budget.xlsx",
     "file": {"mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
 }
 
-# Page 1 response: two items + @odata.nextLink → page 2.
-_PAGE_1_BODY = {
-    "value": [_FILE_1, _FOLDER_1],
-    "@odata.nextLink": f"{GRAPH_BASE}/me/drive/root/children?$skiptoken=asdlnjnkj1nalkm",
-}
-_PAGE_1_NEXT = f"{GRAPH_BASE}/me/drive/root/children?$skiptoken=asdlnjnkj1nalkm"
 
-# Page 2 response: one item + no @odata.nextLink → pagination stops.
-_PAGE_2_BODY = {
-    "value": [_FILE_2],
-}
-
-_SEARCH_BODY = {
-    "value": [
-        {
-            "id": "01BYE5RZY6DSDSZK37BFZLHGP2D4RQPMMW",
-            "name": "quarterly report.xlsx",
-            "size": 1048576,
-            "lastModifiedDateTime": "2023-10-10T08:00:00Z",
-            "createdDateTime": "2023-10-01T00:00:00Z",
-            "webUrl": "https://onedrive.live.com/redir?resid=01BYE5RZY6DSDSZK37BFZLHGP2D4RQPMMW",
-            "file": {"mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
-            "searchResult": {"onClickTelemetryUrl": "https://bing.com/abc"},
-        },
-    ],
-    "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#Collection(microsoft.graph.driveItem)",
-    # Single-page search result — no nextLink.
-}
-
-_DRIVE_BODY = {
-    "id": "b!abc123",
-    "name": "OneDrive",
-    "driveType": "personal",
-    "owner": {"user": {"displayName": "Daron Spektor", "email": "daron@example.com"}},
-    "quota": {"used": 536870912, "total": 5368709120},
-    "webUrl": "https://onedrive.live.com/?id=root",
-}
-
-_RECENT_BODY = {
-    "value": [_FILE_2, _FILE_1],
-}
+def _page(items: list, next_url: str | None = None) -> dict:
+    """Build a Graph collection envelope. body_url stops when @odata.nextLink is absent."""
+    body = {
+        "@odata.context": f"{GRAPH}/$metadata#users('x')/drive/root/children",
+        "value": items,
+    }
+    if next_url is not None:
+        body["@odata.nextLink"] = next_url  # absolute URL, verbatim
+    return body
 
 
-# ---------------------------------------------------------------------------
-# Test cases
-# ---------------------------------------------------------------------------
-
-
-class MsOneDriveManifest(unittest.TestCase):
-    """YAML manifest loads correctly via lib.api's loader and maps every field."""
-
+class _Base(unittest.TestCase):
     def setUp(self):
+        self._saved_env = os.environ.get("RC_CONN_MSONEDRIVE")
+        # Fake token with a split JWT-ish prefix so the hygiene guard can't flag this file itself.
+        os.environ["RC_CONN_MSONEDRIVE"] = "ey" + "J0_fake_msonedrive_bearer_000"
         api.MANIFESTS.clear()
         api._YAML_LOADED_KEYS.clear()
-        self._saved = os.environ.get("RC_CONN_MSONEDRIVE")
-        os.environ["RC_CONN_MSONEDRIVE"] = "ms_test_" + "token_abc"
-
-    def tearDown(self):
-        if self._saved is None:
-            os.environ.pop("RC_CONN_MSONEDRIVE", None)
-        else:
-            os.environ["RC_CONN_MSONEDRIVE"] = self._saved
-
-    def test_manifest_loaded_from_yaml(self):
-        # Force reload so the YAML path is exercised (not the register() in __init__.py).
-        api.MANIFESTS.clear()
-        api._YAML_LOADED_KEYS.clear()
-        m = api.load_manifests()
-        self.assertIn("msonedrive", m)
-        mani = m["msonedrive"]
-        self.assertEqual(mani.base_url, "https://graph.microsoft.com/v1.0")
-        self.assertEqual(mani.auth.strategy, "bearer")
-        self.assertEqual(mani.pagination.style, "none")
-        self.assertEqual(mani.pagination.items_field, "value")
-        self.assertEqual(mani.rate_limit_remaining_header, "")
-
-    def test_register_wins_over_yaml(self):
-        # The connector's register() is called at import time. Verify the registered manifest
-        # takes precedence: load_manifests() with a pre-registered key must NOT overwrite it with
-        # the YAML version (the explicit register() is the source of truth).
-        # Restore the module-level registration (cleared in setUp).
-        msonedrive.MANIFEST  # ensure module is loaded; re-register explicitly.
-        api.register(msonedrive.MANIFEST)
-        self.assertIn("msonedrive", api.MANIFESTS)
-        # The registered entry must NOT be in _YAML_LOADED_KEYS (i.e. it's an explicit reg).
-        self.assertNotIn("msonedrive", api._YAML_LOADED_KEYS)
-        # Now load_manifests() must leave the explicit registration alone.
         api.load_manifests()
-        self.assertNotIn("msonedrive", api._YAML_LOADED_KEYS)
-        self.assertEqual(api.MANIFESTS["msonedrive"].key, "msonedrive")
-
-
-class MsOneDriveOdataPagination(unittest.TestCase):
-    """collect_odata() follows @odata.nextLink pages and stitches items in order."""
-
-    def setUp(self):
-        self._saved = os.environ.get("RC_CONN_MSONEDRIVE")
-        os.environ["RC_CONN_MSONEDRIVE"] = "ms_test_" + "token_abc"
 
     def tearDown(self):
-        if self._saved is None:
+        if self._saved_env is None:
             os.environ.pop("RC_CONN_MSONEDRIVE", None)
         else:
-            os.environ["RC_CONN_MSONEDRIVE"] = self._saved
+            os.environ["RC_CONN_MSONEDRIVE"] = self._saved_env
 
+
+# ---------------------------------------------------------------------------
+# 1. Manifest loading
+# ---------------------------------------------------------------------------
+
+class TestManifest(_Base):
+    def test_yaml_loads_and_maps_every_field(self):
+        self.assertIn("msonedrive", api.MANIFESTS)
+        m = api.MANIFESTS["msonedrive"]
+        self.assertEqual(m.key, "msonedrive")
+        self.assertEqual(m.base_url, "https://graph.microsoft.com/v1.0")
+        self.assertEqual(m.auth.strategy, "bearer")
+        self.assertEqual(m.pagination.style, "body_url")
+        self.assertEqual(m.pagination.next_url_field, "@odata.nextLink")  # literal key
+        self.assertEqual(m.pagination.items_field, "value")
+        self.assertEqual(m.pagination.page_size, 200)
+
+    def test_manifest_yaml_is_manifest_only_and_keeps_egress(self):
+        # connector_module/egress_hosts/oauth aren't lib.api Manifest fields; assert on raw YAML.
+        import yaml
+        raw = yaml.safe_load(
+            (Path(__file__).resolve().parents[1]
+             / "lib" / "connectors" / "msonedrive" / "manifest.yaml").read_text()
+        )
+        self.assertEqual(raw["connector_module"], "")  # manifest-only, no script
+        self.assertIn("graph.microsoft.com", raw["egress_hosts"])
+        self.assertIn("login.microsoftonline.com", raw["egress_hosts"])
+        self.assertIn("oauth", raw)  # oauth block preserved
+
+
+# ---------------------------------------------------------------------------
+# 2. body_url pagination via @odata.nextLink (literal key, absolute URL)
+# ---------------------------------------------------------------------------
+
+class TestPagination(_Base):
     @responses_lib.activate
-    def test_two_pages_stitched(self):
-        """Page 1 has nextLink → page 2; page 2 has no nextLink → stop. Both pages stitched."""
-        responses_lib.add(responses_lib.GET, CHILDREN_URL, json=_PAGE_1_BODY, status=200)
-        responses_lib.add(responses_lib.GET, _PAGE_1_NEXT, json=_PAGE_2_BODY, status=200)
+    def test_collect_stitches_two_pages_via_odata_nextlink(self):
+        page2_url = f"{GRAPH}/me/drive/root/children?$skiptoken=PAGE2"
+        responses_lib.add(
+            responses_lib.GET, f"{GRAPH}/me/drive/root/children",
+            json=_page([_ITEM_1], next_url=page2_url), status=200,
+        )
+        responses_lib.add(
+            responses_lib.GET, page2_url,
+            json=_page([_ITEM_2], next_url=None), status=200,  # no nextLink ⇒ exhausted
+        )
 
-        result = msonedrive.collect_odata("me/drive/root/children", query={"$top": 200})
+        m = api.MANIFESTS["msonedrive"]
+        result = api.client(m, token_key="msonedrive").collect("me/drive/root/children")
 
         self.assertFalse(result["incomplete"], result["reason"])
-        self.assertEqual(len(result["items"]), 3)
         names = [it["name"] for it in result["items"]]
-        self.assertEqual(names, ["myfile.jpg", "Documents", "quarterly report.xlsx"])
+        self.assertEqual(names, ["Q2 Report.docx", "Budget.xlsx"])  # in order
+        self.assertEqual(len(responses_lib.calls), 2)
+        self.assertIn("$skiptoken=PAGE2", responses_lib.calls[1].request.url)
 
     @responses_lib.activate
-    def test_bearer_on_both_pages(self):
-        """Bearer credential must appear on page 1 AND on the follow nextLink (page 2)."""
-        responses_lib.add(responses_lib.GET, CHILDREN_URL, json=_PAGE_1_BODY, status=200)
-        responses_lib.add(responses_lib.GET, _PAGE_1_NEXT, json=_PAGE_2_BODY, status=200)
+    def test_bearer_credential_on_all_pages_including_continuation(self):
+        page2_url = f"{GRAPH}/me/drive/root/children?$skiptoken=PAGE2"
+        responses_lib.add(
+            responses_lib.GET, f"{GRAPH}/me/drive/root/children",
+            json=_page([_ITEM_1], next_url=page2_url), status=200,
+        )
+        responses_lib.add(
+            responses_lib.GET, page2_url,
+            json=_page([_ITEM_2], next_url=None), status=200,
+        )
 
-        msonedrive.collect_odata("me/drive/root/children", query={"$top": 200})
+        m = api.MANIFESTS["msonedrive"]
+        api.client(m, token_key="msonedrive").collect("me/drive/root/children")
 
         self.assertEqual(len(responses_lib.calls), 2)
-        # Auth header must ride every request — both page fetch and link follow.
         for call in responses_lib.calls:
-            self.assertIn("Authorization", call.request.headers)
-            self.assertTrue(
-                call.request.headers["Authorization"].startswith("Bearer "),
-                f"Expected Bearer auth, got: {call.request.headers.get('Authorization')}",
-            )
+            auth = call.request.headers.get("Authorization", "")
+            self.assertTrue(auth.startswith("Bearer "), f"Missing Bearer on {call.request.url}")
+            self.assertIn("fake_msonedrive_bearer", auth)
 
     @responses_lib.activate
-    def test_single_page_no_nextlink(self):
-        """Single-page response (no @odata.nextLink) returns all items, incomplete=False."""
-        single = {"value": [_FILE_1]}
-        responses_lib.add(responses_lib.GET, CHILDREN_URL, json=single, status=200)
-
-        result = msonedrive.collect_odata("me/drive/root/children")
-
-        self.assertFalse(result["incomplete"])
+    def test_single_page_no_continuation(self):
+        responses_lib.add(
+            responses_lib.GET, f"{GRAPH}/me/drive/root/children",
+            json=_page([_ITEM_1], next_url=None), status=200,
+        )
+        m = api.MANIFESTS["msonedrive"]
+        result = api.client(m, token_key="msonedrive").collect("me/drive/root/children")
         self.assertEqual(len(result["items"]), 1)
-        self.assertEqual(result["items"][0]["name"], "myfile.jpg")
-
-    @responses_lib.activate
-    def test_max_items_caps_and_marks_incomplete(self):
-        """max_items cap stops pagination early and sets incomplete=True."""
-        responses_lib.add(responses_lib.GET, CHILDREN_URL, json=_PAGE_1_BODY, status=200)
-        # Page 2 should NOT be fetched when max_items=1.
-        result = msonedrive.collect_odata("me/drive/root/children", max_items=1)
-
-        self.assertTrue(result["incomplete"])
-        self.assertEqual(len(result["items"]), 1)
-        self.assertEqual(len(responses_lib.calls), 1)  # only page 1 requested
-
-
-class MsOneDriveListChildren(unittest.TestCase):
-    """list_children() paginates and picks support-relevant fields."""
-
-    def setUp(self):
-        self._saved = os.environ.get("RC_CONN_MSONEDRIVE")
-        os.environ["RC_CONN_MSONEDRIVE"] = "ms_test_" + "token_abc"
-
-    def tearDown(self):
-        if self._saved is None:
-            os.environ.pop("RC_CONN_MSONEDRIVE", None)
-        else:
-            os.environ["RC_CONN_MSONEDRIVE"] = self._saved
-
-    @responses_lib.activate
-    def test_children_picked_fields(self):
-        responses_lib.add(responses_lib.GET, CHILDREN_URL, json=_PAGE_1_BODY, status=200)
-        responses_lib.add(responses_lib.GET, _PAGE_1_NEXT, json=_PAGE_2_BODY, status=200)
-
-        result = msonedrive.list_children("me/drive/root")
-
-        items = result["items"]
-        self.assertEqual(len(items), 3)
-        # pick() selects support fields; "name" must be present on all items.
-        for it in items:
-            self.assertIn("name", it)
-        # File item: "file" facet path present, "folder" absent.
-        self.assertIn("file", items[0])
-        self.assertNotIn("folder", items[0])
-        # Folder item: "folder" facet present.
-        self.assertIn("folder", items[1])
-
-
-class MsOneDriveSearch(unittest.TestCase):
-    """search_files() uses the Graph search(q='…') path and picks fields."""
-
-    def setUp(self):
-        self._saved = os.environ.get("RC_CONN_MSONEDRIVE")
-        os.environ["RC_CONN_MSONEDRIVE"] = "ms_test_" + "token_abc"
-
-    def tearDown(self):
-        if self._saved is None:
-            os.environ.pop("RC_CONN_MSONEDRIVE", None)
-        else:
-            os.environ["RC_CONN_MSONEDRIVE"] = self._saved
-
-    @responses_lib.activate
-    def test_search_returns_picked_items(self):
-        responses_lib.add(responses_lib.GET, SEARCH_URL, json=_SEARCH_BODY, status=200)
-
-        result = msonedrive.search_files("quarterly report")
-
-        self.assertFalse(result["incomplete"])
-        self.assertEqual(len(result["items"]), 1)
-        it = result["items"][0]
-        self.assertIn("name", it)
-        self.assertEqual(it["name"], "quarterly report.xlsx")
-        # Picked items must NOT contain searchResult (not in _ITEM_FIELDS).
-        self.assertNotIn("searchResult", it)
-
-
-class MsOneDriveRecent(unittest.TestCase):
-    """list_recent() returns picked items from me/drive/recent."""
-
-    def setUp(self):
-        self._saved = os.environ.get("RC_CONN_MSONEDRIVE")
-        os.environ["RC_CONN_MSONEDRIVE"] = "ms_test_" + "token_abc"
-
-    def tearDown(self):
-        if self._saved is None:
-            os.environ.pop("RC_CONN_MSONEDRIVE", None)
-        else:
-            os.environ["RC_CONN_MSONEDRIVE"] = self._saved
-
-    @responses_lib.activate
-    def test_recent_returns_files(self):
-        responses_lib.add(responses_lib.GET, RECENT_URL, json=_RECENT_BODY, status=200)
-
-        result = msonedrive.list_recent()
-
-        self.assertEqual(len(result["items"]), 2)
-        names = [it["name"] for it in result["items"]]
-        self.assertIn("quarterly report.xlsx", names)
-
-
-class MsOneDriveDrive(unittest.TestCase):
-    """get_drive() returns raw drive metadata and renders to markdown."""
-
-    def setUp(self):
-        self._saved = os.environ.get("RC_CONN_MSONEDRIVE")
-        os.environ["RC_CONN_MSONEDRIVE"] = "ms_test_" + "token_abc"
-
-    def tearDown(self):
-        if self._saved is None:
-            os.environ.pop("RC_CONN_MSONEDRIVE", None)
-        else:
-            os.environ["RC_CONN_MSONEDRIVE"] = self._saved
-
-    @responses_lib.activate
-    def test_drive_metadata_and_markdown(self):
-        responses_lib.add(responses_lib.GET, DRIVE_URL, json=_DRIVE_BODY, status=200)
-
-        drive = msonedrive.get_drive()
-        self.assertEqual(drive["name"], "OneDrive")
-        self.assertEqual(drive["driveType"], "personal")
-
-        md = msonedrive.drive_to_markdown(drive)
-        self.assertIn("OneDrive", md)
-        self.assertIn("Daron Spektor", md)
-
-
-class MsOneDriveCLI(unittest.TestCase):
-    """CLI commands run via main() and exit cleanly."""
-
-    def setUp(self):
-        self._saved = os.environ.get("RC_CONN_MSONEDRIVE")
-        os.environ["RC_CONN_MSONEDRIVE"] = "ms_test_" + "token_abc"
-
-    def tearDown(self):
-        if self._saved is None:
-            os.environ.pop("RC_CONN_MSONEDRIVE", None)
-        else:
-            os.environ["RC_CONN_MSONEDRIVE"] = self._saved
-
-    @responses_lib.activate
-    def test_cli_drive(self):
-        responses_lib.add(responses_lib.GET, DRIVE_URL, json=_DRIVE_BODY, status=200)
-        rc = msonedrive.main(["drive"])
-        self.assertEqual(rc, 0)
-
-    @responses_lib.activate
-    def test_cli_children(self):
-        responses_lib.add(responses_lib.GET, CHILDREN_URL, json=_PAGE_1_BODY, status=200)
-        responses_lib.add(responses_lib.GET, _PAGE_1_NEXT, json=_PAGE_2_BODY, status=200)
-        rc = msonedrive.main(["children", "me/drive/root"])
-        self.assertEqual(rc, 0)
-
-    @responses_lib.activate
-    def test_cli_search(self):
-        responses_lib.add(responses_lib.GET, SEARCH_URL, json=_SEARCH_BODY, status=200)
-        rc = msonedrive.main(["search", "quarterly report"])
-        self.assertEqual(rc, 0)
-
-    @responses_lib.activate
-    def test_cli_recent(self):
-        responses_lib.add(responses_lib.GET, RECENT_URL, json=_RECENT_BODY, status=200)
-        rc = msonedrive.main(["recent"])
-        self.assertEqual(rc, 0)
-
-    @responses_lib.activate
-    def test_cli_generic_get_via_lib_api(self):
-        """python -m lib.api get msonedrive ... also works (manifest is registered)."""
-        responses_lib.add(responses_lib.GET, DRIVE_URL, json=_DRIVE_BODY, status=200)
-        rc = api._main(["get", "msonedrive", "me/drive"])
-        self.assertEqual(rc, 0)
         self.assertEqual(len(responses_lib.calls), 1)
-        self.assertIn("Authorization", responses_lib.calls[0].request.headers)
+
+    @responses_lib.activate
+    def test_lib_api_cli_drives_manifest(self):
+        page2_url = f"{GRAPH}/me/drive/root/children?$skiptoken=PAGE2"
+        responses_lib.add(
+            responses_lib.GET, f"{GRAPH}/me/drive/root/children",
+            json=_page([_ITEM_1], next_url=page2_url), status=200,
+        )
+        responses_lib.add(
+            responses_lib.GET, page2_url,
+            json=_page([_ITEM_2], next_url=None), status=200,
+        )
+        rc = api._main([
+            "get", "msonedrive", "me/drive/root/children", "--paginate",
+            "--pick", "name,size,webUrl",
+        ])
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(responses_lib.calls), 2)
+        for call in responses_lib.calls:
+            self.assertTrue(call.request.headers.get("Authorization", "").startswith("Bearer "))
 
 
-class MsOneDriveCassetteHygiene(unittest.TestCase):
-    """CI guard: no real MS Graph access token prefix may appear in connector files.
+# ---------------------------------------------------------------------------
+# 3. api.pick on driveItem fields
+# ---------------------------------------------------------------------------
 
-    Scoped to the connector dir only — this test file names the guard strings itself and must
-    not be scanned (split the literal so the guard doesn't false-positive on itself).
+class TestPick(_Base):
+    def test_pick_selects_support_fields(self):
+        picked = api.pick(_ITEM_1, "id,name,size,lastModifiedDateTime,webUrl")
+        self.assertEqual(picked["id"], "01ABCDEF1")
+        self.assertEqual(picked["name"], "Q2 Report.docx")
+        self.assertEqual(picked["size"], 24576)
+
+    def test_pick_nested_file_mimetype(self):
+        picked = api.pick(_ITEM_1, "name,file.mimeType")
+        self.assertEqual(
+            picked["file.mimeType"],
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+
+
+# ---------------------------------------------------------------------------
+# 4. Token-prefix hygiene
+# ---------------------------------------------------------------------------
+
+class TestHygiene(unittest.TestCase):
+    """CI guard: no real MS Graph access token prefix may land in the connector dir (only
+    manifest.yaml remains). Scoped to the connector dir, NOT this test file — the test legitimately
+    names the prefixes it hunts for, so scanning itself would be a false positive.
+
+    MS Graph / MSAL access tokens are JWTs starting with "eyJ"; delegated Exchange/Graph tokens
+    often start with "EwA". Split each literal with concatenation so the guard can't flag itself.
     """
 
-    # MS Graph / MSAL access tokens are JWTs starting with "eyJ" (base64 "{"}).
-    # Also guard against any literal "Bearer " prefix accidentally embedded.
-    _TOKEN_PREFIXES = ("eyJ" "0", "Bearer" " ey", "RC_CONN" "_MSONEDRIVE=ey")
+    _TOKEN_PREFIXES = ("eyJ" "0", "EwA" "0", "Bearer" " ey", "RC_CONN" "_MSONEDRIVE=ey")
 
-    def test_no_token_prefixes_in_msonedrive_files(self):
+    def test_no_token_prefixes_in_connector_files(self):
         connector_dir = Path(__file__).resolve().parents[1] / "lib" / "connectors" / "msonedrive"
         offenders = []
         for path in connector_dir.rglob("*"):
-            if not path.is_file():
+            if not path.is_file() or path.suffix == ".pyc":
                 continue
             text = path.read_text(encoding="utf-8", errors="ignore")
             for pref in self._TOKEN_PREFIXES:
                 if pref in text:
-                    offenders.append(f"{path.name}: contains {pref!r}")
-        self.assertEqual(offenders, [], f"token-like material present: {offenders}")
+                    offenders.append(f"{path.name}: {pref}")
+        self.assertEqual(offenders, [], f"real token prefix found in connector files: {offenders}")
 
 
 if __name__ == "__main__":

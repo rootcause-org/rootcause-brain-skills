@@ -11,7 +11,6 @@ committed cassette.
 """
 
 import os
-import re
 import sys
 import unittest
 from pathlib import Path

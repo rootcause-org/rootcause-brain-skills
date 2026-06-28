@@ -1,8 +1,9 @@
 key: cloudflare
 name: Cloudflare
 kinds: [token, oauth]
-# Manifest-only integration: NO connector_module. Standard offset pagination with a result wrapper
-# trips no force-code trigger, so the agent drives it via `python -m lib.api get cloudflare …`.
+# Manifest-only integration: NO connector_module. Cloudflare uses 1-based PAGE-NUMBER paging
+# (page=1,2,3,…) with a `result` wrapper — lib.api's `page` style expresses it natively, so the
+# agent drives it via `python -m lib.api get cloudflare …`.
 connector_module: ""
 env_var: RC_CONN_CLOUDFLARE
 egress_hosts:
@@ -12,8 +13,12 @@ base_url: https://api.cloudflare.com/client/v4
 auth:
   strategy: bearer        # API Token presented as `Authorization: Bearer …` (recommended, scoped)
 pagination:
-  style: offset           # result_info.page / result_info.total_pages drives the loop
-  offset_param: page      # Cloudflare uses `page` (1-based) rather than a byte/item offset
+  # Cloudflare pages by 1-based PAGE NUMBER (page=1,2,3,…), NOT an item-count offset; `result_info`
+  # carries `page`/`total_pages`. The `page` style increments the page number and stops on a short
+  # page (len(items) < page_size). `result` holds the item array.
+  style: page
+  page_param: page        # Cloudflare uses `page` (1-based)
+  page_start: 1
   limit_param: per_page
   items_field: result     # every list response wraps the array under `result`
   page_size: 50           # safe default; Cloudflare allows up to 1000 for most endpoints
@@ -36,8 +41,9 @@ help_md: |
   for support diagnosis. Uses an API Token (read-only scopes recommended) or OAuth access token.
   Read-only — only ever issues GETs.
 
-  Pagination is offset-based (`page` / `per_page`); the `result` field holds the item array and
-  `result_info` carries `page` / `total_pages`. lib.api's offset style advances automatically.
+  Pagination is page-number based (`page` 1-based / `per_page`); the `result` field holds the item
+  array and `result_info` carries `page` / `total_pages`. The `--paginate` flag advances the page
+  number automatically and stops on a short page.
 
   Common paths (all require an {account_id} or {zone_id} from the token's scope):
 

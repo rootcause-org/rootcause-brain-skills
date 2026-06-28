@@ -1,12 +1,11 @@
 """Xero Accounting connector — read-only grounding for billing/contact support.
 
 Xero uses 1-based page-number pagination (page=1,2,3…) with a fixed 100-item ceiling, stopping
-when a page returns fewer than 100 items. The generic lib.api offset style increments by item
-count (0→100→200), which is incompatible. Force-code trigger (d) fired: non-standard pagination.
-
-Every request also requires a ``Xero-tenant-id`` header (the organisation UUID), which is
-per-connection and would otherwise need to be supplied as a raw ``--query`` flag on every lib.api
-call. The connector threads it through automatically via ``--tenant-id``.
+when a page returns fewer than 100 items — lib.api's ``page`` style. Every request also requires a
+``Xero-tenant-id`` header (the organisation UUID), which is per-connection. The connector remains a
+script because each endpoint wraps its rows under a different key (Invoices, Contacts, …) and the
+tenant-id is threaded automatically via ``--tenant-id``; ``_xero_pages`` builds a per-call Manifest
+with the right ``items_field`` and lets lib.api's ``collect`` drive the loop + header threading.
 
 Read-only: only ever issues GETs. Writes to customer systems are explicitly out of scope.
 
@@ -54,7 +53,6 @@ def _client() -> api.Client:
 
 
 def _xero_pages(
-    c: api.Client,
     path: str,
     *,
     tenant_id: str,
@@ -62,25 +60,38 @@ def _xero_pages(
     items_key: str,
     max_pages: int = 1000,
 ) -> list[dict]:
-    """Paginate a Xero list endpoint using 1-based page numbers.
+    """Paginate a Xero list endpoint using 1-based page numbers via lib.api's ``page`` style.
 
-    Xero returns at most 100 items per page (fixed ceiling). We stop when a page returns fewer
-    than 100 items (last page) or when ``max_pages`` is reached. The ``Xero-tenant-id`` header is
-    injected on every request — callers supply ``tenant_id`` once and the loop threads it through.
+    Xero returns at most 100 items per page (fixed ceiling), has no explicit has-more flag, and
+    requires a ``Xero-tenant-id`` header on every request. The ``page`` style (page_start=1,
+    page_size=100 ⇒ short-page-at-<100 termination) drives the loop; ``collect`` threads the
+    tenant-id header through every continuation page. ``items_key`` is per-endpoint (Invoices,
+    Contacts, …), so we build a per-call Manifest carrying it as ``items_field``.
+
+    Xero's accounting API has no per-page limit query param (page size is a fixed 100) and ignores
+    unknown query params, so the style's ``limit_param`` is set to the inert ``pageSize`` — it never
+    reaches Xero's semantics, it just makes short-page termination fire at <100.
     """
-    headers = {"Xero-tenant-id": tenant_id}
-    base_q = dict(query or {})
-    items: list[dict] = []
-    page = 1
-    while page <= max_pages:
-        q = dict(base_q, page=page)
-        body = c.get(path, query=q, headers=headers)
-        page_items: list = body.get(items_key) or []
-        items.extend(page_items)
-        if len(page_items) < 100:
-            break  # last page (Xero doesn't send an explicit has_more flag)
-        page += 1
-    return items
+    manifest = api.Manifest(
+        key="xero",
+        base_url=BASE_URL,
+        auth=MANIFEST.auth,
+        pagination=api.Pagination(
+            style="page",
+            page_param="page",
+            page_start=1,
+            limit_param="pageSize",  # inert: Xero ignores it; page size is a fixed 100
+            page_size=100,
+            items_field=items_key,
+        ),
+    )
+    pc = api.client(manifest, token_key="xero")
+    return pc.collect(
+        path,
+        query=dict(query or {}),
+        headers={"Xero-tenant-id": tenant_id},
+        max_pages=max_pages,
+    )["items"]
 
 
 # ---------------------------------------------------------------------------
@@ -127,13 +138,12 @@ def list_invoices(
     max_pages: int = 10,
 ) -> list[dict]:
     """List invoices, optionally filtered by status and/or contact UUID."""
-    c = _client()
     q: dict[str, Any] = {"order": "UpdatedDateUTC DESC"}
     if status:
         q["Statuses"] = status
     if contact_id:
         q["ContactIDs"] = contact_id
-    return _xero_pages(c, "Invoices", tenant_id=tenant_id, query=q, items_key="Invoices", max_pages=max_pages)
+    return _xero_pages("Invoices", tenant_id=tenant_id, query=q, items_key="Invoices", max_pages=max_pages)
 
 
 def find_contact(tenant_id: str, name_or_id: str) -> dict | None:

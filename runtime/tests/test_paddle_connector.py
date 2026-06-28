@@ -1,19 +1,18 @@
-"""Fixture tests for the Paddle connector (script connector — force-code triggers b + d).
+"""Fixture tests for the Paddle integration (manifest-only, driven via lib.api).
 
-Tests cover:
-  - YAML loads via lib.api's manifest loader and maps every field correctly.
-  - Paddle-specific pagination (_paddle_pages) stitches ≥2 pages correctly by following
-    ``meta.pagination.next`` (a body-embedded full URL), gated by ``has_more``.
-  - The bearer credential rides EVERY request including continuation pages.
-  - api.pick selects the support-relevant fields.
-  - resolve_customer works by ID and by email search.
-  - support_summary does the multi-call join (customer + subscriptions + transactions).
-  - summary_to_markdown renders correctly.
-  - The connector CLI (main()) drives the customer command.
-  - Token-prefix hygiene: no real Paddle API key prefix lands in the connector files.
+Paddle is a manifest-only integration: there is no per-key Python connector. lib.api's `body_url`
+pagination style follows the next-page URL embedded in the JSON body at ``meta.pagination.next``
+(a full absolute URL) and stops when it is null. These tests drive the generic path:
 
-No live creds, no network. HTTP is mocked with ``responses``.
-Bodies mirror Paddle's documented example payloads, trimmed to support-relevant fields.
+  - the YAML manifest loads and maps every lib.api field (style=body_url, next_url_field,
+    items_field, auth.strategy, base_url, page_size);
+  - ``client(m).collect()`` stitches ≥2 fixture pages in order by following ``meta.pagination.next``;
+  - the bearer credential rides EVERY request, including the continuation page;
+  - ``api.pick`` selects the support-relevant fields;
+  - token-prefix hygiene: no real Paddle API key prefix lands in the connector dir.
+
+No live creds, no network. HTTP is mocked with ``responses``. Bodies mirror Paddle's documented
+example payloads, trimmed to support-relevant fields.
 
     cd runtime && uv run --with . --with pytest --with responses --with vcrpy --no-project \\
         pytest tests/test_paddle_connector.py -q
@@ -29,9 +28,6 @@ import responses as responses_lib
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # make `lib` importable
 
 from lib import api  # noqa: E402
-
-# Import the connector AFTER lib (it registers the manifest).
-import lib.connectors.paddle as paddle_connector  # noqa: E402
 
 API_BASE = "https://api.paddle.com"
 
@@ -64,10 +60,6 @@ _SUB_1 = {
             }
         }
     ],
-    "management_urls": {
-        "cancel": "https://customer-portal.paddle.com/subscriptions/sub_01h9/cancel",
-        "update_payment_method": "https://customer-portal.paddle.com/subscriptions/sub_01h9/update-payment-method",
-    },
 }
 
 _TXN_1 = {
@@ -98,7 +90,7 @@ _CUSTOMER_2 = {
 
 
 def _page(items: list, has_more: bool, next_url: str | None = None) -> dict:
-    """Build a Paddle-shaped response envelope."""
+    """Build a Paddle-shaped response envelope. body_url stops on a null `next`."""
     return {
         "data": items,
         "meta": {
@@ -113,16 +105,14 @@ def _page(items: list, has_more: bool, next_url: str | None = None) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Helper: restore manifests around each test
-# ---------------------------------------------------------------------------
-
 class _PaddleBase(unittest.TestCase):
     def setUp(self):
-        # Preserve manifest registry state; paddle connector registers on import.
         self._saved_env = os.environ.get("RC_CONN_PADDLE")
-        # Use a fake token with a split prefix so the hygiene guard can't flag this file itself.
+        # Fake token with a split prefix so the hygiene guard can't flag this file itself.
         os.environ["RC_CONN_PADDLE"] = "pdl_sdbx_" + "apikey_testfakekey0000000000_FakeSecret22_abc"
+        api.MANIFESTS.clear()
+        api._YAML_LOADED_KEYS.clear()
+        api.load_manifests()
 
     def tearDown(self):
         if self._saved_env is None:
@@ -137,79 +127,60 @@ class _PaddleBase(unittest.TestCase):
 
 class TestPaddleManifest(_PaddleBase):
     def test_yaml_loads_and_maps_every_field(self):
-        """YAML manifest loads via lib.api loader and maps every field."""
-        api.MANIFESTS.clear()
-        api._YAML_LOADED_KEYS.clear()
-        m = api.load_manifests()
-        self.assertIn("paddle", m)
-        p = m["paddle"]
+        self.assertIn("paddle", api.MANIFESTS)
+        p = api.MANIFESTS["paddle"]
         self.assertEqual(p.key, "paddle")
         self.assertEqual(p.base_url, "https://api.paddle.com")
         self.assertEqual(p.auth.strategy, "bearer")
-        self.assertEqual(p.pagination.style, "cursor")
-        self.assertEqual(p.pagination.cursor_param, "after")
-        self.assertEqual(p.pagination.has_more_field, "meta.pagination.has_more")
+        self.assertEqual(p.pagination.style, "body_url")
+        self.assertEqual(p.pagination.next_url_field, "meta.pagination.next")
         self.assertEqual(p.pagination.items_field, "data")
         self.assertEqual(p.pagination.page_size, 50)
         self.assertEqual(p.rate_limit_remaining_header, "")  # no remaining-count header
 
-    def test_connector_registers_manifest(self):
-        """Connector's register() call makes the manifest drivable via lib.api."""
-        self.assertIn("paddle", api.MANIFESTS)
-        m = api.MANIFESTS["paddle"]
-        self.assertEqual(m.base_url, "https://api.paddle.com")
-
 
 # ---------------------------------------------------------------------------
-# 2. Paddle pagination: body-embedded next URL (trigger d)
+# 2. body_url pagination: next URL embedded at meta.pagination.next (absolute)
 # ---------------------------------------------------------------------------
 
 class TestPaddlePagination(_PaddleBase):
     @responses_lib.activate
-    def test_pagination_stitches_two_pages_via_body_next_url(self):
-        """_paddle_pages follows meta.pagination.next as an absolute URL across 2 pages."""
+    def test_collect_stitches_two_pages_via_body_next_url(self):
         page2_url = f"{API_BASE}/customers?per_page=50&after=ctm_02aaaa"
         responses_lib.add(
-            responses_lib.GET,
-            f"{API_BASE}/customers",
-            json=_page([_CUSTOMER_1], has_more=True, next_url=page2_url),
-            status=200,
+            responses_lib.GET, f"{API_BASE}/customers",
+            json=_page([_CUSTOMER_1], has_more=True, next_url=page2_url), status=200,
         )
         responses_lib.add(
-            responses_lib.GET,
-            page2_url,
-            json=_page([_CUSTOMER_2], has_more=False, next_url=None),
-            status=200,
+            responses_lib.GET, page2_url,
+            json=_page([_CUSTOMER_2], has_more=False, next_url=None), status=200,
         )
 
-        all_items = []
-        for batch in paddle_connector._paddle_pages("/customers"):
-            all_items.extend(batch)
+        m = api.MANIFESTS["paddle"]
+        result = api.client(m, token_key="paddle").collect("/customers")
 
-        self.assertEqual(len(all_items), 2)
-        self.assertEqual(all_items[0]["id"], "ctm_01h8441jn5pcwrfhwh78jqt8hk")
-        self.assertEqual(all_items[1]["id"], "ctm_02aaaa")
+        self.assertFalse(result["incomplete"], result["reason"])
+        ids = [it["id"] for it in result["items"]]
+        self.assertEqual(ids, ["ctm_01h8441jn5pcwrfhwh78jqt8hk", "ctm_02aaaa"])  # in order
         self.assertEqual(len(responses_lib.calls), 2)
+        self.assertIn("after=ctm_02aaaa", responses_lib.calls[1].request.url)
 
     @responses_lib.activate
     def test_bearer_credential_on_all_pages_including_continuation(self):
-        """Bearer token rides every request, including the continuation (page 2)."""
         page2_url = f"{API_BASE}/customers?per_page=50&after=ctm_02aaaa"
         responses_lib.add(
-            responses_lib.GET,
-            f"{API_BASE}/customers",
-            json=_page([_CUSTOMER_1], has_more=True, next_url=page2_url),
-            status=200,
+            responses_lib.GET, f"{API_BASE}/customers",
+            json=_page([_CUSTOMER_1], has_more=True, next_url=page2_url), status=200,
         )
         responses_lib.add(
-            responses_lib.GET,
-            page2_url,
-            json=_page([_CUSTOMER_2], has_more=False),
-            status=200,
+            responses_lib.GET, page2_url,
+            json=_page([_CUSTOMER_2], has_more=False), status=200,
         )
 
-        list(paddle_connector._paddle_pages("/customers"))
+        m = api.MANIFESTS["paddle"]
+        api.client(m, token_key="paddle").collect("/customers")
 
+        self.assertEqual(len(responses_lib.calls), 2)
         for call in responses_lib.calls:
             auth = call.request.headers.get("Authorization", "")
             self.assertTrue(auth.startswith("Bearer "), f"Missing Bearer on {call.request.url}")
@@ -217,20 +188,33 @@ class TestPaddlePagination(_PaddleBase):
 
     @responses_lib.activate
     def test_single_page_no_continuation(self):
-        """has_more=False on first page stops pagination immediately."""
+        """A null `next` on the first page stops pagination immediately (has_more ignored)."""
         responses_lib.add(
-            responses_lib.GET,
-            f"{API_BASE}/customers",
-            json=_page([_CUSTOMER_1], has_more=False),
-            status=200,
+            responses_lib.GET, f"{API_BASE}/customers",
+            json=_page([_CUSTOMER_1], has_more=False, next_url=None), status=200,
         )
-
-        all_items = []
-        for batch in paddle_connector._paddle_pages("/customers"):
-            all_items.extend(batch)
-
-        self.assertEqual(len(all_items), 1)
+        m = api.MANIFESTS["paddle"]
+        result = api.client(m, token_key="paddle").collect("/customers")
+        self.assertEqual(len(result["items"]), 1)
         self.assertEqual(len(responses_lib.calls), 1)
+
+    @responses_lib.activate
+    def test_lib_api_cli_drives_manifest(self):
+        """`python -m lib.api get paddle /customers --paginate` works end-to-end."""
+        page2_url = f"{API_BASE}/customers?after=ctm_02aaaa"
+        responses_lib.add(
+            responses_lib.GET, f"{API_BASE}/customers",
+            json=_page([_CUSTOMER_1], has_more=True, next_url=page2_url), status=200,
+        )
+        responses_lib.add(
+            responses_lib.GET, page2_url,
+            json=_page([_CUSTOMER_2], has_more=False), status=200,
+        )
+        rc = api._main(["get", "paddle", "/customers", "--paginate", "--pick", "id,email,status"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(responses_lib.calls), 2)
+        for call in responses_lib.calls:
+            self.assertTrue(call.request.headers.get("Authorization", "").startswith("Bearer "))
 
 
 # ---------------------------------------------------------------------------
@@ -258,202 +242,14 @@ class TestPaddlePick(_PaddleBase):
 
 
 # ---------------------------------------------------------------------------
-# 4. resolve_customer
-# ---------------------------------------------------------------------------
-
-class TestResolveCustomer(_PaddleBase):
-    @responses_lib.activate
-    def test_resolve_by_id(self):
-        """Resolves customer directly by ctm_ ID via GET /customers/{id}."""
-        responses_lib.add(
-            responses_lib.GET,
-            f"{API_BASE}/customers/ctm_01h8441jn5pcwrfhwh78jqt8hk",
-            json={"data": _CUSTOMER_1, "meta": {"request_id": "req_01"}},
-            status=200,
-        )
-        result = paddle_connector.resolve_customer("ctm_01h8441jn5pcwrfhwh78jqt8hk")
-        self.assertIsNotNone(result)
-        self.assertEqual(result["id"], "ctm_01h8441jn5pcwrfhwh78jqt8hk")
-
-    @responses_lib.activate
-    def test_resolve_by_email_exact_match(self):
-        """Resolves customer by email via /customers?search=, exact match preferred."""
-        responses_lib.add(
-            responses_lib.GET,
-            f"{API_BASE}/customers",
-            json=_page([_CUSTOMER_1], has_more=False),
-            status=200,
-        )
-        result = paddle_connector.resolve_customer("alice@example.com")
-        self.assertIsNotNone(result)
-        self.assertEqual(result["email"], "alice@example.com")
-        # Confirm search param was sent
-        req_url = responses_lib.calls[0].request.url
-        self.assertIn("search=", req_url)
-
-    @responses_lib.activate
-    def test_resolve_not_found_returns_none(self):
-        """Returns None when no customer matches."""
-        responses_lib.add(
-            responses_lib.GET,
-            f"{API_BASE}/customers",
-            json=_page([], has_more=False),
-            status=200,
-        )
-        result = paddle_connector.resolve_customer("nobody@example.com")
-        self.assertIsNone(result)
-
-    def test_resolve_empty_ref_raises(self):
-        with self.assertRaises(RuntimeError):
-            paddle_connector.resolve_customer("")
-
-
-# ---------------------------------------------------------------------------
-# 5. support_summary multi-call join (trigger b)
-# ---------------------------------------------------------------------------
-
-class TestSupportSummary(_PaddleBase):
-    @responses_lib.activate
-    def test_full_join_customer_subscriptions_transactions(self):
-        """support_summary does the multi-call join and pre-selects fields."""
-        cid = _CUSTOMER_1["id"]
-        responses_lib.add(
-            responses_lib.GET,
-            f"{API_BASE}/customers/{cid}",
-            json={"data": _CUSTOMER_1, "meta": {"request_id": "r1"}},
-            status=200,
-        )
-        responses_lib.add(
-            responses_lib.GET,
-            f"{API_BASE}/subscriptions",
-            json=_page([_SUB_1], has_more=False),
-            status=200,
-        )
-        responses_lib.add(
-            responses_lib.GET,
-            f"{API_BASE}/transactions",
-            json=_page([_TXN_1], has_more=False),
-            status=200,
-        )
-
-        s = paddle_connector.support_summary(cid)
-        self.assertTrue(s["found"])
-        self.assertEqual(s["customer"]["id"], cid)
-        self.assertEqual(s["customer"]["email"], "alice@example.com")
-        self.assertEqual(len(s["subscriptions"]), 1)
-        self.assertEqual(s["subscriptions"][0]["id"], "sub_01h9jj8h8bnmf9c58pjiyf9jd")
-        self.assertEqual(s["subscriptions"][0]["status"], "active")
-        self.assertEqual(len(s["recent_transactions"]), 1)
-        self.assertEqual(s["recent_transactions"][0]["status"], "completed")
-        # Three distinct endpoints were called.
-        urls = [c.request.url for c in responses_lib.calls]
-        self.assertTrue(any("/customers/" in u for u in urls))
-        self.assertTrue(any("/subscriptions" in u for u in urls))
-        self.assertTrue(any("/transactions" in u for u in urls))
-
-    @responses_lib.activate
-    def test_not_found_customer(self):
-        """Returns found=False dict when customer not found."""
-        responses_lib.add(
-            responses_lib.GET,
-            f"{API_BASE}/customers",
-            json=_page([], has_more=False),
-            status=200,
-        )
-        s = paddle_connector.support_summary("nobody@example.com")
-        self.assertFalse(s["found"])
-        self.assertEqual(s["ref"], "nobody@example.com")
-
-
-# ---------------------------------------------------------------------------
-# 6. summary_to_markdown rendering
-# ---------------------------------------------------------------------------
-
-class TestSummaryToMarkdown(_PaddleBase):
-    def _make_summary(self):
-        return {
-            "found": True,
-            "customer": api.pick(_CUSTOMER_1, "id,email,name,status,created_at,locale,marketing_consent"),
-            "subscriptions": [api.pick(_SUB_1, "id,status,next_billed_at,paused_at,canceled_at")],
-            "recent_transactions": [api.pick(_TXN_1, "id,status,billed_at,details.totals.total,details.totals.currency_code")],
-        }
-
-    def test_markdown_contains_customer_header(self):
-        md = paddle_connector.summary_to_markdown(self._make_summary())
-        self.assertIn("# Paddle:", md)
-        self.assertIn("alice@example.com", md)
-
-    def test_markdown_contains_subscription_status(self):
-        md = paddle_connector.summary_to_markdown(self._make_summary())
-        self.assertIn("active", md)
-        self.assertIn("sub_01h9", md)
-
-    def test_markdown_contains_transaction(self):
-        md = paddle_connector.summary_to_markdown(self._make_summary())
-        self.assertIn("txn_01h9", md)
-        self.assertIn("completed", md)
-
-    def test_not_found_markdown(self):
-        md = paddle_connector.summary_to_markdown({"found": False, "ref": "nobody@example.com"})
-        self.assertIn("not found", md.lower())
-        self.assertIn("nobody@example.com", md)
-
-
-# ---------------------------------------------------------------------------
-# 7. CLI drive (connector main)
-# ---------------------------------------------------------------------------
-
-class TestPaddleCLI(_PaddleBase):
-    @responses_lib.activate
-    def test_cli_customer_command(self):
-        """CLI 'customer' command calls support_summary and prints markdown."""
-        cid = "ctm_01h8441jn5pcwrfhwh78jqt8hk"
-        responses_lib.add(
-            responses_lib.GET,
-            f"{API_BASE}/customers/{cid}",
-            json={"data": _CUSTOMER_1, "meta": {"request_id": "r1"}},
-            status=200,
-        )
-        responses_lib.add(
-            responses_lib.GET,
-            f"{API_BASE}/subscriptions",
-            json=_page([_SUB_1], has_more=False),
-            status=200,
-        )
-        responses_lib.add(
-            responses_lib.GET,
-            f"{API_BASE}/transactions",
-            json=_page([_TXN_1], has_more=False),
-            status=200,
-        )
-        rc = paddle_connector.main(["customer", cid])
-        self.assertEqual(rc, 0)
-
-    @responses_lib.activate
-    def test_lib_api_cli_drives_manifest(self):
-        """python -m lib.api get paddle /customers works for manifest-only direct calls."""
-        responses_lib.add(
-            responses_lib.GET,
-            f"{API_BASE}/customers",
-            json=_page([_CUSTOMER_1], has_more=False),
-            status=200,
-        )
-        rc = api._main(["get", "paddle", "/customers", "--pick", "id,email,status"])
-        self.assertEqual(rc, 0)
-        # Confirm the bearer credential rode the request.
-        auth = responses_lib.calls[0].request.headers.get("Authorization", "")
-        self.assertTrue(auth.startswith("Bearer "))
-
-
-# ---------------------------------------------------------------------------
-# 8. Token-prefix hygiene
+# 4. Token-prefix hygiene
 # ---------------------------------------------------------------------------
 
 class TestPaddleHygiene(unittest.TestCase):
-    """CI guard: no real Paddle API key prefix may land in the connector files.
+    """CI guard: no real Paddle API key prefix may land in the connector files (only manifest.yaml).
 
-    Scoped to the connector dir (manifest + __init__ + __main__), NOT this test file — the test
-    legitimately names the prefixes it hunts for, so scanning itself would be a false positive.
+    Scoped to the connector dir, NOT this test file — the test legitimately names the prefix it
+    hunts for, so scanning itself would be a false positive.
     """
 
     # Split the prefix literal so the guard can't flag this file itself.

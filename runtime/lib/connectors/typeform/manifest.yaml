@@ -5,9 +5,10 @@ kinds: [token, oauth]
 # trip no force-code trigger for typical support grounding. The agent drives it directly via
 # `python -m lib.api get typeform …` and pre-selects fields with `--pick`.
 #
-# Pagination note: /forms uses offset (page/page_size); /forms/{id}/responses uses token-based
-# cursor (pass `after=<last_item.token>` manually for multi-page); single-page (page_size≤1000)
-# covers most support queries. Manifest declares offset style, which drives /forms listing natively.
+# Pagination note: /forms uses 1-based PAGE-NUMBER paging (page/page_size); /forms/{id}/responses
+# uses token-based cursor (pass `after=<last_item.token>` manually for multi-page); single-page
+# (page_size≤1000) covers most support queries. Manifest declares the `page` style, which drives
+# /forms listing natively.
 connector_module: ""
 env_var: RC_CONN_TYPEFORM
 egress_hosts:
@@ -18,8 +19,11 @@ base_url: https://api.typeform.com
 auth:
   strategy: bearer        # PAT or OAuth access token, both as `Authorization: Bearer …`
 pagination:
-  style: offset           # /forms listing: page + page_size; stop when items < page_size
-  offset_param: page      # Typeform uses 1-based page number, not a byte offset
+  # /forms listing uses 1-based PAGE NUMBER (page=1,2,3,…) + page_size, NOT an item-count offset;
+  # stop when a page returns fewer than page_size items.
+  style: page
+  page_param: page        # Typeform uses 1-based page number
+  page_start: 1
   limit_param: page_size
   items_field: items      # both /forms and /forms/{id}/responses wrap the list under `items`
   page_size: 200          # max for /forms (200); responses max is 1000 — agent can override
@@ -43,7 +47,7 @@ help_md: |
   EU-region accounts should set base_url to https://api.eu.typeform.com at connection time.
 
   Pagination:
-  - `/forms` uses offset pagination (page/page_size, max 200/page).
+  - `/forms` uses page-number pagination (1-based `page`/`page_size`, max 200/page).
   - `/forms/{id}/responses` uses token cursors: for >1000 responses, pass `--query after=<token>`
     where <token> is the `.token` field from the last item of the previous page.
     Single-page fetches with `--query page_size=1000` cover the vast majority of support queries.
@@ -64,6 +68,6 @@ help_md: |
   List workspaces:
       python -m lib.api get typeform /workspaces --pick id,name
 
-  Note: the `--paginate` flag drives offset pagination over /forms. For /responses with >1000
+  Note: the `--paginate` flag drives page-number pagination over /forms. For /responses with >1000
   entries use repeated manual `after=<last_token>` calls; a single page_size=1000 is usually
   sufficient for support lookups.

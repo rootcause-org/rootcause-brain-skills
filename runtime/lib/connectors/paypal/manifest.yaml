@@ -14,11 +14,16 @@ auth:
   strategy: oauth2_client_credentials   # host mints the bearer via client_credentials; workspace
                                          # receives a ready-to-use access token as RC_CONN_PAYPAL
 pagination:
-  # PayPal uses page-number pagination (page=1,2,3...), NOT item-count offsets — the script
-  # connector manages paging manually. Declare style=none so the generic paginator does one-shot
-  # GETs; the script handles multi-page list calls itself.
-  style: none
-  page_size: 20          # PayPal default; connector passes page_size explicitly where supported
+  # PayPal uses 1-based page-number pagination (page=1,2,3...), NOT item-count offsets. The generic
+  # `page` style drives it: `page` increments from page_start=1, `page_size` is the per-page limit,
+  # and a short/empty page ends the loop. `python -m lib.api get paypal <list-path> --paginate`
+  # paginates correctly; the script's list helpers reuse this same style with a per-call items_field.
+  style: page
+  page_param: page
+  page_start: 1
+  limit_param: page_size
+  items_field: items     # PayPal list endpoints (e.g. disputes) wrap rows under "items"
+  page_size: 20          # PayPal default page size
 rate_limit:
   remaining_header: ""   # PayPal does not expose a remaining-count header; 429 + Retry-After only
 oauth:

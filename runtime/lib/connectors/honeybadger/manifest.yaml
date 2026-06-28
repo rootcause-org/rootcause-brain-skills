@@ -1,24 +1,23 @@
 key: honeybadger
 name: Honeybadger
 kinds: [token]
-# Script connector: connector_module is set because trigger (d) fires — Honeybadger embeds the next
-# page URL in the JSON body ("links.next" full URL), not in an HTTP Link header. lib.api's built-in
-# `link` style reads RFC 8288 HTTP Link headers only, so the generic loop can't drive this.
-# The connector reuses lib.api's _send_url + _extract_items but hand-rolls the body-links loop.
-connector_module: lib.connectors.honeybadger
+# Manifest-only integration, driven via `python -m lib.api get honeybadger ...`.
+# Honeybadger embeds the next-page URL in the JSON body at `links.next` (a full absolute URL),
+# not in an HTTP Link header. lib.api's `body_url` style follows that URL verbatim and stops when
+# it is absent. Each page's items live under `results`.
+connector_module: ""
 env_var: RC_CONN_HONEYBADGER
 egress_hosts:
   - app.honeybadger.io
 # --- Generic lib.api caller fields (the compact declarative row) ---
-# pagination.style=none because the script owns the loop; these fields still describe the shape
-# so the manifest registers correctly and the script can share the auth/base_url config.
 base_url: https://app.honeybadger.io/v2
 auth:
-  strategy: basic           # Token as HTTP Basic username; password is empty (token:)
-                            # lib.api encodes "token:" as Base64 and sends Authorization: Basic …
+  strategy: basic           # Auth token as HTTP Basic username; password empty (cred is "token:").
+                            # lib.api Base64-encodes it and sends Authorization: Basic …
 pagination:
-  style: none               # The script owns pagination (body-JSON links.next full URL)
-  items_field: results      # Each page's items live under the "results" key
+  style: body_url           # next-page URL lives inside the JSON body
+  next_url_field: links.next   # full absolute URL; absent when exhausted
+  items_field: results      # each page's items live under the "results" key
   page_size: 25             # Honeybadger's max and default per_page
 rate_limit:
   remaining_header: X-RateLimit-Remaining   # 360 req/hr; also sends X-RateLimit-Limit + X-RateLimit-Reset
@@ -29,27 +28,23 @@ help_md: |
   app.honeybadger.io → Profile → Authentication token) — lib.api sends it as `token:` (empty
   password) encoded as Basic auth, which is Honeybadger's documented mechanism.
 
-  Pagination: each list response carries `{"links": {"next": "<full URL>"}, "results": […]}`.
-  The connector follows `links.next` automatically.
+  Pagination is automatic: each list response carries `{"links": {"next": "<full URL>"},
+  "results": […]}`, and `--paginate` follows `links.next` until it is absent.
 
   Rate limit: 360 requests/hour; tracked via X-RateLimit-Remaining.
 
   Common commands (replace PROJECT_ID with your Honeybadger project numeric ID):
 
       # List unresolved faults (errors) for a project, most recent first
-      python -m lib.connectors.honeybadger faults PROJECT_ID \
-        --query q=is:unresolved --query order=recent \
+      python -m lib.api get honeybadger projects/PROJECT_ID/faults \
+        --query q=is:unresolved --query order=recent --paginate \
         --pick id,klass,message,environment,last_notice_at,notices_count,url
 
       # Recent deployments (correlate with error spikes)
-      python -m lib.connectors.honeybadger deploys PROJECT_ID \
-        --query environment=production \
+      python -m lib.api get honeybadger projects/PROJECT_ID/deploys \
+        --query environment=production --paginate \
         --pick created_at,environment,revision,local_username
 
       # List all projects (get project IDs and fault counts)
-      python -m lib.connectors.honeybadger projects \
+      python -m lib.api get honeybadger projects --paginate \
         --pick id,name,fault_count,unresolved_fault_count,last_notice_at
-
-      # Direct lib.api single-page call (no pagination)
-      python -m lib.api get honeybadger v2/projects/PROJECT_ID/faults \
-        --pick id,klass,message,environment,last_notice_at
