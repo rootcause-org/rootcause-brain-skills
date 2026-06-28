@@ -30,7 +30,7 @@ import time
 from dataclasses import dataclass, field
 from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Iterator
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 from lib import oauth
 
@@ -470,9 +470,13 @@ class Client:
         # inside _send_url); for cursor it's a token re-sent as a query param.
         next_token: Any | None = None
         next_url: str | None = None
+        # The host we pin pagination follows to is the ORIGIN request's host (where the agent actually
+        # aimed this call), not the manifest base_url — which may be a multi-tenant placeholder
+        # (e.g. woocommerce `{store_url}`) the agent overrides with an absolute path.
+        origin_url = _join(self.manifest.base_url, path)
         while seen < cap:
             if next_url is not None:  # link / body_url: follow the URL (absolute verbatim, relative joined)
-                resp = self._send_url("GET", next_url, headers=headers)
+                resp = self._send_url("GET", next_url, headers=headers, origin_url=origin_url)
                 body = _parse_json(resp)
                 page = Page(body=body, items=self._extract_items(body), next=self._next_token(body, resp))
             else:
@@ -527,7 +531,7 @@ class Client:
             reason = f"page fetch failed after {len(items)} item(s): {e}"
         return {"items": items, "incomplete": incomplete, "reason": reason}
 
-    def _send_url(self, method: str, url: str, *, headers=None):
+    def _send_url(self, method: str, url: str, *, headers=None, origin_url: str | None = None):
         """Follow a next-page URL from a Link header or JSON body (link / body_url styles).
 
         An absolute URL is used verbatim; a relative path (e.g. recurly ``/sites/.../accounts?cursor=…``,
@@ -536,6 +540,12 @@ class Client:
         import requests
 
         url = _join(self.manifest.base_url, url)
+        # SECURITY: the next-page URL comes from the upstream RESPONSE (body field or Link header). We are
+        # about to re-attach the connector's live credential to it, so a hostile/compromised upstream that
+        # returns `next: https://attacker/…` would otherwise exfiltrate the token (the run egress can be in
+        # wildcard mode). Pin the follow to the ORIGIN request's site; a cross-site next is a hard refusal,
+        # never a silent partial. (origin_url defaults to base_url for any non-paginated direct call.)
+        _assert_same_site(self.manifest.key, origin_url or self.manifest.base_url, url)
         req_headers = dict(self.manifest.default_headers)
         req_headers.update(headers or {})
         empty: dict[str, Any] = {}
@@ -612,6 +622,24 @@ def _join(base: str, path: str) -> str:
     # urljoin drops the base path unless it ends in "/"; we want base_url to be a prefix, so join
     # against base_url + "/" and strip the leading "/" off path.
     return urljoin(base.rstrip("/") + "/", path.lstrip("/"))
+
+
+def _site(host: str) -> str:
+    """Registrable-ish site = the last two DNS labels (``api.github.com`` → ``github.com``,
+    ``us.sentry.io`` → ``sentry.io``). Good enough to pin a pagination follow to the connector's own
+    domain (tolerating legit subdomain drift) without a public-suffix list."""
+    labels = (host or "").lower().rstrip(".").split(".")
+    return ".".join(labels[-2:]) if len(labels) >= 2 else (host or "").lower()
+
+
+def _assert_same_site(key: str, base_url: str, follow_url: str) -> None:
+    base_host = urlsplit(base_url).hostname or ""
+    target_host = urlsplit(follow_url).hostname or ""
+    if base_host and target_host and _site(target_host) != _site(base_host):
+        raise RuntimeError(
+            f"integration {key!r}: refusing to follow a pagination URL to a foreign host "
+            f"{target_host!r} (base host {base_host!r}) — the credential would leak off-site"
+        )
 
 
 def _parse_json(resp) -> Any:

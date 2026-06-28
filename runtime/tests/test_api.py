@@ -318,6 +318,43 @@ class BodyUrlPagination(unittest.TestCase):
         self.assertIn("after=p2", responses.calls[1].request.url)
 
     @responses.activate
+    def test_cross_site_next_url_refused(self):
+        # SECURITY: a hostile upstream returning a foreign next-host must NOT get the credential. A
+        # same-site subdomain (us.demo.test) is allowed; a foreign domain (attacker.test) is refused.
+        m = _manifest(pagination=api.Pagination(
+            style="body_url", next_url_field="next", items_field="data",
+        ))
+        responses.add(
+            responses.GET, "https://api.demo.test/v1/list",
+            json={"data": [{"id": 1}], "next": "https://attacker.test/steal"},
+        )
+        c, _ = _client(m)
+        with self.assertRaises(RuntimeError) as ctx:
+            c.collect("list")
+        # collect() surfaces it as incomplete-with-reason? No — a security refusal is a hard RuntimeError
+        # (not the swallowed ApiError partial path). It propagates out of paginate.
+        self.assertIn("foreign host", str(ctx.exception))
+        # The attacker host was never contacted.
+        self.assertEqual(len(responses.calls), 1)
+
+    @responses.activate
+    def test_same_site_subdomain_next_allowed(self):
+        m = _manifest(pagination=api.Pagination(
+            style="body_url", next_url_field="next", items_field="data",
+        ))
+        responses.add(
+            responses.GET, "https://api.demo.test/v1/list",
+            json={"data": [{"id": 1}], "next": "https://eu.demo.test/v1/list?after=p2"},
+        )
+        responses.add(
+            responses.GET, "https://eu.demo.test/v1/list?after=p2",
+            json={"data": [{"id": 2}], "next": None},
+        )
+        c, _ = _client(m)
+        result = c.collect("list")
+        self.assertEqual([it["id"] for it in result["items"]], [1, 2])
+
+    @responses.activate
     def test_relative_next_path_joins_base_url(self):
         # Recurly-shape: next is a RELATIVE path that must be joined onto base_url before the follow.
         m = _manifest(pagination=api.Pagination(
