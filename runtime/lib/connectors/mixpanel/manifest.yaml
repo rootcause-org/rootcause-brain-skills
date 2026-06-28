@@ -1,0 +1,68 @@
+key: mixpanel
+name: Mixpanel
+kinds: [token]
+# Manifest-only integration: NO connector_module. The Query API returns standard JSON with a
+# session_id cursor for /engage; segmentation, funnels, and retention are single-page. None of the
+# force-code triggers fire (basic auth is native; cursor pagination maps cleanly; no multi-call join;
+# no GraphQL; no search DSL footgun the agent can't handle with --query).
+connector_module: ""
+env_var: RC_CONN_MIXPANEL
+egress_hosts:
+  - mixpanel.com
+  - "*.mixpanel.com"   # covers api-eu.mixpanel.com, api-in.mixpanel.com, data-eu.mixpanel.com, etc.
+# --- Generic lib.api caller fields (the compact declarative row) ---
+# Service Account credentials are injected as "username:secret" (colon-separated) into
+# RC_CONN_MIXPANEL and sent via HTTP Basic Auth on every request.
+base_url: https://mixpanel.com/api/2.0
+auth:
+  strategy: basic        # Service Account: "username:secret" → Authorization: Basic <base64>
+pagination:
+  # /engage (Query Profiles) paginates via session_id cursor + page index. The session_id is
+  # returned in the response and must be echoed back for subsequent pages; the loop stops when
+  # session_id is absent or empty. /segmentation, /funnels, /retention are single-page — passing
+  # --paginate on those is a safe no-op (session_id absent → cursor = None → loop ends after page 1).
+  style: cursor
+  cursor_field: session_id   # dotted path to the next-page token in the response body
+  cursor_param: session_id   # query param name to send the token back on subsequent pages
+  has_more_field: ""         # absent ⇒ loop until session_id is empty/null
+  items_field: results       # /engage wraps profiles in "results"; single-page endpoints are objects
+  page_size: 1000            # Mixpanel default for /engage; ignored by non-paginating endpoints
+rate_limit:
+  remaining_header: ""   # Mixpanel enforces 60 req/hr via 429 + Retry-After, no remaining header
+help_md: |
+  Reads Mixpanel Query API for support diagnosis: user profiles (events, properties), funnel
+  conversion, event segmentation, and retention data. Credential is a Service Account pair stored
+  as "username:secret" in RC_CONN_MIXPANEL — injected as HTTP Basic Auth on every request.
+  Read-only (GET requests only); we never write to Mixpanel.
+
+  **Regions:** default base_url targets US. For EU or India projects, pass the full absolute URL
+  (e.g. https://eu.mixpanel.com/api/2.0/segmentation?...) or set base_url in the connection
+  config. EU host: eu.mixpanel.com; India host: in.mixpanel.com.
+
+  **Rate limits:** 60 queries/hour, 5 concurrent (Query API). 429 + Retry-After is honoured
+  automatically by lib.api.
+
+  **Key endpoints** (all require --query project_id=<id>):
+
+  User profiles (paginated — use --paginate):
+      python -m lib.api get mixpanel engage \
+        --query project_id=123456 \
+        --query where='properties["$email"]=="user@example.com"' \
+        --paginate --pick 'results.*.\\$distinct_id,results.*.\\$properties.\\$email,results.*.\\$properties.\\$name'
+
+  Event segmentation (single page):
+      python -m lib.api get mixpanel segmentation \
+        --query project_id=123456 --query event="Signed Up" \
+        --query from_date=2024-01-01 --query to_date=2024-01-31 \
+        --query type=unique --query unit=day
+
+  Funnels (single page):
+      python -m lib.api get mixpanel funnels \
+        --query project_id=123456 --query funnel_id=<id> \
+        --query from_date=2024-01-01 --query to_date=2024-01-31
+
+  Retention (single page):
+      python -m lib.api get mixpanel retention \
+        --query project_id=123456 \
+        --query from_date=2024-01-01 --query to_date=2024-01-31 \
+        --query retention_type=birth --query born_event="Signed Up"

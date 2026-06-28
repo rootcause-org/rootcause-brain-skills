@@ -1,0 +1,60 @@
+key: shopify
+name: Shopify
+kinds: [token, oauth]
+# GraphQL transport (POST) + deeply nested edges/nodes requiring field pre-selection trigger a script
+# connector. lib.api is GET/REST-only; a script wraps GraphQL POSTs using requests directly but still
+# delegates retry/backoff to lib.api where possible.
+connector_module: lib.connectors.shopify
+# The injected credential is the Admin API access token (offline/online OAuth token or a private-app
+# token). A per-shop token has no fixed prefix (unlike Stripe rk_/sk_).
+env_var: RC_CONN_SHOPIFY
+egress_hosts:
+  - "*.myshopify.com"   # per-shop subdomain; the agent supplies the shop slug via --shop
+# --- Generic lib.api caller fields ---
+# base_url has no fixed value: Shopify is per-shop (https://<shop>.myshopify.com/…). The connector
+# builds it from the --shop arg. The generic `python -m lib.api get shopify …` CLI is NOT usable for
+# GraphQL, so base_url is intentionally left as a placeholder that signals "use the connector CLI".
+base_url: "https://{shop}.myshopify.com/admin/api/2025-01/graphql.json"
+auth:
+  # X-Shopify-Access-Token header — lib.api's api_key_header strategy places the raw credential
+  # (no "Bearer" prefix) in the named header.
+  strategy: api_key_header
+  name: X-Shopify-Access-Token
+pagination:
+  # GraphQL cursor pagination is embedded in the query body (`after` arg / pageInfo.endCursor) — the
+  # generic lib.api paginator can't drive it. The connector script handles pagination internally.
+  style: none
+  page_size: 50
+rate_limit:
+  # Shopify uses a query-cost throttle (extensions.cost in the response body), not a remaining-count
+  # response header. 429 + Retry-After is still possible; lib.api handles that.
+  remaining_header: ""
+oauth:
+  # Per-shop OAuth: the {shop} placeholder is filled by the connect flow. Shopify uses the
+  # authorization_code grant with per-shop auth/token URLs; the connect flow substitutes the slug.
+  auth_url: https://{shop}.myshopify.com/admin/oauth/authorize
+  token_url: https://{shop}.myshopify.com/admin/oauth/access_token
+  default_scopes:
+    - read_orders
+    - read_customers
+    - read_products
+    - read_inventory
+help_md: |
+  Reads Shopify orders, customers, products, and inventory via the Admin GraphQL API for support
+  diagnosis. Uses a per-shop offline access token (or OAuth) — read-only by declared scopes.
+
+  The connector script (not the generic lib.api CLI) must be used because Shopify's Admin API is
+  GraphQL (POST), not REST:
+
+      python -m lib.connectors.shopify orders   --shop mystore  --limit 10
+      python -m lib.connectors.shopify customer --shop mystore  --ref cus@example.com
+      python -m lib.connectors.shopify product  --shop mystore  --id gid://shopify/Product/123456
+
+  RC_CONN_SHOPIFY must be set to the offline Admin API access token for the target shop.
+  The --shop argument is the Shopify subdomain (e.g. "mystore" → mystore.myshopify.com).
+
+  Pagination: `orders --limit N` auto-pages up to N orders (default 50, max 250 per page) using
+  GraphQL cursor pagination (pageInfo.endCursor / hasNextPage).
+
+  Scopes required: read_orders, read_customers, read_products (read_inventory optional).
+  For orders older than 60 days, the app also needs read_all_orders (requires Shopify approval).

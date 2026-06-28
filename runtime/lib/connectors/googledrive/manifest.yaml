@@ -1,0 +1,73 @@
+key: googledrive
+name: Google Drive
+kinds: [oauth]
+# Manifest-only integration: NO connector_module. Drive file/folder reads trip no force-code
+# trigger — the agent drives it directly via `python -m lib.api get googledrive …` and the `q`
+# search param plus `--pick` handle field selection inline.
+connector_module: ""
+env_var: RC_CONN_GOOGLEDRIVE
+egress_hosts:
+  - www.googleapis.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://www.googleapis.com/drive/v3
+auth:
+  strategy: bearer        # OAuth access token injected as RC_CONN_GOOGLEDRIVE; refreshed host-side
+pagination:
+  style: cursor           # responses carry nextPageToken; send back as pageToken
+  cursor_param: pageToken
+  cursor_field: nextPageToken
+  has_more_field: ""      # absent nextPageToken means no more pages (loop terminates on empty cursor)
+  items_field: files      # files.list wraps the list under "files"
+  page_size: 100          # Drive max is 100 for shared drives; safe default for all endpoints
+rate_limit:
+  remaining_header: ""    # Drive does not expose a remaining-count header; paced by 429 + backoff
+oauth:
+  auth_url: https://accounts.google.com/o/oauth2/v2/auth
+  token_url: https://oauth2.googleapis.com/token
+  # CASA footgun: drive.readonly is a RESTRICTED scope (triggers OAuth App Verification + security
+  # assessment for server-side storage). For metadata-only use cases, prefer
+  # drive.metadata.readonly (sensitive, not restricted). Use drive.readonly only when file content
+  # download is required. Both are listed here; operators should pick the narrowest that fits.
+  default_scopes:
+    - https://www.googleapis.com/auth/drive.metadata.readonly
+help_md: |
+  Reads Google Drive file metadata, folder contents, and shared drive listings for support
+  diagnosis ("which files exist, who owns them, when were they last modified"). Read-only — only
+  ever issues GETs against the Drive v3 REST API.
+
+  **CASA scope note:** `drive.metadata.readonly` (sensitive) covers listing/searching file metadata
+  and is sufficient for most support cases. `drive.readonly` (restricted, requires Google security
+  assessment for server-side storage) is needed only if downloading file content. Use the narrowest
+  scope that fits the project's need.
+
+  **Pagination:** cursor-based via `nextPageToken` / `pageToken`. Use `--paginate` to auto-collect
+  all pages. `pageSize` max is 100.
+
+  **Common paths and examples:**
+
+      # List all files (metadata), paginating all pages, picking support-relevant fields
+      python -m lib.api get googledrive files \
+        --query pageSize=100 --paginate \
+        --pick id,name,mimeType,modifiedTime,owners.*.emailAddress,webViewLink
+
+      # Search for files by name or type (q is the Drive search syntax)
+      python -m lib.api get googledrive files \
+        --query "q=name contains 'invoice'" --query pageSize=100 --paginate \
+        --pick id,name,mimeType,modifiedTime,webViewLink
+
+      # Get metadata for a specific file by ID
+      python -m lib.api get googledrive files/FILE_ID \
+        --pick id,name,mimeType,size,modifiedTime,owners.*.emailAddress
+
+      # List shared drives the service account or user has access to
+      python -m lib.api get googledrive drives \
+        --query pageSize=100 --paginate \
+        --pick id,name,kind
+
+      # Get current user / storage quota info
+      python -m lib.api get googledrive about \
+        --query fields=storageQuota,user \
+        --pick storageQuota,user.emailAddress
+
+  Common paths: `files`, `files/{fileId}`, `drives`, `drives/{driveId}`, `about`.
+  The `q` parameter accepts Drive search syntax, e.g. `mimeType='application/vnd.google-apps.folder'`.

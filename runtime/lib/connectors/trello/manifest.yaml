@@ -1,0 +1,44 @@
+key: trello
+name: Trello
+kinds: [token]
+# Script connector: Trello auth requires TWO query params (key= + token=) which lib.api's
+# single query_param strategy can't express. RC_CONN_TRELLO carries both as "api_key:user_token".
+connector_module: lib.connectors.trello
+env_var: RC_CONN_TRELLO
+egress_hosts:
+  - api.trello.com
+# --- Generic lib.api caller fields ---
+base_url: https://api.trello.com/1
+# auth.strategy=none: the script injects key+token as explicit query params itself.
+# Credential format stored in RC_CONN_TRELLO: "<api_key>:<user_token>"
+auth:
+  strategy: none
+pagination:
+  # Trello list endpoints return a bounded flat array per call. The script uses
+  # before= cursors when walking actions history; simple GET calls set limit= directly.
+  style: none
+  page_size: 50
+rate_limit:
+  # Token-level pacing header (advisory; lib.api still honours 429 + Retry-After).
+  remaining_header: x-rate-limit-api-token-remaining
+help_md: |
+  Reads Trello boards, lists, cards, members, and action history for support diagnosis.
+  Auth token is stored as "api_key:user_token" in RC_CONN_TRELLO (two values, colon-separated).
+
+  The connector renders a per-board support summary (columns / open cards / recent activity) or
+  searches for a member's cards across a board.
+
+  CLI:
+      # Board summary (lists + card counts + recent actions)
+      python -m lib.connectors.trello board <BOARD_ID>
+
+      # Cards assigned to a member on a board
+      python -m lib.connectors.trello member-cards <BOARD_ID> <MEMBER_ID_OR_USERNAME>
+
+  Raw reads via lib.api (after setting RC_CONN_TRELLO="<key>:<token>"):
+      python -m lib.api get trello boards/<ID>/cards --query limit=50
+      python -m lib.api get trello boards/<ID>/actions --query filter=createCard,commentCard --query limit=50
+      python -m lib.api get trello members/me/boards --query filter=open
+
+  Note: the generic lib.api CLI omits the key/token params — use the connector CLI or inject them
+  manually via --query key=... --query token=... when bypassing the connector.

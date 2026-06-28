@@ -1,0 +1,88 @@
+key: pipedrive
+name: Pipedrive
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Pipedrive's offset pagination and api-key-header
+# auth are natively handled by lib.api; support reads (deals/persons/orgs/activities/notes) need no
+# multi-call join or field pre-selection — the agent drives them directly with `python -m lib.api`.
+connector_module: ""
+env_var: RC_CONN_PIPEDRIVE
+egress_hosts:
+  - api.pipedrive.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.pipedrive.com/v1
+auth:
+  # Token auth: Pipedrive expects the API token in the `x-api-token` header (not a query param).
+  # OAuth access tokens are presented as Bearer per the standard flow; the host injects a fresh
+  # access token as RC_CONN_PIPEDRIVE for oauth connections — identical at the container boundary.
+  strategy: api_key_header
+  name: x-api-token
+pagination:
+  # Offset-based: send `start` (offset) + `limit` (page size). Response wraps items in `data` and
+  # signals more items at `additional_data.pagination.more_items_in_collection`. lib.api advances
+  # start by len(page.items) until the page is short (< page_size) — the `has_more` dotted path is
+  # not needed for the offset loop itself (the short-page sentinel is enough), but declared here for
+  # documentation completeness. Max limit Pipedrive accepts is 500; 100 is a safe default.
+  style: offset
+  offset_param: start
+  limit_param: limit
+  items_field: data         # every list response wraps items under a top-level "data" key
+  page_size: 100
+rate_limit:
+  # Pipedrive enforces limits per API token (10 req/s, daily caps). No standard remaining-count
+  # header is documented; lib.api handles 429 + Retry-After automatically.
+  remaining_header: ""
+oauth:
+  auth_url: https://oauth.pipedrive.com/oauth/authorize
+  token_url: https://oauth.pipedrive.com/oauth/token
+  default_scopes: [deals:read, contacts:read, activities:read, leads:read]
+help_md: |
+  Reads Pipedrive CRM deals, persons, organizations, activities, notes, and leads for support
+  diagnosis ("who is this customer, what is their deal stage, recent activity, open leads").
+  Read-only grounding — only ever issues GETs.
+
+  Authentication: store the Pipedrive API token in RC_CONN_PIPEDRIVE. The token is sent as the
+  `x-api-token` request header. For OAuth connections the host injects a fresh access token at run
+  time — no action needed by the agent.
+
+  Pagination is offset-based: response envelope `{"success": true, "data": [...], "additional_data":
+  {"pagination": {"start": 0, "limit": 100, "more_items_in_collection": true, "next_start": 100}}}`.
+  Pass `--paginate` to auto-follow pages; lib.api advances `start` by the page size until the page
+  is short.
+
+  Common paths (all GET under https://api.pipedrive.com/v1):
+
+      # List all deals (with person + org embedded)
+      python -m lib.api get pipedrive deals --paginate \
+        --pick id,title,status,value,currency,stage_id,person_id.name,org_id.name,close_time,add_time
+
+      # Single deal by id
+      python -m lib.api get pipedrive deals/123 \
+        --pick data.id,data.title,data.status,data.value,data.person_id.name,data.org_id.name
+
+      # Deals for a specific person (by person_id)
+      python -m lib.api get pipedrive deals --query person_id=456 --paginate \
+        --pick id,title,status,stage_id,value
+
+      # List persons (contacts)
+      python -m lib.api get pipedrive persons --paginate \
+        --pick id,name,email.*.value,phone.*.value,org_id.name,owner_id.name
+
+      # Search persons by name or email
+      python -m lib.api get pipedrive persons/search --query term=alice@example.com \
+        --pick data.items.*.item.id,data.items.*.item.name,data.items.*.item.emails.*.value
+
+      # List organizations
+      python -m lib.api get pipedrive organizations --paginate \
+        --pick id,name,address,people_count,owner_id.name
+
+      # Activities for a deal
+      python -m lib.api get pipedrive activities --query deal_id=123 --paginate \
+        --pick id,type,subject,done,due_date,note,person_id.name
+
+      # Notes for a deal
+      python -m lib.api get pipedrive notes --query deal_id=123 --paginate \
+        --pick id,content,add_time,user_id.name
+
+      # List leads
+      python -m lib.api get pipedrive leads --paginate \
+        --pick id,title,owner_id,person_id,organization_id,value,add_time,is_archived

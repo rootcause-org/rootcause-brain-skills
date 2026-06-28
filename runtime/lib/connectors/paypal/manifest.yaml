@@ -1,0 +1,63 @@
+key: paypal
+name: PayPal
+kinds: [token, oauth]
+# Script connector: force-code triggers (a) field pre-selection (PayPal objects are large HATEOAS
+# responses) and (b) multi-call join (order → dispute lookup → subscription) both fire. A manifest-
+# only row is also present so `python -m lib.api get paypal <path>` still works for ad-hoc reads.
+connector_module: lib.connectors.paypal
+env_var: RC_CONN_PAYPAL
+egress_hosts:
+  - api-m.paypal.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api-m.paypal.com
+auth:
+  strategy: oauth2_client_credentials   # host mints the bearer via client_credentials; workspace
+                                         # receives a ready-to-use access token as RC_CONN_PAYPAL
+pagination:
+  # PayPal uses page-number pagination (page=1,2,3...), NOT item-count offsets — the script
+  # connector manages paging manually. Declare style=none so the generic paginator does one-shot
+  # GETs; the script handles multi-page list calls itself.
+  style: none
+  page_size: 20          # PayPal default; connector passes page_size explicitly where supported
+rate_limit:
+  remaining_header: ""   # PayPal does not expose a remaining-count header; 429 + Retry-After only
+oauth:
+  auth_url: https://www.paypal.com/signin/authorize
+  token_url: https://api-m.paypal.com/v1/oauth2/token
+  default_scopes:
+    - https://uri.paypal.com/services/disputes/read-buyer
+    - https://uri.paypal.com/services/disputes/read-seller
+    - https://uri.paypal.com/services/invoicing
+    - https://uri.paypal.com/services/subscriptions
+    - https://uri.paypal.com/services/reporting/search/read
+help_md: |
+  Reads PayPal orders, disputes, subscriptions, invoices, and transaction history for billing-
+  support diagnosis. Auth: the host exchanges client_id+secret via the client_credentials grant
+  and injects the bearer as RC_CONN_PAYPAL — the workspace never sees the client secret.
+
+  Connector CLI (recommended — pre-selects support-relevant fields):
+
+      python -m lib.connectors.paypal order 5O190127TN364715T
+      python -m lib.connectors.paypal dispute PP-D-12345
+      python -m lib.connectors.paypal subscription I-BW452GLLEP1G
+
+  Ad-hoc GETs via lib.api (single object, no pagination):
+
+      python -m lib.api get paypal v2/checkout/orders/ORDER_ID
+      python -m lib.api get paypal v1/customer/disputes/DISPUTE_ID
+      python -m lib.api get paypal v1/billing/subscriptions/SUB_ID
+      python -m lib.api get paypal v2/invoicing/invoices/INV_ID
+
+  Transaction search (required: start_date + end_date, ISO8601, max 31-day window):
+
+      python -m lib.api get paypal v1/reporting/transactions \
+        --query start_date=2024-01-01T00:00:00-0700 \
+        --query end_date=2024-01-31T23:59:59-0700 \
+        --query fields=all
+
+  List disputes (open/resolved):
+
+      python -m lib.api get paypal v1/customer/disputes \
+        --query dispute_state=REQUIRED_ACTION
+
+  All responses are read-only GETs; we never mutate PayPal state.

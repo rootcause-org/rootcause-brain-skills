@@ -1,0 +1,78 @@
+key: gitlab
+name: GitLab
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Standard GitLab reads (issues/MRs/pipelines/
+# commits/projects) trip no force-code trigger — the agent drives it directly via
+# `python -m lib.api get gitlab …` and pre-selects fields with `--pick`.
+connector_module: ""
+env_var: RC_CONN_GITLAB
+egress_hosts:
+  - gitlab.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+# NOTE: This manifest targets gitlab.com. Self-hosted GitLab replaces the base_url host with the
+# customer's own domain (e.g. https://gitlab.example.com/api/v4); the egress_hosts entry must
+# also be updated to match. The agent can supply a full absolute URL instead of a path to hit a
+# self-hosted instance without editing the manifest.
+base_url: https://gitlab.com/api/v4
+auth:
+  strategy: api_key_header   # PAT is presented as `PRIVATE-TOKEN: <token>` per GitLab docs;
+  name: PRIVATE-TOKEN        # bearer also works but PAT users expect this header natively.
+pagination:
+  style: link                # RFC 8288 `Link: <…>; rel="next"` headers — same shape as GitHub;
+  items_field: ""            # list endpoints return a bare JSON array (the page IS the list).
+  page_size: 100             # advisory; pass --query per_page=100 for fewer round-trips.
+default_headers:
+  Content-Type: application/json
+rate_limit:
+  # GitLab.com rate-limits via 429 + Retry-After (honoured by lib.api). No stable remaining-count
+  # header is documented for the public REST API.
+  remaining_header: ""
+oauth:
+  auth_url: https://gitlab.com/oauth/authorize
+  token_url: https://gitlab.com/oauth/token
+  default_scopes: [read_api]   # read_api grants read access to all groups/projects/registry/packages
+help_md: |
+  Reads GitLab issues, merge requests, pipelines, jobs, commits, and project metadata for support
+  diagnosis ("is this a known bug / what MR fixed it / did the pipeline pass"). Token or OAuth,
+  both read-only — only ever issues GETs.
+
+  Authentication uses a Personal Access Token (PAT) with the `read_api` scope, passed as the
+  `PRIVATE-TOKEN` header. OAuth tokens (bearer) are also supported by GitLab and used when
+  `kind=oauth`.
+
+  Pagination follows RFC 8288 `Link` headers (`rel="next"`). GitLab defaults to 20 items/page,
+  so pass `--query per_page=100` for fewer round-trips.
+
+  Namespaced paths use `{namespace}/{project}` URI-encoded as `{namespace}%2F{project}` in the
+  `/projects/:id/…` family, or look up the numeric project ID first and use that.
+
+  Common paths and example commands:
+
+      # List open issues for a project (use numeric project ID or URI-encoded path)
+      python -m lib.api get gitlab projects/123/issues \
+        --query state=opened --query per_page=100 --paginate \
+        --pick iid,title,state,web_url,labels,assignees.*.name
+
+      # List merge requests
+      python -m lib.api get gitlab projects/123/merge_requests \
+        --query state=all --query per_page=100 --paginate \
+        --pick iid,title,state,web_url,merged_at,assignees.*.name
+
+      # Recent pipeline runs (useful for CI failure diagnosis)
+      python -m lib.api get gitlab projects/123/pipelines \
+        --query per_page=20 --paginate \
+        --pick id,status,ref,web_url,created_at
+
+      # Commits on the default branch
+      python -m lib.api get gitlab projects/123/repository/commits \
+        --query per_page=100 --paginate \
+        --pick id,short_id,title,author_name,created_at,web_url
+
+      # Resolve namespace/path to a numeric project ID
+      python -m lib.api get gitlab projects \
+        --query search=my-project --query per_page=5 \
+        --pick id,name_with_namespace,web_url
+
+  For self-hosted GitLab, pass an absolute URL:
+      python -m lib.api get gitlab https://gitlab.example.com/api/v4/projects/123/issues \
+        --query per_page=100 --paginate

@@ -1,0 +1,103 @@
+key: jira
+name: Jira
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Standard Jira reads (issues, comments, projects,
+# users, sprints) trip no force-code trigger — basic auth, standard offset pagination (startAt/
+# maxResults/total), no multi-call join required. The agent drives it directly via
+# `python -m lib.api get jira …` and pre-selects fields with --pick.
+#
+# Auth note: token kind stores "email@example.com:api_token"; the `basic` strategy base64-encodes
+# it as the Authorization header. Jira Cloud requires the email as the Basic username and a
+# user-generated API token as the password — NOT the account password.
+#
+# Base URL: Jira Cloud sites are per-account subdomains. The credential (RC_CONN_JIRA) must be
+# set to "email:token" and the agent supplies the site FQDN as the base_url override or as the
+# leading path segment, e.g. --query base=mysite.atlassian.net. The placeholder below documents
+# the expected shape; see help_md for how to supply the site at call time.
+connector_module: ""
+env_var: RC_CONN_JIRA
+egress_hosts:
+  - "*.atlassian.net"         # per-account Jira Cloud subdomain (mysite.atlassian.net)
+  - api.atlassian.com         # OAuth 2.0 token exchange + accessible-resources endpoint
+# --- Generic lib.api caller fields (the compact declarative row) ---
+# The base_url uses a literal placeholder; the agent resolves it by supplying the site FQDN as a
+# leading path prefix or through --query site=... when invoking the connector. See help_md.
+base_url: https://your-site.atlassian.net/rest/api/3
+auth:
+  strategy: basic             # RFC 7617 Basic: credential = "email:api_token", base64-encoded.
+                              # Jira Cloud does not accept the account password — use an API token
+                              # from https://id.atlassian.com/manage-profile/security/api-tokens
+pagination:
+  style: offset               # Jira offset: startAt advances by page length; stop when page < maxResults
+  offset_param: startAt       # 0-based item offset
+  limit_param: maxResults     # items per page
+  items_field: issues         # default list envelope for /search and /issue (use --pick for other shapes)
+  page_size: 50               # Jira Cloud default; 100 is the documented maximum
+rate_limit:
+  remaining_header: ""        # Jira Cloud does not expose a remaining-count header; 429 + Retry-After
+                              # is honoured automatically by lib.api's retry layer
+default_headers:
+  Accept: application/json
+oauth:
+  auth_url: https://auth.atlassian.com/authorize
+  token_url: https://auth.atlassian.com/oauth/token
+  # Minimal read scopes for Jira Cloud grounding:
+  #   read:jira-work — read issues, comments, attachments, worklogs
+  #   read:jira-user — read user/account details
+  #   offline_access — receive a refresh token (required for server-side refresh)
+  default_scopes: [read:jira-work, read:jira-user, offline_access]
+help_md: |
+  Reads Jira Cloud issues, comments, projects, users, sprints, and changelogs for support
+  diagnosis ("what is the status of ticket X, what comments have been posted, who is the assignee,
+  is there a related sprint or fix version"). Read-only — only ever issues GETs.
+
+  **Credential (token kind):** store as "email:api_token" where api_token is a user API token
+  from https://id.atlassian.com/manage-profile/security/api-tokens — NOT the account password.
+  The `basic` strategy base64-encodes the pair and places it in Authorization.
+
+  **Site substitution:** Jira Cloud sites live at `<your-site>.atlassian.net`. Because each
+  project uses a different subdomain, the manifest base_url is a documentation placeholder
+  (`your-site.atlassian.net`). Supply the real FQDN by passing an absolute URL as the path arg:
+
+      python -m lib.api get jira https://mysite.atlassian.net/rest/api/3/issue/PROJ-123 \
+        --pick id,key,fields.summary,fields.status.name,fields.assignee.displayName
+
+  Alternatively, register a project-specific manifest with the real base_url in the brain's
+  grounding helpers (recommended — no absolute URLs in calls).
+
+  **Pagination:** offset-style (startAt/maxResults/total); items live under `issues` for search
+  and issue-list responses. Other endpoints (projects, users, boards) use different item keys —
+  use --pick to navigate those without --paginate, or supply items_field override in a custom call.
+
+  Common paths (relative to `https://mysite.atlassian.net/rest/api/3`):
+
+      # JQL search — the primary way to find issues; paginated under "issues"
+      python -m lib.api get jira https://mysite.atlassian.net/rest/api/3/search \
+        --query jql="project=PROJ AND status!=Done ORDER BY updated DESC" \
+        --query maxResults=50 --paginate \
+        --pick key,fields.summary,fields.status.name,fields.assignee.displayName,fields.updated
+
+      # Single issue with comments and status history
+      python -m lib.api get jira https://mysite.atlassian.net/rest/api/3/issue/PROJ-123 \
+        --query expand=changelog,comment \
+        --pick key,fields.summary,fields.status.name,fields.assignee.displayName,\
+  fields.reporter.displayName,fields.priority.name,fields.fixVersions.*.name,\
+  fields.comment.comments.*.body.content,changelog.histories.*.items
+
+      # List projects the token can access
+      python -m lib.api get jira https://mysite.atlassian.net/rest/api/3/project/search \
+        --pick values.*.key,values.*.name,values.*.projectTypeKey
+
+      # Get a user's issue activity
+      python -m lib.api get jira https://mysite.atlassian.net/rest/api/3/search \
+        --query jql="assignee=user@example.com AND updated>=-7d" \
+        --pick key,fields.summary,fields.status.name,fields.updated
+
+      # List sprints for a board (Jira Software / Agile)
+      python -m lib.api get jira https://mysite.atlassian.net/rest/agile/1.0/board/{boardId}/sprint \
+        --query state=active,closed \
+        --pick values.*.id,values.*.name,values.*.state,values.*.startDate,values.*.endDate
+
+  For OAuth 2.0 connections the base URL changes to the Atlassian API proxy:
+  `https://api.atlassian.com/ex/jira/{cloudId}/rest/api/3` where {cloudId} is obtained from
+  `GET https://api.atlassian.com/oauth/token/accessible-resources`.

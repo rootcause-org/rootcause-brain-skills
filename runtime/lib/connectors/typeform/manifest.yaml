@@ -1,0 +1,69 @@
+key: typeform
+name: Typeform
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Core Typeform reads (forms, responses, workspaces)
+# trip no force-code trigger for typical support grounding. The agent drives it directly via
+# `python -m lib.api get typeform …` and pre-selects fields with `--pick`.
+#
+# Pagination note: /forms uses offset (page/page_size); /forms/{id}/responses uses token-based
+# cursor (pass `after=<last_item.token>` manually for multi-page); single-page (page_size≤1000)
+# covers most support queries. Manifest declares offset style, which drives /forms listing natively.
+connector_module: ""
+env_var: RC_CONN_TYPEFORM
+egress_hosts:
+  - api.typeform.com
+  - api.eu.typeform.com
+# --- Generic lib.api caller fields ---
+base_url: https://api.typeform.com
+auth:
+  strategy: bearer        # PAT or OAuth access token, both as `Authorization: Bearer …`
+pagination:
+  style: offset           # /forms listing: page + page_size; stop when items < page_size
+  offset_param: page      # Typeform uses 1-based page number, not a byte offset
+  limit_param: page_size
+  items_field: items      # both /forms and /forms/{id}/responses wrap the list under `items`
+  page_size: 200          # max for /forms (200); responses max is 1000 — agent can override
+rate_limit:
+  remaining_header: ""    # Typeform paces via 429 + Retry-After; no remaining-count header
+oauth:
+  auth_url: https://api.typeform.com/oauth/authorize
+  token_url: https://api.typeform.com/oauth/token
+  default_scopes:
+    - forms:read
+    - responses:read
+    - workspaces:read
+    - accounts:read
+help_md: |
+  Reads Typeform forms, responses, and workspaces for support diagnosis — which form a user
+  submitted, what answers they gave, when they submitted, and their contact info. Read-only;
+  only ever issues GETs.
+
+  Auth: Personal Access Token (Typeform PAT, format tfp+_…) or OAuth. Both presented as
+  `Authorization: Bearer …`.
+  EU-region accounts should set base_url to https://api.eu.typeform.com at connection time.
+
+  Pagination:
+  - `/forms` uses offset pagination (page/page_size, max 200/page).
+  - `/forms/{id}/responses` uses token cursors: for >1000 responses, pass `--query after=<token>`
+    where <token> is the `.token` field from the last item of the previous page.
+    Single-page fetches with `--query page_size=1000` cover the vast majority of support queries.
+
+  Common paths and examples:
+
+  List all forms:
+      python -m lib.api get typeform /forms --paginate --pick id,title,last_updated_at
+
+  Get a single form (schema + field definitions):
+      python -m lib.api get typeform /forms/FORM_ID --pick id,title,fields
+
+  Search for a specific respondent's answers (filter by query string or since/until):
+      python -m lib.api get typeform /forms/FORM_ID/responses \
+        --query page_size=100 --query since=2024-01-01 --query query=user@example.com \
+        --pick items.*.submitted_at,items.*.answers,items.*.hidden
+
+  List workspaces:
+      python -m lib.api get typeform /workspaces --pick id,name
+
+  Note: the `--paginate` flag drives offset pagination over /forms. For /responses with >1000
+  entries use repeated manual `after=<last_token>` calls; a single page_size=1000 is usually
+  sufficient for support lookups.

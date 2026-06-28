@@ -1,0 +1,55 @@
+key: helpscout
+name: Help Scout
+kinds: [oauth]
+# Script connector — force-code trigger (d): Help Scout uses page-number pagination (?page=N)
+# with termination signalled by absence of `_links.next` in the response BODY (not RFC 8288
+# Link: headers). lib.api's `link` style follows Link: headers; its `offset` style increments
+# by item count (not page number). Neither maps cleanly, so the connector hand-rolls the loop
+# using fetch_page + page.number/totalPages checks.
+connector_module: lib.connectors.helpscout
+env_var: RC_CONN_HELPSCOUT
+egress_hosts:
+  - api.helpscout.net
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.helpscout.net/v2
+auth:
+  strategy: oauth2_client_credentials   # client_id + client_secret → bearer; host mints+refreshes
+# pagination is handled by the connector script (page-number style not expressible in lib.api)
+pagination:
+  style: none           # generic paginator is not used; connector drives pages manually
+  items_field: ""
+  page_size: 25
+rate_limit:
+  remaining_header: X-RateLimit-Remaining-Minute   # advisory; also sends 429 + X-RateLimit-Retry-After
+oauth:
+  auth_url: ""          # client_credentials only — no interactive authorize step
+  token_url: https://api.helpscout.net/v2/oauth2/token
+  default_scopes: []    # client_credentials scope is tied to the app; no per-scope grant
+help_md: |
+  Reads Help Scout mailbox conversations, threads, customers, mailboxes (inboxes), and tags
+  for support-ticket diagnosis. Read-only — only ever issues GETs. Auth is OAuth 2.0
+  client-credentials: the host mints a bearer from client_id+client_secret and injects it as
+  RC_CONN_HELPSCOUT; tokens are valid ~48 h and are refreshed automatically at run assembly.
+
+  Pagination: Help Scout uses ?page=N (1-indexed) with _links.next in the response body.
+  The connector hand-rolls the page loop; use the CLI commands below.
+
+  CLI (connector script):
+
+    # List recent open conversations in a mailbox
+    python -m lib.connectors.helpscout conversations --status open --mailbox 12345
+
+    # Get a single conversation with its threads
+    python -m lib.connectors.helpscout conversation 987654
+
+    # Look up a customer by email
+    python -m lib.connectors.helpscout customer user@example.com
+
+    # List all mailboxes (inboxes)
+    python -m lib.connectors.helpscout mailboxes
+
+  Direct lib.api GETs (manifest-only, no pagination):
+
+    python -m lib.api get helpscout /v2/mailboxes
+    python -m lib.api get helpscout /v2/conversations/987654
+    python -m lib.api get helpscout /v2/conversations --query status=open --query mailbox=12345

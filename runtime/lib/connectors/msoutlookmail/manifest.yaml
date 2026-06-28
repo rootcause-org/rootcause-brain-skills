@@ -1,0 +1,77 @@
+key: msoutlookmail
+name: Microsoft Outlook Mail
+kinds: [token, oauth]
+# Script connector: two force-code triggers fire —
+#   (a) field pre-selection: Graph message objects are enormous (full HTML body, all recipient
+#       arrays, extended properties). Support needs only ~8 fields; a pick pre-selector keeps
+#       context lean.
+#   (d) non-standard pagination: Graph returns @odata.nextLink as an absolute URL in the JSON body,
+#       not an RFC 8288 Link header and not a plain cursor token. lib.api's `link` style follows
+#       response headers; `cursor` style sends the value as a query param. Neither fits Graph's
+#       "next absolute URL in the response body" pattern, so a thin script runs the loop.
+connector_module: lib.connectors.msoutlookmail
+env_var: RC_CONN_MSOUTLOOKMAIL
+egress_hosts:
+  - graph.microsoft.com
+  - login.microsoftonline.com   # OAuth token refresh (host-side) — egress guard coverage
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://graph.microsoft.com/v1.0
+auth:
+  strategy: bearer        # OAuth delegated or app-only access token: Authorization: Bearer …
+# Pagination handled in the connector script (OData @odata.nextLink in body = absolute next URL).
+# style=none so lib.api does not attempt its own paging loop; the connector calls collect_odata().
+pagination:
+  style: none
+  items_field: value      # all Graph collection responses put items under "value"
+  page_size: 50           # $top=50 is a safe default for messages (bodies can be large)
+rate_limit:
+  remaining_header: ""    # Graph throttles via 429 + Retry-After; no remaining-count header
+oauth:
+  auth_url: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+  token_url: https://login.microsoftonline.com/common/oauth2/v2.0/token
+  # Minimal read-only delegated scopes. Mail.ReadBasic is preferred (subject/sender/timestamps,
+  # no body content — lower admin-consent bar). Upgrade to Mail.Read to access bodyPreview.
+  # offline_access is required for refresh tokens.
+  default_scopes:
+    - Mail.ReadBasic
+    - offline_access
+help_md: |
+  Reads Microsoft Outlook Mail (via Microsoft Graph v1.0): messages, mail folders, and message
+  search. Read-only — only ever issues GETs. Supports delegated access (user OAuth token) and
+  app-only access (admin-consented application token).
+
+  Credential: inject an OAuth access token as RC_CONN_MSOUTLOOKMAIL (obtained via the OAuth
+  connect flow with scopes Mail.ReadBasic offline_access; upgrade to Mail.Read for bodyPreview).
+  App-only access requires Mail.ReadBasic.All or Mail.Read.All (admin consent required).
+
+  The connector handles Graph's OData pagination (@odata.nextLink in the JSON body is an absolute
+  URL; the generic lib.api cursor/link styles can't express this pattern directly).
+
+  **Connector CLI** (preferred — handles pagination + field pre-selection):
+
+      # List recent messages (inbox, default 25)
+      python -m lib.connectors.msoutlookmail messages
+
+      # List messages for a specific user (application token)
+      python -m lib.connectors.msoutlookmail messages --user someone@example.com --top 50
+
+      # List messages in a specific folder (by well-known name or folder id)
+      python -m lib.connectors.msoutlookmail messages --folder inbox --top 25
+
+      # Search messages by keyword ($search uses KQL)
+      python -m lib.connectors.msoutlookmail search "invoice payment"
+
+      # Search for a specific user's messages
+      python -m lib.connectors.msoutlookmail search "onboarding" --user someone@example.com
+
+      # List mail folders
+      python -m lib.connectors.msoutlookmail folders
+
+  **Generic lib.api single-page reads** (for one-off lookups, no auto-pagination):
+
+      python -m lib.api get msoutlookmail me/messages \
+        --query '$select=id,subject,from,receivedDateTime,bodyPreview,isRead' \
+        --query '$top=10'
+
+      python -m lib.api get msoutlookmail me/mailFolders \
+        --pick id,displayName,totalItemCount,unreadItemCount

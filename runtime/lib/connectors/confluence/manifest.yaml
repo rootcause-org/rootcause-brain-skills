@@ -1,0 +1,66 @@
+key: confluence
+name: Confluence
+kinds: [token, oauth]
+# Manifest-only: no force-code trigger fires. Pages/spaces/comments/search are plain GET endpoints
+# with standard cursor pagination (Confluence emits both a Link: rel="next" HTTP header AND a body
+# `_links.next` URL — lib.api's `link` style follows the header verbatim). Auth is basic (email:
+# api_token) for the token kind; OAuth bearer for the oauth kind (same bearer presentation at the
+# container boundary after host-side refresh).
+connector_module: ""
+env_var: RC_CONN_CONFLUENCE
+egress_hosts:
+  - "*.atlassian.net"
+# --- Generic lib.api caller fields (the compact declarative row) ---
+# base_url is per-account: every Confluence Cloud instance lives at https://<site>.atlassian.net/wiki/api/v2.
+# The agent substitutes the real hostname — either by setting the path as an absolute URL or by
+# editing the base_url in a project-specific call. See help_md for the copy-paste pattern.
+base_url: https://your-site.atlassian.net/wiki/api/v2
+auth:
+  strategy: basic   # token kind: credential = "user@example.com:api_token" (base64 by lib.api)
+                    # oauth kind: host injects a bearer; presented identically at the container boundary
+pagination:
+  style: link       # Confluence returns `Link: <url>; rel="next"` HTTP headers on list endpoints
+  items_field: results   # every list envelope wraps items under "results"
+  page_size: 250         # Confluence's documented max limit per request
+rate_limit:
+  remaining_header: ""   # Confluence does not expose a remaining-count header; relies on 429 + Retry-After
+oauth:
+  auth_url: https://auth.atlassian.com/authorize
+  token_url: https://auth.atlassian.com/oauth/token
+  default_scopes:
+    - read:confluence-content.all    # read page/blogpost bodies + attachments
+    - read:confluence-space.summary  # read space metadata
+    - read:comment:confluence        # read comments on content
+    - search:confluence              # CQL search across spaces/pages
+help_md: |
+  Reads Confluence Cloud spaces, pages, blog posts, comments, and search results for support
+  grounding ("what does our documentation say about X / what's in our runbook for Y"). Read-only —
+  only ever issues GETs.
+
+  **Token credential** (kind=token): set RC_CONN_CONFLUENCE to "user@example.com:api_token"
+  (colon-separated; lib.api base64-encodes it as HTTP Basic Auth).
+
+  **Per-account base URL**: each Confluence Cloud instance has its own subdomain. Replace
+  `your-site` in the base_url with the real site name, or pass an absolute URL:
+
+      python -m lib.api get confluence \
+        https://acme.atlassian.net/wiki/api/v2/pages \
+        --query limit=250 --paginate \
+        --pick id,title,status,spaceId,_links.webui
+
+  **Common paths** (relative to your-site base, or pass absolute):
+  - `pages`                          — list all pages (add `--query spaceId=<id>` to scope)
+  - `pages/<id>`                     — single page (body not included by default; add `--query body-format=storage`)
+  - `pages/<id>/children/page`       — child pages
+  - `spaces`                         — list all accessible spaces
+  - `spaces/<id>`                    — single space by numeric id
+  - `blogposts`                      — list blog posts
+  - `pages/<id>/footer-comments`     — footer comments on a page
+  - `search?query=<cql>`             — CQL search (e.g. `query=text~"error" AND space="ENG"`)
+
+  **Typical support query** (find pages mentioning a keyword):
+
+      python -m lib.api get confluence \
+        https://acme.atlassian.net/wiki/api/v2/search \
+        --query 'query=text~"password reset"' --query limit=10 --paginate \
+        --pick id,title,excerpt,_links.webui

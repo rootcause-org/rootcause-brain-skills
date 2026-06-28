@@ -1,0 +1,57 @@
+key: netlify
+name: Netlify
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Netlify site/deploy/form reads trip no force-code
+# trigger — bearer auth, RFC 8288 Link header pagination, and bare-array list responses are all
+# handled generically by lib.api. The agent drives it directly via `python -m lib.api get netlify …`
+# and pre-selects fields with --pick.
+connector_module: ""
+env_var: RC_CONN_NETLIFY
+egress_hosts:
+  - api.netlify.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.netlify.com/api/v1
+auth:
+  strategy: bearer        # PAT or OAuth access token, both presented as `Authorization: Bearer …`
+pagination:
+  style: link             # RFC 8288 `Link: <…>; rel="next"` headers — lib.api follows them verbatim
+  items_field: ""         # list endpoints return a bare JSON array (the page IS the list)
+  page_size: 100          # pass --query per_page=100 for fewer round-trips
+rate_limit:
+  remaining_header: X-RateLimit-Remaining   # advisory pacing; Netlify also returns X-RateLimit-Limit/Reset
+oauth:
+  auth_url: https://app.netlify.com/authorize
+  token_url: https://api.netlify.com/oauth/token
+  default_scopes: []      # Netlify OAuth tokens carry full account scope — no granular read scopes
+help_md: |
+  Reads Netlify sites, deploys, build logs, forms, and submissions for support diagnosis
+  ("why did this deploy fail / what is the current live URL / are there form submissions").
+  Token or OAuth, both read-only — only ever issue GETs. Netlify rate-limits to 500 req/min
+  (advisory header X-RateLimit-Remaining).
+
+  Pagination is RFC 8288 `Link` headers; list endpoints return a bare array. Netlify defaults to
+  100 items/page so pass `--query per_page=100` for explicit control, e.g.
+
+      python -m lib.api get netlify sites \
+        --query per_page=100 --paginate \
+        --pick id,name,url,published_deploy.state,build_settings.repo_url
+
+      python -m lib.api get netlify sites/SITE_ID/deploys \
+        --query per_page=100 --paginate \
+        --pick id,state,created_at,error_message,deploy_url
+
+      python -m lib.api get netlify sites/SITE_ID/forms \
+        --pick id,name,submission_count
+
+      python -m lib.api get netlify forms/FORM_ID/submissions \
+        --query per_page=100 --paginate \
+        --pick id,created_at,email,data
+
+  Common paths:
+    sites                            — list all sites (name, url, deploy state)
+    sites/{site_id}                  — single site detail ({site_id} = UUID or domain)
+    sites/{site_id}/deploys          — deploy history + state/error per deploy
+    sites/{site_id}/deploys/{deploy_id} — single deploy detail with error_message
+    sites/{site_id}/forms            — list forms for a site
+    forms/{form_id}/submissions      — form submissions (paginated)
+    sites/{site_id}/submissions      — all verified submissions across forms on a site

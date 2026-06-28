@@ -1,0 +1,48 @@
+key: freshdesk
+name: Freshdesk
+kinds: [token]
+# Manifest-only integration: NO connector_module. Freshdesk's link-header pagination and basic-auth
+# strategy are handled natively by lib.api, and support reads (tickets/contacts/companies) need no
+# multi-call join or field pre-selection — the agent drives them directly with `python -m lib.api`.
+connector_module: ""
+env_var: RC_CONN_FRESHDESK
+egress_hosts:
+  - "*.freshdesk.com"
+# --- Generic lib.api caller fields ---
+# base_url is per-account: the agent must know the customer's Freshdesk subdomain.
+# Supply it as the path prefix or edit the command — see help_md below.
+# RC_CONN_FRESHDESK holds "apikey:X" (API key as Basic-auth user, literal "X" as password).
+base_url: https://{domain}.freshdesk.com/api/v2
+auth:
+  strategy: basic   # RFC 7617: credential = "apikey:X", base64-encoded in Authorization header
+pagination:
+  style: link       # RFC 8288 Link: <url>; rel="next" — lib.api follows verbatim
+  items_field: ""   # list endpoints return a bare JSON array (page IS the list)
+  page_size: 100    # maximum Freshdesk allows; pass --query per_page=100
+rate_limit:
+  remaining_header: X-RateLimit-Remaining
+help_md: |
+  Reads Freshdesk tickets, contacts, companies, agents, and conversations for support diagnosis.
+  Authentication uses HTTP Basic with your API key as the username and "X" as the dummy password.
+  The stored credential (RC_CONN_FRESHDESK) must be set to "apikey:X" where apikey is the actual
+  Freshdesk API key.
+
+  **Per-account subdomain:** the base_url placeholder `{domain}` must be replaced with your
+  Freshdesk subdomain (e.g. `acme` for `acme.freshdesk.com`). Override by passing an absolute URL:
+
+      python -m lib.api get freshdesk https://acme.freshdesk.com/api/v2/tickets \
+        --query per_page=100 --query filter=all_tickets --paginate \
+        --pick id,subject,status,priority,created_at,requester_id
+
+  Common paths (always absolute when using the templated base_url):
+    - tickets                GET /tickets?filter=all_tickets&per_page=100
+    - tickets/{id}           GET /tickets/123
+    - tickets/{id}/conversations  GET /tickets/123/conversations
+    - contacts               GET /contacts?per_page=100
+    - contacts/{id}          GET /contacts/456
+    - companies              GET /companies?per_page=100
+    - agents                 GET /agents
+    - groups                 GET /groups
+
+  Pagination uses RFC 8288 Link headers (`rel="next"`); pass `--paginate` to auto-follow. Freshdesk
+  warns against deep pagination (page > 500) — use time filters (`updated_since`) to narrow first.

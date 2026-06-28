@@ -1,0 +1,96 @@
+key: mailchimp
+name: Mailchimp
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Mailchimp list endpoints each wrap their results
+# under an envelope key named after the resource type (/lists → "lists", /campaigns → "campaigns",
+# /lists/{id}/members → "members", etc.). There is no single consistent items_field across all
+# endpoints, so lib.api's offset pagination cannot auto-page reliably. style=none is correct: the
+# agent fetches one page using --query offset=N --query count=100 and advances manually, or fetches
+# a large single page (Mailchimp allows count up to 1000 on most endpoints).
+connector_module: ""
+env_var: RC_CONN_MAILCHIMP
+egress_hosts:
+  - "*.api.mailchimp.com"
+# --- Generic lib.api caller fields (the compact declarative row) ---
+# Base URL is datacenter-specific: replace {dc} with the prefix from your API key suffix
+# (e.g. "us6" → https://us6.api.mailchimp.com/3.0). The agent supplies the full absolute URL
+# or sets the DC prefix via --query; see help_md for examples.
+# For OAuth tokens, the DC must be fetched from https://login.mailchimp.com/oauth2/metadata after
+# the token exchange — the metadata endpoint returns {"dc": "us6", ...}.
+base_url: https://us1.api.mailchimp.com/3.0
+auth:
+  # Mailchimp accepts EITHER Basic Auth ("anystring:apikey") OR Bearer token (OAuth access token).
+  # bearer works for both: store a raw OAuth token as the credential, OR store the API key directly
+  # (Mailchimp's docs confirm "Authorization: Bearer <apikey>" is valid).
+  # For API keys via token kind: inject the raw key; bearer is simpler than encoding basic-auth.
+  strategy: bearer
+pagination:
+  # Each list endpoint wraps its items under a resource-named key (lists/campaigns/members/etc.)
+  # with no single common envelope. style=none; the agent passes --query offset=N --query count=100
+  # to page manually, or fetches count=1000 (Mailchimp's max) in one shot for small resources.
+  style: none
+  page_size: 100
+rate_limit:
+  # Mailchimp enforces a 10 simultaneous-connection cap (returns 429) but does not expose a
+  # remaining-count header. lib.api's 429 + Retry-After handling covers burst protection.
+  remaining_header: ""
+oauth:
+  auth_url: https://login.mailchimp.com/oauth2/authorize
+  token_url: https://login.mailchimp.com/oauth2/token
+  # Mailchimp OAuth has no scope parameter — the access token grants full account access.
+  # After exchange, fetch https://login.mailchimp.com/oauth2/metadata to get the dc prefix.
+  default_scopes: []
+help_md: |
+  Reads Mailchimp audiences (lists), campaigns, subscribers, automations, and reports for
+  support diagnosis ("is this customer subscribed / what campaigns did they receive / why did
+  they unsubscribe / what's their engagement history"). Read-only GETs only — never modifies
+  any Mailchimp data.
+
+  DATACENTER NOTE: Mailchimp's API is region-sharded. Replace `us1` in the base URL (or pass
+  the full absolute URL) with your account's datacenter prefix. The DC suffix is the last part
+  of your API key (e.g. key ending in `-us6` → use `https://us6.api.mailchimp.com/3.0`). For
+  OAuth tokens fetch https://login.mailchimp.com/oauth2/metadata to get the dc field.
+
+  TOKEN NOTE: Bearer strategy works with both API keys (stored raw) and OAuth access tokens.
+
+  PAGINATION NOTE: Each endpoint wraps results under its own key (lists, campaigns, members,
+  etc.) and supports offset+count. Use --query offset=0 --query count=1000 for a full page
+  (Mailchimp allows up to 1000), and advance offset manually for very large datasets.
+
+  Common support paths:
+
+      # List all audiences / mailing lists
+      python -m lib.api get mailchimp https://us6.api.mailchimp.com/3.0/lists \
+        --query count=100 \
+        --pick lists.*.id,lists.*.name,lists.*.stats.member_count,lists.*.date_created
+
+      # Look up a specific subscriber by email (MD5-hash the lowercased address)
+      python -m lib.api get mailchimp \
+        https://us6.api.mailchimp.com/3.0/lists/{list_id}/members/{md5_of_email} \
+        --pick id,email_address,status,timestamp_opt,timestamp_signup,tags.*.name
+
+      # Subscriber activity (campaigns received, opens, clicks, bounces)
+      python -m lib.api get mailchimp \
+        https://us6.api.mailchimp.com/3.0/lists/{list_id}/members/{md5_of_email}/activity \
+        --query count=50 \
+        --pick activity.*.action,activity.*.timestamp,activity.*.campaign_id,activity.*.title
+
+      # List recent campaigns
+      python -m lib.api get mailchimp https://us6.api.mailchimp.com/3.0/campaigns \
+        --query count=50 --query sort_field=send_time --query sort_dir=DESC \
+        --pick campaigns.*.id,campaigns.*.settings.subject_line,campaigns.*.status,campaigns.*.send_time,campaigns.*.emails_sent
+
+      # Campaign report (open/click rates, bounces)
+      python -m lib.api get mailchimp https://us6.api.mailchimp.com/3.0/reports/{campaign_id} \
+        --pick id,subject_line,emails_sent,opens.unique_opens,clicks.unique_clicks,bounces.hard_bounces,bounces.soft_bounces,unsubscribed
+
+      # Unsubscribes on an audience
+      python -m lib.api get mailchimp \
+        https://us6.api.mailchimp.com/3.0/lists/{list_id}/members \
+        --query status=unsubscribed --query count=100 \
+        --pick members.*.email_address,members.*.status,members.*.timestamp_opt
+
+      # Automations / customer journeys
+      python -m lib.api get mailchimp https://us6.api.mailchimp.com/3.0/automations \
+        --query count=50 \
+        --pick automations.*.id,automations.*.settings.title,automations.*.status,automations.*.start_time

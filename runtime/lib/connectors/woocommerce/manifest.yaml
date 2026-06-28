@@ -1,0 +1,54 @@
+key: woocommerce
+name: WooCommerce
+kinds: [token]
+# Manifest-only integration: no force-code trigger fires. Basic auth + RFC 8288 Link pagination are
+# both natively supported by lib.api. The agent drives it directly via `python -m lib.api get`.
+connector_module: ""
+env_var: RC_CONN_WOOCOMMERCE
+# WooCommerce is per-store: egress varies by customer domain. A wildcard covers any HTTPS shop.
+egress_hosts:
+  - "*.myshopify.com"   # common managed hosting
+  - "*"                  # per-store domains are arbitrary — project brain supplies the actual host
+# --- Generic lib.api caller fields ---
+# base_url is TEMPLATED: the agent must substitute the actual store URL. The literal placeholder
+# {store_url} must be replaced (e.g. https://shop.example.com) when driving via python -m lib.api
+# or when supplying the credential via RC_CONN_WOOCOMMERCE as "consumer_key:consumer_secret@https://shop.example.com".
+# In practice, the brain supplies a project-specific wrapper or the agent sets --query / absolute path.
+# The canonical base for a WooCommerce v3 store is: https://<store>/wp-json/wc/v3
+base_url: "https://{store_url}/wp-json/wc/v3"
+auth:
+  strategy: basic       # consumer_key:consumer_secret presented as HTTP Basic auth over HTTPS
+                        # (WooCommerce docs: username=consumer_key, password=consumer_secret)
+pagination:
+  style: link           # RFC 8288 `Link: <…>; rel="next"` headers — lib.api follows them verbatim
+  items_field: ""       # list endpoints return a bare JSON array (the page IS the list)
+  page_size: 100        # `per_page` parameter; WooCommerce default is 10, max typically 100
+rate_limit:
+  remaining_header: ""  # WooCommerce documents no rate-limit remaining header; honours 429 + Retry-After
+help_md: |
+  Reads WooCommerce orders, customers, products, coupons, and refunds for support diagnosis.
+  Authentication uses HTTP Basic Auth with a consumer key/secret pair generated in
+  WooCommerce › Settings › Advanced › REST API (set to "Read" permission — never Write).
+
+  **TEMPLATED base_url**: supply the store domain as part of the path or use an absolute URL, e.g.
+
+      python -m lib.api get woocommerce https://shop.example.com/wp-json/wc/v3/orders \
+        --query per_page=50 --query status=processing --paginate \
+        --pick id,status,date_created,total,billing.email,billing.first_name,billing.last_name
+
+  Common read paths (all GET-safe, no writes):
+    - orders                     — list orders; filter with ?status=completed|processing|refunded
+    - orders/{id}                — single order detail (line items, billing, shipping, totals)
+    - orders/{id}/refunds        — refunds on an order
+    - customers                  — list customers; search with ?search=email@example.com
+    - customers/{id}             — single customer (name, email, orders count, total spent)
+    - products                   — list products; ?status=publish&per_page=100
+    - products/{id}              — single product (name, price, stock, status)
+    - products/{id}/variations   — product variations
+    - coupons                    — list discount coupons
+
+  Pagination is RFC 8288 Link headers; pass `--paginate` to collect all pages. Response headers
+  X-WP-Total and X-WP-TotalPages carry total counts (informational, not used for loop control).
+
+  Credential stored as "consumer_key:consumer_secret" in RC_CONN_WOOCOMMERCE (the colon separator
+  is the lib.api basic-auth convention). Generate keys with "Read" scope only — never write access.

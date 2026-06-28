@@ -1,0 +1,65 @@
+key: cloudflare
+name: Cloudflare
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Standard offset pagination with a result wrapper
+# trips no force-code trigger, so the agent drives it via `python -m lib.api get cloudflare …`.
+connector_module: ""
+env_var: RC_CONN_CLOUDFLARE
+egress_hosts:
+  - api.cloudflare.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.cloudflare.com/client/v4
+auth:
+  strategy: bearer        # API Token presented as `Authorization: Bearer …` (recommended, scoped)
+pagination:
+  style: offset           # result_info.page / result_info.total_pages drives the loop
+  offset_param: page      # Cloudflare uses `page` (1-based) rather than a byte/item offset
+  limit_param: per_page
+  items_field: result     # every list response wraps the array under `result`
+  page_size: 50           # safe default; Cloudflare allows up to 1000 for most endpoints
+rate_limit:
+  # Cloudflare returns a compound `Ratelimit: "default";r=50;t=30` header (not a plain integer),
+  # so lib.api's simple remaining-header read would mis-parse it. Leave blank; 429 + Retry-After
+  # is the authoritative signal and lib.api already honours it.
+  remaining_header: ""
+oauth:
+  auth_url: https://dash.cloudflare.com/oauth2/auth
+  token_url: https://dash.cloudflare.com/oauth2/token
+  default_scopes:
+    - account:read
+    - zone:read
+    - dns_records:read
+    - audit_logs:read
+    - workers:read
+help_md: |
+  Reads Cloudflare zones, DNS records, Workers scripts, Pages projects, WAF rules, and audit logs
+  for support diagnosis. Uses an API Token (read-only scopes recommended) or OAuth access token.
+  Read-only — only ever issues GETs.
+
+  Pagination is offset-based (`page` / `per_page`); the `result` field holds the item array and
+  `result_info` carries `page` / `total_pages`. lib.api's offset style advances automatically.
+
+  Common paths (all require an {account_id} or {zone_id} from the token's scope):
+
+      # List zones the token can access
+      python -m lib.api get cloudflare zones --paginate --pick result.*.name,result.*.status,result.*.plan.name
+
+      # DNS records for a zone
+      python -m lib.api get cloudflare zones/{zone_id}/dns_records --paginate \
+        --pick result.*.type,result.*.name,result.*.content,result.*.proxied,result.*.ttl
+
+      # Account audit log (who changed what, and when)
+      python -m lib.api get cloudflare accounts/{account_id}/audit_logs \
+        --query per_page=50 --paginate \
+        --pick result.*.when,result.*.action.type,result.*.actor.email,result.*.resource.type
+
+      # Workers scripts deployed on an account
+      python -m lib.api get cloudflare accounts/{account_id}/workers/scripts \
+        --pick result.*.id,result.*.created_on,result.*.modified_on
+
+      # Pages projects
+      python -m lib.api get cloudflare accounts/{account_id}/pages/projects \
+        --paginate --pick result.*.name,result.*.subdomain,result.*.latest_deployment.latest_stage.status
+
+  The {account_id} and {zone_id} values can be read from the API token detail page or by calling
+  `GET /zones` (which returns `account.id` on each zone object).

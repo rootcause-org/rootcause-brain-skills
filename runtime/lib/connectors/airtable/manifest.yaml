@@ -1,0 +1,67 @@
+key: airtable
+name: Airtable
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Airtable reads (bases/tables/records) trip no
+# force-code trigger — bearer auth, cursor pagination with an opaque offset string, no field
+# pre-selection required (agent uses --pick). The agent drives it directly via
+# `python -m lib.api get airtable …`.
+connector_module: ""
+env_var: RC_CONN_AIRTABLE
+egress_hosts:
+  - api.airtable.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.airtable.com/v0
+auth:
+  strategy: bearer          # PAT (pat…) or OAuth access token, both sent as `Authorization: Bearer …`
+pagination:
+  style: cursor             # Airtable returns an opaque `offset` string in the response body;
+                            # pass it back as the `offset` query param to get the next page.
+  cursor_field: offset      # dotted path to the cursor in the response body
+  cursor_param: offset      # query param name to send the cursor back
+  has_more_field: ""        # absent offset field ⇒ last page (no explicit has_more boolean)
+  items_field: records      # response body: { records: [...], offset: "..." }
+  page_size: 100            # Airtable default and maximum is 100 records/page
+rate_limit:
+  # Airtable sends 429 (no Retry-After header documented); lib.api honours 429 with jittered backoff.
+  # No remaining-count header published.
+  remaining_header: ""
+oauth:
+  auth_url: https://airtable.com/oauth2/v1/authorize
+  token_url: https://airtable.com/oauth2/v1/token
+  # Minimal read scopes for support grounding: read records + base/table schema.
+  # data.records:read — see record data; schema.bases:read — see table names and field types.
+  default_scopes: [data.records:read, schema.bases:read]
+help_md: |
+  Reads Airtable bases, tables, and records for support diagnosis ("what data does the customer
+  have, what does their schema look like, is a specific record present"). Read-only — only ever
+  issues GETs. Token is a Personal Access Token (PAT) beginning with `pat`; OAuth tokens also work.
+
+  Rate limit: 5 req/s per base, 50 req/s across the account. On 429, lib.api retries with jittered
+  backoff (Airtable docs: wait 30 s before retrying).
+
+  URL patterns:
+    - List bases:      GET /meta/bases
+    - Base schema:     GET /meta/bases/{baseId}/tables
+    - List records:    GET /{baseId}/{tableIdOrName}
+    - Get record:      GET /{baseId}/{tableIdOrName}/{recordId}
+
+  Records paginate via an opaque `offset` string in the response body; `--paginate` follows
+  automatically. The `fields` key on each record is user-defined (dynamic schema), so `--pick` is
+  your friend.
+
+  Examples:
+
+      # List all bases the token can access
+      python -m lib.api get airtable meta/bases
+
+      # Get the schema (tables + fields) for a base
+      python -m lib.api get airtable meta/bases/appXXXXXXXXXXXXXX/tables \
+        --pick tables.*.id,tables.*.name,tables.*.fields.*.name,tables.*.fields.*.type
+
+      # List records from a table (paginated), pick a few fields
+      python -m lib.api get airtable appXXXXXXXXXXXXXX/tblYYYYYYYYYYYYYY \
+        --query pageSize=100 --paginate \
+        --pick id,fields.Name,fields.Status,fields.Email,createdTime
+
+      # Fetch a single record
+      python -m lib.api get airtable appXXXXXXXXXXXXXX/tblYYYYYYYYYYYYYY/recZZZZZZZZZZZZZZ

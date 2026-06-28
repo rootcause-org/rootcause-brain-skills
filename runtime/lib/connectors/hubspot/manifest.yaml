@@ -1,0 +1,81 @@
+key: hubspot
+name: HubSpot
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. HubSpot CRM REST endpoints (contacts, companies,
+# tickets, deals, owners) trip no force-code trigger: standard bearer auth, cursor paging expressed
+# by lib.api's cursor style, no multi-call join needed for common support reads. The agent drives
+# them directly via `python -m lib.api get hubspot …` and pre-selects fields with --pick.
+connector_module: ""
+env_var: RC_CONN_HUBSPOT
+egress_hosts:
+  - api.hubapi.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.hubapi.com
+auth:
+  strategy: bearer    # Private-app access token or OAuth access token, both `Authorization: Bearer …`
+pagination:
+  style: cursor
+  # HubSpot CRM v3 list responses: {"results": [...], "paging": {"next": {"after": "...", "link": "..."}}}
+  # Cursor token is at paging.next.after; absent ⇒ last page (no separate has_more field).
+  cursor_field: paging.next.after
+  cursor_param: after
+  has_more_field: ""      # absent → loop until cursor_field is empty (paging.next absent = done)
+  items_field: results    # list responses carry the array under "results"
+  page_size: 100          # HubSpot v3 max is 100 (200 for some archived endpoints); 100 is safe
+rate_limit:
+  remaining_header: X-HubSpot-RateLimit-Remaining   # advisory; HubSpot also sends 429 + Retry-After
+oauth:
+  auth_url: https://app.hubspot.com/oauth/authorize
+  token_url: https://api.hubapi.com/oauth/v1/token
+  default_scopes:
+    - crm.objects.contacts.read
+    - crm.objects.companies.read
+    - crm.objects.deals.read
+    - tickets
+help_md: |
+  Reads HubSpot CRM contacts, companies, deals, tickets, owners, and pipelines for support
+  diagnosis. Token (private-app access token) or OAuth — both read-only bearer credentials.
+
+  Private-app tokens are created in HubSpot: Settings → Integrations → Private Apps → Create.
+  Grant only the read scopes you need (crm.objects.contacts.read, crm.objects.companies.read,
+  crm.objects.deals.read, tickets). Token starts with `pat-` but that is implementation detail.
+
+  HubSpot CRM v3 list responses carry objects under `results` with cursor paging via
+  `paging.next.after`. Pass `--paginate` to auto-follow pages.
+
+  Common paths (all GET, all cursor-paged):
+
+      # List contacts (default properties: firstname, lastname, email)
+      python -m lib.api get hubspot /crm/v3/objects/contacts \
+        --query limit=100 --query properties=firstname,lastname,email,phone,hs_lead_status \
+        --paginate --pick id,properties.email,properties.firstname,properties.lastname,properties.hs_lead_status
+
+      # Fetch one contact by id
+      python -m lib.api get hubspot /crm/v3/objects/contacts/12345 \
+        --query properties=firstname,lastname,email,hs_lead_status
+
+      # List companies
+      python -m lib.api get hubspot /crm/v3/objects/companies \
+        --query limit=100 --query properties=name,domain,hs_lead_status \
+        --paginate --pick id,properties.name,properties.domain
+
+      # List open tickets
+      python -m lib.api get hubspot /crm/v3/objects/tickets \
+        --query limit=100 --query properties=subject,hs_pipeline_stage,hs_ticket_priority,content \
+        --paginate --pick id,properties.subject,properties.hs_pipeline_stage,properties.hs_ticket_priority
+
+      # List deals
+      python -m lib.api get hubspot /crm/v3/objects/deals \
+        --query limit=100 --query properties=dealname,dealstage,amount,closedate \
+        --paginate --pick id,properties.dealname,properties.dealstage,properties.amount
+
+      # List CRM owners (agents/reps)
+      python -m lib.api get hubspot /crm/v3/owners \
+        --pick id,email,firstName,lastName
+
+      # Search contacts by email (POST — use direct curl; lib.api is GET-only)
+      # For search, use the CRM search endpoint with a POST body outside this client.
+
+  Tip: HubSpot only returns a curated default set of properties per object. Pass
+  `--query properties=prop1,prop2` to request additional fields. See available properties at
+  GET /crm/v3/properties/{objectType}.

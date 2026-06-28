@@ -1,0 +1,105 @@
+key: calendly
+name: Calendly
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Calendly REST API reads (scheduled events,
+# event types, invitees, users, organisation members) trip no force-code trigger: standard bearer
+# auth, cursor pagination, flat collection responses — the agent drives directly via
+# `python -m lib.api get calendly …` with `--pick` for field pre-selection.
+connector_module: ""
+env_var: RC_CONN_CALENDLY
+egress_hosts:
+  - api.calendly.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.calendly.com
+auth:
+  strategy: bearer        # Personal Access Token or OAuth access token, both `Authorization: Bearer …`
+pagination:
+  style: cursor           # Calendly v2 wraps lists in {"collection": [...], "pagination": {"next_page_token": "...", "next_page": "..."}}
+  cursor_param: page_token      # query param Calendly accepts to advance to the next page
+  cursor_field: pagination.next_page_token   # dotted path; absent / null ⇒ last page
+  has_more_field: ""            # no separate has_more field — loop until cursor_field is empty
+  items_field: collection       # all list endpoints place items under "collection"
+  page_size: 100                # Calendly max is 100
+rate_limit:
+  remaining_header: X-RateLimit-Remaining   # Calendly sends remaining-count; 429 + Retry-After also honoured
+oauth:
+  auth_url: https://auth.calendly.com/oauth/authorize
+  token_url: https://auth.calendly.com/oauth/token
+  default_scopes:
+    - default           # Calendly OAuth uses a single "default" scope for all read access; no granular read-only scope is offered
+help_md: |
+  Reads Calendly scheduled events, event types, invitees, organisation memberships, and user
+  details for support diagnosis ("did a meeting get booked / what event types does this user
+  have / who are the members of this organisation"). PAT or OAuth, both read-only bearer —
+  only ever issues GETs.
+
+  **Auth:** inject a Personal Access Token as RC_CONN_CALENDLY (Settings → Integrations →
+  API & Webhooks → Personal Access Tokens). OAuth tokens use the same env var; the host
+  refreshes them before run time.
+
+  **Pagination:** cursor-based via `pagination.next_page_token` (send back as `page_token`).
+  Items are always under `collection`. Use `--paginate` to auto-collect all pages.
+
+  **Getting the organisation / user URI (required by most list endpoints):**
+
+      # Resolve current user + their organisation URI first
+      python -m lib.api get calendly /users/me \
+        --pick resource.uri,resource.current_organization
+
+  **Common paths and examples:**
+
+      # Get the authenticated user's profile
+      python -m lib.api get calendly /users/me \
+        --pick resource.uri,resource.name,resource.email,resource.scheduling_url,resource.current_organization
+
+      # List event types for a user (pass their URI from /users/me)
+      python -m lib.api get calendly /event_types \
+        --query user=https://api.calendly.com/users/USER_UUID \
+        --paginate \
+        --pick collection.*.uri,collection.*.name,collection.*.type,collection.*.active,collection.*.duration
+
+      # List scheduled events for a user (default: active/upcoming, most-recent first)
+      python -m lib.api get calendly /scheduled_events \
+        --query user=https://api.calendly.com/users/USER_UUID \
+        --query count=100 --query sort=start_time:desc \
+        --paginate \
+        --pick collection.*.uri,collection.*.name,collection.*.status,collection.*.start_time,collection.*.end_time,collection.*.location
+
+      # List scheduled events for an organisation (scoped to the org — replace ORG_UUID)
+      python -m lib.api get calendly /scheduled_events \
+        --query organization=https://api.calendly.com/organizations/ORG_UUID \
+        --query count=100 --query status=active \
+        --paginate \
+        --pick collection.*.uri,collection.*.name,collection.*.status,collection.*.start_time,collection.*.end_time
+
+      # List invitees for a specific scheduled event (EVENT_UUID from a /scheduled_events item)
+      python -m lib.api get calendly /scheduled_events/EVENT_UUID/invitees \
+        --query count=100 \
+        --paginate \
+        --pick collection.*.uri,collection.*.name,collection.*.email,collection.*.status,collection.*.created_at
+
+      # List organisation members
+      python -m lib.api get calendly /organization_memberships \
+        --query organization=https://api.calendly.com/organizations/ORG_UUID \
+        --query count=100 \
+        --paginate \
+        --pick collection.*.uri,collection.*.role,collection.*.user.name,collection.*.user.email
+
+      # Get a single scheduled event by UUID
+      python -m lib.api get calendly /scheduled_events/EVENT_UUID \
+        --pick resource.uri,resource.name,resource.status,resource.start_time,resource.end_time,resource.location,resource.event_memberships
+
+      # Get a single event type by UUID
+      python -m lib.api get calendly /event_types/EVENT_TYPE_UUID \
+        --pick resource.uri,resource.name,resource.type,resource.active,resource.duration,resource.scheduling_url
+
+  **Key paths:**
+    /users/me                                     — authenticated user profile + org URI
+    /users/{uuid}                                 — any user by UUID
+    /event_types                                  — event types for a user or org (pass ?user= or ?organization=)
+    /event_types/{uuid}                           — single event type
+    /scheduled_events                             — scheduled events (pass ?user= or ?organization=; filter by status/date range)
+    /scheduled_events/{uuid}                      — single scheduled event
+    /scheduled_events/{uuid}/invitees             — invitees for a specific event
+    /organization_memberships                     — org members (pass ?organization=)
+    /organization_memberships/{uuid}              — single org membership

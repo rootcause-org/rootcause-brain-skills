@@ -1,0 +1,66 @@
+key: asana
+name: Asana
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Standard Asana reads (tasks/projects/stories/users)
+# trip no force-code trigger — bearer auth, cursor pagination (opaque offset token in next_page),
+# bare `data` array per page. The agent drives it directly via `python -m lib.api get asana …`
+# and pre-selects fields with `--pick`.
+connector_module: ""
+env_var: RC_CONN_ASANA
+egress_hosts:
+  - app.asana.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://app.asana.com/api/1.0
+auth:
+  strategy: bearer        # PAT or OAuth access token, both presented as `Authorization: Bearer …`
+pagination:
+  style: cursor           # Asana uses opaque offset cursors: next_page.offset in the response,
+                          # sent back as `?offset=…`; next_page null/absent ⇒ exhausted.
+  cursor_field: next_page.offset   # dotted path to the opaque cursor in the response body
+  cursor_param: offset             # query param name to send the cursor back as
+  has_more_field: next_page        # truthy when present/non-null; null when last page
+  items_field: data                # every list endpoint wraps results in `data`
+  page_size: 100                   # Asana max is 100 (limit param)
+rate_limit:
+  # Asana does not expose a remaining-count header; rate limiting is handled via 429 + Retry-After.
+  remaining_header: ""
+oauth:
+  auth_url: https://app.asana.com/-/oauth_authorize
+  token_url: https://app.asana.com/-/oauth_token
+  default_scopes: [tasks:read, projects:read, users:read]   # minimal read set for support grounding
+help_md: |
+  Reads Asana tasks, projects, stories (comments/activity), and user profiles for support diagnosis
+  ("what is the status of this task / what comments were added / which project is it in"). Token or
+  OAuth, both read-only by the granted scopes — only ever issues GETs.
+
+  Pagination is cursor-based: Asana returns `next_page.offset` in every list response; lib.api
+  stitches pages automatically when `--paginate` is passed.
+
+  Common paths and copy-paste examples:
+
+      # List all tasks in a project (compact records; add opt_fields for more detail):
+      python -m lib.api get asana projects/{project_gid}/tasks \
+        --query limit=100 --paginate \
+        --pick gid,name,completed,assignee.name,due_on
+
+      # Get a single task with full detail:
+      python -m lib.api get asana tasks/{task_gid} \
+        --query "opt_fields=gid,name,notes,completed,due_on,assignee.name,projects.name,custom_fields.name,custom_fields.display_value"
+
+      # Get stories (comments + activity) for a task:
+      python -m lib.api get asana tasks/{task_gid}/stories \
+        --query limit=100 --paginate \
+        --pick gid,type,text,created_by.name,created_at
+
+      # Search tasks in a workspace:
+      python -m lib.api get asana workspaces/{workspace_gid}/tasks/search \
+        --query "text=billing error" --query limit=100 --paginate \
+        --pick gid,name,completed,projects.*.name
+
+      # Get workspace members (users):
+      python -m lib.api get asana workspaces/{workspace_gid}/users \
+        --query limit=100 --paginate \
+        --pick gid,name,email
+
+  `gid` values (project_gid, workspace_gid, task_gid) are the Asana numeric ID strings visible
+  in the Asana web UI URL. The agent supplies them from brain context or from a prior lookup.

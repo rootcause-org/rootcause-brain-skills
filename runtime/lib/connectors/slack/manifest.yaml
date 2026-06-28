@@ -1,0 +1,66 @@
+key: slack
+name: Slack
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Slack's cursor pagination with
+# response_metadata.next_cursor is a dotted path lib.api handles natively; no force-code trigger
+# fires (no multi-call join, no field pre-selection IS the answer, standard cursor pagination).
+connector_module: ""
+env_var: RC_CONN_SLACK
+egress_hosts:
+  - slack.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://slack.com/api
+auth:
+  strategy: bearer        # Bot/user OAuth token (xox* family) presented as `Authorization: Bearer …`
+pagination:
+  style: cursor           # Slack cursor pagination: response_metadata.next_cursor drives the loop
+  cursor_param: cursor
+  cursor_field: response_metadata.next_cursor   # dotted path; empty string = no more pages
+  has_more_field: ""      # absence/emptiness of cursor_field is the stop signal; no separate has_more
+  items_field: ""         # varies per method (channels/messages/members); agent uses --pick per call
+  page_size: 200          # Slack recommends 100–200; some methods cap at 1000
+rate_limit:
+  remaining_header: ""    # Slack exposes no remaining-count header; paces via 429 + Retry-After only
+oauth:
+  auth_url: https://slack.com/oauth/v2/authorize
+  token_url: https://slack.com/api/oauth.v2.access
+  default_scopes:
+    - channels:read       # list public channels (conversations.list)
+    - channels:history    # read message history in public channels (conversations.history)
+    - groups:read         # list private channels the bot is a member of
+    - users:read          # user list and profile lookup (users.list, users.info)
+    - search:read         # full-text search across messages (search.messages)
+help_md: |
+  Reads Slack channels, message history, users, and search results for support diagnosis ("what
+  was said in #support about X", "who is this user", "what channels exist"). Bearer token auth —
+  supply a bot token or user token (both start with xox, injected as RC_CONN_SLACK), or connect
+  via OAuth. Read-only GET calls only; we never write to or mutate Slack.
+
+  **Pagination:** Slack uses cursor pagination via `response_metadata.next_cursor`; pass
+  `--paginate` to collect all pages. Each method puts its list under a different field (channels,
+  messages, members), so pair `--paginate` with `--pick` to extract what matters.
+
+  **Common methods:**
+
+      # List public channels
+      python -m lib.api get slack conversations.list \
+        --query types=public_channel --query limit=200 --paginate \
+        --pick channels.*.id,channels.*.name,channels.*.topic.value
+
+      # Read messages in a channel (replace CHANNEL_ID)
+      python -m lib.api get slack conversations.history \
+        --query channel=CHANNEL_ID --query limit=200 --paginate \
+        --pick messages.*.ts,messages.*.user,messages.*.text
+
+      # Look up a user by ID
+      python -m lib.api get slack users.info --query user=USER_ID \
+        --pick user.real_name,user.profile.email,user.is_bot
+
+      # Search messages full-text
+      python -m lib.api get slack search.messages \
+        --query query="payment+failed" --query count=20 \
+        --pick messages.matches.*.ts,messages.matches.*.text,messages.matches.*.channel.name
+
+      # List members of a channel
+      python -m lib.api get slack conversations.members \
+        --query channel=CHANNEL_ID --query limit=200 --paginate

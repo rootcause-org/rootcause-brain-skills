@@ -1,0 +1,64 @@
+key: rollbar
+name: Rollbar
+kinds: [token]
+# Manifest-only integration: NO connector_module. Rollbar's REST API trips no force-code trigger —
+# auth is a plain header, pagination is page-number-based (pass --query page=N explicitly; the
+# generic offset style can't express 1-based page numbers), and there is no multi-call join needed
+# for support reads. The agent drives it directly via `python -m lib.api get rollbar <path>`.
+connector_module: ""
+env_var: RC_CONN_ROLLBAR
+egress_hosts:
+  - api.rollbar.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.rollbar.com/api/1
+auth:
+  strategy: api_key_header     # Rollbar uses X-Rollbar-Access-Token, not Authorization:
+  name: X-Rollbar-Access-Token # header name for the project read token
+pagination:
+  # Rollbar uses 1-based page numbers (?page=1, ?page=2, …) which the generic offset style
+  # (which advances by item count) cannot express correctly. Use style: none and let the agent
+  # pass --query page=N explicitly for deeper pages.
+  style: none
+  items_field: result.items    # list endpoints wrap items under {err:0, result:{items:[…]}}
+  page_size: 100               # default items per page for /items; /deploys defaults to 20
+rate_limit:
+  remaining_header: ""   # Rollbar returns 429 + Retry-After on exhaustion; no remaining-count header
+help_md: |
+  Reads Rollbar error items, occurrences, and deploys for support diagnosis ("what errors hit this
+  user / environment / version, and when did we last deploy"). Uses a Project Access Token with
+  'read' scope — only ever issues GETs, never writes to customer systems.
+
+  Auth: supply the token as RC_CONN_ROLLBAR. It is sent as X-Rollbar-Access-Token header.
+
+  Rollbar paginates with 1-based page numbers (page=1, page=2, …), which the generic lib.api
+  pagination loop cannot express automatically. Pass --query page=N to fetch subsequent pages.
+  Default page size is 100 items for /items, 20 for /deploys (override with --query limit=N).
+
+  Common paths and usage examples:
+
+      # List active error items in production (page 1)
+      python -m lib.api get rollbar items \
+        --query status=active --query environment=production --query page=1 \
+        --pick result.items.*.id,result.items.*.title,result.items.*.level,result.items.*.last_occurrence_timestamp
+
+      # Get a single item by counter (project-specific incrementing ID)
+      python -m lib.api get rollbar item/by-counter/42 \
+        --pick result.id,result.title,result.level,result.status,result.environment,result.last_occurrence_timestamp
+
+      # List recent deployments
+      python -m lib.api get rollbar deploys \
+        --query page=1 \
+        --pick result.deploys.*.id,result.deploys.*.environment,result.deploys.*.revision,result.deploys.*.finish_time
+
+      # List occurrences (instances) for a specific item
+      python -m lib.api get rollbar item/123/instances \
+        --query page=1 \
+        --pick result.instances.*.uuid,result.instances.*.timestamp,result.instances.*.data.person
+
+      # List top-level occurrences across all items
+      python -m lib.api get rollbar instances \
+        --query page=1 \
+        --pick result.instances.*.uuid,result.instances.*.timestamp
+
+  Response envelope: { "err": 0, "result": { "items": [...], "total_count": N, "page": 1 } }
+  A non-zero "err" field indicates an API error (check the "message" field).

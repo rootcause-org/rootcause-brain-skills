@@ -1,0 +1,84 @@
+key: datadog
+name: Datadog
+kinds: [token, oauth]
+# Script connector: force-code trigger (c) — exotic dual-secret auth.
+# Datadog requires TWO secrets on every request: DD-API-KEY and DD-APPLICATION-KEY.
+# lib.api only injects one credential per RC_CONN_* env var, so the connector stores them
+# colon-separated ("api_key:app_key") and the script splits them into both headers.
+# No single lib.api auth strategy can express a two-header credential; hence a script.
+connector_module: lib.connectors.datadog
+env_var: RC_CONN_DATADOG
+egress_hosts:
+  - api.datadoghq.com
+  - api.datadoghq.eu
+  - api.ap1.datadoghq.com
+  - api.ap2.datadoghq.com
+# --- Generic lib.api caller fields (used internally by the connector script) ---
+# base_url is US region default; EU/AP users supply an absolute URL or override via the connector.
+base_url: https://api.datadoghq.com
+auth:
+  # The connector handles auth manually (dual-header); this row documents the logical strategy for
+  # catalog consumers. The injected value is "api_key:app_key" — the script splits it.
+  strategy: none          # script injects DD-API-KEY + DD-APPLICATION-KEY directly
+  name: ""
+pagination:
+  # Datadog v2 list endpoints (incidents, events) use offset+limit with meta.pagination envelope.
+  # v1 monitors returns a bare array (no pagination needed; page_size covers all practical volumes).
+  style: offset
+  offset_param: page[offset]
+  limit_param: page[limit]
+  items_field: data       # v2 envelope: {"data": [...], "meta": {"pagination": {...}}}
+  page_size: 50
+rate_limit:
+  remaining_header: X-RateLimit-Remaining  # Datadog returns X-RateLimit-{Limit,Remaining,Period,Reset}
+oauth:
+  # Datadog OAuth is only available to Datadog Marketplace partners (apps); not a general user flow.
+  # Listed for forward-compatibility; the token (PAT) path is the active run path.
+  auth_url: https://app.datadoghq.com/oauth2/v1/authorize
+  token_url: https://api.datadoghq.com/oauth2/v1/token
+  default_scopes:
+    - monitors_read
+    - incident_read
+    - events_read
+    - dashboards_read
+help_md: |
+  Reads Datadog monitors, incidents, events, and dashboards for support diagnosis ("is there an
+  active monitor alert / are there open incidents / what events fired around this error").
+  Read-only — only ever issues GETs.
+
+  **Credential format:** Datadog requires TWO separate keys. Store them colon-separated as
+  the RC_CONN_DATADOG connection token:
+
+      api_key:app_key
+      e.g. "abc123def456:xyz789uvw012"
+
+  The API key authenticates the org; the Application key grants read access to org data.
+  Generate both in Datadog → Organization Settings → API Keys / Application Keys.
+
+  **Connector CLI (pre-joined, field-selected output):**
+
+      # List triggered monitors (alerting/no-data/warn states)
+      python -m lib.connectors.datadog monitors --query name=my-service
+
+      # Get a single monitor by ID
+      python -m lib.connectors.datadog monitors --id 12345
+
+      # List open incidents
+      python -m lib.connectors.datadog incidents --query state=active
+
+      # List recent events (last 1 hour)
+      python -m lib.connectors.datadog events --query filter[from]=now-1h
+
+  **Direct lib.api usage** (single-page, no pre-selection):
+
+      # Monitors return a bare array on v1 — no pagination needed for most orgs
+      python -m lib.api get datadog /api/v1/monitor \
+        --query name=my-service --pick id,name,type,overall_state,message
+
+      # v2 incidents (paginated)
+      python -m lib.api get datadog /api/v2/incidents \
+        --query page[size]=50 --pick data.*.id,data.*.attributes.title,data.*.attributes.status
+
+  **Region note:** EU, AP1, AP2 users must use their region's base URL
+  (e.g. https://api.datadoghq.eu). Supply the full path as an absolute URL to lib.api or
+  export DATADOG_BASE_URL to the connector (it checks this env var at startup).

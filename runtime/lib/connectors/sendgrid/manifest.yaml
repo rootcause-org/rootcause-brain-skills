@@ -1,0 +1,63 @@
+key: sendgrid
+name: SendGrid
+kinds: [token]
+# Manifest-only integration: NO connector_module. The support-critical suppression and stats
+# endpoints are offset-paginated and return flat arrays — no force-code trigger fires.
+# The /messages activity endpoint uses a page_token cursor; the agent can drive that manually
+# with --query page_token=<token> since it is one-shot per support query.
+connector_module: ""
+env_var: RC_CONN_SENDGRID
+egress_hosts:
+  - api.sendgrid.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.sendgrid.com/v3
+auth:
+  strategy: bearer   # API key presented as `Authorization: Bearer <key>`; no OAuth for SendGrid
+pagination:
+  style: offset      # most support endpoints: ?offset=N&limit=N; items are bare JSON arrays
+  offset_param: offset
+  limit_param: limit
+  items_field: ""    # suppression/stats endpoints return a bare JSON array (the page IS the list)
+  page_size: 500     # SendGrid max is 500 for suppression endpoints
+rate_limit:
+  remaining_header: X-RateLimit-Remaining   # confirmed: SendGrid returns X-RateLimit-{Limit,Remaining,Reset}
+help_md: |
+  Reads SendGrid suppression lists, email activity, and delivery stats for support diagnosis
+  ("why did this email bounce / is this address blocked / what is the send volume"). API-key only
+  (no OAuth); only ever issues GETs — read-only grounding.
+
+  Common support paths:
+
+      # All bounces (hard + soft) — most useful for "why didn't they get our email"
+      python -m lib.api get sendgrid suppression/bounces --paginate \
+        --pick email,reason,created,status
+
+      # Blocks (ISP/reputation blocks)
+      python -m lib.api get sendgrid suppression/blocks --paginate \
+        --pick email,reason,created,status
+
+      # Invalid emails (malformed/bad address)
+      python -m lib.api get sendgrid suppression/invalid_emails --paginate \
+        --pick email,reason,created
+
+      # Spam reports
+      python -m lib.api get sendgrid suppression/spam_reports --paginate \
+        --pick email,created,ip
+
+      # Global stats (daily, last 7 days)
+      python -m lib.api get sendgrid stats \
+        --query start_date=2024-01-01 --query end_date=2024-01-07 \
+        --pick date,stats.*.metrics.requests,stats.*.metrics.delivered,stats.*.metrics.bounces
+
+      # Check a specific email address across all suppressions
+      python -m lib.api get sendgrid suppression/bounces \
+        --query email=user@example.com
+
+      # Email activity — uses page_token cursor, single fetch first then follow manually
+      python -m lib.api get sendgrid messages \
+        --query limit=100 --query query="to_email=user@example.com"
+
+  Note: `/messages` (email activity) uses a `page_token` cursor rather than offset; for a
+  multi-page activity search, fetch the first page and pass `--query page_token=<next_page_token>`
+  from the response for subsequent pages. Suppression endpoints are offset-paginated and work
+  seamlessly with --paginate.

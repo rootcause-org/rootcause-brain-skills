@@ -1,0 +1,55 @@
+key: bugsnag
+name: Bugsnag
+kinds: [token]
+# Manifest-only integration: NO connector_module. Bugsnag reads (errors/events/projects) trip no
+# force-code trigger — no multi-call join, no exotic auth, link pagination is standard, no search
+# DSL footguns. The agent drives it directly via `python -m lib.api get bugsnag …` and pre-selects
+# fields with `--pick`.
+connector_module: ""
+env_var: RC_CONN_BUGSNAG
+egress_hosts:
+  - api.bugsnag.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.bugsnag.com
+auth:
+  # Bugsnag uses the "token" auth scheme (not Bearer). With api_key_header the credential
+  # value is placed verbatim into the named header. See help_md for storage instructions.
+  strategy: api_key_header
+  name: Authorization
+pagination:
+  style: link             # RFC 8288 `Link: <…>; rel="next"` headers — lib.api follows them verbatim
+  items_field: ""         # list endpoints return a bare JSON array (the page IS the list)
+  page_size: 100          # advisory; for `link` style pass --query per_page=100
+default_headers:
+  X-Version: "2"          # required: Bugsnag API v2 selector
+rate_limit:
+  remaining_header: X-RateLimit-Remaining   # advisory pacing; Bugsnag also sends 429 + Retry-After
+help_md: |
+  Reads Bugsnag errors, events, projects, and organisation members for support and incident diagnosis
+  ("is this a known error / who reported it / how often / severity / when last seen"). Token auth
+  only (PAT) — read-only by design, only GETs.
+
+  IMPORTANT: Bugsnag uses the "token" auth scheme, not Bearer. Store the full Authorization
+  header value as the credential — prefix your Personal Auth Token with the scheme word and a
+  space, e.g. store the string: scheme_word + " " + YOUR-PERSONAL-AUTH-TOKEN.
+  (Bugsnag: `Authorization: <scheme> <PAT>`, not `Authorization: Bearer <PAT>`.)
+
+  Pagination is RFC 8288 `Link` headers; list endpoints return a bare array. Bugsnag defaults to
+  30 items/page — pass `--query per_page=100` for fewer round-trips.
+
+  Common paths:
+    - /user                                          → authenticated user
+    - /organizations/{org_id}/projects               → list projects
+    - /projects/{project_id}/errors                 → list errors (filterable, sortable)
+    - /projects/{project_id}/errors/{error_id}      → single error detail
+    - /projects/{project_id}/errors/{error_id}/events → occurrences of an error
+    - /projects/{project_id}/events/{event_id}      → single event (full stacktrace)
+    - /errors/{error_id}/latest_event               → most recent occurrence
+    - /organizations/{org_id}/collaborators         → team members
+
+  Example — list open errors for a project, pick support-relevant fields:
+
+      python -m lib.api get bugsnag /projects/PROJECT_ID/errors \
+        --query per_page=100 --query sort=last_seen \
+        --paginate \
+        --pick error_class,message,status,severity,last_seen,events_url,id

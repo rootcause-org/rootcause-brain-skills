@@ -1,0 +1,65 @@
+key: basecamp
+name: Basecamp
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Basecamp reads (projects, to-dos, messages,
+# comments, people) trip no force-code trigger — the agent drives via `python -m lib.api get
+# basecamp …` with `--paginate` and `--pick`. OAuth is the preferred credential kind.
+connector_module: ""
+env_var: RC_CONN_BASECAMP
+egress_hosts:
+  - 3.basecampapi.com
+  - launchpad.37signals.com
+# --- Generic lib.api caller fields ---
+# Base URL is per-account: the agent supplies the ACCOUNT_ID as the first path segment.
+# e.g. `python -m lib.api get basecamp 195539477/projects.json`
+# There is no shared subdomain; all accounts live under 3.basecampapi.com/{account_id}/.
+base_url: https://3.basecampapi.com
+auth:
+  strategy: bearer        # OAuth access token or long-lived personal access token, both as Bearer
+pagination:
+  style: link             # RFC 5988 `Link: <url>; rel="next"` — lib.api follows verbatim
+  items_field: ""         # list endpoints return a bare JSON array (page IS the list)
+  page_size: 100          # advisory; Basecamp uses geared paging (15→30→50→100+), pass page=N
+default_headers:
+  # Basecamp requires a descriptive User-Agent — omitting it returns 400 Bad Request.
+  User-Agent: "rootcause-integration (https://rootcause.app)"
+  Content-Type: "application/json; charset=utf-8"
+rate_limit:
+  remaining_header: ""    # Basecamp sends no remaining-count header; 429 + Retry-After in seconds
+oauth:
+  auth_url: https://launchpad.37signals.com/authorization/new
+  token_url: https://launchpad.37signals.com/authorization/token
+  # Basecamp does not publish granular scopes — the OAuth grant gives full API read access.
+  default_scopes: []
+help_md: |
+  Reads Basecamp 3 projects, to-do lists, to-dos, message boards, messages, comments, and people
+  for support diagnosis ("what are the open tasks for this project? who's assigned? what messages
+  are on this board?"). OAuth or long-lived token, both read-only by GET-only usage.
+
+  IMPORTANT — the base URL is per-account. Every path must start with the numeric ACCOUNT_ID:
+      https://3.basecampapi.com/{ACCOUNT_ID}/…
+
+  Supply ACCOUNT_ID as the first path segment; the agent or operator pastes it from the
+  Basecamp web URL (e.g. https://3.basecamp.com/195539477/… → account_id=195539477).
+
+  Pagination is RFC 5988 `Link: rel="next"` headers; list endpoints return a bare JSON array.
+  Basecamp uses geared paging (15 items page 1, 30 page 2, 50 page 3, 100+ thereafter), so
+  always pass `--query page=1` explicitly and use `--paginate` to collect all items.
+
+  Key read paths (prefix each with {ACCOUNT_ID}/):
+    projects.json                                  — all active projects
+    projects.json?status=archived                  — archived projects
+    projects/{project_id}/todolists.json           — to-do lists in a project
+    todolists/{todolist_id}/todos.json             — to-dos in a list
+    projects/{project_id}/message_boards.json      — message board for a project (returns one)
+    message_boards/{message_board_id}/messages.json — messages on a board
+    recordings/{recording_id}/comments.json        — comments on any recording (todo, message…)
+    people.json                                    — all people visible to the token holder
+
+  Example — list all active projects:
+      python -m lib.api get basecamp 195539477/projects.json \
+        --paginate --pick id,name,status,description,app_url
+
+  Example — get open to-dos on a list:
+      python -m lib.api get basecamp 195539477/todolists/123456789/todos.json \
+        --paginate --pick id,title,completed,due_on,assignees.*.name,comments_count

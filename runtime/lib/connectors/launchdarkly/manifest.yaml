@@ -1,0 +1,61 @@
+key: launchdarkly
+name: LaunchDarkly
+kinds: [token]
+# Manifest-only integration: NO connector_module. Feature-flag reads (list flags, get flag details,
+# environments, projects, audit log) trip no force-code trigger — offset pagination is standard,
+# no multi-call join required, auth is a simple header token. The agent drives it directly via
+# `python -m lib.api get launchdarkly <path> [--query k=v] [--paginate] [--pick a,b]`.
+connector_module: ""
+env_var: RC_CONN_LAUNCHDARKLY
+egress_hosts:
+  - app.launchdarkly.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://app.launchdarkly.com/api/v2
+auth:
+  strategy: api_key_header   # LD tokens are sent raw in Authorization (no "Bearer " prefix)
+  name: Authorization
+pagination:
+  style: offset              # limit + offset query params; items under "items" key in response
+  items_field: items
+  offset_param: offset
+  limit_param: limit
+  page_size: 20              # LD's documented default; raise to 100 for bulk reads
+default_headers:
+  LD-API-Version: "20240415"  # pin the stable GA API version (required by LD; beta needs "beta")
+rate_limit:
+  remaining_header: X-Ratelimit-Route-Remaining   # per-route remaining; reset at X-Ratelimit-Reset
+# No OAuth: LaunchDarkly uses personal/service access tokens only; OAuth not supported by this API.
+help_md: |
+  Reads LaunchDarkly feature flags, environments, projects, audit log, and contexts (users)
+  for support diagnosis — e.g. "is this flag on for this environment?", "when did targeting last
+  change?", "what environments exist for project X?". Read-only (GET only, no writes).
+
+  Auth: inject a personal or service access token as RC_CONN_LAUNCHDARKLY.
+  Pagination: offset-based; always pass --paginate for lists to exhaust all pages.
+
+  Common paths and examples:
+
+  List all projects:
+      python -m lib.api get launchdarkly projects --paginate --pick key,name
+
+  List feature flags for a project (projKey = your project key, e.g. "default"):
+      python -m lib.api get launchdarkly flags/default \
+        --query env=production --paginate \
+        --pick key,name,kind,environments.production.on,environments.production.summary
+
+  Get a single flag:
+      python -m lib.api get launchdarkly flags/default/my-flag-key \
+        --query env=production \
+        --pick key,name,kind,environments.production.on,environments.production.targeting
+
+  List environments for a project:
+      python -m lib.api get launchdarkly projects/default/environments \
+        --paginate --pick key,name,color,production
+
+  Get audit log (recent flag changes, 20 most recent):
+      python -m lib.api get launchdarkly auditlog \
+        --query limit=20 --pick date,kind,description,target.name
+
+  List contexts (users/devices that evaluated flags) for a project+env:
+      python -m lib.api get launchdarkly projects/default/environments/production/contexts \
+        --paginate --pick kind,key,name,email

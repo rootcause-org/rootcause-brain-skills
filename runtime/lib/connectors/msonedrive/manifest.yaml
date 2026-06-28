@@ -1,0 +1,67 @@
+key: msonedrive
+name: Microsoft OneDrive
+kinds: [token, oauth]
+# Script connector: force-code trigger (d) fires — Graph paginator uses @odata.nextLink, a full
+# absolute URL returned in the JSON body. lib.api's `link` style reads RFC 8288 Link: response
+# headers; `cursor` style sends a token back as a query param. Neither can follow an opaque URL
+# from the response body, so a thin script is required.
+connector_module: lib.connectors.msonedrive
+env_var: RC_CONN_MSONEDRIVE
+egress_hosts:
+  - graph.microsoft.com
+  - login.microsoftonline.com   # OAuth token refresh (host-side) — egress guard coverage
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://graph.microsoft.com/v1.0
+auth:
+  strategy: bearer        # OAuth delegated or app-only access token, both as Authorization: Bearer …
+pagination:
+  # @odata.nextLink pagination: the script follows the absolute URL directly (not a query param).
+  # style=none here so the generic lib.api paginator won't try to drive listing calls; the script
+  # handles multi-page traversal itself via collect_odata().
+  style: none
+  items_field: value       # all Graph collection endpoints put items under "value"
+  page_size: 200           # Graph default max for drives/children; use $top=200 where allowed
+rate_limit:
+  remaining_header: ""     # Graph throttles via 429 + Retry-After; no remaining-count header
+oauth:
+  auth_url: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+  token_url: https://login.microsoftonline.com/common/oauth2/v2.0/token
+  # Minimal read-only delegated scopes for OneDrive file grounding. Files.Read covers personal
+  # OneDrive; Sites.Read.All covers SharePoint/OneDrive for Business document libraries.
+  default_scopes:
+    - Files.Read
+    - Files.Read.All
+    - Sites.Read.All
+    - offline_access
+help_md: |
+  Reads Microsoft OneDrive and SharePoint document libraries via the Microsoft Graph API v1.0.
+  Supports delegated access (user token) and app-only access (client credentials). Read-only —
+  only ever issues GETs.
+
+  Authentication: inject an OAuth access token as RC_CONN_MSONEDRIVE (obtained via the OAuth
+  connect flow with scopes Files.Read Files.Read.All Sites.Read.All offline_access).
+
+  Common paths and commands:
+
+      # User's default drive metadata
+      python -m lib.connectors.msonedrive drive
+
+      # List root folder children (paginated, picks name/size/lastModified/webUrl)
+      python -m lib.connectors.msonedrive children me/drive/root
+
+      # List children of a specific folder by ID
+      python -m lib.connectors.msonedrive children drives/{drive-id}/items/{item-id}
+
+      # Search for files by keyword
+      python -m lib.connectors.msonedrive search "quarterly report"
+
+      # Recent files
+      python -m lib.connectors.msonedrive recent
+
+  For ad-hoc single-page reads without pagination (e.g. metadata for one item):
+
+      python -m lib.api get msonedrive me/drive/items/{item-id} \
+        --pick id,name,size,lastModifiedDateTime,webUrl,file,folder
+
+  Graph uses @odata.nextLink in the JSON body for pagination; this connector follows those URLs
+  directly so the agent never has to hand-roll paging loops.

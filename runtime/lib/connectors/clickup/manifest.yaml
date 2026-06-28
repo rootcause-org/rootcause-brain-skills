@@ -1,0 +1,62 @@
+key: clickup
+name: ClickUp
+kinds: [token, oauth]
+# Script connector: ClickUp pagination uses a 0-based PAGE NUMBER (page=0,1,2,…) rather than
+# an item-count offset, so lib.api's generic offset style (which advances offset by len(items))
+# cannot express it. Force-code trigger (d): pagination the generic styles can't express.
+#
+# Auth note: ClickUp personal tokens (pk_…) ride raw in the Authorization header with NO "Bearer"
+# prefix — api_key_header strategy places the credential value verbatim. OAuth access tokens also
+# use the same header; the host injects either as the env var value, so the strategy is consistent.
+connector_module: lib.connectors.clickup
+env_var: RC_CONN_CLICKUP
+egress_hosts:
+  - api.clickup.com
+# --- Generic lib.api caller fields (required for catalog + auth; the script owns pagination) ---
+base_url: https://api.clickup.com/api/v2
+auth:
+  strategy: api_key_header   # places the credential value verbatim as Authorization: <token>
+  name: Authorization        # personal token (pk_…) has no "Bearer" prefix; OAuth host-injects bearer
+pagination:
+  # The script handles pagination manually (page-number loop); manifest style is `none` so the
+  # generic paginator doesn't interfere. page_size=100 is the server-enforced ceiling.
+  style: none
+  items_field: tasks         # list-tasks response envelope: {"tasks": [...]}
+  page_size: 100
+rate_limit:
+  remaining_header: X-RateLimit-Remaining
+oauth:
+  auth_url: https://app.clickup.com/api
+  token_url: https://api.clickup.com/api/v2/oauth/token
+  default_scopes: []         # ClickUp OAuth is scope-less at the token level — workspace access is
+                             # governed by app permissions granted during the OAuth connect flow
+help_md: |
+  Reads ClickUp tasks, comments, spaces, lists, and workspace members for support diagnosis
+  ("what tasks are open for this customer / what's the status / recent comments"). Personal API
+  token (pk_…) or OAuth, both read-only — only ever issues GETs.
+
+  Pagination uses 0-based page numbers (page=0,1,2,…); ClickUp caps at 100 tasks/page and stops
+  when a page returns fewer items. The script handles this loop automatically.
+
+  Use the connector CLI for structured task lists with field pre-selection:
+
+      python -m lib.connectors.clickup tasks list/{list_id}
+      python -m lib.connectors.clickup tasks team/{team_id} --max-pages 5
+      python -m lib.connectors.clickup task {task_id}
+      python -m lib.connectors.clickup comments {task_id}
+      python -m lib.connectors.clickup spaces {team_id}
+
+  Or drive single (non-paginated) reads directly via lib.api for one-shot lookups:
+
+      # List all workspaces the token can access
+      python -m lib.api get clickup team
+
+      # Get a single task
+      python -m lib.api get clickup task/{task_id} \
+        --pick id,name,status.status,assignees.*.username,due_date,url,description
+
+      # Get task comments (25 most recent, newest first by default)
+      python -m lib.api get clickup task/{task_id}/comment
+
+  The agent must supply the {team_id}/{space_id}/{list_id}/{task_id} from prior calls or context.
+  Start with `team` to discover workspace IDs, then drill into spaces → lists → tasks.

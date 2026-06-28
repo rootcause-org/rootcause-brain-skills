@@ -1,0 +1,83 @@
+key: quickbooks
+name: QuickBooks Online
+kinds: [token, oauth]
+# Script connector: lib.connectors.quickbooks exists because multiple force-code triggers fire:
+# (a) field pre-selection — Customer/Invoice objects carry 50+ fields; support needs 5–8.
+# (d) non-standard pagination — QB embeds STARTPOSITION/MAXRESULTS *inside* the SQL query string
+#     sent as a query param; lib.api's offset style can't inject values into SQL clauses.
+# (e) search DSL — QB uses a SQL-like query language; a thin wrapper with pre-built queries
+#     prevents footguns (missing quotes, wrong field names, bare LIKE without %).
+# The realmId (company identifier) also varies per connection; the connector resolves it from
+# RC_CONN_QUICKBOOKS_REALM_ID so the base_url is fully concrete at call time.
+connector_module: lib.connectors.quickbooks
+env_var: RC_CONN_QUICKBOOKS
+egress_hosts:
+  - quickbooks.api.intuit.com   # REST API (production)
+  - sandbox-quickbooks.api.intuit.com  # sandbox (dev/test only)
+
+# --- Generic lib.api caller fields (the compact declarative row) ---
+# Base URL is templated: the realmId is company-specific and cannot be hardcoded.
+# The connector resolves it from RC_CONN_QUICKBOOKS_REALM_ID at call time.
+# For direct lib.api use, pass the full URL or set base_url=https://quickbooks.api.intuit.com/v3/company/{realmId}.
+base_url: https://quickbooks.api.intuit.com/v3/company
+auth:
+  strategy: bearer        # OAuth 2.0 access token presented as `Authorization: Bearer …`
+pagination:
+  # QB embeds pagination in the SQL: SELECT … STARTPOSITION N MAXRESULTS M
+  # The connector handles paging manually; lib.api's generic loop is not used.
+  style: none
+  items_field: ""         # connector extracts items from QueryResponse.<Entity>
+  page_size: 100
+default_headers:
+  Accept: application/json     # QB also serves XML by default; JSON requires this header
+rate_limit:
+  # QuickBooks signals throttling with 429 + Retry-After; no remaining-count header.
+  remaining_header: ""
+oauth:
+  auth_url: https://appcenter.intuit.com/connect/oauth2
+  token_url: https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer
+  # QuickBooks does not separate read vs. write scopes; accounting covers both.
+  # openid/profile/email are standard OIDC scopes for identity context.
+  default_scopes:
+    - com.intuit.quickbooks.accounting
+    - openid
+    - profile
+    - email
+help_md: |
+  Reads QuickBooks Online customers, invoices, payments, and company info for billing/support
+  diagnosis. Bearer auth via an OAuth 2.0 access token — token or OAuth kinds both inject it
+  as `RC_CONN_QUICKBOOKS`.
+
+  QuickBooks is multi-company: the company identifier (realmId) is required for every request.
+  Set `RC_CONN_QUICKBOOKS_REALM_ID=<your-realm-id>` alongside the token. The realmId is the
+  numeric company ID visible in the QB dashboard URL: `.../app/...?companyId=<realmId>`.
+
+  The connector wraps the QB query endpoint (`/v3/company/{realmId}/query?query=<SQL>`),
+  handling offset-in-SQL pagination and common entity lookups with field pre-selection.
+
+  CLI usage:
+
+      # Look up a customer by name or email
+      python -m lib.connectors.quickbooks customer "Acme Corp"
+      python -m lib.connectors.quickbooks customer --email acme@example.com
+
+      # List recent invoices for a customer (by QB customer id)
+      python -m lib.connectors.quickbooks invoices --customer-id 42 --limit 10
+
+      # Show a single invoice by QB invoice id
+      python -m lib.connectors.quickbooks invoice 1001
+
+      # Company overview (name, address, fiscal year)
+      python -m lib.connectors.quickbooks company
+
+  For direct QB SQL queries via lib.api (requires knowing the realm id):
+
+      python -m lib.api get quickbooks v3/company/<realmId>/query \
+        --query "query=SELECT * FROM Customer WHERE DisplayName LIKE '%Acme%' MAXRESULTS 5" \
+        --pick "QueryResponse.Customer.*.DisplayName,QueryResponse.Customer.*.Balance"
+
+  QB SQL tips:
+  - Wrap string literals in single quotes: `WHERE DisplayName = 'Acme Corp'`
+  - Use `LIKE '%term%'` for partial matches
+  - Pagination: append `STARTPOSITION 1 MAXRESULTS 100` to the SQL (1-based offset)
+  - Available entities: Customer, Invoice, Payment, Bill, Vendor, Item, Account, CompanyInfo

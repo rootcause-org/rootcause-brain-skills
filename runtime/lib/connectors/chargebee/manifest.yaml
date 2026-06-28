@@ -1,0 +1,67 @@
+key: chargebee
+name: Chargebee
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Basic reads (customers/subscriptions/invoices/
+# transactions/events) trip no force-code trigger — Basic auth and cursor pagination are both
+# handled natively by lib.api. The agent drives it directly via `python -m lib.api get chargebee …`.
+connector_module: ""
+env_var: RC_CONN_CHARGEBEE
+egress_hosts:
+  - "*.chargebee.com"     # per-account subdomain: {site}.chargebee.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+# base_url is templated: the agent supplies the actual site subdomain via the full path or by
+# setting the site in the path. Because Chargebee uses a per-account subdomain the base_url here
+# uses the literal placeholder {site} — see help_md for how to pass it.
+base_url: https://{site}.chargebee.com/api/v2
+auth:
+  strategy: basic         # API key as HTTP Basic username; password is empty — lib.api encodes "key:"
+pagination:
+  # Chargebee returns `next_offset` (opaque cursor) in the response body; you send it back as the
+  # `offset` query param. This maps exactly to lib.api's cursor style:
+  #   cursor_field  = where in the response the next token lives
+  #   cursor_param  = what query param carries it on the next request
+  #   has_more_field = absent — loop until next_offset is null/missing
+  style: cursor
+  cursor_field: next_offset
+  cursor_param: offset
+  has_more_field: ""      # absence of next_offset is the stop signal; no separate has_more field
+  items_field: list       # list responses wrap items under "list": [{"customer":{…}}, …]
+  page_size: 100          # Chargebee max; default is 10, so always pass limit=100
+default_headers: {}       # no required version header for Chargebee v2
+rate_limit:
+  remaining_header: ""    # Chargebee does not expose a remaining-count header; 429 + Retry-After honoured
+oauth:
+  auth_url: https://chargebee.com/oauth/authorize
+  token_url: https://chargebee.com/oauth/token
+  default_scopes:
+    - read_only           # minimal read-only scope for support grounding
+help_md: |
+  Reads Chargebee customers, subscriptions, invoices, transactions, and events for billing-support
+  diagnosis. Read-only — only ever issues GETs. Auth is a Chargebee Full-Access or Read-Only API
+  key (Settings → Configure Chargebee → API Keys), passed via RC_CONN_CHARGEBEE as HTTP Basic
+  username with an empty password — the connector encodes it automatically.
+
+  IMPORTANT — per-account subdomain: Chargebee's base URL is `https://{site}.chargebee.com/api/v2`.
+  Because the site name varies per customer, supply the full absolute URL when calling:
+
+      python -m lib.api get chargebee https://YOURSITE.chargebee.com/api/v2/customers \
+        --query limit=100 --paginate \
+        --pick "customer.id,customer.email,customer.first_name,customer.last_name,customer.billing_address"
+
+  List response envelope: `{"list": [{"customer": {…}}, …], "next_offset": "…"}`. Each item is
+  wrapped in a resource-type key (`customer`, `subscription`, `invoice`, `transaction`). Use dotted
+  --pick paths like `customer.email` to extract the nested field.
+
+  Common paths (always use absolute URLs with your site):
+    https://YOURSITE.chargebee.com/api/v2/customers               — all customers
+    https://YOURSITE.chargebee.com/api/v2/customers/{id}          — one customer
+    https://YOURSITE.chargebee.com/api/v2/subscriptions?customer_id[is]=CUST_ID  — by customer
+    https://YOURSITE.chargebee.com/api/v2/invoices?customer_id[is]=CUST_ID
+    https://YOURSITE.chargebee.com/api/v2/transactions?customer_id[is]=CUST_ID
+    https://YOURSITE.chargebee.com/api/v2/events?source[is]=api&limit=100
+
+  Useful pick paths:
+    customer:      customer.id,customer.email,customer.first_name,customer.last_name,customer.billing_address
+    subscription:  subscription.id,subscription.status,subscription.plan_id,subscription.next_billing_at,subscription.current_term_end
+    invoice:       invoice.id,invoice.status,invoice.amount_due,invoice.date,invoice.due_date
+    transaction:   transaction.id,transaction.amount,transaction.status,transaction.payment_method_type,transaction.date

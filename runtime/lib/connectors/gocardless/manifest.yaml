@@ -1,0 +1,74 @@
+key: gocardless
+name: GoCardless
+kinds: [token, oauth]
+# Script connector: the force-code trigger is (d) non-standard pagination — GoCardless list
+# responses embed items under a resource-type key that varies per endpoint ("payments",
+# "mandates", "customers", "subscriptions", "payment_requests", …) while the pagination envelope
+# is always at "meta.cursors.after". The generic items_field cannot be fixed to a single value
+# across all endpoints, so the script extracts items dynamically from the response envelope.
+connector_module: lib.connectors.gocardless
+env_var: RC_CONN_GOCARDLESS
+egress_hosts:
+  - api.gocardless.com
+  - api-sandbox.gocardless.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.gocardless.com
+auth:
+  strategy: bearer        # Access token or OAuth access token, presented as `Authorization: Bearer …`
+pagination:
+  style: cursor           # GoCardless uses meta.cursors.after as the opaque next-page token
+  cursor_field: meta.cursors.after   # dotted path lib.api _dotted() resolves; None ⇒ last page
+  cursor_param: after     # query param sent on the next request
+  has_more_field: ""      # no explicit has_more; absence of meta.cursors.after stops the loop
+  items_field: ""         # varies per resource type — the script extracts items dynamically
+  page_size: 200          # GoCardless max; default is 50, so always request the max
+default_headers:
+  GoCardless-Version: "2015-07-06"   # required API version header (pinned; GoCardless requires this)
+rate_limit:
+  remaining_header: ratelimit-remaining   # advisory pacing; GoCardless also sends 429 + Retry-After
+oauth:
+  auth_url: https://connect.gocardless.com/oauth/authorize
+  token_url: https://connect.gocardless.com/oauth/access_token
+  default_scopes:
+    - read_only             # minimal read-only scope; read_write is the alternative for full access
+help_md: |
+  Reads GoCardless payments, mandates, customers, subscriptions, and refunds for billing-support
+  diagnosis ("did this payment fail / what is this customer's mandate status / what subscriptions
+  are active"). Token or OAuth, both read-only — only ever issues GETs.
+
+  GoCardless wraps every list response as `{"<resource>": [...], "meta": {"cursors": {"after": "…",
+  "before": "…"}}}` where the items key matches the endpoint name. The connector handles this
+  variable envelope transparently; the agent sees a flat items list.
+
+  ## Usage (via connector CLI — handles variable envelope + pagination)
+
+      python -m lib.connectors.gocardless list payments --query customer_id=CU123 --max-pages 5
+      python -m lib.connectors.gocardless list mandates --query customer_id=CU123
+      python -m lib.connectors.gocardless list subscriptions --query customer_id=CU123
+      python -m lib.connectors.gocardless list refunds --query payment_id=PM123
+      python -m lib.connectors.gocardless list customers --query email=user@example.com
+      python -m lib.connectors.gocardless get payment PM123
+      python -m lib.connectors.gocardless get mandate MD123
+      python -m lib.connectors.gocardless get customer CU123
+      python -m lib.connectors.gocardless get subscription SB123
+
+  ## Raw access via generic CLI (single-page, full body — items_field varies)
+
+      python -m lib.api get gocardless /payments --query customer_id=CU123 --query limit=200
+
+  ## Key endpoints
+  - `GET /payments`               — list payments (filter by customer_id, mandate, status, created_at)
+  - `GET /payments/{id}`          — one payment with status/failure reason/amount
+  - `GET /mandates`               — list mandates (filter by customer_id, status)
+  - `GET /mandates/{id}`          — one mandate with bank account, scheme, status
+  - `GET /customers`              — list customers (filter by email, created_at)
+  - `GET /customers/{id}`         — one customer with bank accounts + contact details
+  - `GET /subscriptions`          — list subscriptions (filter by customer_id, mandate_id, status)
+  - `GET /subscriptions/{id}`     — one subscription with plan, interval, amount
+  - `GET /refunds`                — list refunds (filter by payment_id, mandate_id)
+  - `GET /events`                 — audit trail of state changes (filter by resource_type, action)
+  - `GET /payment_requests`       — open banking payment requests
+
+  ## GoCardless-Version header
+  All requests require `GoCardless-Version: 2015-07-06` — declared in default_headers and sent
+  automatically by this connector.

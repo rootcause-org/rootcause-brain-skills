@@ -1,0 +1,46 @@
+key: twilio
+name: Twilio
+kinds: [token]
+# Script connector: Twilio paginates via `next_page_uri` in the JSON body (a relative path to follow
+# verbatim), which none of the generic styles (cursor/offset/link) can express — the script extracts
+# AccountSid from the basic-auth credential and follows next_page_uri directly.
+connector_module: lib.connectors.twilio
+env_var: RC_CONN_TWILIO
+egress_hosts:
+  - api.twilio.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+# base_url omits the per-account segment (/Accounts/{AccountSid}) — the script builds paths from the
+# AccountSid extracted from the credential (format: "AC…:auth_token").
+base_url: https://api.twilio.com/2010-04-01
+auth:
+  strategy: basic    # HTTP Basic: AccountSid as username, AuthToken as password
+pagination:
+  # Twilio wraps list results in an envelope and provides `next_page_uri` as the continuation. The
+  # generic cursor/link styles don't match (cursor wants a token sent as a param; link reads a
+  # response header), so pagination is handled in the script via _twilio_pages().
+  style: none         # script drives paging; this row is informational / for manifest validation
+  items_field: ""
+  page_size: 50
+rate_limit:
+  remaining_header: ""   # Twilio enforces limits via 429 + Retry-After; no remaining-count header
+help_md: |
+  Reads Twilio SMS messages, calls, and phone numbers for support diagnosis. Credential is
+  "AccountSid:AuthToken" stored as the token value (injected as RC_CONN_TWILIO). Read-only — only
+  ever issues GETs. Pre-pilot: connect Twilio to ground support runs in SMS/call history.
+
+  The connector extracts AccountSid from the credential automatically. Use the script CLI for
+  pre-joined, field-pruned output:
+
+      python -m lib.connectors.twilio messages [--to +1555...] [--from +1555...] [--limit 20]
+      python -m lib.connectors.twilio calls    [--to +1555...] [--status completed] [--limit 20]
+      python -m lib.connectors.twilio numbers  [--limit 20]
+
+  Or drive the raw API directly (set RC_CONN_TWILIO=AC…:auth_token first):
+
+      python -m lib.api get twilio /2010-04-01/Accounts/AC.../Messages.json \
+        --query To=+15551234567 --query PageSize=50
+
+  Key paths (substitute your AccountSid):
+    /2010-04-01/Accounts/{AccountSid}/Messages.json       — SMS/MMS list + filter by To/From/Status
+    /2010-04-01/Accounts/{AccountSid}/Calls.json          — call log
+    /2010-04-01/Accounts/{AccountSid}/IncomingPhoneNumbers.json — provisioned numbers

@@ -1,0 +1,61 @@
+key: paddle
+name: Paddle
+kinds: [token, oauth]
+# Script connector: Paddle pagination embeds the next URL inside the JSON body
+# (`meta.pagination.next`) — not an HTTP Link header and not a standalone cursor token — so the
+# generic lib.api cursor/link styles can't drive it. A thin connector handles the while-has-more
+# loop manually and also does the multi-call join (customer → subscriptions → transactions) for
+# concise support grounding. Force-code triggers: (b) multi-call join, (d) non-standard pagination.
+connector_module: lib.connectors.paddle
+env_var: RC_CONN_PADDLE
+egress_hosts:
+  - api.paddle.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.paddle.com
+auth:
+  strategy: bearer        # API key presented as `Authorization: Bearer <pdl_sdbx/live key>`
+pagination:
+  # Paddle returns `meta.pagination.next` (full URL) + `meta.pagination.has_more` (bool) +
+  # `data` (items). No standalone cursor token in the response; the connector drives the loop
+  # manually via the `next` URL rather than having lib.api reconstruct it from a token.
+  style: cursor           # closest generic fit; script overrides with _paddle_pages()
+  cursor_param: after
+  cursor_field: meta.pagination.next   # full next URL — only used as a fallback hint
+  has_more_field: meta.pagination.has_more
+  items_field: data
+  page_size: 50
+rate_limit:
+  # Paddle uses 429 + Retry-After (honoured by lib.api); no remaining-count header documented.
+  remaining_header: ""
+oauth:
+  auth_url: https://login.paddle.com/oauth2/authorize
+  token_url: https://login.paddle.com/oauth2/token
+  default_scopes:
+    - customers.read
+    - subscriptions.read
+    - transactions.read
+    - products.read
+    - prices.read
+help_md: |
+  Reads Paddle customers, subscriptions, transactions, products, and prices for billing-support
+  diagnosis. Token (API key) or OAuth, both read-only — only ever issues GETs.
+
+  The connector renders a concise per-customer support summary (subscription status, recent
+  transactions, billing contact). For raw list access use `python -m lib.api get paddle ...`
+  with manual pagination via `--query after=<id>`.
+
+  **Connector commands (recommended for support):**
+
+      python -m lib.connectors.paddle customer ctm_01h8441jn5pcwrfhwh78jqt8hk
+      python -m lib.connectors.paddle customer alice@example.com
+
+  **Direct API reads (for one-off exploration):**
+
+      python -m lib.api get paddle /customers --query per_page=50 --pick id,email,status,created_at
+      python -m lib.api get paddle /subscriptions --query customer_id=ctm_xyz --query status=active \
+        --pick id,status,next_billed_at,items.*.price.unit_price.amount
+      python -m lib.api get paddle /transactions --query customer_id=ctm_xyz --query per_page=30
+
+  **Common paths:** /customers, /subscriptions, /transactions, /products, /prices
+  **Paddle ID prefixes:** ctm_ (customer), sub_ (subscription), txn_ (transaction),
+  pro_ (product), pri_ (price)

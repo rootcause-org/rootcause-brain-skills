@@ -1,0 +1,67 @@
+key: vercel
+name: Vercel
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Deployment/project/domain reads trip no
+# force-code trigger — cursor pagination is standard, items fields vary per endpoint but the
+# agent picks them with --pick, no multi-call join needed for support grounding.
+connector_module: ""
+env_var: RC_CONN_VERCEL
+egress_hosts:
+  - api.vercel.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.vercel.com
+auth:
+  strategy: bearer        # Personal Access Token or OAuth access token, both as `Authorization: Bearer …`
+pagination:
+  # Vercel uses a timestamp cursor: the response envelope carries `pagination.next` (a JS
+  # millisecond timestamp, null when exhausted). The next page is fetched by passing that
+  # value as the `until` query parameter. Items are nested under an endpoint-specific key
+  # (e.g. `deployments`, `projects`, `domains`) — the agent selects the right field with
+  # --pick or jq after collecting; no single items_field covers all endpoints.
+  style: cursor
+  cursor_field: pagination.next   # dotted path into the response body
+  cursor_param: until             # sent as ?until=<timestamp> to fetch the next page
+  has_more_field: ""              # absent ⇒ loop until cursor_field is empty/null
+  items_field: ""                 # endpoint-specific; agent uses --pick or jq to extract
+  page_size: 100                  # advisory; passed as ?limit=100 by the agent
+rate_limit:
+  # Vercel paces with 429 + Retry-After (honoured by lib.api). No remaining-count header
+  # documented in the public API.
+  remaining_header: ""
+oauth:
+  auth_url: https://vercel.com/oauth/authorize
+  token_url: https://api.vercel.com/v2/oauth/access_token
+  # Minimal read-only scopes for support grounding (deployments + projects + team membership).
+  default_scopes: [deployment, project, team, user]
+help_md: |
+  Reads Vercel deployments, projects, domains, aliases, and team info for support diagnosis
+  ("latest deploy status, which branch deployed, error state, custom domains"). Bearer PAT or
+  OAuth, both read-only — only ever issues GETs.
+
+  Pagination is cursor-based: each list response carries `pagination.next` (a JS ms timestamp,
+  null when done); lib.api sends it back as `?until=<value>`. Items sit under an
+  endpoint-specific key (`deployments`, `projects`, `domains`, …) — pipe through jq or use
+  `--pick` to narrow the field.
+
+  Useful paths for support:
+
+      # Recent deployments (all states) for a project
+      python -m lib.api get vercel /v7/deployments \
+        --query projectId=<id> --query limit=20 --query teamId=<team_id> \
+        --pick deployments.*.uid,deployments.*.name,deployments.*.state,deployments.*.url,deployments.*.createdAt
+
+      # List projects
+      python -m lib.api get vercel /v9/projects \
+        --query teamId=<team_id> --query limit=50 --paginate \
+        --pick projects.*.id,projects.*.name,projects.*.framework,projects.*.latestDeployments.*.readyState
+
+      # Get a single deployment detail
+      python -m lib.api get vercel /v13/deployments/<deployment_id_or_url> \
+        --pick id,name,url,state,errorCode,errorMessage,createdAt,buildingAt,ready
+
+      # List domains for a project
+      python -m lib.api get vercel /v9/projects/<project_id>/domains \
+        --query teamId=<team_id> --pick domains.*.name,domains.*.verified,domains.*.redirect
+
+  Pass `--query teamId=<team_id>` on every call when the token belongs to a team installation
+  (omit for personal accounts). The `teamId` can also be the team `slug`.

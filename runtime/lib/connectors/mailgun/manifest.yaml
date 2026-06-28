@@ -1,0 +1,73 @@
+key: mailgun
+name: Mailgun
+kinds: [token]
+# Manifest-only integration: NO connector_module. Mailgun list endpoints return
+# {"items": [...], "paging": {"next": "<url>", ...}} — the next-page token is a full URL
+# embedded in the response body (not an RFC 8288 Link header, not a scalar cursor token),
+# so lib.api's built-in pagination styles can't auto-page these endpoints. style=none is
+# correct: the agent fetches one page and follows paging.next manually when it needs more.
+# The /domains endpoint supports ?skip=N but support queries rarely need full-scan paging.
+connector_module: ""
+env_var: RC_CONN_MAILGUN
+egress_hosts:
+  - api.mailgun.net
+  - api.eu.mailgun.net
+# --- Generic lib.api caller fields (the compact declarative row) ---
+# Base URL uses the US region. For EU-hosted domains substitute api.eu.mailgun.net;
+# pass the full absolute URL to python -m lib.api get mailgun <url>.
+base_url: https://api.mailgun.net/v3
+auth:
+  # HTTP Basic Auth: username is the literal string "api", password is the private API key.
+  # Inject the credential as "api:<key>" via RC_CONN_MAILGUN so lib.api's `basic` strategy
+  # (which splits on the first ":") sends Authorization: Basic base64("api:<key>").
+  strategy: basic
+pagination:
+  style: none   # paging.next is a full URL in the JSON body — agent follows manually
+  items_field: items
+  page_size: 100
+rate_limit:
+  remaining_header: X-RateLimit-Remaining  # Mailgun returns X-RateLimit-{Limit,Remaining,Reset}
+help_md: |
+  Reads Mailgun email events, suppression lists (bounces/complaints/unsubscribes), and domain
+  metadata for support diagnosis ("why didn't the customer receive our email / is their address
+  bouncing / did they unsubscribe / what domains are configured"). Credential is the Mailgun
+  private API key injected as "api:<key>" (the library encodes it as HTTP Basic Auth).
+  Read-only GETs only — never writes to the customer's Mailgun account.
+
+  All mail-sending paths are domain-scoped: replace {domain} with your sending domain
+  (e.g. mg.example.com). Use https://api.eu.mailgun.net/v3 as the base for EU-hosted accounts.
+
+  Pagination note: list endpoints wrap results in "items" and carry the next-page URL in
+  "paging.next" (a full URL, not a cursor token). --paginate does not chain pages automatically;
+  fetch the first page and pass the paging.next URL as the path argument for subsequent pages,
+  or add --query limit=100 and --query p=<last-address> for suppression list endpoints.
+
+  Common support paths:
+
+      # Recent email events — delivered, failed, bounced, complained, unsubscribed
+      python -m lib.api get mailgun {domain}/events \
+        --query event=failed --query limit=100 \
+        --pick items.*.event,items.*.recipient,items.*.reason,items.*.delivery-status.message
+
+      # All bounces on a domain (hard-bounce suppression list)
+      python -m lib.api get mailgun {domain}/bounces \
+        --query limit=100 \
+        --pick items.*.address,items.*.code,items.*.error,items.*.created_at
+
+      # Spam complaints
+      python -m lib.api get mailgun {domain}/complaints \
+        --query limit=100 \
+        --pick items.*.address,items.*.created_at
+
+      # Unsubscribes
+      python -m lib.api get mailgun {domain}/unsubscribes \
+        --query limit=100 \
+        --pick items.*.address,items.*.tag,items.*.created_at
+
+      # Look up one address in the bounce list
+      python -m lib.api get mailgun {domain}/bounces/user@example.com
+
+      # List all sending domains on the account
+      python -m lib.api get mailgun domains \
+        --query limit=100 \
+        --pick items.*.name,items.*.state,items.*.type,items.*.created_at

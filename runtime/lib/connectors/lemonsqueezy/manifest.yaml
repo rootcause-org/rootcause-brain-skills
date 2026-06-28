@@ -1,0 +1,53 @@
+key: lemonsqueezy
+name: Lemon Squeezy
+kinds: [token, oauth]
+# Script connector: Lemon Squeezy uses JSON:API page-number pagination (page[number] / page[size])
+# where the next page is communicated via `links.next` in the response body (not an HTTP Link
+# header). Neither the `offset` style (which advances by item count, not page number) nor `link`
+# style (which reads the HTTP Link header) maps cleanly. Trigger (d) fired → thin script.
+connector_module: lib.connectors.lemonsqueezy
+env_var: RC_CONN_LEMONSQUEEZY
+egress_hosts:
+  - api.lemonsqueezy.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.lemonsqueezy.com/v1
+auth:
+  strategy: bearer        # API key or OAuth access token, presented as `Authorization: Bearer …`
+pagination:
+  # lib.api drives pagination in the script; these fields are here so manifest.yaml is a complete
+  # catalog row and the YAML loader can parse it without error. The script uses links.next in the
+  # JSON:API body, not the generic paginator.
+  style: none             # overridden by script; left as `none` so any naive manifest-only caller
+  items_field: data       # gets at least the first page correctly
+  page_size: 100
+default_headers:
+  Accept: application/vnd.api+json   # JSON:API content negotiation — required by the server
+rate_limit:
+  remaining_header: X-RateLimit-Remaining
+oauth:
+  auth_url: https://app.lemonsqueezy.com/oauth/authorize
+  token_url: https://api.lemonsqueezy.com/v1/oauth/token
+  default_scopes: [orders:read, customers:read, subscriptions:read, licenses:read]
+help_md: |
+  Reads Lemon Squeezy store data for support diagnosis: customers, orders, subscriptions, and
+  license keys. Read-only; only ever issues GETs. Auth is a Lemon Squeezy API key (Settings →
+  API) presented as a Bearer token.
+
+  Use the connector CLI for a joined customer summary (order history + active subscriptions +
+  license keys in one compact markdown block):
+
+      python -m lib.connectors.lemonsqueezy customer <customer-id-or-email>
+
+  Or drive individual endpoints directly via lib.api (single-page, no auto-paging):
+
+      python -m lib.api get lemonsqueezy /customers --query filter[email]=alice@example.com
+      python -m lib.api get lemonsqueezy /orders --query filter[user_email]=alice@example.com
+      python -m lib.api get lemonsqueezy /subscriptions --query filter[user_email]=alice@example.com
+      python -m lib.api get lemonsqueezy /license-keys --query filter[email]=alice@example.com
+
+  For paginated collection use the connector CLI or call the script; the generic --paginate flag
+  does not work for this integration (JSON:API page-number pagination lives in the body, not HTTP
+  headers).
+
+  Common paths: /customers, /orders, /order-items, /subscriptions, /subscription-items,
+  /license-keys, /products, /variants, /stores.

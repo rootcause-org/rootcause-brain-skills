@@ -1,0 +1,70 @@
+key: intercom
+name: Intercom
+kinds: [token, oauth]
+# Script connector: the force-code trigger is (d) non-standard pagination — Intercom's list
+# responses embed items under a resource-type key that varies per endpoint ("conversations",
+# "contacts", "companies", "articles"), so the generic items_field cannot be fixed in the manifest.
+# The script handles items extraction by inspecting the response envelope.
+connector_module: lib.connectors.intercom
+env_var: RC_CONN_INTERCOM
+egress_hosts:
+  - api.intercom.io
+  - api.eu.intercom.io
+  - api.au.intercom.io
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.intercom.io
+auth:
+  strategy: bearer        # Access token or OAuth token, presented as `Authorization: Bearer …`
+pagination:
+  style: cursor           # Intercom uses `starting_after` cursor embedded at pages.next.starting_after
+  cursor_field: pages.next.starting_after  # dotted path the lib.api _dotted() resolver handles
+  cursor_param: starting_after
+  has_more_field: ""      # pagination stops when pages.next is absent (cursor_field returns None)
+  items_field: ""         # varies per resource type — the script extracts items dynamically
+  page_size: 50           # Intercom default 20, max 150; 50 is a reasonable default
+default_headers:
+  Accept: application/json
+  Intercom-Version: "2.11"   # pin the stable API version (Intercom recommends sending this header)
+rate_limit:
+  remaining_header: X-RateLimit-Remaining
+oauth:
+  auth_url: https://app.intercom.com/oauth
+  token_url: https://api.intercom.io/auth/eagle/token
+  default_scopes:
+    - read_conversations
+    - read_contacts
+    - read_companies
+    - read_articles
+    - read_admins
+help_md: |
+  Reads Intercom conversations, contacts (users/leads), companies, and articles for support
+  diagnosis ("what did this customer report / what is their plan / have they seen the article").
+  Token or OAuth, both read-only — only GETs.
+
+  Intercom routes `api.intercom.io` to your workspace's region automatically; explicit regional
+  base URLs (api.eu.intercom.io, api.au.intercom.io) are also listed as egress hosts.
+
+  ## Usage
+
+  Single-page GET (most grounding queries):
+
+      python -m lib.connectors.intercom list conversations --query display_as=plaintext
+      python -m lib.connectors.intercom list contacts --query email=user@example.com
+      python -m lib.connectors.intercom list companies --query company_id=acme
+      python -m lib.connectors.intercom get conversation <id>
+      python -m lib.connectors.intercom get contact <id>
+
+  The script connector auto-pages and pre-selects support-relevant fields. For raw access the
+  generic CLI also works (single-page only — items_field varies per resource):
+
+      python -m lib.api get intercom /conversations --query per_page=20
+
+  ## Key endpoints
+  - `GET /conversations` — list conversations (filtered by assignee, state, date range)
+  - `GET /conversations/{id}` — one conversation with full message history
+  - `GET /contacts` — search contacts by email/phone/name
+  - `GET /contacts/{id}` — one contact with lifecycle/segment/plan info
+  - `GET /companies` — list companies (filter by company_id, name, tag)
+  - `GET /companies/{id}` — one company with plan, user count, MRR
+  - `GET /articles` — list help-centre articles
+  - `GET /articles/{id}` — one article with body text

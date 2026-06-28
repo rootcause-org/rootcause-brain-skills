@@ -1,0 +1,69 @@
+key: supabase
+name: Supabase
+kinds: [token, oauth]
+# Manifest-only: the Management API is flat REST GET calls returning JSON arrays or simple objects.
+# No force-code trigger fires — no multi-call join required, no exotic pagination, no field
+# pre-selection that IS the answer. The agent drives it directly via `python -m lib.api get supabase …`
+# and narrows with --pick.
+connector_module: ""
+env_var: RC_CONN_SUPABASE
+egress_hosts:
+  - api.supabase.com
+# --- Generic lib.api caller fields ---
+base_url: https://api.supabase.com
+auth:
+  strategy: bearer          # PAT injected as `Authorization: Bearer <token>` (Management API PAT)
+pagination:
+  style: none               # Most list endpoints return a flat JSON array (no envelope, no cursor).
+  # /v1/organizations/{slug}/projects uses offset pagination; /v1/snippets uses cursor. Both are
+  # navigable by passing --query offset=N / --query cursor=<token> manually, or use lib.api's
+  # collect() with style=offset/cursor if called directly. The dominant support paths (projects,
+  # health, functions) are single-page arrays — `none` is the right manifest default.
+  page_size: 100
+rate_limit:
+  remaining_header: ""      # Supabase Management API does not expose a rate-limit remaining header;
+                            # the client handles 429 + Retry-After via the standard lib.api path.
+oauth:
+  auth_url: https://api.supabase.com/v1/oauth/authorize
+  token_url: https://api.supabase.com/v1/oauth/token
+  default_scopes: [all]     # Supabase OAuth scopes are granted at org level; "all" is the minimal
+                            # read-oriented scope for management operations (no granular read-only scope).
+help_md: |
+  Reads Supabase project and organization metadata via the Management API
+  (https://api.supabase.com). Authenticated with a personal access token (PAT) or OAuth access
+  token presented as `Authorization: Bearer <token>`. Read-only — only GETs are issued.
+
+  Key paths for support diagnosis:
+    /v1/projects                          — list all projects (ref, name, region, status)
+    /v1/projects/{ref}                    — single project detail + database info
+    /v1/projects/{ref}/health             — service health (auth, db, realtime, storage, functions)
+    /v1/projects/{ref}/functions          — list Edge Functions (slug, name, status, version)
+    /v1/projects/{ref}/config/auth        — Auth configuration (site URL, providers, JWT settings)
+    /v1/organizations                     — list orgs the token belongs to
+    /v1/organizations/{slug}/members      — team members + roles
+    /v1/projects/{ref}/database/backups   — backup list and schedule
+
+  Note: {ref} is the 20-char project reference (e.g. abcdefghijklmnopqrst), visible in the
+  Supabase dashboard URL. The agent supplies it as part of the path.
+
+  Example usage:
+
+      # List all projects (ref, name, region, status):
+      python -m lib.api get supabase /v1/projects \
+        --pick ref,name,region,status
+
+      # Service health for a specific project:
+      python -m lib.api get supabase /v1/projects/abcdefghijklmnopqrst/health \
+        --pick name,healthy,status,error
+
+      # List Edge Functions:
+      python -m lib.api get supabase /v1/projects/abcdefghijklmnopqrst/functions \
+        --pick slug,name,status,version
+
+      # Auth config:
+      python -m lib.api get supabase /v1/projects/abcdefghijklmnopqrst/config/auth \
+        --pick site_url,disable_signup,jwt_exp,mailer_autoconfirm
+
+      # Org members:
+      python -m lib.api get supabase /v1/organizations/my-org-slug/members \
+        --pick username,role_name,primary_email

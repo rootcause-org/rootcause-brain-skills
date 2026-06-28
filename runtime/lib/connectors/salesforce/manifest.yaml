@@ -1,0 +1,78 @@
+key: salesforce
+name: Salesforce
+kinds: [token, oauth]
+# Script connector: lib.connectors.salesforce exists because multiple force-code triggers fire:
+# (a) field pre-selection — Case/Contact objects are enormous; support needs 5-6 fields.
+# (d) non-standard pagination — SOQL query results carry a JSON `nextRecordsUrl` path that becomes
+#     the next GET path verbatim; lib.api's cursor/link/offset styles can't express this.
+# (e) SOQL search DSL — the query param requires properly escaped SOQL strings; a thin wrapper
+#     with pre-built query helpers prevents footguns (unquoted strings, wrong field names).
+connector_module: lib.connectors.salesforce
+env_var: RC_CONN_SALESFORCE
+egress_hosts:
+  - "*.salesforce.com"         # instance subdomain is org-specific (e.g. mycompany.my.salesforce.com)
+  - "*.my.salesforce.com"      # canonical "My Domain" format used by most orgs
+  - login.salesforce.com       # OAuth token endpoint (sandbox: test.salesforce.com)
+  - test.salesforce.com        # sandbox OAuth endpoint
+
+# --- Generic lib.api caller fields (the compact declarative row) ---
+# Base URL is templated: the instance subdomain is org-specific. The connector resolves it from the
+# token (via /services/oauth2/userinfo or from an injected RC_CONN_SALESFORCE_INSTANCE env var).
+# For direct lib.api use, pass the full instance URL as the path or override via --query.
+# The placeholder form below documents the shape; the connector sets it at runtime.
+base_url: https://login.salesforce.com
+auth:
+  strategy: bearer    # Salesforce access_token (OAuth 2.0) presented as `Authorization: Bearer …`
+pagination:
+  # SOQL query results: {"records": [...], "done": bool, "nextRecordsUrl": "/services/data/vX/query/..."}
+  # nextRecordsUrl is a JSON path that is fetched verbatim as the next GET — not a cursor param.
+  # lib.api's generic styles can't express this, so the connector drives pagination manually.
+  style: none         # connector handles pagination manually via nextRecordsUrl
+  items_field: records
+  page_size: 200      # Salesforce default; max 2000 via queryOptions sforce-query-options header
+rate_limit:
+  # Salesforce returns `Sforce-Limit-Info: api-usage=X/Y` — not a simple remaining-count header;
+  # lib.api doesn't parse it. Standard 429 + Retry-After is honoured by lib.api.
+  remaining_header: ""
+oauth:
+  auth_url: https://login.salesforce.com/services/oauth2/authorize
+  token_url: https://login.salesforce.com/services/oauth2/token
+  # Minimal read scopes for support: api (REST access) + refresh_token (for auto-refresh).
+  # openid/profile give identity context. Full data access is governed by the Connected App profile.
+  default_scopes:
+    - api
+    - refresh_token
+    - openid
+help_md: |
+  Reads Salesforce Cases, Contacts, Accounts, and Leads for support diagnosis. Bearer auth via an
+  OAuth 2.0 access token — token or OAuth kinds both inject it as `RC_CONN_SALESFORCE`.
+
+  Salesforce orgs have an instance-specific subdomain (e.g. `mycompany.my.salesforce.com`). The
+  connector resolves this from the token's identity endpoint. Supply it as
+  `RC_CONN_SALESFORCE_INSTANCE=https://mycompany.my.salesforce.com` to skip the extra round-trip.
+
+  The connector wraps the SOQL query endpoint (`/services/data/v59.0/query?q=SOQL`) and follows
+  `nextRecordsUrl` pages automatically, pre-selecting the support-relevant fields from each object
+  to keep context small.
+
+  CLI usage:
+
+      # List open cases for a contact email
+      python -m lib.connectors.salesforce cases --email user@example.com
+
+      # Look up a contact by email
+      python -m lib.connectors.salesforce contact user@example.com
+
+      # List cases for an account (by name or Salesforce Account ID)
+      python -m lib.connectors.salesforce cases --account "Acme Corp"
+      python -m lib.connectors.salesforce cases --account 0013000000XXXXX
+
+  For direct SOQL via lib.api (requires knowing the instance URL):
+
+      python -m lib.api get salesforce /services/data/v59.0/query \
+        --query "q=SELECT Id,CaseNumber,Subject,Status,Priority FROM Case LIMIT 10"
+
+  SOQL tips:
+  - Date literals: `TODAY`, `LAST_N_DAYS:30`, `THIS_MONTH`
+  - Text filter: `WHERE Subject LIKE '%timeout%'`
+  - NULL check: `WHERE ContactId != null`

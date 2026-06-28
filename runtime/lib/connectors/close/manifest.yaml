@@ -1,0 +1,79 @@
+key: close
+name: Close
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Close CRM's offset pagination and basic-auth
+# strategy are natively handled by lib.api; support reads (leads/contacts/opportunities/activities)
+# need no multi-call join or field pre-selection — the agent drives them directly with `python -m lib.api`.
+connector_module: ""
+env_var: RC_CONN_CLOSE
+egress_hosts:
+  - api.close.com
+# --- Generic lib.api caller fields ---
+# RC_CONN_CLOSE holds "apikey:" (API key as Basic-auth user, empty password — the literal trailing
+# colon is required by Close's basic-auth scheme and must be included in the stored credential).
+base_url: https://api.close.com/api/v1
+auth:
+  strategy: basic   # RFC 7617: credential = "apikey:", base64-encoded in Authorization header.
+                    # Close uses API key as the username and empty string as the password.
+pagination:
+  style: offset
+  offset_param: _skip
+  limit_param: _limit
+  items_field: data       # every list response wraps items under a "data" key
+  has_more_field: has_more
+  page_size: 100
+rate_limit:
+  remaining_header: ""  # Close uses a structured `RateLimit` header (limit/remaining/reset),
+                        # not a simple remaining-only header; handled via 429 + Retry-After in lib.api
+oauth:
+  auth_url: https://app.close.com/oauth2/authorize/
+  token_url: https://api.close.com/oauth2/token/
+  default_scopes: [all.full_access]   # Close has no granular read-only scopes; full_access is the
+                                       # standard scope for API access (reads are always safe here)
+help_md: |
+  Reads Close CRM leads, contacts, opportunities, and activities for support diagnosis ("who is this
+  customer, what is their deal stage, what emails/calls have we had"). Token (API key) or OAuth,
+  both read-only by usage — only ever issues GETs.
+
+  Authentication uses HTTP Basic with the API key as the username and an empty password. The stored
+  credential (RC_CONN_CLOSE) must be set to "apikey:" where apikey is the actual Close API key
+  (note the trailing colon for the empty password).
+
+  Pagination is offset-based: response envelope `{"data": [...], "has_more": true/false}`. Pass
+  `--paginate` to auto-follow; lib.api advances `_skip` by the page size until `has_more` is false.
+
+  Common paths (all GET under https://api.close.com/api/v1):
+
+      # List leads (with contacts and opportunities embedded)
+      python -m lib.api get close lead/ --paginate \
+        --pick id,display_name,status_label,html_url,contacts.*.name,contacts.*.emails.*.email
+
+      # Single lead by id
+      python -m lib.api get close lead/lead_abc123/
+
+      # List opportunities for a lead
+      python -m lib.api get close opportunity/ --query lead_id=lead_abc123 --paginate \
+        --pick id,status_label,value,value_currency,date_won,date_lost,close_date
+
+      # Activities (all types) for a lead
+      python -m lib.api get close activity/ --query lead_id=lead_abc123 --paginate \
+        --pick id,_type,date_created,note,subject,body_text,duration
+
+      # Email activities for a lead
+      python -m lib.api get close activity/email/ --query lead_id=lead_abc123 --paginate \
+        --pick id,date_created,subject,body_text,status,direction
+
+      # Call activities for a lead
+      python -m lib.api get close activity/call/ --query lead_id=lead_abc123 --paginate \
+        --pick id,date_created,duration,direction,note,status
+
+      # Notes for a lead
+      python -m lib.api get close activity/note/ --query lead_id=lead_abc123 --paginate \
+        --pick id,date_created,note
+
+      # List contacts
+      python -m lib.api get close contact/ --paginate \
+        --pick id,display_name,lead_id,emails.*.email,phones.*.phone
+
+  Use `--query _fields=id,display_name,status_label,html_url,contacts` to limit response size on
+  lead list calls (Close supports field selection via `_fields`).

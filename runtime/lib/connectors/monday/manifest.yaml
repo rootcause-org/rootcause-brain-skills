@@ -1,0 +1,59 @@
+key: monday
+name: monday.com
+kinds: [token, oauth]
+# monday.com is GraphQL-only (POST https://api.monday.com/v2). lib.api is a GET/REST client, so
+# this connector needs a script for the GraphQL transport. Force-code triggers:
+#   (c) GraphQL transport — all reads are POST with a "query" body, not GET.
+#   (a) field pre-selection — board/item responses are enormous nested objects.
+connector_module: lib.connectors.monday
+env_var: RC_CONN_MONDAY
+egress_hosts:
+  - api.monday.com
+# --- Generic lib.api caller fields (required even for a script connector) ---
+# base_url is included for catalog completeness; the script uses it directly.
+base_url: https://api.monday.com/v2
+auth:
+  strategy: bearer        # PAT or OAuth access token, both presented as `Authorization: <token>`
+                          # Note: monday.com uses bare token (no "Bearer " prefix in their docs, but
+                          # tests confirm Authorization header with the raw token value works fine).
+pagination:
+  # monday.com uses GraphQL cursor pagination via items_page/next_items_page — not expressible by
+  # lib.api's generic REST pager. The script handles pagination internally.
+  style: none
+rate_limit:
+  # monday.com returns RateLimit header with `r` (remaining) and `t` (reset seconds).
+  # The header format is non-standard (compound: "r=99;t=60"), so we track it advisory-only.
+  remaining_header: ""
+default_headers:
+  API-Version: "2026-04"    # Pin the stable API version; avoids breaking changes on default roll.
+  Content-Type: application/json
+oauth:
+  auth_url: https://auth.monday.com/oauth2/authorize
+  token_url: https://auth.monday.com/oauth2/token
+  default_scopes:
+    - boards:read
+    - users:read
+    - workspaces:read
+    - teams:read
+help_md: |
+  Reads monday.com boards, items, columns, groups, users, and workspaces for support diagnosis.
+  Token or OAuth, both read-only. monday.com is GraphQL-only, so this connector posts GraphQL
+  queries rather than using lib.api's generic REST GET path.
+
+  Use the script CLI for structured support summaries:
+
+      python -m lib.connectors.monday board 1234567890
+      python -m lib.connectors.monday items 1234567890 --limit 20
+      python -m lib.connectors.monday user me
+      python -m lib.connectors.monday search "customer name"
+
+  Or run raw GraphQL for custom queries (output is JSON):
+
+      python -m lib.connectors.monday query 'query { me { id name email } }'
+
+  Common patterns:
+  - List boards:  query { boards { id name state description } }
+  - Board items:  query { boards(ids:[ID]) { items_page { cursor items { id name state } } } }
+  - Next page:    query { next_items_page(cursor:"CURSOR") { cursor items { id name } } }
+  - User info:    query { me { id name email } }
+  - Updates:      query { items(ids:[ID]) { updates { id body created_at creator { name } } } }

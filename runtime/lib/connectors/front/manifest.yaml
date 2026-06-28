@@ -1,0 +1,62 @@
+key: front
+name: Front
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Front's REST API (conversations, messages,
+# contacts, inboxes, teammates, tags) trips no force-code trigger — bearer auth, cursor pagination
+# via _pagination.next / page_token, no multi-call join required for support grounding.
+connector_module: ""
+env_var: RC_CONN_FRONT
+egress_hosts:
+  - api2.frontapp.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api2.frontapp.com
+auth:
+  strategy: bearer        # API token or OAuth access token, both presented as `Authorization: Bearer …`
+pagination:
+  style: cursor           # Front returns `_pagination.next` (full URL or token); page_token drives the loop
+  cursor_field: _pagination.next   # dotted path to the next-page URL in the response body
+  cursor_param: page_token         # query param sent to fetch the next page
+  has_more_field: ""               # absent = loop until cursor_field is empty
+  items_field: _results            # all list responses wrap items under `_results`
+  page_size: 100                   # max limit; default 50 — set `limit=100` in your query for fewer trips
+rate_limit:
+  remaining_header: x-ratelimit-remaining   # Front sends x-ratelimit-remaining on every response
+oauth:
+  auth_url: https://app.frontapp.com/oauth/authorize
+  token_url: https://app.frontapp.com/oauth/token
+  default_scopes: [shared:read, private:read]   # minimal read-only set for conversations/contacts/inboxes
+help_md: |
+  Reads Front conversations, messages, contacts, inboxes, tags, and teammates for support diagnosis
+  (active threads, message history, contact details, team assignment). Token or OAuth, both read-only
+  by granted scopes — only ever issue GETs.
+
+  Pagination: Front wraps items under `_results` and provides the next-page cursor in
+  `_pagination.next`. Pass `limit=100` to minimise round-trips.
+
+  Examples:
+
+      # List recent open conversations
+      python -m lib.api get front conversations \
+        --query q=is:open --query limit=100 --paginate \
+        --pick id,subject,status,assignee.email,tags.*.name
+
+      # Fetch a single conversation with its messages
+      python -m lib.api get front conversations/cnv_abc123
+
+      # List messages in a conversation
+      python -m lib.api get front conversations/cnv_abc123/messages \
+        --pick id,type,author.email,text,created_at
+
+      # Lookup a contact by email
+      python -m lib.api get front contacts \
+        --query q=foo@example.com --paginate \
+        --pick id,name,handles.*.handle
+
+      # List inboxes
+      python -m lib.api get front inboxes --pick id,name,type
+
+      # List teammates
+      python -m lib.api get front teammates --pick id,email,first_name,last_name
+
+  Common paths: /conversations, /conversations/{id}/messages, /contacts, /inboxes,
+  /teammates, /tags, /conversations/search

@@ -1,0 +1,79 @@
+key: pagerduty
+name: PagerDuty
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. PagerDuty REST v2 trips no force-code trigger:
+# auth is a standard header (api_key_header with full `Token token=<key>` value), pagination is
+# standard offset/limit with a `more` boolean, and support reads (incidents/services/users/oncalls)
+# need no multi-call join. The agent drives it directly via `python -m lib.api get pagerduty …`.
+#
+# Auth note: PagerDuty's REST v2 auth header is `Authorization: Token token=<api_key>`. The FULL
+# value including the `Token token=` prefix must be stored as the RC_CONN_PAGERDUTY connection
+# token, e.g. `Token token=<your-api-key>`. The api_key_header strategy injects it verbatim.
+connector_module: ""
+env_var: RC_CONN_PAGERDUTY
+egress_hosts:
+  - api.pagerduty.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.pagerduty.com
+auth:
+  strategy: api_key_header    # PagerDuty uses `Authorization: Token token=<key>` — NOT Bearer.
+  name: Authorization         # Store the FULL `Token token=<key>` string as the connection token.
+pagination:
+  # PagerDuty offset+limit: { "incidents": [...], "more": true, "offset": 0, "limit": 25, "total": 99 }
+  # Items live under the resource name (incidents, services, users, etc.) — set items_field to the
+  # resource name for --paginate, or fetch single pages and use --pick on the full response body.
+  # The default below targets incidents (most common support use case); override items_field per
+  # endpoint when using collect() directly in scripts.
+  style: offset
+  offset_param: offset
+  limit_param: limit
+  items_field: incidents      # varies per endpoint: incidents | services | users | oncalls | alerts
+  page_size: 25               # PagerDuty default and safe max for incident-heavy accounts
+rate_limit:
+  remaining_header: X-RateLimit-Remaining   # advisory; PagerDuty also sends 429 + Retry-After
+default_headers:
+  Accept: application/vnd.pagerduty+json;version=2   # required by PagerDuty REST v2
+oauth:
+  auth_url: https://app.pagerduty.com/oauth/authorize
+  token_url: https://app.pagerduty.com/oauth/token
+  default_scopes: [read]    # minimal read scope for all resource reads
+help_md: |
+  Reads PagerDuty incidents, services, on-call schedules, users, and alerts for support diagnosis
+  ("is there an active incident, who is on-call, what services are degraded"). Read-only — only
+  ever issues GETs.
+
+  **Token format:** PagerDuty REST v2 expects `Authorization: Token token=<api-key>`. Store the
+  FULL string (including the `Token token=` prefix) as the `RC_CONN_PAGERDUTY` connection token,
+  e.g. `Token token=<your-api-key>`. The api_key_header strategy injects it verbatim.
+
+  **Pagination:** PagerDuty uses offset+limit. The default `items_field` is `incidents`; for other
+  resources you must paginate with explicit offset or inspect the response envelope directly:
+
+      # List open incidents (paginated, items_field=incidents matches manifest default)
+      python -m lib.api get pagerduty incidents \
+        --query statuses[]=triggered --query statuses[]=acknowledged --query limit=25 \
+        --paginate \
+        --pick incidents.*.id,incidents.*.title,incidents.*.status,incidents.*.service.summary,incidents.*.created_at
+
+      # Get a single incident by ID
+      python -m lib.api get pagerduty incidents/P1234567 \
+        --pick incident.id,incident.title,incident.status,incident.urgency,incident.service.summary
+
+      # List services
+      python -m lib.api get pagerduty services \
+        --query limit=25 \
+        --pick services.*.id,services.*.name,services.*.status,services.*.description
+
+      # Who is on-call right now (all schedules)
+      python -m lib.api get pagerduty oncalls \
+        --query limit=25 \
+        --pick oncalls.*.user.summary,oncalls.*.schedule.summary,oncalls.*.start,oncalls.*.end
+
+      # Get user by email
+      python -m lib.api get pagerduty users \
+        --query query=user@example.com \
+        --pick users.*.id,users.*.name,users.*.email,users.*.role
+
+  For non-incident endpoints (services, users, oncalls) the response envelope key differs from
+  `incidents`. Fetch single pages (no --paginate) and use --pick on the full body, or pass
+  the resource-specific list as the --pick path prefix (e.g. `--pick services.*.id,...`).

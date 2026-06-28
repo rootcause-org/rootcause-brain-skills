@@ -1,0 +1,60 @@
+key: newrelic
+name: New Relic
+kinds: [token]
+# Script connector: force-code trigger (c) fires — NerdGraph is a GraphQL API (POST transport).
+# lib.api is GET/REST only; every NerdGraph call is a POST with a JSON `query` body, so the
+# generic client can't drive it. The script wraps lib.api's _send path (auth + retry + backoff)
+# and issues the POST directly, then picks the support-relevant fields out of the nested response.
+connector_module: lib.connectors.newrelic
+env_var: RC_CONN_NEWRELIC
+egress_hosts:
+  - api.newrelic.com      # US endpoint
+  - api.eu.newrelic.com   # EU endpoint (FedRAMP-adjacent region)
+
+# --- Generic lib.api caller fields (the compact declarative row) ---
+# NerdGraph is POST-only GraphQL; lib.api's GET path is unused at runtime (the script owns every
+# call). base_url points at the US endpoint; EU users pass --eu to the CLI or set it in the
+# brain config. The script reads RC_CONN_NEWRELIC and passes it as Api-Key: <value>.
+base_url: https://api.newrelic.com/graphql
+
+auth:
+  strategy: api_key_header   # Header: Api-Key: <value>  (NerdGraph docs: "API-Key" header)
+  name: "Api-Key"
+
+# NerdGraph is not a paged REST resource — every response is a nested GraphQL object. Pagination
+# for entitySearch uses a cursor argument INSIDE the GraphQL query body, not a query-string param,
+# so lib.api's generic styles can't express it. The script owns cursor iteration.
+pagination:
+  style: none
+
+rate_limit:
+  remaining_header: ""   # NerdGraph enforces a concurrency cap (25), not a rate count; 429 + Retry-After
+
+# GraphQL requires Content-Type: application/json on every POST.
+default_headers:
+  Content-Type: application/json
+
+help_md: |
+  Reads New Relic observability data — APM entities, alert violations, NRQL time-series queries,
+  and distributed traces — for support and incident diagnosis. Uses a User API Key
+  (RC_CONN_NEWRELIC) sent as `Api-Key: <value>`. Read-only: only ever issues GraphQL queries
+  (never mutations). NerdGraph is a GraphQL API, so all calls are POST to the same endpoint.
+
+  US endpoint (default): https://api.newrelic.com/graphql
+  EU endpoint:           https://api.eu.newrelic.com/graphql  (pass --eu flag)
+
+  CLI examples:
+
+    # List APM application entities and their alert severity
+    python -m lib.connectors.newrelic entities --query "name like 'my-app' and type = 'APPLICATION'" \
+      --pick "name,guid,alertSeverity,reporting"
+
+    # Run a NRQL query (error rate, response time, throughput, etc.)
+    python -m lib.connectors.newrelic nrql ACCOUNT_ID \
+      "SELECT count(*) FROM TransactionError SINCE 1 HOUR AGO FACET error.class LIMIT 20"
+
+    # List open alert violations for all monitored entities
+    python -m lib.connectors.newrelic violations ACCOUNT_ID --pick "label,duration,severity,entity.name"
+
+    # List recent alert incidents (active + recently closed)
+    python -m lib.connectors.newrelic incidents ACCOUNT_ID --pick "title,priority,state,createdAt"

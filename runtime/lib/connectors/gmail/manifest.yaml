@@ -1,0 +1,64 @@
+key: gmail
+name: Gmail
+kinds: [token, oauth]
+# Script connector: force-code triggers (a) field pre-selection + (b) multi-call join fire.
+# messages.list returns only {id, threadId}; useful grounding requires messages.get per ID, then
+# picking the few support-relevant fields (subject, from, date, snippet, labelIds) out of the
+# deeply-nested payload object. The script does the join transparently.
+connector_module: lib.connectors.gmail
+env_var: RC_CONN_GMAIL
+egress_hosts:
+  - gmail.googleapis.com
+  - oauth2.googleapis.com     # token refresh endpoint
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://gmail.googleapis.com/gmail/v1
+auth:
+  strategy: bearer            # OAuth access token injected as `Authorization: Bearer …`
+pagination:
+  style: cursor               # `nextPageToken` in body; `pageToken` as the continuation param
+  cursor_field: nextPageToken
+  cursor_param: pageToken
+  has_more_field: ""          # absent nextPageToken means exhausted (not a boolean flag)
+  items_field: messages       # messages.list wraps the list under "messages"
+  page_size: 100              # maxResults; Gmail supports up to 500
+rate_limit:
+  remaining_header: ""        # Gmail rate-limits via 429 + Retry-After, no remaining-count header
+oauth:
+  auth_url: https://accounts.google.com/o/oauth2/v2/auth
+  token_url: https://oauth2.googleapis.com/token
+  default_scopes:
+    - https://www.googleapis.com/auth/gmail.readonly
+help_md: |
+  Reads Gmail messages, threads, and labels for a mailbox — read-only grounding for support
+  diagnosis. The connector joins messages.list → messages.get to surface the support-relevant
+  fields (subject, sender, date, snippet, labels, body excerpt) without flooding context with the
+  full nested MIME payload.
+
+  **IMPORTANT — CASA / sensitive scope:** `gmail.readonly` is a *restricted* Google OAuth scope
+  (full mailbox read). For production use the project must complete Google's CASA Tier 2 security
+  assessment or use the narrower `gmail.metadata` scope (headers + labels only, no body). The
+  connector script accepts a `--scope` flag defaulting to `readonly`; flip to `metadata` for
+  lower-friction deployments where body content is not needed.
+
+  Key script commands (print concise markdown):
+
+      # Recent messages matching a search query (default: last 20, newest first)
+      python -m lib.connectors.gmail messages --query "is:unread" --limit 20
+
+      # Full detail for one message by ID
+      python -m lib.connectors.gmail message <message-id>
+
+      # Thread detail (all messages in a conversation)
+      python -m lib.connectors.gmail thread <thread-id>
+
+      # All labels in the mailbox
+      python -m lib.connectors.gmail labels
+
+  For direct lib.api access to the raw list endpoints (returns only id/threadId per message):
+
+      python -m lib.api get gmail users/me/messages \
+        --query q=is:unread --query maxResults=20 --paginate \
+        --pick id,threadId
+
+  The `userId` path segment is always `me` (the authenticated inbox) unless you have domain-wide
+  delegation and explicitly set a different address.

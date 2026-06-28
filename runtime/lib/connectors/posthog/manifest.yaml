@@ -1,0 +1,64 @@
+key: posthog
+name: PostHog
+kinds: [token, oauth]
+# Script connector: force-code trigger (d) — PostHog embeds the next-page URL in the JSON body
+# ({"next": "<full URL>", "results": [...]}), not in an HTTP Link header. lib.api's built-in
+# `link` style reads only RFC 8288 HTTP headers; `cursor` style would incorrectly send the full URL
+# as a query param. The connector owns the while-has-next loop via _send_url (same approach as
+# lib.connectors.honeybadger).
+connector_module: lib.connectors.posthog
+env_var: RC_CONN_POSTHOG
+egress_hosts:
+  - us.posthog.com
+  - eu.posthog.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+# Default to US Cloud. EU Cloud users: pass absolute URL paths or target eu.posthog.com directly.
+base_url: https://us.posthog.com
+auth:
+  strategy: bearer        # Personal API key or OAuth access token, both presented as Bearer
+pagination:
+  style: none             # script owns the loop; this row informs manifest consumers only
+  items_field: results    # list lives under `results` in every paginated envelope
+  page_size: 100          # advisory; passed as `limit` query param
+rate_limit:
+  # PostHog returns 429 + Retry-After (handled by lib.api). No remaining-count header documented.
+  remaining_header: ""
+oauth:
+  auth_url: https://app.posthog.com/oauth/authorize
+  token_url: https://app.posthog.com/oauth/token
+  default_scopes:
+    - project:read
+    - person:read
+    - feature_flag:read
+    - session_recording:read
+    - query:read
+    - activity_log:read
+help_md: |
+  Reads PostHog analytics: persons/users, feature flags, session recordings, and raw events for
+  support diagnosis ("which flags is this user enrolled in / what did they do before the error /
+  does this user exist in PostHog"). Bearer auth with a Personal API Key or OAuth access token.
+  Read-only — only ever issues GETs against the private cloud endpoints.
+
+  Most paths require a numeric project_id (find it in PostHog -> Project Settings -> Project ID).
+  Use the connector CLI for paginated list queries:
+
+      python -m lib.connectors.posthog persons 12345 --query search=user@example.com \
+        --pick id,distinct_ids,properties.email,properties.plan,created_at
+
+      python -m lib.connectors.posthog feature-flags 12345 \
+        --pick id,key,name,active,filters
+
+      python -m lib.connectors.posthog session-recordings 12345 \
+        --query person_id=<uuid> \
+        --pick id,distinct_id,start_time,recording_duration,console_error_count,start_url
+
+      python -m lib.connectors.posthog events 12345 \
+        --query distinct_id=<id> --query limit=50 \
+        --pick id,event,timestamp,distinct_id
+
+  EU Cloud users: set env var POSTHOG_BASE_URL=https://eu.posthog.com or pass absolute paths.
+
+  Common paths (for single-item GETs via python -m lib.api get posthog <path>):
+  - api/projects/{project_id}/persons/{id}/         -- single person detail
+  - api/organizations/                              -- list orgs (discover org IDs)
+  - api/organizations/{org_id}/projects/            -- list projects to find numeric project_id

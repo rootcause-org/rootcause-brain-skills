@@ -1,0 +1,78 @@
+key: googlecalendar
+name: Google Calendar
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Calendar reads (events/calendars/calendarList)
+# trip no force-code trigger — cursor pagination, bearer auth, and `--pick` handle everything the
+# agent needs without bespoke Python.
+connector_module: ""
+env_var: RC_CONN_GOOGLECALENDAR
+egress_hosts:
+  - www.googleapis.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://www.googleapis.com/calendar/v3
+auth:
+  strategy: bearer        # OAuth access token or service-account bearer injected as RC_CONN_GOOGLECALENDAR; refreshed host-side
+pagination:
+  style: cursor           # responses carry nextPageToken; send back as pageToken
+  cursor_param: pageToken
+  cursor_field: nextPageToken
+  has_more_field: ""      # absent nextPageToken means no more pages (loop terminates on empty cursor)
+  items_field: items      # events.list / calendarList.list wrap the list under "items"
+  page_size: 250          # Calendar API default and a safe page size (max 2500 for events)
+rate_limit:
+  remaining_header: ""    # Google Calendar exposes no remaining-count header; paced by 429 + backoff
+oauth:
+  auth_url: https://accounts.google.com/o/oauth2/v2/auth
+  token_url: https://oauth2.googleapis.com/token
+  default_scopes:
+    - https://www.googleapis.com/auth/calendar.readonly
+    - https://www.googleapis.com/auth/calendar.events.readonly
+help_md: |
+  Reads Google Calendar events, calendar metadata, and calendar lists for support diagnosis
+  ("what events exist, who's invited, when are they scheduled, what calendars does a user have").
+  Read-only — only ever issues GETs against the Calendar v3 REST API.
+
+  **Auth:** bearer OAuth access token injected as RC_CONN_GOOGLECALENDAR. Use
+  `calendar.readonly` for broad access (all calendars + events visible to the account) or the
+  narrower `calendar.events.readonly` for events only.
+
+  **Pagination:** cursor-based via `nextPageToken` / `pageToken`. Use `--paginate` to auto-collect
+  all pages. Default page size is 250; maximum for events is 2500.
+
+  **Common paths and examples:**
+
+      # List all calendars the authenticated user can see
+      python -m lib.api get googlecalendar users/me/calendarList \
+        --paginate \
+        --pick items.*.id,items.*.summary,items.*.accessRole,items.*.primary
+
+      # List upcoming events on the primary calendar (next 30 days)
+      python -m lib.api get googlecalendar calendars/primary/events \
+        --query timeMin=2026-01-01T00:00:00Z --query singleEvents=true \
+        --query orderBy=startTime --paginate \
+        --pick id,summary,start,end,status,attendees.*.email,htmlLink
+
+      # Search events by text across summary/description/location/attendees
+      python -m lib.api get googlecalendar calendars/primary/events \
+        --query q=invoice --query singleEvents=true --paginate \
+        --pick id,summary,start,end,status,htmlLink
+
+      # Get metadata for a specific calendar
+      python -m lib.api get googlecalendar calendars/primary \
+        --pick id,summary,description,timeZone
+
+      # Get a single event by ID
+      python -m lib.api get googlecalendar calendars/primary/events/EVENT_ID \
+        --pick id,summary,start,end,status,attendees.*.email,location,htmlLink
+
+      # List calendars a specific user has (service-account / domain-wide delegation scenario):
+      # use calendarId=USER_EMAIL in the path or pass it via --query calendarId=...
+      python -m lib.api get googlecalendar users/me/calendarList \
+        --paginate --pick items.*.summary,items.*.id
+
+  Common paths:
+    users/me/calendarList           — all calendars the account has access to
+    calendars/{calendarId}          — single calendar metadata (use "primary" for the default)
+    calendars/{calendarId}/events   — events on a calendar (supports q, timeMin, timeMax, singleEvents)
+    calendars/{calendarId}/events/{eventId} — single event
+    users/me/settings               — user-level Calendar settings

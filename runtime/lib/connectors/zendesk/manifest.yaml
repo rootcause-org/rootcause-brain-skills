@@ -1,0 +1,66 @@
+key: zendesk
+name: Zendesk
+kinds: [token, oauth]
+# Script connector: force-code trigger (d) fires — Zendesk list responses embed items under a
+# resource-type key that varies per endpoint ("tickets", "users", "organizations", "groups", …),
+# so the generic `items_field` in the manifest cannot be fixed to a single value. The script
+# extracts items dynamically from the response envelope (same pattern as lib.connectors.intercom).
+connector_module: lib.connectors.zendesk
+env_var: RC_CONN_ZENDESK
+egress_hosts:
+  - "*.zendesk.com"
+# --- Generic lib.api caller fields (the compact declarative row) ---
+# base_url is per-account: the Zendesk subdomain differs per customer workspace.
+# RC_CONN_ZENDESK holds "{email}/token:{api_token}" — lib.api basic strategy splits on the first
+# ":" giving user="{email}/token" and password="{api_token}", which is exactly the format Zendesk
+# requires for API token auth (https://developer.zendesk.com/api-reference/ticketing/introduction/).
+base_url: https://{subdomain}.zendesk.com/api/v2
+auth:
+  strategy: basic   # RFC 7617: credential = "{email}/token:{api_token}", base64 in Authorization
+pagination:
+  style: cursor                 # Zendesk cursor pagination (recommended over offset for all resources)
+  cursor_param: "page[after]"   # query param that carries the after_cursor value
+  cursor_field: meta.after_cursor  # dotted path to the next cursor in the response envelope
+  has_more_field: meta.has_more    # gating field — loop stops when false
+  items_field: ""               # varies per endpoint — script handles dynamic extraction
+  page_size: 100                # Zendesk max page size for cursor pagination (page[size])
+rate_limit:
+  remaining_header: X-RateLimit-Remaining
+oauth:
+  auth_url: https://{subdomain}.zendesk.com/oauth/authorizations/new
+  token_url: https://{subdomain}.zendesk.com/oauth/tokens
+  default_scopes:
+    - read   # "read" grants all GET endpoints — minimal read-only scope for Zendesk OAuth
+help_md: |
+  Reads Zendesk tickets, users, organizations, comments, and search results for support diagnosis.
+  Authentication uses HTTP Basic with "{email}/token:{api_token}" as the credential
+  (RC_CONN_ZENDESK must hold exactly that string, e.g. "agent@acme.com/token:abc123xyz").
+
+  **Per-account subdomain:** the base_url placeholder `{subdomain}` must be replaced with the
+  customer's Zendesk subdomain (e.g. `acme` for `acme.zendesk.com`). Pass absolute URLs:
+
+      python -m lib.connectors.zendesk list tickets \
+        --base-url https://acme.zendesk.com/api/v2 \
+        --query status=open --max-pages 5
+
+      python -m lib.connectors.zendesk get ticket 12345 \
+        --base-url https://acme.zendesk.com/api/v2
+
+  The script connector handles cursor pagination and dynamic items extraction. For raw single-page
+  access (no pagination), use the generic CLI with an absolute URL:
+
+      python -m lib.api get zendesk https://acme.zendesk.com/api/v2/tickets \
+        --query "page[size]=100" \
+        --pick tickets.*.id,tickets.*.subject,tickets.*.status
+
+  Common endpoints (always use absolute URL with the CLI due to templated base_url):
+    - tickets                  GET /tickets?page[size]=100
+    - tickets/{id}             GET /tickets/123
+    - tickets/{id}/comments    GET /tickets/123/comments
+    - users/{id}               GET /users/456
+    - search                   GET /search?query=type:ticket+status:open
+    - organizations/{id}       GET /organizations/789
+    - groups                   GET /groups
+
+  Pagination uses Zendesk cursor-based pagination (meta.after_cursor / meta.has_more);
+  pass --max-pages to cap results. The `read` OAuth scope grants all GET endpoints.

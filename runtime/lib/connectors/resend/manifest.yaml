@@ -1,0 +1,44 @@
+key: resend
+name: Resend
+kinds: [token]
+# Script connector: trigger (d) — Resend cursor pagination uses the last item's id as the next
+# `after` param; lib.api's cursor_field can't express "last element id", so the connector pages
+# manually (mirrors the Stripe pattern). connector_module handles list calls; point-lookups and
+# other single-page reads are still drivable via `python -m lib.api get resend <path>`.
+connector_module: lib.connectors.resend
+env_var: RC_CONN_RESEND
+egress_hosts:
+  - api.resend.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.resend.com
+auth:
+  strategy: bearer          # API key presented as `Authorization: Bearer re_…`
+pagination:
+  style: cursor             # direction: after=<last_id>; has_more; items under data
+  cursor_field: ""          # NO scalar cursor in the body — script derives it from data[-1].id
+  cursor_param: after
+  has_more_field: has_more
+  items_field: data
+  page_size: 100            # Resend max is 100 (default 20)
+rate_limit:
+  # Resend rate-limits at 5 req/s per team; responds 429 + Retry-After (honoured by lib.api).
+  # No remaining-count header documented.
+  remaining_header: ""
+help_md: |
+  Reads Resend transactional email history, domains, and contacts for support diagnosis
+  ("did this email deliver / what was the status / which domain is sending"). Bearer API key,
+  read-only GETs only. Cursor pagination driven by the connector (last item id → after param).
+
+  Script commands (compact markdown output):
+      python -m lib.connectors.resend emails           # recent sent emails with delivery status
+      python -m lib.connectors.resend emails --limit 50
+      python -m lib.connectors.resend email <id>       # single email detail + last_event
+      python -m lib.connectors.resend domains          # domain list with sending status
+
+  Direct lib.api reads (single-page, no pagination needed for low-volume calls):
+      python -m lib.api get resend /emails/<id> \
+        --pick "id,to,from,subject,last_event,created_at,tags"
+      python -m lib.api get resend /domains \
+        --pick "data.*.name,data.*.status,data.*.region"
+      python -m lib.api get resend /contacts \
+        --pick "data.*.email,data.*.first_name,data.*.unsubscribed"

@@ -1,0 +1,66 @@
+key: dropbox
+name: Dropbox
+kinds: [token, oauth]
+# Script connector: Dropbox API v2 uses RPC-style POSTs (JSON bodies) for ALL endpoints —
+# lib.api is GET-only. Cursor pagination also requires a POST to a different continuation path
+# (files/list_folder/continue), which the generic cursor paginator cannot express.
+# Force-code triggers fired:
+#   (3) exotic transport — every RPC endpoint is a POST with a JSON body, not a GET
+#   (4) non-standard pagination — continuation requires POST to /list_folder/continue with cursor in body
+#   (1) field pre-selection — raw list_folder entries carry large metadata; 5-6 fields answer support Qs
+connector_module: lib.connectors.dropbox
+env_var: RC_CONN_DROPBOX
+egress_hosts:
+  - api.dropboxapi.com
+  - www.dropbox.com    # OAuth authorize redirect (not called at runtime, but host egress policy)
+# --- Generic lib.api caller fields (the compact declarative row) ---
+# lib.api GET-based calls are not usable for Dropbox (all RPC endpoints are POSTs). These fields
+# define the manifest shape required by the catalog; the script connector bypasses lib.api.request()
+# and issues its own POSTs. auth strategy is still bearer (same credential, same env var).
+base_url: https://api.dropboxapi.com/2
+auth:
+  strategy: bearer        # OAuth2 access token or long-lived token, as `Authorization: Bearer …`
+pagination:
+  # Dropbox cursor pagination cannot be driven by lib.api (continuation is a POST to a different
+  # path). style=none keeps the generic paginator from running; the script handles it directly.
+  style: none
+rate_limit:
+  # Dropbox returns 429 + Retry-After (seconds) for rate limits; no remaining-count header.
+  remaining_header: ""
+oauth:
+  auth_url: https://www.dropbox.com/oauth2/authorize
+  token_url: https://api.dropboxapi.com/oauth2/token
+  default_scopes:
+    - files.metadata.read   # list/get file and folder metadata (files/list_folder, files/get_metadata)
+    - sharing.read          # read shared link metadata (sharing/list_shared_links, sharing/get_shared_link_metadata)
+    - account_info.read     # read account display name and email (users/get_current_account)
+help_md: |
+  Reads Dropbox file/folder metadata, shared links, and account info for support diagnosis
+  ("does this file exist", "what's shared", "when was this last modified"). Read-only — only
+  ever issues POSTs that READ metadata; we never create, move, or delete anything.
+
+  All Dropbox API v2 endpoints are RPC-style POSTs (JSON body), not GETs. The script connector
+  wraps the key support endpoints with field pre-selection and Dropbox's two-phase cursor pagination
+  (list_folder → list_folder/continue).
+
+  Script CLI:
+
+      # List files/folders at a path (use "" for Dropbox root, or "/folder/name")
+      python -m lib.connectors.dropbox list-folder /Documents
+
+      # List with pagination, show all entries
+      python -m lib.connectors.dropbox list-folder /Documents --recursive
+
+      # Get metadata for a single file or folder
+      python -m lib.connectors.dropbox get-metadata /Documents/report.pdf
+
+      # Search for files by name or content keywords
+      python -m lib.connectors.dropbox search "quarterly report"
+      python -m lib.connectors.dropbox search "invoice" --path /Finance
+
+      # List shared links (optionally filtered to a path)
+      python -m lib.connectors.dropbox shared-links
+      python -m lib.connectors.dropbox shared-links --path /Public/file.pdf
+
+      # Current account info (name, email, quota)
+      python -m lib.connectors.dropbox account

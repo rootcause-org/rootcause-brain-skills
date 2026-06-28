@@ -1,0 +1,73 @@
+key: xero
+name: Xero
+kinds: [token, oauth]
+# Script connector: Xero uses 1-based page-number pagination (`page=1,2,3…`) with a fixed 100
+# items/page, stopping when a page returns fewer than 100 items. The generic lib.api offset style
+# increments by item count (0 → 100 → 200…), which is incompatible. Force-code trigger (d) fired:
+# non-standard pagination. The connector also handles the required per-tenant `Xero-tenant-id`
+# header so callers don't need to supply it as a raw --query k=v on every call.
+connector_module: lib.connectors.xero
+env_var: RC_CONN_XERO
+egress_hosts:
+  - api.xero.com
+  - identity.xero.com    # OAuth token refresh endpoint
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.xero.com/api.xro/2.0
+auth:
+  strategy: bearer        # OAuth2 access token, injected from the oauth row's fresh bearer
+pagination:
+  # Xero's 1-based page number can't be expressed by the generic offset (which increments by item
+  # count) or cursor (no token in the response body). Set style=none so a naive manifest-only caller
+  # gets page 1 correctly; the script's _xero_pages() handles the while-has-more loop.
+  style: none
+  items_field: ""          # varies per endpoint (Invoices, Contacts, etc.); the script knows each
+  page_size: 100           # Xero's fixed maximum — cannot be overridden
+rate_limit:
+  remaining_header: X-MinLimit-Remaining   # advisory; Xero also sends 429 + Retry-After
+oauth:
+  auth_url: https://login.xero.com/identity/connect/authorize
+  token_url: https://identity.xero.com/connect/token
+  default_scopes:
+    - openid
+    - profile
+    - email
+    - offline_access
+    - accounting.transactions.read
+    - accounting.contacts.read
+    - accounting.settings.read
+help_md: |
+  Reads Xero accounting data for support diagnosis: invoices, contacts, credit notes, payments,
+  accounts, and bank transactions. Read-only — only ever issues GETs. Auth is OAuth (recommended)
+  or a long-lived token; the access token is injected automatically as RC_CONN_XERO.
+
+  Every Xero request requires a `Xero-tenant-id` header (the organisation's UUID — find it via
+  `/connections`). The connector CLI accepts `--tenant-id` and threads it through automatically.
+  For raw lib.api calls supply it explicitly with `--query Xero-tenant-id=<uuid>` (the connector
+  injects it as a header, but lib.api's --query flag is the escape hatch for direct calls).
+
+  **Connector commands (recommended):**
+
+      # List tenants / find tenant-id first:
+      python -m lib.connectors.xero tenants
+
+      # Get an invoice by number or UUID:
+      python -m lib.connectors.xero invoice --tenant-id <uuid> INV-0042
+
+      # List a contact's open invoices:
+      python -m lib.connectors.xero contact --tenant-id <uuid> "Acme Corp"
+
+      # List recent invoices (all statuses, newest first):
+      python -m lib.connectors.xero invoices --tenant-id <uuid> --status OUTSTANDING
+
+  **Direct API reads (single-page, for quick exploration):**
+
+      python -m lib.api get xero /Invoices --query InvoiceNumber=INV-0042
+      python -m lib.api get xero /Contacts --query where=Name%3D%3D%22Acme+Corp%22
+
+  Note: for multi-page collection use the connector CLI; `python -m lib.api get xero ... --paginate`
+  is not supported for Xero (1-based page style incompatible with the generic paginator).
+
+  **Common paths:** /Invoices, /Contacts, /CreditNotes, /Payments, /Accounts, /BankTransactions,
+  /Organisations, /Currencies
+  **OAuth connect flow:** requires `accounting.transactions.read`, `accounting.contacts.read`,
+  `accounting.settings.read`, `offline_access` (for refresh token).

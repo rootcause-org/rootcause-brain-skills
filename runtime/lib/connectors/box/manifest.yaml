@@ -1,0 +1,65 @@
+key: box
+name: Box
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Box's marker-based cursor pagination and bearer
+# auth are handled natively by lib.api, and support reads (files/folders/users/search) need no
+# multi-call join or field pre-selection — the agent drives them directly via `python -m lib.api`.
+connector_module: ""
+env_var: RC_CONN_BOX
+egress_hosts:
+  - api.box.com
+  - upload.box.com   # separate upload host; included for completeness (we never write)
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.box.com/2.0
+auth:
+  strategy: bearer   # OAuth 2.0 access token, presented as `Authorization: Bearer …`
+pagination:
+  style: cursor      # marker-based: send `marker`, response returns `next_marker` + `entries`
+  cursor_param: marker
+  cursor_field: next_marker   # null/empty when last page — lib.api stops without has_more_field
+  has_more_field: ""          # Box omits has_more; absence of next_marker signals exhaustion
+  items_field: entries        # all collection endpoints wrap items under `entries`
+  page_size: 1000             # Box max per_page for most endpoints; pass --query limit=1000
+rate_limit:
+  remaining_header: ""   # Box returns 429 + Retry-After; no remaining-count header
+oauth:
+  auth_url: https://account.box.com/api/oauth2/authorize
+  token_url: https://api.box.com/oauth2/token
+  default_scopes: [root_readwrite]   # minimal OAuth scope covering files/folders/user reads
+help_md: |
+  Reads Box files, folders, users, comments, and search results for support diagnosis ("what files
+  does this user have, what was recently modified, what does this folder contain"). Bearer auth —
+  a developer token (short-lived) or an OAuth access token; both injected as `RC_CONN_BOX`.
+  Read-only grounding: only ever issues GETs.
+
+  Pagination is marker-based cursor: `next_marker` in the response, `marker` as the query param,
+  `entries` as the items array. Pass `--paginate` to auto-follow.
+
+  Common paths (all under https://api.box.com/2.0):
+
+      # List folder contents (root = folder ID "0")
+      python -m lib.api get box folders/0/items \
+        --query limit=1000 --paginate \
+        --pick id,name,type,size,modified_at,owned_by.login
+
+      # Get file metadata
+      python -m lib.api get box files/FILE_ID \
+        --pick id,name,size,modified_at,created_at,owned_by.login,shared_link.url
+
+      # Get user info
+      python -m lib.api get box users/USER_ID \
+        --pick id,name,login,status,space_used,space_amount
+
+      # Search for files/folders
+      python -m lib.api get box search \
+        --query query=invoice --query type=file --query limit=200 \
+        --paginate --pick id,name,type,modified_at,parent.name
+
+      # List users in the enterprise
+      python -m lib.api get box users \
+        --query limit=1000 --paginate \
+        --pick id,name,login,status,space_used
+
+      # File comments
+      python -m lib.api get box files/FILE_ID/comments \
+        --paginate --pick id,message,created_by.login,created_at

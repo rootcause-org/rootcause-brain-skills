@@ -1,0 +1,63 @@
+key: podio
+name: Podio
+kinds: [token, oauth]
+# Script connector: force-code trigger (c) fires — Podio's auth header is
+# `Authorization: OAuth2 <token>`, not the standard `Bearer` prefix that lib.api's
+# bearer strategy emits. The thin connector wraps the custom header so the agent
+# never has to hand-roll it.
+connector_module: lib.connectors.podio
+env_var: RC_CONN_PODIO
+egress_hosts:
+  - api.podio.com
+  - podio.com   # OAuth authorize endpoint lives here
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.podio.com
+auth:
+  # The connector injects `Authorization: OAuth2 <token>` manually; lib.api auth is set
+  # to none so _apply_auth is a no-op and the connector owns the credential placement.
+  strategy: none
+pagination:
+  style: offset         # Podio list endpoints take `offset` + `limit`; response carries `total` + `items`
+  offset_param: offset
+  limit_param: limit
+  items_field: items    # list responses: {"total": N, "filtered": N, "items": [...]}
+  page_size: 30         # Podio default; max is typically 100 for items
+rate_limit:
+  remaining_header: ""  # Podio doesn't expose a remaining-count header; relies on 429 + Retry-After
+oauth:
+  auth_url: https://podio.com/oauth/authorize
+  token_url: https://api.podio.com/oauth/token/v2
+  default_scopes: []    # Podio OAuth 2 uses a single global access scope; no fine-grained read scopes to request
+help_md: |
+  Reads Podio organizations, spaces (workspaces), apps, items, tasks, and contacts for support
+  diagnosis. OAuth bearer (access_token) or a long-lived token — both injected as RC_CONN_PODIO.
+  Podio requires `Authorization: OAuth2 <token>` (not Bearer); the connector handles this.
+  Access tokens expire after 8 hours; the host refreshes them automatically at run assembly for
+  oauth connections. Read-only: only ever issues GETs.
+
+  The connector exposes a CLI with subcommands that render concise markdown. Use the script for
+  common support lookups; fall back to `python -m lib.api get podio …` for one-off GETs (the
+  connector's _client() injects the auth header).
+
+      # List all organizations the token has access to
+      python -m lib.connectors.podio orgs
+
+      # List spaces (workspaces) in an organization
+      python -m lib.connectors.podio spaces --org-id 12345
+
+      # List apps in a space
+      python -m lib.connectors.podio apps --space-id 67890
+
+      # List items in an app (with optional field filter)
+      python -m lib.connectors.podio items --app-id 11111 [--limit 50]
+
+      # Get a single item by id
+      python -m lib.connectors.podio item --item-id 99999
+
+      # List tasks (optionally scoped to a space or app item)
+      python -m lib.connectors.podio tasks [--space-id 67890]
+
+  For raw access (once the connector's client is running):
+      python -m lib.api get podio /org/  [--paginate] [--pick org_id,name,url_label]
+      python -m lib.api get podio /space/{space_id}/  [--pick space_id,name,url,status]
+      python -m lib.api get podio /item/{item_id}/  [--pick item_id,title,fields]

@@ -1,0 +1,57 @@
+key: googlesheets
+name: Google Sheets
+kinds: [oauth, token]
+# Manifest-only integration: NO connector_module. All useful Sheets reads (cell values, sheet
+# metadata, multiple ranges) are single-page GETs with no join or field pre-selection trigger —
+# the agent drives them directly via `python -m lib.api get googlesheets <path>`.
+connector_module: ""
+env_var: RC_CONN_GOOGLESHEETS
+egress_hosts:
+  - sheets.googleapis.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://sheets.googleapis.com/v4
+auth:
+  strategy: bearer        # OAuth 2.0 access token, presented as `Authorization: Bearer …`
+                          # For kind=oauth the host refreshes the token before injection.
+                          # For kind=token a long-lived service-account access token works too.
+pagination:
+  style: none             # All Sheets reads are single-page: values/batchGet and spreadsheets.get
+                          # return the full result set in one response — no cursor/offset/link.
+rate_limit:
+  # Sheets API returns 429 with Retry-After when quota is hit; lib.api honours that automatically.
+  # There is no remaining-count header to track.
+  remaining_header: ""
+oauth:
+  auth_url: https://accounts.google.com/o/oauth2/v2/auth
+  token_url: https://oauth2.googleapis.com/token
+  # Minimal read-only scope: can read all spreadsheets the authorized account can see.
+  # Prefer spreadsheets.readonly over the broader drive or drive.readonly scopes.
+  default_scopes:
+    - https://www.googleapis.com/auth/spreadsheets.readonly
+help_md: |
+  Reads Google Sheets spreadsheet structure and cell values for support grounding — e.g. reading
+  a customer-submitted configuration sheet, pricing table, or data export the team works in.
+  Read-only: only ever issues GETs, never writes to any sheet.
+
+  The spreadsheetId is part of the URL (the long alphanumeric string in a Sheets URL after /d/).
+
+  Key endpoints:
+
+  1. **Sheet metadata** — titles, tab names, grid dimensions:
+         python -m lib.api get googlesheets spreadsheets/SPREADSHEET_ID \
+           --pick spreadsheetId,properties.title,sheets.*.properties.title
+
+  2. **Read a cell range** (A1 notation):
+         python -m lib.api get googlesheets \
+           "spreadsheets/SPREADSHEET_ID/values/Sheet1!A1:D20" \
+           --pick range,values
+
+  3. **Read multiple ranges at once** (batchGet):
+         python -m lib.api get googlesheets \
+           "spreadsheets/SPREADSHEET_ID/values:batchGet" \
+           --query "ranges=Sheet1!A1:B10" \
+           --query "ranges=Sheet2!A1:A5" \
+           --pick spreadsheetId,valueRanges.*.range,valueRanges.*.values
+
+  All responses are single-page (no --paginate needed). Ranges use standard A1 notation;
+  omit the sheet name to default to the first sheet (e.g. `A1:Z100`).

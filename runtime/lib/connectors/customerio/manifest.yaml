@@ -1,0 +1,93 @@
+key: customerio
+name: Customer.io
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Customer.io App API reads (customers/people,
+# segments, activities/events, messages/broadcasts) trip no force-code trigger — bearer auth and
+# cursor pagination (`next` token, items under `customers`) are both handled natively by lib.api.
+# The agent drives it directly via `python -m lib.api get customerio …` and pre-selects fields
+# with --pick. (A script would only be warranted for a cross-resource join, which has not emerged.)
+connector_module: ""
+env_var: RC_CONN_CUSTOMERIO
+egress_hosts:
+  - api.customer.io
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.customer.io/v1
+auth:
+  strategy: bearer        # App API Key — created under Settings → API Credentials → App API Keys.
+                          # Presented as `Authorization: Bearer <key>`. NOT the Track API write key;
+                          # that is a separate credential for ingestion only.
+pagination:
+  # Customer.io App API list responses: {"customers": [...], "next": "cursor_token"}
+  # `next` is absent (or null) on the final page — no separate has_more field needed.
+  style: cursor
+  cursor_field: next       # top-level "next" key in the response body
+  cursor_param: start      # sent back as `?start=<cursor>` on subsequent requests
+  has_more_field: ""       # absence of "next" is the stop signal
+  items_field: customers   # list responses carry the array under "customers"
+  page_size: 100           # Customer.io default max; use limit=100 to fetch a full page
+rate_limit:
+  remaining_header: X-RateLimit-Remaining   # advisory pacing; Customer.io also sends 429 + Retry-After
+default_headers: {}        # no required version header for v1
+oauth:
+  # Customer.io OAuth 2.0 for third-party integrations (authorization_code grant).
+  # Documented at https://docs.customer.io/api/app/#operation/oauth2Authorize
+  auth_url: https://fly.customer.io/oauth/authorize
+  token_url: https://api.customer.io/oauth/token
+  default_scopes:
+    - accounts:read        # read workspace info
+    - people:read          # read people/customer profiles
+    - segments:read        # read segments
+    - metrics:read         # read broadcast/campaign metrics
+help_md: |
+  Reads Customer.io people (customers), segments, activities/events, and broadcast/campaign
+  metrics for support diagnosis ("who is this person / which segment are they in / what messages
+  did they receive / did a broadcast reach them"). Read-only — only ever issues GETs.
+
+  Authentication: App API Key (NOT the Track write key). Create one under
+  Settings → API Credentials → App API Keys. The key is the RC_CONN_CUSTOMERIO bearer token.
+
+  Customer.io cursor pagination: responses carry a top-level `"next"` cursor string; send it back
+  as `?start=<cursor>`. Items are under `"customers"` for people endpoints.
+
+  ## Common paths (all GET)
+
+      # List people (customers), cursor-paged
+      python -m lib.api get customerio /customers \
+        --query limit=100 --paginate \
+        --pick id,email,attributes.first_name,attributes.last_name,attributes.plan,created_at
+
+      # Get one person by identifier (email or cio_id)
+      python -m lib.api get customerio /customers/person@example.com
+
+      # List activities (events) for a person
+      python -m lib.api get customerio /customers/person@example.com/activities \
+        --query limit=100 --paginate \
+        --pick type,name,timestamp
+
+      # List all segments
+      python -m lib.api get customerio /segments \
+        --pick id,name,description,count,type
+
+      # Check which segments a person belongs to
+      python -m lib.api get customerio /customers/person@example.com/segments \
+        --pick id,name
+
+      # List broadcasts/campaigns (message templates)
+      python -m lib.api get customerio /campaigns \
+        --pick id,name,state,created_at,updated_at
+
+      # List messages sent to a person
+      python -m lib.api get customerio /customers/person@example.com/messages \
+        --query limit=100 --paginate \
+        --pick id,type,subject,created,sent_at,opened_at,clicked_at,failed_at
+
+  ## Key endpoints
+  - `GET /customers`                              — list people; filter by email with --query email=...
+  - `GET /customers/{id}`                         — one person by cio_id, email, or external id
+  - `GET /customers/{id}/activities`              — event history for a person
+  - `GET /customers/{id}/segments`                — segments a person belongs to
+  - `GET /customers/{id}/messages`                — messages sent to a person
+  - `GET /segments`                               — list all segments
+  - `GET /segments/{id}/membership`               — members of a segment (cursor-paged)
+  - `GET /campaigns`                              — list broadcasts/campaigns
+  - `GET /campaigns/{id}/metrics`                 — delivery metrics for a campaign

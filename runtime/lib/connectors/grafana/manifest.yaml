@@ -1,0 +1,75 @@
+key: grafana
+name: Grafana Cloud
+kinds: [token]
+# Manifest-only integration: NO connector_module. The support-relevant Grafana reads (alert rules,
+# datasources, annotations, org users) trip no force-code trigger — no field pre-selection dominates,
+# no multi-call join required, standard bearer auth, offset pagination expressed by lib.api natively.
+connector_module: ""
+env_var: RC_CONN_GRAFANA
+egress_hosts:
+  - "*.grafana.net"    # per-stack Grafana Cloud URL (e.g. mystack.grafana.net)
+  - grafana.net        # redirect base
+  - grafana.com        # docs/portal — included for completeness; API calls go to *.grafana.net
+
+# --- Generic lib.api caller fields (the compact declarative row) ---
+# base_url is templated: each Grafana Cloud stack has its own subdomain.
+# The agent supplies the full stack URL, e.g. https://myorg.grafana.net, via --query or by
+# constructing the path as an absolute URL. Set base_url to the common pattern; override per-call
+# by passing an absolute path when the stack slug is known.
+base_url: https://grafana.net
+
+auth:
+  strategy: bearer    # Service account token (bearer) or legacy API key — same header
+
+# Grafana legacy /api/* endpoints (datasources, alert-rules, annotations, org/users) use offset
+# pagination: page=N, perpage=M. Many support endpoints return small complete result sets (all
+# datasources, all alert rules) so a single page is often enough; offset style degrades safely.
+# New /apis/* Kubernetes-style endpoints use cursor (`continue` token) — those are less common for
+# support reads and can be driven with --query continue=<token> per page.
+pagination:
+  style: offset
+  offset_param: page       # Grafana uses page number (1-based), not a byte offset
+  limit_param: perpage
+  page_size: 1000          # Grafana default for most list endpoints; fetch all in one shot
+
+rate_limit:
+  remaining_header: ""     # Grafana Cloud does not expose a remaining-count header; 429 + Retry-After
+
+# No required default headers (no API-version pinning needed for the legacy /api/* surface).
+default_headers: {}
+
+help_md: |
+  Reads Grafana Cloud alert rules, datasources, annotations, org users, and dashboard metadata for
+  support and incident diagnosis. Uses a service account token (service-account bearer token or
+  legacy apikey) — read-only scopes only, never writes.
+
+  IMPORTANT: Grafana Cloud is per-stack. Supply the full stack URL as the base, e.g.
+  https://myorg.grafana.net. The base_url here is a fallback placeholder; in practice the agent
+  constructs paths as absolute URLs or sets --query base=… depending on the brain config.
+
+  Common support reads (replace https://myorg.grafana.net with the project's stack URL):
+
+    # All alert rules (returns JSON array — complete in one page for most stacks)
+    python -m lib.api get grafana https://myorg.grafana.net/api/v1/provisioning/alert-rules \
+      --pick uid,title,ruleGroup,labels,annotations,for,noDataState,execErrState
+
+    # Firing / pending alert instances
+    python -m lib.api get grafana https://myorg.grafana.net/api/prometheus/grafana/api/v1/alerts
+
+    # All datasources
+    python -m lib.api get grafana https://myorg.grafana.net/api/datasources \
+      --pick id,uid,name,type,url,isDefault
+
+    # Annotations (recent events/incidents tagged in dashboards)
+    python -m lib.api get grafana https://myorg.grafana.net/api/annotations \
+      --query limit=200 --query from=1700000000000 \
+      --pick id,dashboardUID,panelId,time,text,tags
+
+    # Org users (who has access)
+    python -m lib.api get grafana https://myorg.grafana.net/api/org/users/lookup \
+      --pick login,name,email,role
+
+    # Dashboard search / list
+    python -m lib.api get grafana https://myorg.grafana.net/api/search \
+      --query type=dash-db --query limit=500 \
+      --pick uid,title,url,folderTitle,tags

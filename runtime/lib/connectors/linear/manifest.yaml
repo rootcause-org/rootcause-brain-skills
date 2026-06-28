@@ -1,0 +1,61 @@
+key: linear
+name: Linear
+kinds: [token, oauth]
+# Script connector: Linear is GraphQL-only (POST https://api.linear.app/graphql).
+# lib.api is a GET/REST client — the GraphQL transport is the force-code trigger (c).
+# Additional triggers: (a) field pre-selection (huge nested GQL objects → 4-6 fields),
+# (d) Relay-style cursor pagination (pageInfo.endCursor/hasNextPage can't be expressed
+# with lib.api's cursor_field/has_more_field style).
+connector_module: lib.connectors.linear
+env_var: RC_CONN_LINEAR
+egress_hosts:
+  - api.linear.app
+# --- Generic lib.api caller fields (kept for catalog parity; the script bypasses them) ---
+# The script uses requests directly for GraphQL POSTs but documents the base_url for
+# reference and hosts for egress policy merging.
+base_url: https://api.linear.app/graphql
+auth:
+  strategy: bearer        # PAT or OAuth access token presented as `Authorization: Bearer …`
+pagination:
+  # Relay-style cursor (pageInfo.endCursor + hasNextPage inside a GQL connection);
+  # the connector drives this manually — the manifest style is recorded for documentation only.
+  style: cursor
+  cursor_param: after
+  cursor_field: pageInfo.endCursor
+  has_more_field: pageInfo.hasNextPage
+  items_field: nodes
+  page_size: 50
+rate_limit:
+  remaining_header: X-RateLimit-Requests-Remaining   # advisory; also X-RateLimit-Complexity-Remaining
+oauth:
+  auth_url: https://linear.app/oauth/authorize
+  token_url: https://api.linear.app/oauth/token
+  default_scopes: [read]   # `read` is the only scope needed for read-only grounding
+help_md: |
+  Reads Linear issues, teams, users, projects, and comments for support diagnosis ("which team
+  owns this, what's the status, is there a known bug"). Bearer PAT or OAuth — both read-only.
+  Linear is GraphQL-only; the connector sends POST requests to https://api.linear.app/graphql.
+
+  CLI examples:
+
+      # Fetch open issues assigned to a user (by email or Linear user id)
+      python -m lib.connectors.linear issues --assignee user@example.com --limit 20
+
+      # List all teams in the workspace
+      python -m lib.connectors.linear teams
+
+      # Fetch a single issue by identifier (e.g. ENG-123)
+      python -m lib.connectors.linear issue ENG-123
+
+      # Search issues by text
+      python -m lib.connectors.linear search "payment webhook failing"
+
+      # List projects for a team
+      python -m lib.connectors.linear projects --team ENG
+
+  Pagination: Relay-style cursor (pageInfo.endCursor / hasNextPage). The connector handles
+  the while-hasNextPage loop internally so callers never hand-roll pagination.
+
+  Rate limits: 5 000 requests/hour (PAT or OAuth). The remaining count is in
+  X-RateLimit-Requests-Remaining; complexity budget in X-RateLimit-Complexity-Remaining.
+  The connector honours 429 + Retry-After automatically via lib.api's retry layer.

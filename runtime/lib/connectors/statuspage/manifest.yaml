@@ -1,0 +1,66 @@
+key: statuspage
+name: Statuspage
+kinds: [token]
+# Manifest-only integration: NO connector_module. Standard list/get reads (incidents, components,
+# subscribers) trip no force-code trigger — the agent drives them directly via
+# `python -m lib.api get statuspage …` and pre-selects fields with --pick.
+connector_module: ""
+env_var: RC_CONN_STATUSPAGE
+egress_hosts:
+  - api.statuspage.io
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.statuspage.io/v1
+auth:
+  # Statuspage uses `Authorization: OAuth <api_key>` — not a standard Bearer. Store the FULL
+  # header value (including the "OAuth " prefix) as the RC_CONN_STATUSPAGE token. The
+  # api_key_header strategy places the value verbatim under the named header, exactly what we need.
+  strategy: api_key_header
+  name: Authorization
+pagination:
+  # Statuspage uses page-number + per_page offset pagination. The API returns a flat JSON array
+  # per page; the loop exits when a page returns fewer items than page_size (no has_more field).
+  style: offset
+  offset_param: page
+  limit_param: per_page
+  items_field: ""      # list endpoints return a bare JSON array (the page IS the list)
+  page_size: 100
+rate_limit:
+  # Statuspage enforces 1 req/s (60-s rolling window); 429 is honoured by lib.api's Retry-After
+  # handler. No remaining-count header is documented.
+  remaining_header: ""
+help_md: |
+  Reads Statuspage incidents, components, incident updates, and subscribers for support diagnosis
+  ("is there an active outage / when did it start / which components are affected"). Read-only;
+  only ever issues GETs.
+
+  **Token format:** Statuspage expects `Authorization: OAuth <api-key>`. Store the FULL string
+  (including the `OAuth ` prefix) as the `RC_CONN_STATUSPAGE` connection token, e.g.
+  `OAuth <your-api-key>`. The api_key_header strategy injects it verbatim as the Authorization
+  header value.
+
+  All mutating endpoints (POST/PATCH) are ignored — this connector is grounding-only.
+
+  Every data endpoint is scoped to a page_id (your Statuspage page's alphanumeric slug). Pass it
+  as a path segment:
+
+      python -m lib.api get statuspage pages/{page_id}/incidents \
+        --query per_page=100 --paginate \
+        --pick id,name,status,impact,shortlink,created_at,resolved_at
+
+      python -m lib.api get statuspage pages/{page_id}/incidents/{incident_id}
+
+      python -m lib.api get statuspage pages/{page_id}/components \
+        --query per_page=100 --paginate \
+        --pick id,name,status,description,created_at,updated_at
+
+      python -m lib.api get statuspage pages/{page_id}/incidents/{incident_id}/incident_updates \
+        --paginate --pick id,status,body,created_at
+
+      python -m lib.api get statuspage pages/{page_id}/subscribers \
+        --paginate --pick id,email,subscription_type,created_at
+
+  **Public unauthenticated API** (no token needed): Statuspage also exposes a public summary at
+  `https://{subdomain}.statuspage.io/api/v2/summary.json` (no auth, not driven via this connector).
+
+  Common paths under `/pages/{page_id}/`:
+    incidents, incidents/{id}, incidents/{id}/incident_updates, components, subscribers
