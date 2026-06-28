@@ -1,0 +1,41 @@
+key: github
+name: GitHub
+kinds: [token, oauth]
+# Manifest-only integration: NO connector_module. Basic GitHub reads (issues/PRs/releases/commits)
+# trip no force-code trigger, so the agent drives it directly via `python -m lib.api get github …`
+# and pre-selects fields with `--pick`. (Add a script only if a real multi-call join emerges.)
+connector_module: ""
+env_var: RC_CONN_GITHUB
+egress_hosts:
+  - api.github.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.github.com
+auth:
+  strategy: bearer        # PAT or OAuth access token, both presented as `Authorization: Bearer …`
+pagination:
+  style: link             # RFC 8288 `Link: <…>; rel="next"` headers — lib.api follows them verbatim
+  items_field: ""         # list endpoints return a bare JSON array (the page IS the list)
+  page_size: 100          # advisory; for `link` style the agent must pass --query per_page=100
+default_headers:
+  Accept: application/vnd.github+json
+  X-GitHub-Api-Version: "2022-11-28"   # pin the stable API version (recommended by GitHub docs)
+rate_limit:
+  remaining_header: X-RateLimit-Remaining   # advisory pacing; GitHub also sends 429 + Retry-After
+oauth:
+  auth_url: https://github.com/login/oauth/authorize
+  token_url: https://github.com/login/oauth/access_token
+  default_scopes: [repo, read:org]          # minimal read set for issues/PRs/releases across repos+org
+help_md: |
+  Reads GitHub issues, pull requests, releases, commits, and repo metadata for support diagnosis
+  ("is this a known bug / when was it fixed / what shipped"). Token or OAuth, both read-only by the
+  granted scopes — only ever issue GETs.
+
+  Pagination is RFC 8288 `Link` headers; list endpoints return a bare array. GitHub defaults to 30
+  items/page, so pass `--query per_page=100` for fewer round-trips, e.g.
+
+      python -m lib.api get github repos/OWNER/REPO/issues \
+        --query state=all --query per_page=100 --paginate \
+        --pick number,title,state,html_url,labels.*.name
+
+  Common paths: repos/{owner}/{repo}/issues, /pulls, /releases, /commits; search/issues?q=…
+  (search has its own response envelope under `items` and is rate-limited separately).
