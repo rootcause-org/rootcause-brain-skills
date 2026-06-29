@@ -24,17 +24,20 @@ from lib.connectors import sentry  # noqa: E402
 from lib import stripe as lib_stripe  # noqa: E402
 
 
+_DSN_ENV_KEYS = ("PG_DSN", "DATABASE_URL", "RC_DB_DEFAULT")
+
+
 class DSNResolution(unittest.TestCase):
     def setUp(self):
         self._clean = {
-            k: v for k, v in os.environ.items() if k.endswith("_DSN") or k in ("PG_DSN", "DATABASE_URL")
+            k: v for k, v in os.environ.items() if k.endswith("_DSN") or k in _DSN_ENV_KEYS
         }
         for k in self._clean:
             del os.environ[k]
 
     def tearDown(self):
         for k in list(os.environ):
-            if k.endswith("_DSN") or k in ("PG_DSN", "DATABASE_URL"):
+            if k.endswith("_DSN") or k in _DSN_ENV_KEYS:
                 del os.environ[k]
         os.environ.update(self._clean)
 
@@ -110,6 +113,42 @@ class DSNResolution(unittest.TestCase):
         os.environ["B_DSN"] = "postgres://b"
         with self.assertRaises(RuntimeError):
             db._resolve_dsn(None)
+
+    def test_default_multiple_uses_standard(self):
+        # Multiple DBs, no db=, but a STANDARD is set (RC_DB_DEFAULT) → resolve to it instead of raising.
+        os.environ["MOMENTUM_POWERTOOLS_DSN"] = "postgres://pt"
+        os.environ["MOMENTUM_RUBY_DSN"] = "postgres://ruby"
+        os.environ["RC_DB_DEFAULT"] = "MOMENTUM_RUBY_DSN"
+        self.assertEqual(db._resolve_dsn(None), "postgres://ruby")
+
+    def test_default_standard_stale_falls_through_to_raise(self):
+        # RC_DB_DEFAULT names a DSN that isn't present this run (tenant overlay / stale) → don't point at a
+        # missing DB; raise the normal multi-DB "pass db=" error.
+        os.environ["A_DSN"] = "postgres://a"
+        os.environ["B_DSN"] = "postgres://b"
+        os.environ["RC_DB_DEFAULT"] = "GONE_DSN"
+        with self.assertRaises(RuntimeError):
+            db._resolve_dsn(None)
+
+    def test_pg_dsn_wins_over_standard(self):
+        # PG_DSN is the explicit single-DSN override; it precedes the standard fallback.
+        os.environ["PG_DSN"] = "postgres://pg"
+        os.environ["A_DSN"] = "postgres://a"
+        os.environ["B_DSN"] = "postgres://b"
+        os.environ["RC_DB_DEFAULT"] = "A_DSN"
+        self.assertEqual(db._resolve_dsn(None), "postgres://pg")
+
+    def test_defaulted_to_standard_only_when_omitted_on_multi_db(self):
+        os.environ["MOMENTUM_POWERTOOLS_DSN"] = "postgres://pt"
+        os.environ["MOMENTUM_RUBY_DSN"] = "postgres://ruby"
+        os.environ["RC_DB_DEFAULT"] = "MOMENTUM_RUBY_DSN"
+        # db omitted on a multi-DB run → the standard's short name (drives the table-not-found message).
+        self.assertEqual(db._defaulted_to_standard(None), "ruby")
+        # db EXPLICITLY passed → not "defaulted", even to the same DB.
+        self.assertIsNone(db._defaulted_to_standard("ruby"))
+        # No standard set → nothing defaulted.
+        del os.environ["RC_DB_DEFAULT"]
+        self.assertIsNone(db._defaulted_to_standard(None))
 
 
 class DatabaseCatalog(unittest.TestCase):
@@ -383,6 +422,76 @@ class QueryPlaceholderHandling(unittest.TestCase):
     def test_real_params_are_passed_through(self):
         _, passed = self._run("SELECT 1 WHERE x ILIKE %s", ["%avo%"])
         self.assertEqual(passed, ["%avo%"])
+
+
+class TableNotFoundMessage(unittest.TestCase):
+    """A table-not-found on a multi-DB run where db= was OMITTED explains 'wrong database' — names the
+    standard that was used + the alternatives — so the agent re-runs with db= instead of rewriting."""
+
+    def setUp(self):
+        self._clean = {
+            k: v
+            for k, v in os.environ.items()
+            if k.endswith("_DSN") or k in ("PG_DSN", "DATABASE_URL", "RC_DB_DEFAULT", "RC_DB_DESCRIPTIONS")
+        }
+        for k in self._clean:
+            del os.environ[k]
+
+    def tearDown(self):
+        for k in list(os.environ):
+            if k.endswith("_DSN") or k in ("PG_DSN", "DATABASE_URL", "RC_DB_DEFAULT", "RC_DB_DESCRIPTIONS"):
+                del os.environ[k]
+        os.environ.update(self._clean)
+
+    def _fake_psycopg(self):
+        """A psycopg double whose cursor.execute raises a REAL UndefinedTable (so the except clause, which
+        catches the concrete class, fires) and whose errors.* are real classes."""
+
+        class _UndefinedTable(Exception):
+            diag = mock.Mock(message_hint=None)
+
+        class _UndefinedColumn(Exception):
+            diag = mock.Mock(message_hint=None)
+
+        cur = mock.MagicMock()
+        cur.execute.side_effect = _UndefinedTable('relation "accounts" does not exist')
+        cur.__enter__ = lambda s: cur
+        cur.__exit__ = lambda *a: False
+        conn = mock.MagicMock()
+        conn.cursor.return_value = cur
+        conn.__enter__ = lambda s: conn
+        conn.__exit__ = lambda *a: False
+        fake = mock.MagicMock()
+        fake.connect.return_value = conn
+        fake.errors.UndefinedTable = _UndefinedTable
+        fake.errors.UndefinedColumn = _UndefinedColumn
+        return fake
+
+    def test_omitted_db_on_multi_db_names_standard_and_alternatives(self):
+        os.environ["MOMENTUM_POWERTOOLS_DSN"] = "postgres://pt"
+        os.environ["MOMENTUM_RUBY_DSN"] = "postgres://ruby"
+        os.environ["RC_DB_DEFAULT"] = "MOMENTUM_RUBY_DSN"
+        os.environ["RC_DB_DESCRIPTIONS"] = '{"MOMENTUM_POWERTOOLS_DSN":"Credits / usage."}'
+        with mock.patch.dict(sys.modules, {"psycopg": self._fake_psycopg()}):
+            with self.assertRaises(RuntimeError) as ctx:
+                db.query("select * from accounts", timeout_ms=0)  # no db= → defaults to the standard
+        msg = str(ctx.exception)
+        self.assertIn("No db= was passed", msg)
+        self.assertIn("'ruby'", msg)  # the standard that was used
+        self.assertIn("powertools", msg)  # the alternative it should try
+        self.assertIn('relation "accounts" does not exist', msg)  # original error preserved
+
+    def test_explicit_db_keeps_the_generic_scoping_hint(self):
+        # db= was passed explicitly → not a "wrong default DB" situation; the scoping/typo hint applies.
+        os.environ["MOMENTUM_POWERTOOLS_DSN"] = "postgres://pt"
+        os.environ["MOMENTUM_RUBY_DSN"] = "postgres://ruby"
+        os.environ["RC_DB_DEFAULT"] = "MOMENTUM_RUBY_DSN"
+        with mock.patch.dict(sys.modules, {"psycopg": self._fake_psycopg()}):
+            with self.assertRaises(RuntimeError) as ctx:
+                db.query("select * from accounts", db="ruby", timeout_ms=0)
+        msg = str(ctx.exception)
+        self.assertNotIn("No db= was passed", msg)
+        self.assertIn("lib.db.columns", msg)  # the generic undefined hint
 
 
 class ExcludedColumnHeal(unittest.TestCase):

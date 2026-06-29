@@ -3,8 +3,9 @@
 A project usually has SEVERAL databases — Momentum Tools has powertools / ruby / elsa — each
 injected as its own ``*_DSN`` env var. Pick one with the ``db`` argument, which accepts a short
 name (``"powertools"``), the exact env-var name (``"MOMENTUM_POWERTOOLS_DSN"``), or a raw DSN.
-With a single database configured (or ``PG_DSN`` set) ``db`` may be omitted. ``databases()``
-lists what this run has. ``--list`` (or a bad ``db=``) shows each database's purpose — the
+``db`` may be omitted with a single database configured, with ``PG_DSN`` set, or when the project has
+a STANDARD database (the operator's default, injected as ``RC_DB_DEFAULT``) — a multi-DB run then
+reads the standard. ``databases()`` lists what this run has. ``--list`` (or a bad ``db=``) shows each database's purpose — the
 descriptions come from project metadata in the ``RC_DB_DESCRIPTIONS`` env var (a JSON object keyed
 by the exact DSN env-var name), so the agent learns which DB is which without trial-and-error.
 
@@ -132,6 +133,12 @@ def databases() -> list[str]:
     )
 
 
+def _default_db_env() -> str:
+    """The project's STANDARD database — the DSN env var name the host injects as ``RC_DB_DEFAULT`` (the
+    operator-set default a multi-DB run falls back to when ``db=`` is omitted). ``""`` when none set."""
+    return os.environ.get("RC_DB_DEFAULT", "").strip()
+
+
 def _short_name(env: str) -> str:
     """Short name for a DSN env var = its trailing segment, lowercased.
 
@@ -232,6 +239,12 @@ def _resolve_dsn(db: str | None) -> str:
         return os.environ[avail[0]]
     if not avail:
         raise RuntimeError("no project database configured for this run (no *_DSN env var set)")
+    # Several DBs and no db=: fall back to the project's STANDARD database when the operator set one
+    # (RC_DB_DEFAULT, a DSN env name). Saves a weak model a turn rediscovering db=; query() still names
+    # the alternatives if the standard turns out to be the wrong DB for the table.
+    default_env = _default_db_env()
+    if default_env and os.environ.get(default_env):
+        return os.environ[default_env]
     raise RuntimeError(
         "multiple databases available — pass db= to pick one (short name, env var, or raw DSN):\n"
         f"{_format_catalog()}"
@@ -258,6 +271,21 @@ def _undefined_hint(exc) -> str:
         "drop the unavailable name and re-run — no need to rewrite the whole query."
     )
     return " ".join(parts)
+
+
+def _defaulted_to_standard(db: str | None) -> str | None:
+    """Short name of the STANDARD database iff THIS call defaulted to it — i.e. ``db`` was omitted and a
+    multi-DB run resolved via ``RC_DB_DEFAULT`` (not PG_DSN, not a lone DB). ``None`` otherwise. Lets
+    `query` tell a table-not-found apart as "you didn't pick a DB, so the standard was used and the table
+    may live in another", instead of the generic typo/scoping hint."""
+    if db is not None or os.environ.get("PG_DSN"):
+        return None
+    if len(databases()) <= 1:
+        return None
+    default_env = _default_db_env()
+    if default_env and os.environ.get(default_env):
+        return _short_name(default_env)
+    return None
 
 
 def _excluded_columns() -> dict:
@@ -487,7 +515,22 @@ def query(
                 # placeholders"). With None the query is sent verbatim, so inline wildcards just work;
                 # parameterised queries (params given) still bind `%s` normally.
                 cur.execute(sql, params if params else None)
-            except (psycopg.errors.UndefinedColumn, psycopg.errors.UndefinedTable) as e:
+            except psycopg.errors.UndefinedTable as e:
+                # A table-not-found on a multi-DB run where db= was OMITTED is usually "wrong database",
+                # not a typo: name the standard we silently used + the alternatives so the agent re-runs
+                # with db= instead of rewriting against the wrong DB. Otherwise the generic scoping/typo
+                # hint applies. `from e` keeps the original traceback.
+                std = _defaulted_to_standard(db)
+                if std is not None:
+                    hint = (
+                        f"No db= was passed, so the standard database {std!r} was used — that table isn't "
+                        f"there. If it lives in another database, re-run with db=. Databases this run can "
+                        f"read:\n{_format_catalog()}"
+                    )
+                else:
+                    hint = _undefined_hint(e)
+                raise RuntimeError(f"{e}\n\n{hint}") from e
+            except psycopg.errors.UndefinedColumn as e:
                 # Still undefined after the pre-flight heal ⇒ a typo, a hidden column used in WHERE/
                 # ORDER BY (which we don't rewrite), or a shape we couldn't parse. Enrich so the agent
                 # fixes the one bad name instead of rewriting. `from e` keeps the original traceback.
