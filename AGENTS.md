@@ -6,7 +6,8 @@ This repo is the kit, not a brain:
 
 - shipped agent skills in `skills/*/SKILL.md`;
 - the Local Brain Work engine in `skills/local-brain-work/scripts/`;
-- the `rootcause-runtime` Python package in `runtime/` (`lib` helpers imported by brain scripts);
+- the `rootcause-runtime` Python package in `runtime/` (`lib` helpers imported by brain scripts) —
+  **edits here are release-gated; see [Version Coherence](#version-coherence)**;
 - the workspace image in `docker/`;
 - installer/plugin/release plumbing.
 
@@ -85,6 +86,14 @@ Diagnosis is read-only by default. Exceptions must be explicit: `rc ask` creates
 executes writes, and `brain_action.py --commit` writes to whatever `.env.action` targets.
 
 ## Version Coherence
+
+**Did you touch `runtime/lib/**`, `runtime/pyproject.toml`, or `runtime/requirements.lock`? Then you
+owe a release — a bare merge/push does NOT reach prod.** The box installs the *pinned tag*, not `main`,
+so unreleased lib bytes never ship. Close it out with `./refresh-brains.sh --release <patch|minor>`
+(bumps + tags + pushes the whole line below; `--relock` if deps changed), then in the **rootcause** repo
+`scripts/bump-workspace-pin.py vX.Y.Z` → commit → promote. Full steps: [RELEASING.md](RELEASING.md).
+rootcause's `promote.py` preflight now **FAILs** while lib commits sit past the pin (even unpushed local
+ones), so a forgotten release blocks the next deploy — but don't rely on the gate; release as you go.
 
 One version line moves together:
 
