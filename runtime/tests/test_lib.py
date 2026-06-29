@@ -343,6 +343,48 @@ class UndefinedHint(unittest.TestCase):
         self.assertNotIn("None", msg)
 
 
+class QueryPlaceholderHandling(unittest.TestCase):
+    """`query` must send a literal `%` verbatim (the `ILIKE 'avo%'` wildcard footgun): pass None to
+    psycopg when there are no params, a sequence only when there are. Mocks the lazily-imported
+    psycopg so no real DB is needed."""
+
+    def _fake_psycopg(self, calls):
+        cur = mock.MagicMock()
+        cur.description = None  # short-circuit before array handling
+        cur.execute.side_effect = lambda *a: calls.append(a)
+        cur.__enter__ = lambda s: cur
+        cur.__exit__ = lambda *a: False
+        conn = mock.MagicMock()
+        conn.cursor.return_value = cur
+        conn.__enter__ = lambda s: conn
+        conn.__exit__ = lambda *a: False
+        fake = mock.MagicMock()
+        fake.connect.return_value = conn
+        return fake
+
+    def _run(self, sql, params):
+        calls = []
+        with mock.patch.dict(os.environ, {"PG_DSN": "postgres://x/y"}), mock.patch.dict(
+            sys.modules, {"psycopg": self._fake_psycopg(calls)}
+        ):
+            db.query(sql, params)
+        # calls[0] is the SET LOCAL statement_timeout; calls[-1] is the user query.
+        return calls[-1]
+
+    def test_no_params_passes_none_so_literal_percent_survives(self):
+        sql, passed = self._run("SELECT 1 WHERE table_name ILIKE 'avo%'", None)
+        self.assertEqual(sql, "SELECT 1 WHERE table_name ILIKE 'avo%'")
+        self.assertIsNone(passed)  # None, NOT [] — else psycopg rejects the literal %
+
+    def test_empty_params_also_passes_none(self):
+        _, passed = self._run("SELECT 1 WHERE x ILIKE 'a%'", [])
+        self.assertIsNone(passed)
+
+    def test_real_params_are_passed_through(self):
+        _, passed = self._run("SELECT 1 WHERE x ILIKE %s", ["%avo%"])
+        self.assertEqual(passed, ["%avo%"])
+
+
 class ExcludedColumnHeal(unittest.TestCase):
     """_strip_excluded auto-drops manifest-hidden SELECT columns on the simple shape, leaves typos and
     non-simple queries alone, and never empties the SELECT."""

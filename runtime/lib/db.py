@@ -449,8 +449,14 @@ def query(
     """Run a read-only SELECT and return rows as a list of dicts.
 
     Opens a fresh read-only connection per call (the container is disposable, so pooling buys
-    nothing). Use ``%s`` placeholders with ``params`` — never string-format input into ``sql``.
-    ``db`` selects the database (see module docstring); ``timeout_ms`` caps the statement.
+    nothing). ``db`` selects the database (see module docstring); ``timeout_ms`` caps the statement.
+
+    Placeholders: bind UNTRUSTED INPUT as ``%s`` with ``params`` — never string-format input into
+    ``sql`` (injection). But a literal ``%`` wildcard is fine inline: ``ILIKE 'avo%'`` with no
+    ``params`` runs verbatim (psycopg only treats ``%`` as a placeholder when ``params`` is passed).
+    So either inline a static wildcard (``ILIKE 'avo%'``) OR bind a dynamic one (``ILIKE %s`` with
+    ``['%' + term + '%']``) — both work; don't mix a static-`%` literal into a query that also binds
+    params, since then psycopg scans the whole string and the literal ``%`` needs doubling (``%%``).
 
     Auto-heal: if the project's data-scoping hides a column you SELECT (standard single-table shape),
     that column is dropped, the trimmed query runs, and a warning names what was dropped — so one extra
@@ -475,7 +481,12 @@ def query(
             if timeout_ms:
                 cur.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
             try:
-                cur.execute(sql, params or [])
+                # Pass None (not []) when there are no params: psycopg only scans the SQL for
+                # placeholders when params is a sequence, and that scan rejects a literal `%` (the
+                # `ILIKE 'avo%'` wildcard footgun → "only '%s','%b','%t' are allowed as
+                # placeholders"). With None the query is sent verbatim, so inline wildcards just work;
+                # parameterised queries (params given) still bind `%s` normally.
+                cur.execute(sql, params if params else None)
             except (psycopg.errors.UndefinedColumn, psycopg.errors.UndefinedTable) as e:
                 # Still undefined after the pre-flight heal ⇒ a typo, a hidden column used in WHERE/
                 # ORDER BY (which we don't rewrite), or a shape we couldn't parse. Enrich so the agent
