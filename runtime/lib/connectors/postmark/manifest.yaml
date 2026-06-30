@@ -1,0 +1,78 @@
+key: postmark
+name: Postmark
+kinds: [token]
+# Manifest-only integration: NO connector_module. Postmark's REST API trips no force-code trigger —
+# auth is a single static header, support reads (outbound messages, bounces, delivery stats) are
+# plain offset/count GETs, and no multi-call join or non-standard transport is needed. The agent
+# drives it directly via `python -m lib.api get postmark …`.
+#
+# Token only. Postmark authenticates server-level reads with a SERVER API TOKEN sent as the
+# `X-Postmark-Server-Token` header (one token per Postmark "server"). Store the raw token as the
+# RC_CONN_POSTMARK connection value; api_key_header injects it verbatim. Account-level endpoints
+# (a different `X-Postmark-Account-Token`) are NOT support-grounding surface and are not offered.
+connector_module: ""
+env_var: RC_CONN_POSTMARK
+egress_hosts:
+  - api.postmarkapp.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.postmarkapp.com
+auth:
+  strategy: api_key_header     # Postmark uses `X-Postmark-Server-Token: <token>` — not Bearer.
+  name: X-Postmark-Server-Token
+pagination:
+  # Postmark offset/count: { "TotalCount": N, "Messages": [...] }. Items live under a per-endpoint
+  # key (Messages | Bounces | InboundMessages); items_field defaults to the outbound message search
+  # (the most common support use). For bounces/inbound, override items_field in a script or fetch a
+  # single page and --pick the envelope directly (see help_md).
+  style: offset
+  offset_param: offset
+  limit_param: count
+  items_field: Messages
+  page_size: 500              # Postmark's max `count` per page
+rate_limit:
+  remaining_header: ""        # Postmark does not advertise a remaining-count header; 422/429 on abuse
+default_headers:
+  Accept: application/json
+help_md: |
+  Reads Postmark outbound message activity, bounces, and delivery stats for support diagnosis
+  ("did our email reach this customer, did it bounce and why, what's our send/bounce volume").
+  Server API token only (no OAuth); only ever issues GETs — read-only grounding.
+
+  **Token:** store the Postmark SERVER token as `RC_CONN_POSTMARK`; it rides as the
+  `X-Postmark-Server-Token` header. One token per Postmark server (mailstream).
+
+  **Pagination:** outbound message search is offset/count and wraps items under `Messages`
+  (the manifest default). Bounces wrap under `Bounces` and inbound under `InboundMessages`, so for
+  those fetch a single page (no --paginate) and --pick the envelope, or pass the wrapper as the
+  --pick prefix.
+
+      # Find a customer's recent outbound messages (status, subject, when) — most common lookup
+      python -m lib.api get postmark messages/outbound \
+        --query recipient=user@example.com --query count=50 --paginate \
+        --pick Messages.*.MessageID,Messages.*.Status,Messages.*.Subject,Messages.*.ReceivedAt
+
+      # Full delivery trail for ONE message: per-recipient events (Delivered / Bounced / Opened)
+      python -m lib.api get postmark messages/outbound/<MessageID>/details \
+        --pick Recipients,Subject,MessageEvents.*.Type,MessageEvents.*.ReceivedAt,MessageEvents.*.Details
+
+      # Why did mail to this address bounce? (HardBounce / SoftBounce / SpamComplaint …)
+      python -m lib.api get postmark bounces \
+        --query emailFilter=user@example.com --query count=50 \
+        --pick Bounces.*.Type,Bounces.*.Email,Bounces.*.BouncedAt,Bounces.*.Description,Bounces.*.Inactive
+
+      # One bounce in detail (full SMTP response + whether the address is now suppressed)
+      python -m lib.api get postmark bounces/<BounceID> \
+        --pick Type,Email,Description,Details,Inactive,CanActivate
+
+      # Account-wide delivery health snapshot (inactive recipients + bounce breakdown)
+      python -m lib.api get postmark deliverystats \
+        --pick InactiveMails,Bounces.*.Name,Bounces.*.Count
+
+      # Outbound volume + rates over a window (sent / bounced / spam / opens)
+      python -m lib.api get postmark stats/outbound \
+        --query fromdate=2024-01-01 --query todate=2024-01-31 \
+        --pick Sent,Bounced,BounceRate,SpamComplaints,Opens,UniqueOpens
+
+  Useful outbound-search filters: `recipient`, `tag`, `status` (queued/sent/processed), `fromdate`,
+  `todate`, `subject`. Bounce filters: `type`, `inactive`, `emailFilter`, `tag`, `messageID`,
+  `fromdate`, `todate`.
