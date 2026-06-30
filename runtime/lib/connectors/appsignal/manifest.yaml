@@ -1,0 +1,66 @@
+key: appsignal
+name: AppSignal
+kinds: [token]
+# Script connector: force-code trigger (e) fires — AppSignal's public API is GraphQL
+# (POST https://appsignal.com/graphql) for search/incidents, plus a REST sample endpoint for
+# the full backtrace. lib.api is GET/REST only and can't express the GraphQL transport, the
+# org→app discovery join, or the reference-code tag search, so the script owns every call
+# (reusing lib.api's auth/retry/backoff — never re-implementing them).
+#
+# Token only. AppSignal authenticates every API call with a PERSONAL API TOKEN passed as the
+# `?token=` query param. AppSignal's only OAuth surface is its hosted MCP server, which signs you
+# in at the account level and exposes read AND write tools at once — incompatible with rootcause's
+# read-only grounding plane — so it is deliberately NOT offered here.
+connector_module: lib.connectors.appsignal
+env_var: RC_CONN_APPSIGNAL
+egress_hosts:
+  - appsignal.com        # GraphQL (/graphql) + REST sample API (/api/<appId>/samples/…)
+
+# --- Generic lib.api caller fields (catalog parity; the script owns every call) ---
+# base_url is the GraphQL endpoint; the script appends ?token=<RC_CONN_APPSIGNAL>. The REST
+# sample endpoint shares the appsignal.com host (already in egress_hosts).
+base_url: https://appsignal.com/graphql
+auth:
+  strategy: query_param   # token rides the URL as ?token=<value>, not a header
+  name: token
+pagination:
+  # GraphQL responses are nested objects, not a paged REST resource. Incident lists cap at the
+  # GraphQL `limit` arg inside the query body; none of lib.api's styles apply.
+  style: none
+rate_limit:
+  remaining_header: ""    # AppSignal does not advertise a remaining-count header; 429 + Retry-After
+default_headers:
+  Content-Type: application/json
+  Accept: application/json
+
+help_md: |
+  Reads AppSignal exception data for support diagnosis — the exception class + message, the
+  backtrace, the failing controller action or background job, request params/env, and the grouped
+  incident with its real occurrence count. Read-only: only ever issues GraphQL QUERIES (never
+  mutations) and REST GETs. Credential is a personal API token (RC_CONN_APPSIGNAL) sent as the
+  `?token=` query param.
+
+  AppSignal is GraphQL-only (POST https://appsignal.com/graphql); `show` additionally hits the REST
+  sample endpoint for the full backtrace. An 8-character error REFERENCE CODE (shown to a customer
+  in the UI / a screenshot) resolves via a one-call org-wide tag search.
+
+  Discover what the token can see first — orgs + app ids are not hardcoded:
+
+    # List the organizations + apps this token can access (slug, app id, name, environment)
+    python -m lib.connectors.appsignal apps
+
+    # Resolve an 8-char reference code → exception sample(s) across the org (lists sample ids)
+    python -m lib.connectors.appsignal search A1B2C3D4 --org my-org-slug
+
+    # Search by exception name / job / controller action
+    python -m lib.connectors.appsignal search "NoMethodError" --org my-org-slug
+
+    # Grouped exception incidents for one app (occurrence counts, last seen, first backtrace line)
+    python -m lib.connectors.appsignal incidents "ActiveRecord::RecordNotFound" \
+      --app <appId> --since 1w
+
+    # Full detail for ONE sample: complete backtrace + params + request env
+    python -m lib.connectors.appsignal show "<sample id from search>"
+
+  `--since` lookback: 1h / 1d / 2d / 1w / 30d (server-side timeframe filter). `--pick` narrows each
+  result to dotted field paths. Sample `session_data` (CSRF/session secrets) is never returned.
