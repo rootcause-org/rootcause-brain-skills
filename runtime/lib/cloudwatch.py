@@ -10,9 +10,10 @@ The story behind a thread lives in the app's structured (``slog`` JSON) logs. Tw
 Insights matches a field in context, so prefer ``filter @message like /"thread_id":"<uuid>"/``
 over a bare id, which false-matches any field carrying those digits.
 
-Credentials come from the standard AWS env vars injected per run
-(``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY`` / ``AWS_REGION``), read-only by IAM.
-``boto3`` is imported lazily so the module loads for projects without CloudWatch.
+Credentials prefer the structured ``RC_CONN_CLOUDWATCH`` connection JSON injected per run
+(``access_key_id``, ``secret_access_key``, ``region``), with the legacy standard AWS env vars as a
+fallback during migration. IAM must be read-only. ``boto3`` is imported lazily so the module loads for
+projects without CloudWatch.
 
 CLI (token-efficient one-offs from bash):
 
@@ -22,6 +23,7 @@ CLI (token-efficient one-offs from bash):
     python -m lib.cloudwatch /app 'fields @message | filter @message like /panic/ | limit 50'
 """
 
+import json
 import os
 import time
 
@@ -32,12 +34,53 @@ _MAX_WAIT = 60.0
 
 
 def _client():
-    region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
-    if not os.environ.get("AWS_ACCESS_KEY_ID"):
-        raise RuntimeError("AWS credentials not set — no CloudWatch configured for this run")
+    creds = _credentials()
     import boto3
 
-    return boto3.client("logs", region_name=region)
+    return boto3.client(
+        "logs",
+        region_name=creds["region"],
+        aws_access_key_id=creds["access_key_id"],
+        aws_secret_access_key=creds["secret_access_key"],
+    )
+
+
+def _credentials() -> dict[str, str]:
+    raw = os.environ.get("RC_CONN_CLOUDWATCH", "").strip()
+    if raw:
+        try:
+            body = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("RC_CONN_CLOUDWATCH is not valid JSON") from exc
+        if not isinstance(body, dict):
+            raise RuntimeError("RC_CONN_CLOUDWATCH must be a JSON object")
+        access_key_id = str(body.get("access_key_id") or body.get("aws_access_key_id") or "").strip()
+        secret_access_key = str(body.get("secret_access_key") or body.get("aws_secret_access_key") or "").strip()
+        region = str(body.get("region") or body.get("aws_region") or "").strip()
+    else:
+        access_key_id = os.environ.get("AWS_ACCESS_KEY_ID", "").strip()
+        secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY", "").strip()
+        region = (os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "").strip()
+    missing = [
+        name
+        for name, value in (
+            ("access_key_id", access_key_id),
+            ("secret_access_key", secret_access_key),
+            ("region", region),
+        )
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(
+            "CloudWatch connection not configured: missing "
+            + ", ".join(missing)
+            + " (expected RC_CONN_CLOUDWATCH JSON or legacy AWS_* env vars)"
+        )
+    return {
+        "access_key_id": access_key_id,
+        "secret_access_key": secret_access_key,
+        "region": region,
+    }
 
 
 def _epoch(t) -> int:

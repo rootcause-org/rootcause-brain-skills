@@ -8,6 +8,7 @@ tests; here we lock down the logic that decides *what* gets run.
 """
 
 import io
+import json
 import os
 import re
 import sys
@@ -20,7 +21,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # make `lib` importable
 
 from lib import _output, cloudwatch, db, oauth  # noqa: E402
-from lib.connectors import sentry  # noqa: E402
+from lib.connectors import cloudwatch as cloudwatch_connector, sentry  # noqa: E402
 from lib import stripe as lib_stripe  # noqa: E402
 
 
@@ -672,6 +673,67 @@ class CloudWatchTimeRange(unittest.TestCase):
     def test_explicit_iso_window(self):
         s, e = cloudwatch._time_range(hours=24, start="2026-01-10 00:00:00", end="2026-01-10 01:00:00")
         self.assertEqual(e - s, 3600)
+
+
+class CloudWatchCredentials(unittest.TestCase):
+    def setUp(self):
+        self._saved = {
+            k: os.environ.get(k)
+            for k in (
+                "RC_CONN_CLOUDWATCH",
+                "AWS_ACCESS_KEY_ID",
+                "AWS_SECRET_ACCESS_KEY",
+                "AWS_REGION",
+                "AWS_DEFAULT_REGION",
+            )
+        }
+        for k in self._saved:
+            os.environ.pop(k, None)
+
+    def tearDown(self):
+        for k, v in self._saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_structured_connection_credentials_win(self):
+        os.environ["RC_CONN_CLOUDWATCH"] = json.dumps(
+            {
+                "access_key_id": "conn-key",
+                "secret_access_key": "conn-secret",
+                "region": "eu-west-1",
+            }
+        )
+        os.environ["AWS_ACCESS_KEY_ID"] = "legacy-key"
+        os.environ["AWS_SECRET_ACCESS_KEY"] = "legacy-secret"
+        os.environ["AWS_REGION"] = "eu-central-1"
+
+        self.assertEqual(
+            cloudwatch._credentials(),
+            {
+                "access_key_id": "conn-key",
+                "secret_access_key": "conn-secret",
+                "region": "eu-west-1",
+            },
+        )
+
+    def test_legacy_aws_env_fallback(self):
+        os.environ["AWS_ACCESS_KEY_ID"] = "legacy-key"
+        os.environ["AWS_SECRET_ACCESS_KEY"] = "legacy-secret"
+        os.environ["AWS_REGION"] = "eu-central-1"
+
+        self.assertEqual(cloudwatch._credentials()["region"], "eu-central-1")
+
+    def test_missing_structured_field_names_missing_value(self):
+        os.environ["RC_CONN_CLOUDWATCH"] = json.dumps({"access_key_id": "conn-key", "region": "eu-west-1"})
+
+        with self.assertRaisesRegex(RuntimeError, "secret_access_key"):
+            cloudwatch._credentials()
+
+    def test_connector_reexports_cloudwatch_helpers(self):
+        self.assertIs(cloudwatch_connector.insights, cloudwatch.insights)
+        self.assertIs(cloudwatch_connector.search, cloudwatch.search)
 
 
 class InsightsPolling(unittest.TestCase):
