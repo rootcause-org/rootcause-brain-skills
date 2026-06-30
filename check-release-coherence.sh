@@ -57,6 +57,19 @@ elif [ -d "$ROOTCAUSE_DIR/runtime" ]; then
   if [ -f "$prod_lock" ] && ! cmp -s "$ROOT/runtime/requirements.lock" "$prod_lock"; then
     err "$prod_lock differs from runtime/requirements.lock"
   fi
+  # The host integration_catalog is a generated projection of these connector manifests. Fail the
+  # release if a manifest changed without regenerating the prod snapshot (`make catalog`).
+  catalog_gen="$ROOTCAUSE_DIR/scripts/gen_catalog_migration.py"
+  if [ -f "$catalog_gen" ]; then
+    if command -v uv >/dev/null 2>&1; then
+      if ! uv run --with pyyaml python "$catalog_gen" \
+          "$ROOT/runtime/lib/connectors" "$ROOTCAUSE_DIR/db/catalog.generated.sql" --check >/dev/null; then
+        err "db/catalog.generated.sql is stale vs connector manifests — run \`make catalog\` in rootcause"
+      fi
+    else
+      echo "warning: uv unavailable; skipped catalog snapshot lockstep check" >&2
+    fi
+  fi
 else
   echo "warning: sibling rootcause repo not found at $ROOTCAUSE_DIR; skipped prod pin/lock checks" >&2
 fi
