@@ -32,6 +32,9 @@ rc brain sync
 rc env keys
 rc env pull
 rc env diff
+printf %s "$SECRET_VALUE" | rc env set key=FOO_API_TOKEN
+rc env rm FOO_API_TOKEN
+rc env reveal FOO_API_TOKEN
 rc login
 rc whoami
 ```
@@ -86,10 +89,18 @@ with `jq`. Use [`rc-debug`](../skills/rc-debug/SKILL.md) for the analysis-first 
 rc env keys
 rc env pull
 rc env diff
+printf %s "$SECRET_VALUE" | rc env set key=FOO_API_TOKEN
+rc env rm FOO_API_TOKEN
+rc env reveal FOO_API_TOKEN
 ```
 
 `rc env pull` writes the production grounding `.env` to the brain root with mode `0600`; values are not
-printed. The file is gitignored and contains real secrets.
+printed. `rc env set` adds or rotates one grounding secret, reading the value from STDIN by default and
+never echoing it. `rc env reveal` is the deliberate exception: it prints one live value for copy/pipe use
+and is audited. The file is gitignored and contains real secrets.
+
+For the full choose-the-store flow, tenant behavior, and action write-plane rules, read
+[docs/secrets.md](secrets.md).
 
 ## Brain Cache
 

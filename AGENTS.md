@@ -49,6 +49,8 @@ Read these before changing product-facing docs/skills:
 - [docs/side-effects.md](docs/side-effects.md) — read-only vs explicit side effects.
 - [docs/support-boundary.md](docs/support-boundary.md) — brain fix vs support escalation.
 - [docs/mirrors.md](docs/mirrors.md) — source mirror freshness and local/prod gaps.
+- [docs/secrets.md](docs/secrets.md) — public `rc` flow for adding/rotating grounding env and action
+  credentials.
 
 ## Canonical Skills
 

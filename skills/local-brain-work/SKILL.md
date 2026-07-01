@@ -136,6 +136,10 @@ rc env pull
 secret values. If a private DB is not reachable from the laptop, treat that as an infra boundary and
 verify with `rc ask` instead of forcing local live tests.
 
+If a brain edit introduces a new read-only credential, follow `docs/secrets.md`: document the env var
+name only, set it with `printf %s "$SECRET_VALUE" | rc env set key=NAME`, then `rc env pull` before live
+local checks. Use `--plane action` only for hosted action credentials, never for normal grounding.
+
 ## Finish
 
 After local edits: verify with the smallest useful local checks, commit in the brain repo, optionally

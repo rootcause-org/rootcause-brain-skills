@@ -17,7 +17,9 @@ rc env pull
 ```
 
 `rc env pull` writes a `0600` gitignored `.env` using your OAuth token. It does not print secret
-values.
+values. Need a new key for a script and your login has secrets-write access? Use
+`printf %s "$SECRET_VALUE" | rc env set key=FOO_API_TOKEN` and document only the key name in the brain;
+see [secrets.md](secrets.md).
 
 ## 2. Install The Kit
 
