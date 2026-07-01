@@ -8,10 +8,10 @@ description: "Publish, ship, deploy, sync, or promote rootcause brain changes fr
 Use this as the shared final step after local brain edits from `local-brain-work`, `brain-ask`, `rc-debug`,
 `rc-health`, `rc-fleet`, or manual authoring.
 
-The current public `rc` CLI has `ask`, `run`, `fleet`, `health`, `thread`, `config`, `env`, and
-`tenant`; it does **not** expose `publish`, `promote`, `sync`, or `brain` commands yet. Therefore this
-skill validates and prepares evidence, runs public confidence checks when possible, and produces a
-RootCause support request for live sync/promote until that product surface exists.
+Public `rc` v0.10.1+ exposes the brain-cache step directly: `rc brain status` shows the mounted on-box
+brain SHA versus `origin/main`, and `rc brain sync` fetches `origin/main`, fast-forwards when safe, and
+expires warm `rc bash` workspaces. Channel promotion (`main` -> `stable`/`edge`) is still separate when a
+project uses pinned brain refs.
 
 ## Required Context
 
@@ -57,17 +57,19 @@ Also read [docs/actions.md](../../docs/actions.md) when publishing `actions/<id>
    ```
    Capture run id, status, trace URL, and `rc run <id> --brain-diff` when relevant.
 
-5. Check whether a public publish/promote command now exists before promising it:
+5. Refresh and verify the deployed brain cache:
    ```bash
-   rc --help
-   rc publish --help
-   rc promote --help
    rc brain --help
+   rc brain status
+   rc brain sync
+   rc brain status
+   rc bash list
    ```
-   If present in a future CLI, use the public command contract. If absent, do not invent a private
-   workaround.
+   Good state: `state: current`, `stale: false`, `local_sha == remote_sha`, and `rc bash list` shows
+   the expected script catalog. `rc brain sync` is the cache cleanup/invalidation command; it also makes
+   the next `rc bash run` mount the refreshed `/brain`.
 
-6. Produce a RootCause support request when public publish/promote is absent:
+6. Produce a RootCause support request only for gaps the public surface still cannot do:
    ```text
    Project/brain:
    Tenant, if any:
@@ -78,9 +80,10 @@ Also read [docs/actions.md](../../docs/actions.md) when publishing `actions/<id>
    Requested outcome:
    Verification already run:
    Run ids / trace URLs:
-   Product gap: public rc publish/promote is not exposed yet
+   rc brain status/sync output:
+   Product gap: channel promote | tenant brain publish | action wiring | manual reconcile
    ```
 
-Requested outcomes should be product-level: "sync origin", "promote shared project brain to stable for
-tenant `<slug>`", "publish tenant brain main", or "wire/verify action execution". Do not list private
-RootCause commands or infrastructure mechanics.
+Requested outcomes should be product-level: "promote shared project brain to stable for tenant `<slug>`",
+"publish tenant brain main", "manual reconcile diverged brain cache", or "wire/verify action execution".
+Do not list private RootCause commands or infrastructure mechanics.

@@ -28,6 +28,12 @@ Read:
    ```
    Treat it as the manifest: database short names/descriptions, cataloged scripts, available actions,
    and which console planes are live.
+   If a pushed brain script is missing or `/brain` looks stale, run:
+   ```bash
+   rc brain status
+   rc brain sync
+   rc bash list
+   ```
 
 2. For database work, fetch only what you need:
    ```bash
@@ -47,8 +53,9 @@ Read:
    rc bash list
    ```
    `rc bash run` is the workspace-exec plane and may be unavailable on older/v1 servers. When available,
-   use cataloged scripts before raw bash. Logs are reached through that exec plane, usually with
-   `python -m lib.cloudwatch ...`, not a separate log verb.
+   use cataloged scripts before raw bash. `rc brain sync` invalidates warm bash workspaces, so the next
+   run remounts the refreshed `/brain`. Logs are reached through that exec plane, usually with `python -m
+   lib.cloudwatch ...`, not a separate log verb.
 
 4. For actions, preflight before running:
    ```bash

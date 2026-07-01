@@ -14,7 +14,9 @@ surface or in managed infrastructure.
 | No inbound email run at all | Upstream channel/ReplyPen routing or RootCause support. |
 | Callback rejected or dead-lettered | RootCause/channel integration. Use `rc thread`/`rc health` evidence. |
 | Action plane 404, disabled, or not wired | RootCause support plus the customer app owner for app-side receivers. |
-| Sync/promote/publish not exposed through public `rc` | RootCause support request; product gap to close. |
+| Pushed brain commit not mounted | Run `rc brain status`; then `rc brain sync` if behind/stale. |
+| `rc brain sync` reports manual reconcile | RootCause support request with `rc brain status -o json`. |
+| Channel promote / tenant publish / action wiring not exposed through public `rc` | RootCause support request; product gap to close. |
 
 ## Support Request Template
 

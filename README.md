@@ -40,7 +40,7 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 | `rc-health` | Stale mirrors plus dead-lettered runs. |
 | `rc-fleet` | Recent fleet digest plus recurring failure patterns. |
 | `brain-dev-upgrade` | Update local kit and `rc` CLI. |
-| `brain-publish` | Post-edit publish/promote/support-request step using public surfaces only. |
+| `brain-publish` | Post-edit `rc brain status/sync`, promote/support-request step using public surfaces only. |
 
 Older duplicate entrypoints are not shipped; use the canonical skills above.
 
@@ -66,6 +66,8 @@ Details: [docs/side-effects.md](docs/side-effects.md).
   production egress allowlist.
 - `rc ask --brain-ref dev/<branch>` is the full production-loop confidence check without moving live
   refs.
+- `rc brain sync` refreshes the deployed brain cache from `origin/main` and invalidates warm `rc bash`
+  workspaces.
 
 ## Docs
 

@@ -27,6 +27,8 @@ rc health [--hours N]
 rc thread <id>
 rc config get
 rc config set max_run_usd=5 default_tier=pro
+rc brain status
+rc brain sync
 rc env keys
 rc env pull
 rc env diff
@@ -88,6 +90,19 @@ rc env diff
 
 `rc env pull` writes the production grounding `.env` to the brain root with mode `0600`; values are not
 printed. The file is gitignored and contains real secrets.
+
+## Brain Cache
+
+```bash
+rc brain status
+rc brain sync
+rc bash list
+```
+
+Use after pushing a brain commit. `status` fetches `origin/main` and reports mounted SHA, origin SHA,
+staleness, and sync time. `sync` fast-forwards the deployed cache when safe and expires warm `rc bash`
+workspaces; the next `rc bash run` remounts the refreshed `/brain`. If sync reports manual reconcile,
+use `brain-publish` with the status output.
 
 ## Author -> Verify Loop
 
