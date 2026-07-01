@@ -36,7 +36,9 @@ oauth:
     - profile
     - email
     - offline_access
-    - accounting.transactions.read
+    - accounting.invoices.read
+    - accounting.payments.read
+    - accounting.banktransactions.read
     - accounting.contacts.read
     - accounting.settings.read
 help_md: |
@@ -73,5 +75,5 @@ help_md: |
 
   **Common paths:** /Invoices, /Contacts, /CreditNotes, /Payments, /Accounts, /BankTransactions,
   /Organisations, /Currencies
-  **OAuth connect flow:** requires `accounting.transactions.read`, `accounting.contacts.read`,
-  `accounting.settings.read`, `offline_access` (for refresh token).
+  **OAuth connect flow:** requires granular read scopes for invoices/credit notes, payments,
+  bank transactions, contacts, and organisation settings, plus `offline_access` for refresh tokens.
