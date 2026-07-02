@@ -26,9 +26,10 @@ without requiring private RootCause source, host shells, SSM, registry database 
 scripts.
 
 The brain is the project's owned instruction layer. Put business context here: product vocabulary,
-support policies, escalation/playbook decisions, tone/voice choices, grounding scripts, tests,
-projection templates, and action manifests. Do not put private RootCause host mechanics, secrets, or
-generic system-prompt rules here.
+support policies, escalation/playbook decisions, grounding scripts, tests, projection templates, and
+action manifests. Do not put private RootCause host mechanics, secrets, generic system-prompt rules, or
+brand voice/language/signature defaults here; rootcause persona settings own those at project, tenant,
+and mailbox scope.
 
 ## Brain Versus External Context
 
@@ -37,8 +38,8 @@ interchangeable.
 
 | Source | Mounted as | What belongs there | What the brain should say about it |
 |---|---|---|---|
-| Project brain | `/brain` | Durable business context, routing, playbooks, scripts, fixtures, projection templates, action catalog. | Which brain files/scripts answer which classes of questions, and how to decide in project terms. |
-| Tenant brain/overlay | `/tenant` and/or compiled `/brain` | Tenant-specific overrides, labels, tone, local policies, settings-driven substitutions. | Shared rules that are safe for all tenants, plus projection templates when the shared brain compiles tenant views. |
+| Project brain | `/brain` | Durable business context, terminology, routing, playbooks, scripts, fixtures, projection templates, action catalog. | Which brain files/scripts answer which classes of questions, and how to decide in project terms. |
+| Tenant brain/overlay | `/tenant` and/or compiled `/brain` | Tenant-specific labels, local policies, settings-driven substitutions, and domain exceptions. | Shared rules that are safe for all tenants, plus projection templates when the shared brain compiles tenant views. |
 | Source mirrors | `/mirrors/<name>` | Customer application code, schemas, config, runbooks, or other source-controlled repositories mirrored by RootCause. | Which repo/file areas explain behaviors; do not copy code facts that should be read from mirrors. |
 | Knowledge base | `/kb` | External support docs or synced knowledge sources, when configured. | When to consult KB material and how it should rank against committed brain playbooks. |
 | Grounding databases/APIs | `lib.db`, `lib.http`, etc. | Live read-only facts: customers, orders, invoices, app state, remote API data. | How to query safely, which scripts encapsulate repeated lookups, and what findings mean for the customer. |

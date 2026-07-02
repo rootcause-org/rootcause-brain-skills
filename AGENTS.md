@@ -36,8 +36,9 @@ private mechanics into shipped docs or skills.
 Do not repeat RootCause's generic production prompt in brain docs. `emailPreamble` and capability-gated
 sections in `rootcause/internal/agent/prompt.go` already own the generic support-engineer role,
 draft/note split, read-only workspace, actions/preflight, PII, DB scoping, mirrors, and grounding
-mandate. Brain docs should add project business context, playbooks, source/KB pointers, and action
-rules.
+mandate. Persona settings own brand voice, language, formality, and signature at project, tenant, and
+mailbox scope. Brain docs should add project business context, terminology, playbooks, source/KB
+pointers, and action rules.
 
 ## Core Model
 
