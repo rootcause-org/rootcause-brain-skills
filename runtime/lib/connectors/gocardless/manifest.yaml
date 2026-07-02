@@ -1,6 +1,7 @@
 key: gocardless
 name: GoCardless
 kinds: [token, oauth]
+credential_exposure: broker
 # Script connector: the force-code trigger is (d) non-standard pagination — GoCardless list
 # responses embed items under a resource-type key that varies per endpoint ("payments",
 # "mandates", "customers", "subscriptions", "payment_requests", …) while the pagination envelope

@@ -10,10 +10,8 @@ Three entry points answer real support questions:
   customer — lookup by email or GID: name, email, orders count, phone, tags
   product  — lookup by GID: title, handle, status, variants (price, inventory), tags
 
-Auth: X-Shopify-Access-Token header (raw token, no "Bearer" prefix) injected as RC_CONN_SHOPIFY.
-Retry/backoff: lib.api's Client._send_url is not reusable here (GraphQL POST); we keep the retry
-layer minimal (one 429-aware retry) rather than re-implementing the full backoff — Shopify's cost
-throttle is response-body-based, not header-based.
+Auth: X-Shopify-Access-Token header (raw token, no "Bearer" prefix) or brokered host-side token.
+HTTP/retry/method policy rides lib.api so broker mode and env mode share one path.
 
 CLI:
     python -m lib.connectors.shopify orders   --shop SLUG [--limit N] [--query FILTER]
@@ -25,17 +23,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import time
 from typing import Any
 
-import requests
-
-from lib import oauth
+from lib import api
 
 # Shopify stable Admin GraphQL version — update annually when Shopify releases a new stable version.
 _API_VERSION = "2025-01"
-_CONNECT_TIMEOUT = 10.0
-_READ_TIMEOUT = 30.0
 
 
 # ---------------------------------------------------------------------------
@@ -43,50 +36,25 @@ _READ_TIMEOUT = 30.0
 # ---------------------------------------------------------------------------
 
 
-def _graphql_url(shop: str) -> str:
-    slug = shop.rstrip("/").removesuffix(".myshopify.com")
-    return f"https://{slug}.myshopify.com/admin/api/{_API_VERSION}/graphql.json"
-
-
-def _token() -> str:
-    return oauth.token("shopify")
-
-
 def _post(shop: str, query: str, variables: dict | None = None) -> dict:
-    """POST a GraphQL query; handles 429 Retry-After with one retry. Raises on error."""
-    url = _graphql_url(shop)
-    headers = {
-        "X-Shopify-Access-Token": _token(),
-        "Content-Type": "application/json",
-    }
+    """POST a GraphQL query through lib.api so brokered credentials stay host-side."""
+    slug = shop.rstrip("/").removesuffix(".myshopify.com")
+    manifest = api.Manifest(
+        key="shopify",
+        base_url=f"https://{slug}.myshopify.com/admin/api/{_API_VERSION}",
+        auth=api.Auth(strategy="api_key_header", name="X-Shopify-Access-Token"),
+        allowed_post_paths=("graphql.json", "/admin/api/*/graphql.json"),
+    )
+    client = api.client(manifest, token_key="shopify")
     payload = {"query": query, "variables": variables or {}}
-
-    for attempt in range(2):
-        resp = requests.post(
-            url,
-            headers=headers,
-            json=payload,
-            timeout=(_CONNECT_TIMEOUT, _READ_TIMEOUT),
-        )
-        if resp.status_code == 429:
-            ra = resp.headers.get("Retry-After")
-            wait = float(ra) if ra else 2.0
-            time.sleep(min(wait, 60.0))
-            if attempt == 0:
-                continue
-        if not (200 <= resp.status_code < 300):
-            try:
-                body = resp.text[:800]
-            except Exception:  # noqa: BLE001
-                body = ""
-            raise RuntimeError(f"Shopify GraphQL HTTP {resp.status_code}: {body}")
-        data = resp.json()
-        if "errors" in data:
-            errs = json.dumps(data["errors"])[:800]
-            raise RuntimeError(f"Shopify GraphQL errors: {errs}")
-        return data
-
-    raise RuntimeError("Shopify GraphQL: exceeded retry limit")
+    try:
+        data = client.post("graphql.json", json_body=payload)
+    except api.ApiError as e:
+        raise RuntimeError(f"Shopify GraphQL HTTP {e.status}: {e.body[:800]}") from e
+    if "errors" in data:
+        errs = json.dumps(data["errors"])[:800]
+        raise RuntimeError(f"Shopify GraphQL errors: {errs}")
+    return data
 
 
 # ---------------------------------------------------------------------------

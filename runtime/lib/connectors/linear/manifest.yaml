@@ -1,6 +1,8 @@
 key: linear
 name: Linear
 kinds: [token, oauth]
+credential_exposure: env
+credential_exposure_reason: provider-enforced read-only credential
 # Script connector: Linear is GraphQL-only (POST https://api.linear.app/graphql).
 # lib.api is a GET/REST client — the GraphQL transport is the force-code trigger (c).
 # Additional triggers: (a) field pre-selection (huge nested GQL objects → 4-6 fields),

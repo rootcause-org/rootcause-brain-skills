@@ -102,18 +102,29 @@ class AuthPlacement(unittest.TestCase):
 class BrokeredRouting(unittest.TestCase):
     @responses.activate
     def test_brokered_manifest_routes_to_virtual_host_without_auth(self):
-        responses.add(responses.GET, "http://rc-broker.internal/demo/ping", json={"ok": True})
+        responses.add(
+            responses.GET,
+            "http://rc-broker.internal/demo/__url/https%3A%2F%2Fapi.demo.test%2Fv1%2Fping",
+            json={"ok": True},
+        )
         m = _manifest(auth=api.Auth(strategy="bearer"), brokered=True)
         with mock.patch.object(api.oauth, "token") as token:
             c = api.client(m)
         token.assert_not_called()
         self.assertEqual(c.get("ping"), {"ok": True})
-        self.assertEqual(responses.calls[0].request.url, "http://rc-broker.internal/demo/ping")
+        self.assertEqual(
+            responses.calls[0].request.url,
+            "http://rc-broker.internal/demo/__url/https%3A%2F%2Fapi.demo.test%2Fv1%2Fping",
+        )
         self.assertNotIn("Authorization", responses.calls[0].request.headers)
 
     @responses.activate
     def test_brokered_roster_env_routes_without_env_token(self):
-        responses.add(responses.GET, "http://rc-broker.internal/demo/ping", json={"ok": True})
+        responses.add(
+            responses.GET,
+            "http://rc-broker.internal/demo/__url/https%3A%2F%2Fapi.demo.test%2Fv1%2Fping",
+            json={"ok": True},
+        )
         with mock.patch.dict(os.environ, {"RC_CONNECTIONS": '[{"key":"demo","brokered":true}]'}, clear=False):
             with mock.patch.object(api.oauth, "token") as token:
                 c = api.client(_manifest(auth=api.Auth(strategy="api_key_header", name="X-Api-Key")))
@@ -123,7 +134,11 @@ class BrokeredRouting(unittest.TestCase):
 
     @responses.activate
     def test_brokered_keeps_read_tier_post_policy(self):
-        responses.add(responses.POST, "http://rc-broker.internal/demo/crm/search", json={"ok": True})
+        responses.add(
+            responses.POST,
+            "http://rc-broker.internal/demo/__url/https%3A%2F%2Fapi.demo.test%2Fv1%2Fcrm%2Fsearch",
+            json={"ok": True},
+        )
         c, _ = _client(_manifest(brokered=True, allowed_post_paths=("/crm/*",)))
         self.assertEqual(c.post("/crm/search", json_body={"filter": "alice"}), {"ok": True})
         with self.assertRaises(api.MethodPolicyError):
@@ -138,7 +153,7 @@ class BrokeredRouting(unittest.TestCase):
         )
         responses.add(
             responses.GET,
-            "http://rc-broker.internal/demo/list",
+            "http://rc-broker.internal/demo/__url/https%3A%2F%2Fapi.demo.test%2Fv1%2Flist",
             json=[{"id": 1}],
             headers={"Link": '<https://api.demo.test/v1/list?page=2>; rel="next"'},
         )
@@ -163,6 +178,13 @@ class BrokeredRouting(unittest.TestCase):
     def test_brokered_absolute_url_refuses_plain_http(self):
         with self.assertRaisesRegex(RuntimeError, "https"):
             api._broker_url("stripe", "http://api.stripe.com/v1/customers")
+
+    def test_brokered_relative_path_uses_runtime_base_url(self):
+        got = api._broker_url("shopify", "graphql.json", base_url="https://acme.myshopify.com/admin/api/2025-01")
+        self.assertEqual(
+            got,
+            "http://rc-broker.internal/shopify/__url/https%3A%2F%2Facme.myshopify.com%2Fadmin%2Fapi%2F2025-01%2Fgraphql.json",
+        )
 
 
 class ErrorNormalization(unittest.TestCase):
@@ -698,13 +720,19 @@ class ReadMethodPolicy(unittest.TestCase):
         })
         self.assertEqual(mani.allowed_post_paths, ("/search", "crm/*/search"))
 
-    def test_manifest_parses_broker_exposure(self):
+    def test_manifest_ignores_catalog_broker_exposure_without_runtime_roster(self):
         mani = api._manifest_from_dict({
             "key": "demo",
             "base_url": "https://api.demo.test/v1",
             "credential_exposure": "broker",
         })
-        self.assertTrue(mani.brokered)
+        self.assertFalse(mani.brokered)
+        explicit = api._manifest_from_dict({
+            "key": "demo",
+            "base_url": "https://api.demo.test/v1",
+            "brokered": True,
+        })
+        self.assertTrue(explicit.brokered)
 
     def test_post_next_url_pagination_refused(self):
         m = _manifest(

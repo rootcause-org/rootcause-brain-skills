@@ -1,6 +1,7 @@
 key: xero
 name: Xero
 kinds: [token, oauth]
+credential_exposure: broker
 # Script connector: Xero uses 1-based page-number pagination (`page=1,2,3…`) with a fixed 100
 # items/page, stopping when a page returns fewer than 100 items. The generic lib.api offset style
 # increments by item count (0 → 100 → 200…), which is incompatible. Force-code trigger (d) fired:
@@ -44,7 +45,7 @@ oauth:
 help_md: |
   Reads Xero accounting data for support diagnosis: invoices, contacts, credit notes, payments,
   accounts, and bank transactions. Read-only — only ever issues GETs. Auth is OAuth (recommended)
-  or a long-lived token; the access token is injected automatically as RC_CONN_XERO.
+  or a long-lived token; the access token is held host-side behind the API broker.
 
   Every Xero request requires a `Xero-tenant-id` header (the organisation's UUID — find it via
   `/connections`). The connector CLI accepts `--tenant-id` and threads it through automatically.

@@ -829,9 +829,13 @@ def _broker_url(key: str, path: str, *, base_url: str = "") -> str:
 def _broker_relative_path(path: str, base_url: str) -> str:
     if path.startswith("http://"):
         raise RuntimeError("brokered integration URLs must use https")
-    if not path.startswith("https://"):
-        return path
-    return "__url/" + quote(path, safe="")
+    if path.startswith("https://"):
+        return "__url/" + quote(path, safe="")
+    if base_url and "{" not in base_url and "}" not in base_url:
+        joined = _join(base_url, path)
+        if joined.startswith("https://"):
+            return "__url/" + quote(joined, safe="")
+    return path
 
 
 def _manifest_with_runtime_broker_flag(manifest: Manifest, *, token_key: str | None = None) -> Manifest:
@@ -1126,15 +1130,9 @@ def _manifest_from_dict(raw: dict) -> Manifest:
     if not isinstance(post_raw, list):
         raise ValueError("'read_endpoints.post' must be a list")
     allowed_post_paths = tuple(str(v) for v in post_raw if str(v).strip())
-    brokered = _entry_marks_brokered(
-        {
-            "brokered": raw.get("brokered"),
-            "credential_exposure": raw.get("credential_exposure"),
-            "exposure": raw.get("exposure"),
-            "injection": raw.get("injection"),
-            "credential_injection": raw.get("credential_injection"),
-        }
-    )
+    # `credential_exposure` is host catalog metadata. A run's roster/env is the authority that turns a
+    # local manifest client into broker mode; local fixture usage should keep env-token behavior.
+    brokered = _entry_marks_brokered(raw.get("brokered"))
 
     return Manifest(
         key=key,

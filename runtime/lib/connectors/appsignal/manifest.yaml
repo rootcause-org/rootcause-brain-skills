@@ -1,6 +1,8 @@
 key: appsignal
 name: AppSignal
 kinds: [token]
+credential_exposure: env
+credential_exposure_reason: provider-enforced read-only credential
 # Script connector: force-code trigger (e) fires — AppSignal's public API is GraphQL
 # (POST https://appsignal.com/graphql) for search/incidents, plus a REST sample endpoint for
 # the full backtrace. lib.api is GET/REST only and can't express the GraphQL transport, the

@@ -1,8 +1,8 @@
 """Fixture tests for the Shopify Admin GraphQL connector.
 
-Shopify uses GraphQL (POST), not REST — so this test mocks `requests.post` directly via the
-`responses` library rather than using lib.api's paginate/collect. The fixture bodies mirror
-Shopify's documented example payloads, trimmed to support-relevant fields.
+Shopify uses GraphQL (POST), not REST. The connector drives POSTs through lib.api so env-token and
+brokered modes share method policy/retry behavior. The fixture bodies mirror Shopify's documented
+example payloads, trimmed to support-relevant fields.
 
 Exercises:
 - Manifest YAML loads via lib.api's YAML loader and maps every field correctly.
@@ -244,6 +244,29 @@ class ShopifyOrders(unittest.TestCase):
 
         for call in responses_lib.calls:
             self.assertEqual(call.request.headers["X-Shopify-Access-Token"], "shpat_test_dummy")
+
+    @responses_lib.activate
+    def test_brokered_mode_posts_without_client_side_token(self):
+        os.environ.pop("RC_CONN_SHOPIFY", None)
+        old_brokered = os.environ.get("RC_API_BROKERED_KEYS")
+        os.environ["RC_API_BROKERED_KEYS"] = "shopify"
+        try:
+            responses_lib.add(
+                responses_lib.POST,
+                "http://rc-broker.internal/shopify/__url/"
+                "https%3A%2F%2Fteststore.myshopify.com%2Fadmin%2Fapi%2F2025-01%2Fgraphql.json",
+                json=_PAGE_2_BODY,
+                status=200,
+            )
+            orders = shopify_conn.fetch_orders(SHOP, limit=1)
+            self.assertEqual(len(orders), 1)
+            self.assertNotIn("X-Shopify-Access-Token", responses_lib.calls[0].request.headers)
+            self.assertNotIn("Authorization", responses_lib.calls[0].request.headers)
+        finally:
+            if old_brokered is None:
+                os.environ.pop("RC_API_BROKERED_KEYS", None)
+            else:
+                os.environ["RC_API_BROKERED_KEYS"] = old_brokered
 
     @responses_lib.activate
     def test_second_page_uses_after_cursor(self):

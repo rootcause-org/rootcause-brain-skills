@@ -1,6 +1,8 @@
 key: podio
 name: Podio
 kinds: [token, oauth]
+credential_exposure: env
+credential_exposure_reason: provider-enforced read-only credential
 # Script connector: force-code trigger (c) fires — Podio's auth header is
 # `Authorization: OAuth2 <token>`, not the standard `Bearer` prefix that lib.api's
 # bearer strategy emits. The thin connector wraps the custom header so the agent

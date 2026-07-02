@@ -1,6 +1,7 @@
 key: lemonsqueezy
 name: Lemon Squeezy
 kinds: [token, oauth]
+credential_exposure: broker
 # Manifest-only integration, driven via `python -m lib.api get lemonsqueezy ...`.
 # Lemon Squeezy is a JSON:API store: list responses carry the next-page URL in the body at
 # `links.next` (a full absolute URL), not in an HTTP Link header. lib.api's `body_url` style

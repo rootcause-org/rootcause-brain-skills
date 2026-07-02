@@ -1,6 +1,8 @@
 key: salesforce
 name: Salesforce
 kinds: [token, oauth]
+credential_exposure: env
+credential_exposure_reason: provider-enforced read-only credential
 # Script connector: lib.connectors.salesforce exists because multiple force-code triggers fire:
 # (a) field pre-selection — Case/Contact objects are enormous; support needs 5-6 fields.
 # (d) non-standard pagination — SOQL query results carry a JSON `nextRecordsUrl` path that becomes

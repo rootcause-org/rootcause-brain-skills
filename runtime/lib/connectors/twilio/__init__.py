@@ -6,10 +6,8 @@ None of the generic lib.api pagination styles can express this: ``cursor`` sends
 param; ``link`` reads an RFC 8288 ``Link:`` response header. So the script follows ``next_page_uri``
 directly via ``_twilio_pages()``.
 
-Auth is HTTP Basic with ``AccountSid:AuthToken`` as the credential value (injected as
-``RC_CONN_TWILIO``). The AccountSid (``AC…`` prefix) is extracted from the credential to build
-per-account API paths — every Twilio resource lives under
-``/2010-04-01/Accounts/{AccountSid}/…``.
+Auth is HTTP Basic with ``AccountSid:AuthToken`` as the credential value. In broker mode the credential
+stays host-side, so the AccountSid is discovered via ``GET Accounts.json`` through the broker.
 
 Read-only: only GETs. Never writes to the customer's Twilio account.
 
@@ -47,19 +45,24 @@ def _credential() -> str:
 
 
 def _account_sid() -> str:
-    """Extract the AccountSid (``AC…`` prefix) from the credential.
+    """Resolve the AccountSid, parsing env-mode credentials or discovering it through the broker."""
+    try:
+        cred = _credential()
+    except RuntimeError:
+        cred = ""
+    if cred:
+        sid, _, _ = cred.partition(":")
+        if sid.startswith("AC"):
+            return sid
+        raise RuntimeError("RC_CONN_TWILIO must be 'AccountSid:AuthToken' — AccountSid starts with 'AC'")
 
-    The injected ``RC_CONN_TWILIO`` value must be ``{AccountSid}:{AuthToken}``. We parse the SID
-    here so the script can build per-account paths without the caller ever supplying it separately.
-    Raises loudly with a clear message if the credential is missing or malformed.
-    """
-    cred = _credential()
-    sid, _, _ = cred.partition(":")
-    if not sid.startswith("AC"):
-        raise RuntimeError(
-            "RC_CONN_TWILIO must be 'AccountSid:AuthToken' — AccountSid starts with 'AC'"
-        )
-    return sid
+    body = _client().get("Accounts.json")
+    accounts = body.get("accounts") or []
+    for account in accounts:
+        sid = str(account.get("sid") or "")
+        if sid.startswith("AC"):
+            return sid
+    raise RuntimeError("Twilio account SID not found via brokered Accounts.json")
 
 
 def _client() -> api.Client:

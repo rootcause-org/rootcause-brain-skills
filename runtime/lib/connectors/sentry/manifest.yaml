@@ -1,6 +1,8 @@
 key: sentry
 name: Sentry
 kinds: [token, oauth]
+credential_exposure: env
+credential_exposure_reason: provider-enforced read-only credential
 connector_module: lib.connectors.sentry
 env_var: RC_CONN_SENTRY
 egress_hosts:

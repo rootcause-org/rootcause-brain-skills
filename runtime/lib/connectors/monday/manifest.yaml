@@ -1,6 +1,8 @@
 key: monday
 name: monday.com
 kinds: [token, oauth]
+credential_exposure: env
+credential_exposure_reason: provider-enforced read-only credential
 # monday.com is GraphQL-only (POST https://api.monday.com/v2). lib.api is a GET/REST client, so
 # this connector needs a script for the GraphQL transport. Force-code triggers:
 #   (c) GraphQL transport — all reads are POST with a "query" body, not GET.

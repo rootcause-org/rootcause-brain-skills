@@ -1,6 +1,7 @@
 key: shopify
 name: Shopify
 kinds: [token, oauth]
+credential_exposure: broker
 # GraphQL transport (POST) + deeply nested edges/nodes requiring field pre-selection trigger a script
 # connector. lib.api is GET/REST-only; a script wraps GraphQL POSTs using requests directly but still
 # delegates retry/backoff to lib.api where possible.
@@ -29,6 +30,10 @@ rate_limit:
   # Shopify uses a query-cost throttle (extensions.cost in the response body), not a remaining-count
   # response header. 429 + Retry-After is still possible; lib.api handles that.
   remaining_header: ""
+read_endpoints:
+  post:
+    - graphql.json
+    - /admin/api/*/graphql.json
 oauth:
   # Per-shop OAuth: the {shop} placeholder is filled by the connect flow. Shopify uses the
   # authorization_code grant with per-shop auth/token URLs; the connect flow substitutes the slug.
@@ -50,7 +55,7 @@ help_md: |
       python -m lib.connectors.shopify customer --shop mystore  --ref cus@example.com
       python -m lib.connectors.shopify product  --shop mystore  --id gid://shopify/Product/123456
 
-  RC_CONN_SHOPIFY must be set to the offline Admin API access token for the target shop.
+  The Admin API access token is held host-side and used through the API broker.
   The --shop argument is the Shopify subdomain (e.g. "mystore" → mystore.myshopify.com).
 
   Pagination: `orders --limit N` auto-pages up to N orders (default 50, max 250 per page) using

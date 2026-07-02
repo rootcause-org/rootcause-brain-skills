@@ -1,6 +1,7 @@
 key: paypal
 name: PayPal
 kinds: [token, oauth]
+credential_exposure: broker
 # Script connector: force-code triggers (a) field pre-selection (PayPal objects are large HATEOAS
 # responses) and (b) multi-call join (order → dispute lookup → subscription) both fire. A manifest-
 # only row is also present so `python -m lib.api get paypal <path>` still works for ad-hoc reads.
@@ -38,7 +39,7 @@ oauth:
 help_md: |
   Reads PayPal orders, disputes, subscriptions, invoices, and transaction history for billing-
   support diagnosis. Auth: the host exchanges client_id+secret via the client_credentials grant
-  and injects the bearer as RC_CONN_PAYPAL — the workspace never sees the client secret.
+  and keeps the bearer host-side behind the API broker — the workspace never sees the client secret.
 
   Connector CLI (recommended — pre-selects support-relevant fields):
 

@@ -1,6 +1,8 @@
 key: trello
 name: Trello
 kinds: [token]
+credential_exposure: env
+credential_exposure_reason: provider-enforced read-only credential
 # Script connector: Trello auth requires TWO query params (key= + token=) which lib.api's
 # single query_param strategy can't express. RC_CONN_TRELLO carries both as "api_key:user_token".
 connector_module: lib.connectors.trello

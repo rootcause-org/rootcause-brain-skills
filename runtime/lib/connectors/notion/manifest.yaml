@@ -1,6 +1,8 @@
 key: notion
 name: Notion
 kinds: [token, oauth]
+credential_exposure: env
+credential_exposure_reason: provider-enforced read-only credential
 # Script connector: Notion's search, data-source-query, and markdown-read endpoints use request
 # shapes that lib.api's GET CLI cannot express ergonomically. The script wraps those calls with
 # field pre-selection while plain GETs can still use lib.api's generic client.

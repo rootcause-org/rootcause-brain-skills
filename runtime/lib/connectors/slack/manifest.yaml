@@ -1,6 +1,7 @@
 key: slack
 name: Slack
 kinds: [token, oauth]
+credential_exposure: broker
 # Manifest-only integration: NO connector_module. Slack's cursor pagination with
 # response_metadata.next_cursor is a dotted path lib.api handles natively; no force-code trigger
 # fires (no multi-call join, no field pre-selection IS the answer, standard cursor pagination).
@@ -38,7 +39,7 @@ oauth:
 help_md: |
   Reads Slack channels, message history, users, and search results for support diagnosis ("what
   was said in #support about X", "who is this user", "what channels exist"). Bearer token auth —
-  supply a bot token or user token (both start with xox, injected as RC_CONN_SLACK), or connect
+  supply a bot token or user token (both start with xox), or connect
   via OAuth. Read-only GET calls only; we never write to or mutate Slack.
 
   **Pagination:** Slack uses cursor pagination via `response_metadata.next_cursor`; pass

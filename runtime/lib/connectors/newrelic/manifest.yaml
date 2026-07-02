@@ -1,6 +1,8 @@
 key: newrelic
 name: New Relic
 kinds: [token]
+credential_exposure: env
+credential_exposure_reason: provider-enforced read-only credential
 # Script connector: force-code trigger (c) fires — NerdGraph is a GraphQL API (POST transport).
 # lib.api is GET/REST only; every NerdGraph call is a POST with a JSON `query` body, so the
 # generic client can't drive it. The script wraps lib.api's _send path (auth + retry + backoff)

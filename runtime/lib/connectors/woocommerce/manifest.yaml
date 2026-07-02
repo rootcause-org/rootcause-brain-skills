@@ -1,6 +1,7 @@
 key: woocommerce
 name: WooCommerce
 kinds: [token]
+credential_exposure: broker
 # Manifest-only integration: no force-code trigger fires. Basic auth + RFC 8288 Link pagination are
 # both natively supported by lib.api. The agent drives it directly via `python -m lib.api get`.
 connector_module: ""
@@ -50,5 +51,6 @@ help_md: |
   Pagination is RFC 8288 Link headers; pass `--paginate` to collect all pages. Response headers
   X-WP-Total and X-WP-TotalPages carry total counts (informational, not used for loop control).
 
-  Credential stored as "consumer_key:consumer_secret" in RC_CONN_WOOCOMMERCE (the colon separator
-  is the lib.api basic-auth convention). Generate keys with "Read" scope only — never write access.
+  Credential stored as "consumer_key:consumer_secret@https://shop.example.com" and kept host-side
+  behind the API broker; the store URL binds the broker route to that one host before auth is attached.
+  Generate keys with "Read" scope only — never write access.

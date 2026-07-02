@@ -1,6 +1,7 @@
 key: quickbooks
 name: QuickBooks Online
 kinds: [token, oauth]
+credential_exposure: broker
 # Script connector: lib.connectors.quickbooks exists because multiple force-code triggers fire:
 # (a) field pre-selection — Customer/Invoice objects carry 50+ fields; support needs 5–8.
 # (d) non-standard pagination — QB embeds STARTPOSITION/MAXRESULTS *inside* the SQL query string
@@ -45,8 +46,7 @@ oauth:
     - email
 help_md: |
   Reads QuickBooks Online customers, invoices, payments, and company info for billing/support
-  diagnosis. Bearer auth via an OAuth 2.0 access token — token or OAuth kinds both inject it
-  as `RC_CONN_QUICKBOOKS`.
+  diagnosis. Bearer auth via an OAuth 2.0 access token — token or OAuth kinds both use the API broker.
 
   QuickBooks is multi-company: the company identifier (realmId) is required for every request.
   Set `RC_CONN_QUICKBOOKS_REALM_ID=<your-realm-id>` alongside the token. The realmId is the

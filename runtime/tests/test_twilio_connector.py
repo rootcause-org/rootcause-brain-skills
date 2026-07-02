@@ -208,6 +208,39 @@ class TwilioAuth(unittest.TestCase):
         with self.assertRaises(RuntimeError, msg="should raise on missing AC prefix"):
             tw._account_sid()
 
+    @responses_lib.activate
+    def test_brokered_mode_discovers_account_sid_without_env_token(self):
+        os.environ.pop("RC_CONN_TWILIO", None)
+        old_brokered = os.environ.get("RC_API_BROKERED_KEYS")
+        os.environ["RC_API_BROKERED_KEYS"] = "twilio"
+        try:
+            responses_lib.add(
+                responses_lib.GET,
+                "http://rc-broker.internal/twilio/__url/https%3A%2F%2Fapi.twilio.com%2F2010-04-01%2FAccounts.json",
+                json={"accounts": [{"sid": _ACCOUNT_SID}]},
+                status=200,
+            )
+            responses_lib.add(
+                responses_lib.GET,
+                "http://rc-broker.internal/twilio/__url/"
+                f"https%3A%2F%2Fapi.twilio.com%2F2010-04-01%2FAccounts%2F{_ACCOUNT_SID}%2FMessages.json?PageSize=10",
+                json=_MESSAGES_PAGE_2,
+                status=200,
+            )
+
+            sid = tw._account_sid()
+            msgs = tw.list_messages(sid, limit=10)
+
+            self.assertEqual(sid, _ACCOUNT_SID)
+            self.assertEqual(len(msgs), 1)
+            for call in responses_lib.calls:
+                self.assertNotIn("Authorization", call.request.headers)
+        finally:
+            if old_brokered is None:
+                os.environ.pop("RC_API_BROKERED_KEYS", None)
+            else:
+                os.environ["RC_API_BROKERED_KEYS"] = old_brokered
+
 
 class TwilioPagination(unittest.TestCase):
     """next_page_uri pagination stitches ≥2 pages; credential rides every request."""

@@ -1,6 +1,8 @@
 key: datadog
 name: Datadog
 kinds: [token, oauth]
+credential_exposure: env
+credential_exposure_reason: provider-enforced read-only credential
 # Script connector: force-code trigger (c) — exotic dual-secret auth.
 # Datadog requires TWO secrets on every request: DD-API-KEY and DD-APPLICATION-KEY.
 # lib.api only injects one credential per RC_CONN_* env var, so the connector stores them

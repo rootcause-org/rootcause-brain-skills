@@ -1,6 +1,7 @@
 key: twilio
 name: Twilio
 kinds: [token]
+credential_exposure: broker
 # Script connector: Twilio paginates via `next_page_uri` in the JSON body (a relative path to follow
 # verbatim), which none of the generic styles (cursor/offset/link) can express — the script extracts
 # AccountSid from the basic-auth credential and follows next_page_uri directly.
@@ -25,8 +26,8 @@ rate_limit:
   remaining_header: ""   # Twilio enforces limits via 429 + Retry-After; no remaining-count header
 help_md: |
   Reads Twilio SMS messages, calls, and phone numbers for support diagnosis. Credential is
-  "AccountSid:AuthToken" stored as the token value (injected as RC_CONN_TWILIO). Read-only — only
-  ever issues GETs. Pre-pilot: connect Twilio to ground support runs in SMS/call history.
+  "AccountSid:AuthToken" stored host-side and used through the API broker. Read-only — only ever
+  issues GETs. Pre-pilot: connect Twilio to ground support runs in SMS/call history.
 
   The connector extracts AccountSid from the credential automatically. Use the script CLI for
   pre-joined, field-pruned output:
@@ -35,7 +36,7 @@ help_md: |
       python -m lib.connectors.twilio calls    [--to +1555...] [--status completed] [--limit 20]
       python -m lib.connectors.twilio numbers  [--limit 20]
 
-  Or drive the raw API directly (set RC_CONN_TWILIO=AC…:auth_token first):
+  Or drive the raw API directly through lib.api:
 
       python -m lib.api get twilio /2010-04-01/Accounts/AC.../Messages.json \
         --query To=+15551234567 --query PageSize=50

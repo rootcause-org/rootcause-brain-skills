@@ -1,6 +1,8 @@
 key: dropbox
 name: Dropbox
 kinds: [token, oauth]
+credential_exposure: env
+credential_exposure_reason: provider-enforced read-only credential
 # Script connector: Dropbox API v2 uses RPC-style POSTs (JSON bodies) for ALL endpoints.
 # Cursor pagination requires POSTing to a different continuation path (files/list_folder/continue),
 # which the generic paginator cannot express from a single manifest row.
