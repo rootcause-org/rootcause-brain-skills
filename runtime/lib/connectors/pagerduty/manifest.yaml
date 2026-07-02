@@ -33,6 +33,11 @@ rate_limit:
   remaining_header: X-RateLimit-Remaining   # advisory; PagerDuty also sends 429 + Retry-After
 default_headers:
   Accept: application/vnd.pagerduty+json;version=2   # required by PagerDuty REST v2
+read_endpoints:
+  post:
+    # Analytics endpoints query existing incident metrics/raw rows; they require analytics.read.
+    - /analytics/raw/incidents
+    - /analytics/metrics/incidents/*
 oauth:
   auth_url: https://app.pagerduty.com/oauth/authorize
   token_url: https://app.pagerduty.com/oauth/token
@@ -77,3 +82,9 @@ help_md: |
   For non-incident endpoints (services, users, oncalls) the response envelope key differs from
   `incidents`. Fetch single pages (no --paginate) and use --pick on the full body, or pass
   the resource-specific list as the --pick path prefix (e.g. `--pick services.*.id,...`).
+
+  Analytics POST reads are allowlisted as single-page calls:
+
+      python -m lib.api post pagerduty analytics/raw/incidents \
+        --json '{"filters":{"created_at_start":"2026-06-01T00:00:00Z","created_at_end":"2026-06-02T00:00:00Z"},"limit":100,"offset":0}' \
+        --pick incidents.*.id,incidents.*.created_at,incidents.*.seconds_to_resolve

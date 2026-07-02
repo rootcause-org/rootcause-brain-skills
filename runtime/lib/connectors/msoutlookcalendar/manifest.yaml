@@ -21,6 +21,13 @@ pagination:
   page_size: 200                     # Graph default page cap for calendar/event collections
 rate_limit:
   remaining_header: ""    # Graph uses 429 + Retry-After (honoured by lib.api); no remaining header
+read_endpoints:
+  post:
+    # getSchedule is a non-mutating free/busy query with schedules/time range in the body.
+    - /me/calendar/getSchedule
+    - /users/*/calendar/getSchedule
+    - /v1.0/me/calendar/getSchedule
+    - /v1.0/users/*/calendar/getSchedule
 oauth:
   auth_url: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
   token_url: https://login.microsoftonline.com/common/oauth2/v2.0/token
@@ -59,3 +66,9 @@ help_md: |
       python -m lib.api get msoutlookcalendar me/events \
         --query '$select=subject,start,end,organizer,location,isAllDay' \
         --query '$top=10'
+
+  Free/busy schedule POST reads are allowlisted:
+
+      python -m lib.api post msoutlookcalendar me/calendar/getSchedule \
+        --json '{"schedules":["a@contoso.com"],"startTime":{"dateTime":"2026-07-02T09:00:00","timeZone":"UTC"},"endTime":{"dateTime":"2026-07-02T17:00:00","timeZone":"UTC"},"availabilityViewInterval":60}' \
+        --pick value.*.scheduleId,value.*.availabilityView

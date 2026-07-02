@@ -27,6 +27,15 @@ default_headers:
   Accept: application/vnd.recurly.v2021-02-25   # required — pins the stable GA API version
 rate_limit:
   remaining_header: X-RateLimit-Remaining       # advisory; Recurly also sends 429 + Retry-After
+read_endpoints:
+  post:
+    # Preview endpoints return calculated billing outcomes without persisting a purchase/change.
+    - /purchases/preview
+    - /accounts/*/invoices/preview
+    - /subscriptions/*/change/preview
+    - /gift_cards/preview
+    - /sites/*/purchases/preview
+    - /sites/*/subscriptions/*/change/preview
 help_md: |
   Reads Recurly subscription billing data for support diagnosis: accounts, subscriptions,
   invoices, transactions, and add-ons. Read-only; only ever issues GETs. Auth is a Recurly
@@ -48,3 +57,9 @@ help_md: |
 
   Common paths: /accounts, /subscriptions, /invoices, /transactions, /plans, /coupons,
   /add_ons. Filter by account: /accounts/{code}/subscriptions, /accounts/{code}/invoices.
+
+  Preview POSTs are allowlisted as non-mutating single-page calls:
+
+      python -m lib.api post recurly /purchases/preview \
+        --json '{"currency":"USD","account":{"code":"acct_123"},"subscriptions":[{"plan_code":"basic"}]}' \
+        --pick charge_invoice.total,charge_invoice.currency

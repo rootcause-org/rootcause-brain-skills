@@ -27,6 +27,15 @@ pagination:
 rate_limit:
   # Dropbox returns 429 + Retry-After (seconds) for rate limits; no remaining-count header.
   remaining_header: ""
+read_endpoints:
+  post:
+    # Single-shot metadata/account reads. Use the script connector for cursor-based list/search flows.
+    - /files/get_metadata
+    - /users/get_current_account
+    - /users/get_space_usage
+    - /2/files/get_metadata
+    - /2/users/get_current_account
+    - /2/users/get_space_usage
 oauth:
   auth_url: https://www.dropbox.com/oauth2/authorize
   token_url: https://api.dropboxapi.com/oauth2/token
@@ -64,3 +73,12 @@ help_md: |
 
       # Current account info (name, email, quota)
       python -m lib.connectors.dropbox account
+
+  Raw single-shot RPC reads also work through lib.api:
+
+      python -m lib.api post dropbox files/get_metadata \
+        --json '{"path":"/Documents/report.pdf"}' \
+        --pick name,path_display,size,client_modified,server_modified
+
+      python -m lib.api post dropbox users/get_current_account --json '{}' \
+        --pick account_id,email,name.display_name

@@ -24,6 +24,13 @@ pagination:
   page_size: 250         # Confluence's documented max limit per request
 rate_limit:
   remaining_header: ""   # Confluence does not expose a remaining-count header; relies on 429 + Retry-After
+read_endpoints:
+  post:
+    # Maps visible content IDs to content types; no content is created or changed.
+    - /content/convert-ids-to-types
+    - /wiki/api/v2/content/convert-ids-to-types
+    - /ex/confluence/*/wiki/api/v2/content/convert-ids-to-types
+    - /ex/confluence/*/api/v2/content/convert-ids-to-types
 oauth:
   auth_url: https://auth.atlassian.com/authorize
   token_url: https://auth.atlassian.com/oauth/token
@@ -64,3 +71,9 @@ help_md: |
         https://acme.atlassian.net/wiki/api/v2/search \
         --query 'query=text~"password reset"' --query limit=10 --paginate \
         --pick id,title,excerpt,_links.webui
+
+  Non-mutating POST read:
+
+      python -m lib.api post confluence \
+        https://acme.atlassian.net/wiki/api/v2/content/convert-ids-to-types \
+        --json '{"contentIds":["123456","789012"]}'

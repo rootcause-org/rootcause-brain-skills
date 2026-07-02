@@ -21,6 +21,11 @@ pagination:
   page_size: 250          # Calendar API default and a safe page size (max 2500 for events)
 rate_limit:
   remaining_header: ""    # Google Calendar exposes no remaining-count header; paced by 429 + backoff
+read_endpoints:
+  post:
+    # freeBusy is a non-mutating availability query with calendars/time range in the body.
+    - /freeBusy
+    - /calendar/v3/freeBusy
 oauth:
   auth_url: https://accounts.google.com/o/oauth2/v2/auth
   token_url: https://oauth2.googleapis.com/token
@@ -76,3 +81,9 @@ help_md: |
     calendars/{calendarId}/events   — events on a calendar (supports q, timeMin, timeMax, singleEvents)
     calendars/{calendarId}/events/{eventId} — single event
     users/me/settings               — user-level Calendar settings
+
+  Free/busy POST read:
+
+      python -m lib.api post googlecalendar freeBusy \
+        --json '{"timeMin":"2026-07-02T09:00:00Z","timeMax":"2026-07-02T17:00:00Z","items":[{"id":"primary"}]}' \
+        --pick calendars

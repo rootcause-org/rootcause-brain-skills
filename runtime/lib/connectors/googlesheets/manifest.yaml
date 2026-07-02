@@ -21,6 +21,15 @@ rate_limit:
   # Sheets API returns 429 with Retry-After when quota is hit; lib.api honours that automatically.
   # There is no remaining-count header to track.
   remaining_header: ""
+read_endpoints:
+  post:
+    # DataFilter reads/searches are non-mutating but POST-only.
+    - /spreadsheets/*:getByDataFilter
+    - /spreadsheets/*/values:batchGetByDataFilter
+    - /spreadsheets/*/developerMetadata:search
+    - /v4/spreadsheets/*:getByDataFilter
+    - /v4/spreadsheets/*/values:batchGetByDataFilter
+    - /v4/spreadsheets/*/developerMetadata:search
 oauth:
   auth_url: https://accounts.google.com/o/oauth2/v2/auth
   token_url: https://oauth2.googleapis.com/token
@@ -55,3 +64,14 @@ help_md: |
 
   All responses are single-page (no --paginate needed). Ranges use standard A1 notation;
   omit the sheet name to default to the first sheet (e.g. `A1:Z100`).
+
+  DataFilter POST reads are allowlisted:
+
+  4. **Read ranges by DataFilter**:
+         python -m lib.api post googlesheets spreadsheets/SPREADSHEET_ID/values:batchGetByDataFilter \
+           --json '{"dataFilters":[{"a1Range":"Sheet1!A1:D20"}]}' \
+           --pick spreadsheetId,valueRanges.*.valueRange.values
+
+  5. **Search developer metadata**:
+         python -m lib.api post googlesheets spreadsheets/SPREADSHEET_ID/developerMetadata:search \
+           --json '{"dataFilters":[{"developerMetadataLookup":{"metadataKey":"customer_id"}}]}'

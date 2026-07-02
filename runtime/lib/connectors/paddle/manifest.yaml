@@ -23,6 +23,12 @@ pagination:
 rate_limit:
   # Paddle uses 429 + Retry-After (honoured by lib.api); no remaining-count header documented.
   remaining_header: ""
+read_endpoints:
+  post:
+    # Preview endpoints calculate pricing/transactions/charges without creating or billing anything.
+    - /pricing-preview
+    - /transactions/preview
+    - /subscriptions/*/charge/preview
 oauth:
   auth_url: https://login.paddle.com/oauth2/authorize
   token_url: https://login.paddle.com/oauth2/token
@@ -49,3 +55,9 @@ help_md: |
   **Common paths:** /customers, /subscriptions, /transactions, /products, /prices
   **Paddle ID prefixes:** ctm_ (customer), sub_ (subscription), txn_ (transaction),
   pro_ (product), pri_ (price)
+
+  Preview POSTs are allowlisted as non-mutating single-page calls:
+
+      python -m lib.api post paddle /pricing-preview \
+        --json '{"items":[{"price_id":"pri_123","quantity":1}],"address":{"country_code":"US","postal_code":"94105"}}' \
+        --pick data.details.line_items.*.price.id,data.details.totals.total,data.currency_code

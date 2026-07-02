@@ -21,6 +21,11 @@ pagination:
   page_size: 200                     # Graph default max for drives/children; use $top=200 where allowed
 rate_limit:
   remaining_header: ""     # Graph throttles via 429 + Retry-After; no remaining-count header
+read_endpoints:
+  post:
+    # Microsoft Search query is non-mutating; the request body holds entity type, query, and window.
+    - /search/query
+    - /v1.0/search/query
 oauth:
   auth_url: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
   token_url: https://login.microsoftonline.com/common/oauth2/v2.0/token
@@ -68,3 +73,9 @@ help_md: |
 
       python -m lib.api get msonedrive me/drive/items/{item-id} \
         --pick id,name,size,lastModifiedDateTime,webUrl,file,folder
+
+  Microsoft Search POST is allowlisted for single-page file search:
+
+      python -m lib.api post msonedrive search/query \
+        --json '{"requests":[{"entityTypes":["driveItem"],"query":{"queryString":"contract"},"from":0,"size":50,"fields":["name","webUrl"]}]}' \
+        --pick value.*.hitsContainers.*.hits.*.resource.name,value.*.hitsContainers.*.hits.*.resource.webUrl

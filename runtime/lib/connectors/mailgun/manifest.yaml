@@ -27,6 +27,11 @@ pagination:
   page_size: 100
 rate_limit:
   remaining_header: X-RateLimit-Remaining  # Mailgun returns X-RateLimit-{Limit,Remaining,Reset}
+read_endpoints:
+  post:
+    # Analytics logs/metrics are read-only query endpoints on Mailgun's v1 Analytics API.
+    - /v1/analytics/logs
+    - /v1/analytics/metrics
 help_md: |
   Reads Mailgun email events, suppression lists (bounces/complaints/unsubscribes), and domain
   metadata for support diagnosis ("why didn't the customer receive our email / is their address
@@ -71,3 +76,12 @@ help_md: |
       python -m lib.api get mailgun domains \
         --query limit=100 \
         --pick items.*.name,items.*.state,items.*.type,items.*.created_at
+
+      # Analytics logs via Mailgun v1 (single page; pass absolute URL because base_url is v3)
+      python -m lib.api post mailgun https://api.mailgun.net/v1/analytics/logs \
+        --json '{"duration":"1d","filter":{"AND":[{"attribute":"recipient","comparator":"=","values":[{"label":"user@example.com","value":"user@example.com"}]}]},"pagination":{"limit":100}}' \
+        --pick items.*.timestamp,items.*.event,items.*.recipient,items.*.message
+
+      # Aggregate analytics metrics
+      python -m lib.api post mailgun https://api.mailgun.net/v1/analytics/metrics \
+        --json '{"duration":"7d","metrics":["accepted_count","delivered_count","failed_count"]}'

@@ -23,6 +23,15 @@ pagination:
   page_size: 100               # default items per page for /items; /deploys defaults to 20
 rate_limit:
   remaining_header: ""   # Rollbar returns 429 + Retry-After on exhaustion; no remaining-count header
+read_endpoints:
+  post:
+    # Metrics endpoints query/aggregate existing project error data with a read token.
+    - /metrics/items
+    - /metrics/occurrences
+    - /metrics/ttr
+    - /api/1/metrics/items
+    - /api/1/metrics/occurrences
+    - /api/1/metrics/ttr
 help_md: |
   Reads Rollbar error items, occurrences, and deploys for support diagnosis ("what errors hit this
   user / environment / version, and when did we last deploy"). Uses a Project Access Token with
@@ -62,3 +71,13 @@ help_md: |
 
   Response envelope: { "err": 0, "result": { "items": [...], "total_count": N, "page": 1 } }
   A non-zero "err" field indicates an API error (check the "message" field).
+
+  Metrics POST reads are allowlisted:
+
+      python -m lib.api post rollbar metrics/items \
+        --json '{"item_counters":[42,43]}' \
+        --pick result.*.item_counter,result.*.occurrences
+
+      python -m lib.api post rollbar metrics/occurrences \
+        --json '{"start_time":1717200000,"end_time":1717286400,"limit":100}' \
+        --pick result.*.timestamp,result.*.item_counter

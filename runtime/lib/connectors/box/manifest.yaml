@@ -22,6 +22,11 @@ pagination:
   page_size: 1000             # Box max per_page for most endpoints; pass --query limit=1000
 rate_limit:
   remaining_header: ""   # Box returns 429 + Retry-After; no remaining-count header
+read_endpoints:
+  post:
+    # Metadata query is a read-only search endpoint; query parameters live in the JSON body.
+    - /metadata_queries/execute_read
+    - /2.0/metadata_queries/execute_read
 oauth:
   auth_url: https://account.box.com/api/oauth2/authorize
   token_url: https://api.box.com/oauth2/token
@@ -63,3 +68,8 @@ help_md: |
       # File comments
       python -m lib.api get box files/FILE_ID/comments \
         --paginate --pick id,message,created_by.login,created_at
+
+      # Metadata query (single page; next_marker must be supplied manually in the body)
+      python -m lib.api post box metadata_queries/execute_read \
+        --json '{"from":"enterprise_123.template","ancestor_folder_id":"0","query":"amount >= :v","query_params":{"v":100},"limit":100}' \
+        --pick entries.*.id,entries.*.type,entries.*.name

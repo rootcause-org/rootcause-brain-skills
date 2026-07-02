@@ -29,6 +29,11 @@ pagination:
   page_size: 1000            # Mixpanel default for /engage; ignored by non-paginating endpoints
 rate_limit:
   remaining_header: ""   # Mixpanel enforces 60 req/hr via 429 + Retry-After, no remaining header
+read_endpoints:
+  post:
+    # Query Profiles accepts POST form bodies; it reads matching profiles and does not mutate them.
+    - /engage
+    - /api/2.0/engage
 help_md: |
   Reads Mixpanel Query API for support diagnosis: user profiles (events, properties), funnel
   conversion, event segmentation, and retention data. Credential is a Service Account pair stored
@@ -49,6 +54,13 @@ help_md: |
         --query project_id=123456 \
         --query where='properties["$email"]=="user@example.com"' \
         --paginate --pick 'results.*.\\$distinct_id,results.*.\\$properties.\\$email,results.*.\\$properties.\\$name'
+
+  User profiles via POST form (single page; follow session_id/page manually for more):
+      python -m lib.api post mixpanel engage \
+        --form project_id=123456 \
+        --form 'where=properties["$email"]=="user@example.com"' \
+        --form 'output_properties=["$email","$name"]' \
+        --pick 'results.*.\\$distinct_id,results.*.\\$properties.\\$email,results.*.\\$properties.\\$name'
 
   Event segmentation (single page):
       python -m lib.api get mixpanel segmentation \

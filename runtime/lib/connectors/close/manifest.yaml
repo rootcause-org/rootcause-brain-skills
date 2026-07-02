@@ -25,6 +25,13 @@ pagination:
 rate_limit:
   remaining_header: ""  # Close uses a structured `RateLimit` header (limit/remaining/reset),
                         # not a simple remaining-only header; handled via 429 + Retry-After in lib.api
+read_endpoints:
+  post:
+    # Advanced Filtering search is non-mutating; body carries the query tree and field selection.
+    - /data/search
+    - /data/search/
+    - /api/v1/data/search
+    - /api/v1/data/search/
 oauth:
   auth_url: https://app.close.com/oauth2/authorize/
   token_url: https://api.close.com/oauth2/token/
@@ -74,6 +81,11 @@ help_md: |
       # List contacts
       python -m lib.api get close contact/ --paginate \
         --pick id,display_name,lead_id,emails.*.email,phones.*.phone
+
+      # Advanced Filtering search (single page; body cursor pagination is manual)
+      python -m lib.api post close data/search/ \
+        --json '{"query":{"type":"and","queries":[{"type":"object_type","object_type":"contact"},{"type":"field_condition","field":{"type":"regular_field","object_type":"contact","field_name":"title"},"condition":{"type":"text","mode":"full_words","value":"CEO"}}]},"_fields":{"contact":["id","name","title"]},"_limit":10}' \
+        --pick data.*.id,data.*.name,data.*.title
 
   Use `--query _fields=id,display_name,status_label,html_url,contacts` to limit response size on
   lead list calls (Close supports field selection via `_fields`).

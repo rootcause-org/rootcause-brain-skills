@@ -34,6 +34,10 @@ rate_limit:
   # Salesforce returns `Sforce-Limit-Info: api-usage=X/Y` — not a simple remaining-count header;
   # lib.api doesn't parse it. Standard 429 + Retry-After is honoured by lib.api.
   remaining_header: ""
+read_endpoints:
+  post:
+    # Parameterized SOSL search is a read-only POST because object/field filters live in the body.
+    - /services/data/*/parameterizedSearch
 oauth:
   auth_url: https://login.salesforce.com/services/oauth2/authorize
   token_url: https://login.salesforce.com/services/oauth2/token
@@ -71,6 +75,12 @@ help_md: |
 
       python -m lib.api get salesforce /services/data/v59.0/query \
         --query "q=SELECT Id,CaseNumber,Subject,Status,Priority FROM Case LIMIT 10"
+
+  Non-mutating POST search is allowlisted for one-shot SOSL-style lookup:
+
+      python -m lib.api post salesforce https://mycompany.my.salesforce.com/services/data/v59.0/parameterizedSearch \
+        --json '{"q":"Acme","sobjects":[{"name":"Account","fields":["Id","Name"],"limit":5},{"name":"Contact","fields":["Id","Email","Name"],"limit":5}],"in":"ALL","overallLimit":10}' \
+        --pick searchRecords.*.attributes.type,searchRecords.*.Id,searchRecords.*.Name
 
   SOQL tips:
   - Date literals: `TODAY`, `LAST_N_DAYS:30`, `THIS_MONTH`

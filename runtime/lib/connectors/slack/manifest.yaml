@@ -21,6 +21,11 @@ pagination:
   page_size: 200          # Slack recommends 100–200; some methods cap at 1000
 rate_limit:
   remaining_header: ""    # Slack exposes no remaining-count header; paces via 429 + Retry-After only
+read_endpoints:
+  post:
+    # Slack assistant search is a read-only POST because search inputs live in the request body.
+    - assistant.search.context
+    - /api/assistant.search.context
 oauth:
   auth_url: https://slack.com/oauth/v2/authorize
   token_url: https://slack.com/api/oauth.v2.access
@@ -64,3 +69,8 @@ help_md: |
       # List members of a channel
       python -m lib.api get slack conversations.members \
         --query channel=CHANNEL_ID --query limit=200 --paginate
+
+      # Assistant search context (single page; body cursor pagination is manual)
+      python -m lib.api post slack assistant.search.context \
+        --json '{"query":"project gizmo","content_types":["messages","files"],"limit":20}' \
+        --pick results.*.channel_name,results.*.text,results.*.permalink

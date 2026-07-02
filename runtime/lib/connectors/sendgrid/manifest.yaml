@@ -21,6 +21,13 @@ pagination:
   page_size: 500     # SendGrid max is 500 for suppression endpoints
 rate_limit:
   remaining_header: X-RateLimit-Remaining   # confirmed: SendGrid returns X-RateLimit-{Limit,Remaining,Reset}
+read_endpoints:
+  post:
+    # Marketing contact search/lookup endpoints are non-mutating but POST-only.
+    - /marketing/contacts/search
+    - /marketing/contacts/search/emails
+    - /v3/marketing/contacts/search
+    - /v3/marketing/contacts/search/emails
 help_md: |
   Reads SendGrid suppression lists, email activity, and delivery stats for support diagnosis
   ("why did this email bounce / is this address blocked / what is the send volume"). API-key only
@@ -56,6 +63,15 @@ help_md: |
       # Email activity — uses page_token cursor, single fetch first then follow manually
       python -m lib.api get sendgrid messages \
         --query limit=100 --query query="to_email=user@example.com"
+
+      # Marketing contact search (single page)
+      python -m lib.api post sendgrid marketing/contacts/search \
+        --json '{"query":"email LIKE \"user@example.com%\""}' \
+        --pick result.*.id,result.*.email,result.*.first_name,result.*.last_name
+
+      # Marketing contact lookup by exact emails
+      python -m lib.api post sendgrid marketing/contacts/search/emails \
+        --json '{"emails":["user@example.com"]}'
 
   Note: `/messages` (email activity) uses a `page_token` cursor rather than offset; for a
   multi-page activity search, fetch the first page and pass `--query page_token=<next_page_token>`

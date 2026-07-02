@@ -30,6 +30,15 @@ pagination:
 default_headers: {}       # no required version header for Chargebee v2
 rate_limit:
   remaining_header: ""    # Chargebee does not expose a remaining-count header; 429 + Retry-After honoured
+read_endpoints:
+  post:
+    # Estimate endpoints calculate hypothetical billing outcomes without creating Chargebee records.
+    - /estimates/*
+    - /customers/*/*_estimate
+    - /subscriptions/*/*_estimate
+    - /api/v2/estimates/*
+    - /api/v2/customers/*/*_estimate
+    - /api/v2/subscriptions/*/*_estimate
 oauth:
   auth_url: https://chargebee.com/oauth/authorize
   token_url: https://chargebee.com/oauth/token
@@ -65,3 +74,10 @@ help_md: |
     subscription:  subscription.id,subscription.status,subscription.plan_id,subscription.next_billing_at,subscription.current_term_end
     invoice:       invoice.id,invoice.status,invoice.amount_due,invoice.date,invoice.due_date
     transaction:   transaction.id,transaction.amount,transaction.status,transaction.payment_method_type,transaction.date
+
+  Estimate POSTs are allowlisted as non-mutating single-page calls:
+
+      python -m lib.api post chargebee https://YOURSITE.chargebee.com/api/v2/estimates/create_subscription \
+        --form subscription_items[item_price_id][0]=basic-USD \
+        --form subscription_items[quantity][0]=1 \
+        --pick estimate.invoice_estimate.total,estimate.invoice_estimate.currency_code

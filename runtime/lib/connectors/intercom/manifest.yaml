@@ -27,6 +27,12 @@ default_headers:
   Intercom-Version: "2.11"   # pin the stable API version (Intercom recommends sending this header)
 rate_limit:
   remaining_header: X-RateLimit-Remaining
+read_endpoints:
+  post:
+    # Intercom search endpoints are non-mutating but POST-only because filters live in the body.
+    - /contacts/search
+    - /conversations/search
+    - /tickets/search
 oauth:
   auth_url: https://app.intercom.com/oauth
   token_url: https://api.intercom.io/auth/eagle/token
@@ -58,6 +64,17 @@ help_md: |
   generic CLI also works (single-page only — items_field varies per resource):
 
       python -m lib.api get intercom /conversations --query per_page=20
+
+  POST search endpoints are explicitly allowlisted for one-shot filtered lookups. Do not pass
+  --paginate; Intercom's search cursor lives in the next request body.
+
+      python -m lib.api post intercom /contacts/search \
+        --json '{"query":{"operator":"AND","value":[{"field":"email","operator":"=","value":"user@example.com"}]},"pagination":{"per_page":10}}' \
+        --pick data.*.id,data.*.email,data.*.name
+
+      python -m lib.api post intercom /conversations/search \
+        --json '{"query":{"field":"source.author.email","operator":"=","value":"user@example.com"},"pagination":{"per_page":10}}' \
+        --pick conversations.*.id,conversations.*.title,conversations.*.state
 
   ## Key endpoints
   - `GET /conversations` — list conversations (filtered by assignee, state, date range)

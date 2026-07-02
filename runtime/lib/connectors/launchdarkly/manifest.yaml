@@ -24,6 +24,13 @@ default_headers:
   LD-API-Version: "20240415"  # pin the stable GA API version (required by LD; beta needs "beta")
 rate_limit:
   remaining_header: X-Ratelimit-Route-Remaining   # per-route remaining; reset at X-Ratelimit-Reset
+read_endpoints:
+  post:
+    # Context search endpoints are read-only but POST because the filter expression lives in the body.
+    - /projects/*/environments/*/contexts/search
+    - /projects/*/environments/*/context-instances/search
+    - /api/v2/projects/*/environments/*/contexts/search
+    - /api/v2/projects/*/environments/*/context-instances/search
 # No OAuth: LaunchDarkly uses personal/service access tokens only; OAuth not supported by this API.
 help_md: |
   Reads LaunchDarkly feature flags, environments, projects, audit log, and contexts (users)
@@ -59,3 +66,9 @@ help_md: |
   List contexts (users/devices that evaluated flags) for a project+env:
       python -m lib.api get launchdarkly projects/default/environments/production/contexts \
         --paginate --pick kind,key,name,email
+
+  Context POST search is allowlisted for single-page filtered lookup:
+
+      python -m lib.api post launchdarkly projects/default/environments/production/contexts/search \
+        --json '{"filter":"*.email equals \"user@example.com\"","sort":"-ts","limit":20}' \
+        --pick items.*.kind,items.*.key,items.*.name,items.*.email
