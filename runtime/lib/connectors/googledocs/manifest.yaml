@@ -1,0 +1,40 @@
+key: googledocs
+name: Google Docs
+kinds: [oauth]
+# Manifest-only integration: a document read is one GET by document id. Use a script only for
+# higher-level workflows that must search Drive, fetch many docs, and summarize/export content.
+connector_module: ""
+env_var: RC_CONN_GOOGLEDOCS
+egress_hosts:
+  - docs.googleapis.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://docs.googleapis.com/v1
+auth:
+  strategy: bearer
+pagination:
+  style: none
+rate_limit:
+  remaining_header: ""
+oauth:
+  auth_url: https://accounts.google.com/o/oauth2/v2/auth
+  token_url: https://oauth2.googleapis.com/token
+  default_scopes:
+    - https://www.googleapis.com/auth/documents.readonly
+help_md: |
+  Reads native Google Docs document structure and text runs for support grounding. Read-only:
+  only ever issues GETs, never writes to a document.
+
+  The documentId is the long string in a Google Docs URL after `/document/d/`.
+
+  Common paths and examples:
+
+      # Fetch a document's title and body content
+      python -m lib.api get googledocs documents/DOCUMENT_ID \
+        --pick title,body.content.*.paragraph.elements.*.textRun.content
+
+      # Fetch a document with named ranges, revision id, and body
+      python -m lib.api get googledocs documents/DOCUMENT_ID \
+        --pick documentId,title,revisionId,namedRanges,body.content.*.paragraph.elements.*.textRun.content
+
+  The raw Docs API response is structural, not Markdown. For a folder-wide search/read workflow,
+  start with `googledrive files` to find document ids, then fetch the few relevant docs here.
