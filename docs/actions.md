@@ -102,6 +102,7 @@ remain read-only and `RC_CONN_*`-backed.
 Available provider helpers are intentionally small and grown as actions need them:
 
 - `lib.action.googledrive.upload_file(folder_id=..., file=...)`
+- `lib.action.googledrive.upload_attachment(folder_id=..., attachment=...)`
 - `lib.action.notion.append_file_link(page_id=..., title=..., url=...)`
 - `lib.action.notion.create_page(parent_id=..., title=..., properties=...)`
 - `lib.action.notion.update_properties(page_id=..., properties=...)`

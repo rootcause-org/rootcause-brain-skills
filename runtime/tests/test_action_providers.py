@@ -86,6 +86,21 @@ class GoogleDriveActions(unittest.TestCase):
         self.assertEqual(got.web_url, "https://drive/file")
         self.assertEqual(responses.calls[0].request.headers["Authorization"], "Bearer write-token")
 
+    def test_upload_attachment_uses_attachment_metadata(self):
+        fake = FakeClient()
+        fake.upload = mock.Mock(return_value={"id": "file_2", "name": "invoice.pdf", "webViewLink": "https://drive/invoice"})
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "delivered.bin"
+            src.write_bytes(b"pdf")
+            fp = action.FileParam(path=src, filename="invoice.pdf", mime_type="application/pdf", size_bytes=3)
+            with mock.patch.object(googledrive, "_client", return_value=fake):
+                got = googledrive.upload_attachment(folder_id="folder_1", attachment=fp)
+        self.assertEqual(got.id, "file_2")
+        fake.upload.assert_called_once()
+        _, kw = fake.upload.call_args
+        self.assertEqual(kw["metadata"], {"name": "invoice.pdf", "parents": ["folder_1"]})
+        self.assertEqual(kw["content_type"], "application/pdf")
+
 
 if __name__ == "__main__":
     unittest.main()

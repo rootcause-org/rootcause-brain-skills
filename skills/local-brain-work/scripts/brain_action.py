@@ -74,7 +74,9 @@ def load_manifest(action_path: Path) -> dict:
 
 def _check_type(name: str, value, typ: str) -> str | None:
     """Mirror the host's ParamType check (internal/action/action.go). Returns an error string or None.
-    bool is NOT an int here (Python's bool-is-int footgun would let `true` pass as integer)."""
+    bool is NOT an int here (Python's bool-is-int footgun would let `true` pass as integer).
+    Attachment params also accept the delivered local file descriptor shape so body smoke tests can
+    run after the host's fetch/rewrite phase."""
     if typ in ("", "string"):
         return None if isinstance(value, str) else f"param {name!r} must be a string, got {type(value).__name__}"
     if typ == "integer":
@@ -88,6 +90,14 @@ def _check_type(name: str, value, typ: str) -> str | None:
     if typ == "string[]":
         ok = isinstance(value, list) and all(isinstance(x, str) for x in value)
         return None if ok else f"param {name!r} must be a string[]"
+    if typ == "attachment":
+        if isinstance(value, str):
+            trimmed = value.strip()
+            return None if _UUID_RE.match(trimmed) else f"param {name!r} must be an attachment_id UUID string, got {value!r}"
+        if isinstance(value, dict):
+            path = value.get("path") or value.get("local_path") or value.get("tmp_path")
+            return None if isinstance(path, str) and path else f"param {name!r} local attachment descriptor must include a path"
+        return f"param {name!r} must be an attachment_id UUID string, got {type(value).__name__}"
     return f"param {name!r} declares an unsupported type {typ!r}"
 
 

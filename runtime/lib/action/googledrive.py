@@ -51,6 +51,15 @@ def upload_file(
     )
 
 
+def upload_attachment(*, folder_id: str, attachment: action.FileParam, name: str | None = None) -> DriveFile:
+    return upload_file(
+        folder_id=folder_id,
+        file=attachment,
+        name=name or attachment.filename,
+        mime_type=attachment.mime_type,
+    )
+
+
 def _source(file: action.FileParam | Path | str) -> dict[str, Any]:
     if isinstance(file, action.FileParam):
         return {
