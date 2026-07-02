@@ -1,9 +1,10 @@
 """rootcause sandbox helper library.
 
 Thin, READ-ONLY helpers the agent's Python grounding code imports inside the disposable
-container: `db`, `api`, `stripe`, `cloudwatch`, `fs`, `http`, `html`, `oauth`. `api` is the generic
-read-tier REST client (the `lib.db` of third-party HTTP integrations); most integrations need only a
-manifest row + `python -m lib.api get <key> <path>`, with allowlisted `post` for non-mutating search.
+container: `db`, `api`, `stripe`, `cloudwatch`, `fs`, `http`, `html`, `oauth`. Hosted Python actions
+also import `action` for the post-confirmation write-plane harness. `api` is the generic read-tier
+REST client (the `lib.db` of third-party HTTP integrations); most integrations need only a manifest
+row + `python -m lib.api get <key> <path>`, with allowlisted `post` for non-mutating search.
 Each is configured from the per-project
 secrets injected as env (read-only PG DSN, Stripe restricted key, least-priv AWS creds, GitHub
 read token) and the read-only mounts: the brain at /brain and source mirrors at /mirrors/<repo>,
@@ -28,7 +29,7 @@ Typical use from a `bash` Python script:
 
 # Submodules are imported on demand (`from lib import db`), not eagerly here: eager imports make
 # `python -m lib.db` double-import the module it's running and emit a RuntimeWarning on every call.
-__all__ = ["db", "api", "stripe", "cloudwatch", "fs", "http", "html", "oauth", "telemetry"]
+__all__ = ["db", "api", "stripe", "cloudwatch", "fs", "http", "html", "oauth", "action", "telemetry"]
 
 # Auto-wire best-effort PostHog error tracking (no-op without POSTHOG_PROJECT_API_KEY). Swallow any
 # failure here — importing `lib` must never fail because telemetry couldn't initialize.

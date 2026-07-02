@@ -189,6 +189,37 @@ class RetryBackoff(unittest.TestCase):
         self.assertEqual(len(responses.calls), 1)
         self.assertEqual(sleeps, [])
 
+    @responses.activate
+    def test_action_post_not_retried_without_idempotency_key(self):
+        responses.add(responses.POST, "https://api.demo.test/v1/x", json={"e": 1}, status=503)
+        c, sleeps = _client(allow_writes=True)
+        with self.assertRaises(api.ApiError):
+            c.post("x", json={"name": "alice"})
+        self.assertEqual(len(responses.calls), 1)
+        self.assertEqual(sleeps, [])
+
+    @responses.activate
+    def test_action_post_retries_with_idempotency_key(self):
+        responses.add(responses.POST, "https://api.demo.test/v1/x", json={"e": 1}, status=503)
+        responses.add(responses.POST, "https://api.demo.test/v1/x", json={"ok": True}, status=200)
+        c, sleeps = _client(allow_writes=True)
+        got = c.post("x", json={"name": "alice"}, idempotency_key="idem-123")
+        self.assertEqual(got, {"ok": True})
+        self.assertEqual(len(responses.calls), 2)
+        self.assertEqual(responses.calls[0].request.headers["Idempotency-Key"], "idem-123")
+        self.assertEqual(len(sleeps), 1)
+
+    @responses.activate
+    def test_idempotency_key_retries_file_style_request(self):
+        responses.add(responses.POST, "https://api.demo.test/v1/upload", json={"e": 1}, status=503)
+        responses.add(responses.POST, "https://api.demo.test/v1/upload", json={"ok": True}, status=200)
+        c, sleeps = _client(allow_writes=True)
+        got = c.post("/upload", files={"attachment": BytesIO(b"abc")}, idempotency_key="upload-123")
+        self.assertEqual(got, {"ok": True})
+        self.assertEqual(len(responses.calls), 2)
+        self.assertEqual(responses.calls[0].request.headers["Idempotency-Key"], "upload-123")
+        self.assertEqual(len(sleeps), 1)
+
 
 class RetryAfterParsing(unittest.TestCase):
     def test_seconds_form(self):
@@ -550,7 +581,47 @@ class ReadMethodPolicy(unittest.TestCase):
             with self.assertRaises(api.MethodPolicyError) as cm:
                 c.request(verb, "/customers/1", json_body={"name": "x"})
             self.assertIn("human-confirmed action", str(cm.exception))
+            self.assertIn("lib.action.client", str(cm.exception))
         self.assertEqual(len(responses.calls), 0)
+
+    @responses.activate
+    def test_action_client_allows_write_verbs(self):
+        for method in (responses.POST, responses.PATCH, responses.PUT, responses.DELETE):
+            responses.add(method, "https://api.demo.test/v1/customers/1", json={"ok": True})
+        c, _ = _client(allow_writes=True)
+        self.assertEqual(c.post("customers/1", json={"name": "a"}), {"ok": True})
+        self.assertEqual(c.patch("customers/1", json={"name": "b"}), {"ok": True})
+        self.assertEqual(c.put("customers/1", json={"name": "c"}), {"ok": True})
+        self.assertEqual(c.delete("customers/1"), {"ok": True})
+
+    @responses.activate
+    def test_action_client_refuses_query_param_auth_for_writes(self):
+        responses.add(responses.POST, "https://api.demo.test/v1/customers", json={"ok": True})
+        c, _ = _client(_manifest(auth=api.Auth(strategy="query_param", name="token")), allow_writes=True)
+        with self.assertRaises(RuntimeError) as cm:
+            c.post("customers", json={"name": "a"})
+        self.assertIn("query-param auth", str(cm.exception))
+
+    @responses.activate
+    def test_upload_builds_multipart_related_body(self):
+        def cb(request):
+            self.assertIn("uploadType=multipart", request.url)
+            self.assertIn("multipart/related", request.headers["Content-Type"])
+            self.assertIn(b'"name":"invoice.pdf"', request.body)
+            self.assertIn(b"%PDF", request.body)
+            return (200, {"Content-Type": "application/json"}, '{"id":"file_1"}')
+
+        responses.add_callback(responses.POST, "https://api.demo.test/upload", callback=cb)
+        c, _ = _client(_manifest(base_url="https://api.demo.test/v1"), allow_writes=True)
+        self.assertEqual(
+            c.upload(
+                "https://api.demo.test/upload",
+                data=b"%PDF",
+                content_type="application/pdf",
+                metadata={"name": "invoice.pdf"},
+            ),
+            {"id": "file_1"},
+        )
 
     def test_manifest_parses_read_post_allowlist(self):
         mani = api._manifest_from_dict({

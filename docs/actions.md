@@ -1,7 +1,8 @@
 # Actions
 
 Everything else in a brain is read-only diagnosis. An action is the deliberate state-changing plane:
-the run may propose a vetted action, but execution is gated outside the LLM loop.
+the run proposes vetted params, a human confirms later, and only then does the executor run the
+approved digest.
 
 Read [docs/side-effects.md](side-effects.md) before reporting action results.
 
@@ -12,12 +13,12 @@ sequenceDiagram
     participant Run as Agent run
     participant Human as Reviewer
     participant Exec as Executor
-    participant App as Project app
+    participant App as Project app/API
     Run->>Human: proposes action_id + params + digest
     Note over Run: run ends read-only
     Human->>Exec: confirms
     Exec->>App: executes approved digest
-    App-->>Exec: result/error
+    App-->>Exec: structured result
 ```
 
 A draft that says "booked", "cancelled", or "refunded" is not proof of mutation. Check the action
@@ -32,14 +33,90 @@ actions/<id>/
   preflight.py
 ```
 
-- `manifest.yaml` describes the action and parameter schema the model sees.
-- `preflight.py`, when present, is read-only and can block unsafe/mis-grounded params before proposal.
+- `manifest.yaml` describes the action, param schema, and any hosted write connections.
+- `preflight.py`, when present, is read-only and blocks unsafe/mis-grounded params before proposal.
 - `script.rb` is customer-hosted Embassy mode.
-- `script.py` is hosted Python mode and can be dry-run locally with `brain_action.py`.
+- `script.py` is hosted Python mode and should use `lib.action`.
 
 Action docs/runbooks should put exact safety guards and verification checks near the top: required
 evidence, disqualifying states, preflight expectations, post-execution proof, and when to refuse or
-escalate. Other runbooks should link to those guard lines instead of restating looser action rules.
+escalate.
+
+## Hosted Python Harness
+
+Hosted Python actions import the baked runtime harness instead of hand-rolling params, result files,
+credential lookup, HTTP retries, and error envelopes.
+
+```python
+#!/usr/bin/env python3
+from lib import action
+from lib.action import googledrive, notion
+
+p = action.params()
+f = p.file("attachment")
+
+uploaded = googledrive.upload_file(folder_id=p["folder_id"], file=f)
+page = notion.append_file_link(page_id=p["page_id"], title=f.filename, url=uploaded.web_url)
+
+action.ok(
+    f"Saved **{f.filename}** to Drive and linked it on the Notion page.",
+    {"drive_file_id": uploaded.id, "notion_page_id": page.id},
+)
+```
+
+`action.params()` reads `$RC_ACTION_PARAMS` and installs crash capture. `p["name"]` is required;
+`p.get("name")` is optional. `p.file("attachment")` returns a `FileParam` with `path`, `filename`,
+`mime_type`, `size_bytes`, `attachment_id`, plus `open()` and `read_bytes()`.
+
+`action.ok(summary, data)` writes the success Result to `$RC_ACTION_RESULT`, prints it, and exits.
+`action.fail(summary, data)` is a handled negative: the executor worked, but the reviewer should not
+send the optimistic draft. `raise action.ActionError("message")` is a hard handled failure without a
+Python backtrace. Any other uncaught exception is captured with a backtrace in the Result file.
+
+Function style is also supported:
+
+```python
+from lib import action
+
+@action.main
+def run(p):
+    return {"summary": "Done.", "id": p["id"]}
+```
+
+## Write Connections
+
+Hosted OAuth/API writes go through `lib.action.client("<capability>")` or provider helpers under
+`lib.action.*`. Action code should not read env vars directly.
+
+```yaml
+connections:
+  - googledrive.write
+  - notion.write
+```
+
+`action.client("notion.write")` resolves only `RC_ACTION_NOTION`, never `RC_CONN_NOTION`, and returns
+a `lib.api.Client` with write verbs enabled. Missing credentials fail closed with guidance to declare
+the capability and connect a write grant (`label=actions`). Read connectors under `lib.connectors.*`
+remain read-only and `RC_CONN_*`-backed.
+
+Available provider helpers are intentionally small and grown as actions need them:
+
+- `lib.action.googledrive.upload_file(folder_id=..., file=...)`
+- `lib.action.notion.append_file_link(page_id=..., title=..., url=...)`
+- `lib.action.notion.create_page(parent_id=..., title=..., properties=...)`
+- `lib.action.notion.update_properties(page_id=..., properties=...)`
+
+One-off write calls can use the generic client:
+
+```python
+from lib import action
+
+c = action.client("linear.write")
+c.post("issues", json={"title": "Customer follow-up"}, idempotency_key="issue-123")
+```
+
+Write requests are not retried blindly. Passing `idempotency_key=` sets the `Idempotency-Key` header
+and opts that request into transient-status retry.
 
 ## Local Hosted-Python Checks
 
@@ -53,6 +130,10 @@ uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --commit
 
 Default body execution is a local dry-run rollback. `--commit` writes for real to whatever
 `.env.action` targets; use only safe local/staging targets unless explicitly intending a real write.
+Inside scripts, `action.dry_run()` follows `--commit` > `--dry-run` > `RC_ACTION_DRY_RUN=1`.
+
+For tenant-enabled projects, use `action.require_tenant()` and scope every write by the trusted
+`RC_TENANT_ID` / `RC_TENANT_SLUG` values, never by model-proposed params.
 
 ## Ground First
 
@@ -71,5 +152,5 @@ RootCause commands here; use `brain-publish` to prepare the support request when
 
 ## Triage
 
-Use [`skills/local-brain-work/action-run-triage.md`](../skills/local-brain-work/action-run-triage.md) when a run
-mentions an action, a preflight, or apparent mutation.
+Use [`skills/local-brain-work/action-run-triage.md`](../skills/local-brain-work/action-run-triage.md)
+when a run mentions an action, a preflight, or apparent mutation.

@@ -28,6 +28,7 @@ manifest helpers and CLI ``--help`` work on a bare host).
 
 from __future__ import annotations
 
+import json
 import random
 import re
 import time
@@ -43,11 +44,12 @@ from lib import oauth
 DEFAULT_CONNECT_TIMEOUT = 10.0
 DEFAULT_READ_TIMEOUT = 30.0
 
-# Retry only read-tier methods. GET/HEAD/OPTIONS are intrinsically read-tier here; POST becomes
-# read-tier only when the manifest allowlists that path as a non-mutating endpoint.
+# Retry only read-tier methods by default. GET/HEAD/OPTIONS are intrinsically read-tier here; POST
+# becomes read-tier only when the manifest allowlists that path as a non-mutating endpoint. A write
+# call may opt into retries by passing an idempotency key.
 _IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
-_STATE_CHANGING_METHODS = frozenset({"PUT", "PATCH", "DELETE"})
+_STATE_CHANGING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 # Transient statuses worth retrying. 429 is handled separately (honours Retry-After).
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
@@ -85,6 +87,12 @@ class ApiError(RuntimeError):
 
 class MethodPolicyError(RuntimeError):
     """The requested HTTP method/path is outside the run-time read-tier policy."""
+
+
+_WRITE_VERB_HINT = (
+    "write verbs are action-plane only - get a client via lib.action.client(...) for a "
+    "human-confirmed action"
+)
 
 
 @dataclass(frozen=True)
@@ -304,6 +312,7 @@ class Client:
 
     manifest: Manifest
     credential: str = ""
+    allow_writes: bool = False
     connect_timeout: float = DEFAULT_CONNECT_TIMEOUT
     read_timeout: float = DEFAULT_READ_TIMEOUT
     max_retries: int = DEFAULT_MAX_RETRIES
@@ -322,34 +331,126 @@ class Client:
         query: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         json_body: Any | None = None,
-        data: dict[str, Any] | None = None,
+        data: Any | None = None,
         files: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
+        idempotency_header: str = "Idempotency-Key",
     ) -> Any:
         """Make one HTTP call (following retries/rate-limits) and return parsed JSON.
 
         ``path`` is joined onto the manifest ``base_url`` (an absolute URL overrides). Raises
         ``ApiError`` on a non-2xx after exhausting retries — never a silent empty.
         """
-        resp = self._send(method, path, query=query, headers=headers, json_body=json_body, data=data, files=files)
+        resp = self._send(
+            method,
+            path,
+            query=query,
+            headers=headers,
+            json_body=json_body,
+            data=data,
+            files=files,
+            idempotency_key=idempotency_key,
+            idempotency_header=idempotency_header,
+        )
         return _parse_json(resp)
 
     def get(self, path: str, **kw) -> Any:
         return self.request("GET", path, **kw)
 
     def post(self, path: str, **kw) -> Any:
+        _normalize_json_alias(kw)
         return self.request("POST", path, **kw)
 
-    def _send(self, method, path, *, query=None, headers=None, json_body=None, data=None, files=None):
+    def patch(self, path: str, **kw) -> Any:
+        _normalize_json_alias(kw)
+        return self.request("PATCH", path, **kw)
+
+    def put(self, path: str, **kw) -> Any:
+        _normalize_json_alias(kw)
+        return self.request("PUT", path, **kw)
+
+    def delete(self, path: str, **kw) -> Any:
+        _normalize_json_alias(kw)
+        return self.request("DELETE", path, **kw)
+
+    def upload(
+        self,
+        path: str,
+        *,
+        data: bytes,
+        content_type: str,
+        metadata: dict | None = None,
+        media_param: str = "uploadType",
+        media_style: str = "multipart",
+        query: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        idempotency_key: str | None = None,
+        idempotency_header: str = "Idempotency-Key",
+    ) -> Any:
+        """Upload bytes through the same auth/retry/error path as other action writes.
+
+        ``multipart`` emits the Google-style ``multipart/related`` body: JSON metadata part followed
+        by the binary media part. ``media`` sends raw bytes as the request body.
+        """
+        q = dict(query or {})
+        h = dict(headers or {})
+        if media_style == "media":
+            q.setdefault(media_param, "media")
+            h.setdefault("Content-Type", content_type)
+            body = data
+        elif media_style == "multipart":
+            q.setdefault(media_param, "multipart")
+            boundary = f"rc-action-{self._rng.getrandbits(64):016x}"
+            meta = json.dumps(metadata or {}, separators=(",", ":")).encode("utf-8")
+            body = b"".join(
+                [
+                    f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n".encode(),
+                    meta,
+                    b"\r\n",
+                    f"--{boundary}\r\nContent-Type: {content_type}\r\n\r\n".encode(),
+                    data,
+                    b"\r\n",
+                    f"--{boundary}--\r\n".encode(),
+                ]
+            )
+            h.setdefault("Content-Type", f'multipart/related; boundary="{boundary}"')
+        else:
+            raise ValueError("media_style must be 'multipart' or 'media'")
+        return self.request(
+            "POST",
+            path,
+            query=q,
+            headers=h,
+            data=body,
+            idempotency_key=idempotency_key,
+            idempotency_header=idempotency_header,
+        )
+
+    def _send(
+        self,
+        method,
+        path,
+        *,
+        query=None,
+        headers=None,
+        json_body=None,
+        data=None,
+        files=None,
+        idempotency_key: str | None = None,
+        idempotency_header: str = "Idempotency-Key",
+    ):
         import requests
 
         verb = method.upper()
-        read_tier = self._assert_read_tier(verb, path)
+        read_tier = self._assert_method_allowed(verb, path)
         url = _join(self.manifest.base_url, path)
         req_headers = dict(self.manifest.default_headers)
         req_headers.update(headers or {})
+        if idempotency_key:
+            req_headers.setdefault(idempotency_header or "Idempotency-Key", idempotency_key)
         req_query = dict(query or {})
         self._apply_auth(req_headers, req_query)
-        retry_read = (verb in _IDEMPOTENT_METHODS or read_tier) and not files
+        retry_allowed = bool(idempotency_key) or ((verb in _IDEMPOTENT_METHODS or read_tier) and not files)
 
         attempt = 0
         while True:
@@ -365,7 +466,7 @@ class Client:
             )
             if 200 <= resp.status_code < 300:
                 return resp
-            retryable = resp.status_code in _RETRYABLE_STATUS and retry_read
+            retryable = resp.status_code in _RETRYABLE_STATUS and retry_allowed
             if not retryable or attempt >= self.max_retries:
                 raise ApiError(
                     resp.status_code,
@@ -377,15 +478,16 @@ class Client:
             _sleep(delay, self._sleeper)
             attempt += 1
 
+    def _assert_method_allowed(self, verb: str, path: str) -> bool:
+        if self.allow_writes:
+            if verb in _STATE_CHANGING_METHODS or verb in _IDEMPOTENT_METHODS:
+                return verb in _IDEMPOTENT_METHODS
+            raise MethodPolicyError(f"HTTP method {verb!r} is not supported by lib.api")
+        return self._assert_read_tier(verb, path)
+
     def _assert_read_tier(self, verb: str, path: str) -> bool:
         if verb in _IDEMPOTENT_METHODS:
             return True
-        if verb in _STATE_CHANGING_METHODS:
-            raise MethodPolicyError(
-                f"{verb} is not available through lib.api in the run loop. lib.api is for read-tier "
-                "grounding; for state-changing workflows, define/propose a human-confirmed action "
-                "where the action runtime has the needed permissions."
-            )
         if verb == "POST":
             if _matches_any_path(path, self.manifest.allowed_post_paths):
                 return True
@@ -396,6 +498,8 @@ class Client:
                 "connector manifest's read_endpoints.post allowlist. Otherwise use the action plane "
                 "for a human-confirmed state-changing workflow."
             )
+        if verb in _STATE_CHANGING_METHODS:
+            raise MethodPolicyError(_WRITE_VERB_HINT)
         raise MethodPolicyError(f"HTTP method {verb!r} is not supported by lib.api read-tier grounding")
 
     def _retry_delay(self, resp, attempt: int) -> float:
@@ -413,6 +517,11 @@ class Client:
         cred = self.credential
         a = self.manifest.auth
         strat = a.strategy
+        if self.allow_writes and strat == "query_param":
+            raise RuntimeError(
+                f"integration {self.manifest.key!r} uses query-param auth, which is refused for "
+                "action writes because it would put credentials in URLs"
+            )
         if strat == "none" or not cred:
             if strat not in ("none", ""):
                 raise RuntimeError(
@@ -694,6 +803,14 @@ def _join(base: str, path: str) -> str:
     # urljoin drops the base path unless it ends in "/"; we want base_url to be a prefix, so join
     # against base_url + "/" and strip the leading "/" off path.
     return urljoin(base.rstrip("/") + "/", path.lstrip("/"))
+
+
+def _normalize_json_alias(kw: dict[str, Any]) -> None:
+    if "json" not in kw:
+        return
+    if "json_body" in kw:
+        raise TypeError("use only one of json= or json_body=")
+    kw["json_body"] = kw.pop("json")
 
 
 def _normalized_path(path: str) -> str:
