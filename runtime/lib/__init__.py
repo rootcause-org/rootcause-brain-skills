@@ -2,8 +2,9 @@
 
 Thin, READ-ONLY helpers the agent's Python grounding code imports inside the disposable
 container: `db`, `api`, `stripe`, `cloudwatch`, `fs`, `http`, `html`, `oauth`. `api` is the generic
-read-only REST client (the `lib.db` of third-party HTTP integrations); most integrations need only a
-manifest row + `python -m lib.api get <key> <path>`. Each is configured from the per-project
+read-tier REST client (the `lib.db` of third-party HTTP integrations); most integrations need only a
+manifest row + `python -m lib.api get <key> <path>`, with allowlisted `post` for non-mutating search.
+Each is configured from the per-project
 secrets injected as env (read-only PG DSN, Stripe restricted key, least-priv AWS creds, GitHub
 read token) and the read-only mounts: the brain at /brain and source mirrors at /mirrors/<repo>,
 both `:ro` (a write returns EROFS). Only /tmp is writable scratch.

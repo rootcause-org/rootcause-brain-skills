@@ -53,8 +53,8 @@ def _gql(query: str, variables: dict | None = None, *, eu: bool = False) -> dict
     """POST one GraphQL query to NerdGraph; return the parsed ``data`` dict.
 
     Auth comes from RC_CONN_NEWRELIC (lib.oauth.token raises loudly when absent). Retry/backoff
-    for 429/5xx is handled by a minimal inline loop mirroring lib.api's strategy, since we're
-    issuing a POST (not a GET) and lib.api's _send path is GET-only in spirit.
+    for 429/5xx is handled by a minimal inline loop mirroring lib.api's strategy, since NerdGraph
+    needs GraphQL-specific response handling around the POST.
 
     Raises ``api.ApiError`` on HTTP error or on a GraphQL ``errors`` payload (NerdGraph returns
     200 even on partial errors, so we surface the first error message clearly).

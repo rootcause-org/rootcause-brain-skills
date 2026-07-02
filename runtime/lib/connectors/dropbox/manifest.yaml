@@ -1,9 +1,9 @@
 key: dropbox
 name: Dropbox
 kinds: [token, oauth]
-# Script connector: Dropbox API v2 uses RPC-style POSTs (JSON bodies) for ALL endpoints —
-# lib.api is GET-only. Cursor pagination also requires a POST to a different continuation path
-# (files/list_folder/continue), which the generic cursor paginator cannot express.
+# Script connector: Dropbox API v2 uses RPC-style POSTs (JSON bodies) for ALL endpoints.
+# Cursor pagination requires POSTing to a different continuation path (files/list_folder/continue),
+# which the generic paginator cannot express from a single manifest row.
 # Force-code triggers fired:
 #   (3) exotic transport — every RPC endpoint is a POST with a JSON body, not a GET
 #   (4) non-standard pagination — continuation requires POST to /list_folder/continue with cursor in body
@@ -14,7 +14,7 @@ egress_hosts:
   - api.dropboxapi.com
   - www.dropbox.com    # OAuth authorize redirect (not called at runtime, but host egress policy)
 # --- Generic lib.api caller fields (the compact declarative row) ---
-# lib.api GET-based calls are not usable for Dropbox (all RPC endpoints are POSTs). These fields
+# Generic lib.api calls are not usable for Dropbox's two-phase RPC pagination. These fields
 # define the manifest shape required by the catalog; the script connector bypasses lib.api.request()
 # and issues its own POSTs. auth strategy is still bearer (same credential, same env var).
 base_url: https://api.dropboxapi.com/2

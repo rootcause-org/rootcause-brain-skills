@@ -1,9 +1,10 @@
-"""Generic READ-only REST client — the ``lib.db`` of third-party HTTP integrations.
+"""Generic read-tier REST client — the ``lib.db`` of third-party HTTP integrations.
 
 Most integrations need NO bespoke Python. A compact declarative manifest row (base URL, auth
 strategy, pagination style, rate-limit header) plus this caller is enough: the agent runs
 
     python -m lib.api get <key> <path> [--query k=v ...] [--paginate] [--pick a.b,c]
+    python -m lib.api post <key> <path> --json '{"filter":...}' [--pick a.b,c]
 
 and pipes the JSON through ``jq``/``rg`` so a raw API dump never floods the model context. A
 dedicated thin connector (``lib.connectors.<x>``) is added ONLY when the integration trips a
@@ -11,9 +12,11 @@ force-code trigger: field pre-selection, a multi-call join, exotic auth/signing,
 pagination, or a search DSL (see the integrations skill). Such a connector imports THIS module —
 it never re-implements retry/pagination/rate-limiting.
 
-Design posture (mirrors ``lib.db``): read verbs only (we never write to customer systems), raise
-LOUDLY with the failing provider detail on error rather than returning a silent empty/partial, and
-take the credential from ``lib.oauth.token`` so it never lands in argv, logs, or model context.
+Design posture (mirrors ``lib.db``): read-tier calls only (GET is always allowed; non-mutating POSTs
+must be allowlisted in the connector manifest; PUT/PATCH/DELETE are refused with action-plane
+guidance), raise LOUDLY with the failing provider detail on error rather than returning a silent
+empty/partial, and take the credential from ``lib.oauth.token`` so it never lands in argv, logs, or
+model context.
 
 Auth is the credential VALUE injected as ``RC_CONN_<KEY>`` plus a manifest-declared *strategy* that
 says where it goes (bearer header / basic / api-key header / query param / oauth2 client-credentials).
@@ -26,6 +29,7 @@ manifest helpers and CLI ``--help`` work on a bare host).
 from __future__ import annotations
 
 import random
+import re
 import time
 from dataclasses import dataclass, field
 from email.utils import parsedate_to_datetime
@@ -39,9 +43,11 @@ from lib import oauth
 DEFAULT_CONNECT_TIMEOUT = 10.0
 DEFAULT_READ_TIMEOUT = 30.0
 
-# Retry only idempotent reads by default — this is read-only grounding, but a connector could still
-# pass a write verb, and a blind retry there is a footgun.
+# Retry only read-tier methods. GET/HEAD/OPTIONS are intrinsically read-tier here; POST becomes
+# read-tier only when the manifest allowlists that path as a non-mutating endpoint.
 _IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+_STATE_CHANGING_METHODS = frozenset({"PUT", "PATCH", "DELETE"})
 
 # Transient statuses worth retrying. 429 is handled separately (honours Retry-After).
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
@@ -75,6 +81,10 @@ class ApiError(RuntimeError):
             detail = detail[:800] + "…(truncated)"
         where = f" for {url}" if url else ""
         super().__init__(f"HTTP {status}{where}: {detail}" if detail else f"HTTP {status}{where}")
+
+
+class MethodPolicyError(RuntimeError):
+    """The requested HTTP method/path is outside the run-time read-tier policy."""
 
 
 @dataclass(frozen=True)
@@ -135,6 +145,7 @@ class Manifest:
     pagination: Pagination = field(default_factory=Pagination)
     rate_limit_remaining_header: str = ""  # e.g. "X-RateLimit-Remaining"; advisory pacing only
     default_headers: dict[str, str] = field(default_factory=dict)
+    allowed_post_paths: tuple[str, ...] = ()
 
 
 @dataclass
@@ -310,28 +321,35 @@ class Client:
         *,
         query: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        json_body: Any | None = None,
+        data: dict[str, Any] | None = None,
+        files: dict[str, Any] | None = None,
     ) -> Any:
         """Make one HTTP call (following retries/rate-limits) and return parsed JSON.
 
         ``path`` is joined onto the manifest ``base_url`` (an absolute URL overrides). Raises
         ``ApiError`` on a non-2xx after exhausting retries — never a silent empty.
         """
-        resp = self._send(method, path, query=query, headers=headers)
+        resp = self._send(method, path, query=query, headers=headers, json_body=json_body, data=data, files=files)
         return _parse_json(resp)
 
     def get(self, path: str, **kw) -> Any:
         return self.request("GET", path, **kw)
 
-    def _send(self, method, path, *, query=None, headers=None):
+    def post(self, path: str, **kw) -> Any:
+        return self.request("POST", path, **kw)
+
+    def _send(self, method, path, *, query=None, headers=None, json_body=None, data=None, files=None):
         import requests
 
         verb = method.upper()
+        read_tier = self._assert_read_tier(verb, path)
         url = _join(self.manifest.base_url, path)
         req_headers = dict(self.manifest.default_headers)
         req_headers.update(headers or {})
         req_query = dict(query or {})
         self._apply_auth(req_headers, req_query)
-        idempotent = verb in _IDEMPOTENT_METHODS
+        retry_read = (verb in _IDEMPOTENT_METHODS or read_tier) and not files
 
         attempt = 0
         while True:
@@ -340,11 +358,14 @@ class Client:
                 url,
                 params=req_query,
                 headers=req_headers,
+                json=json_body,
+                data=data,
+                files=files,
                 timeout=(self.connect_timeout, self.read_timeout),
             )
             if 200 <= resp.status_code < 300:
                 return resp
-            retryable = resp.status_code in _RETRYABLE_STATUS and idempotent
+            retryable = resp.status_code in _RETRYABLE_STATUS and retry_read
             if not retryable or attempt >= self.max_retries:
                 raise ApiError(
                     resp.status_code,
@@ -355,6 +376,27 @@ class Client:
             delay = self._retry_delay(resp, attempt)
             _sleep(delay, self._sleeper)
             attempt += 1
+
+    def _assert_read_tier(self, verb: str, path: str) -> bool:
+        if verb in _IDEMPOTENT_METHODS:
+            return True
+        if verb in _STATE_CHANGING_METHODS:
+            raise MethodPolicyError(
+                f"{verb} is not available through lib.api in the run loop. lib.api is for read-tier "
+                "grounding; for state-changing workflows, define/propose a human-confirmed action "
+                "where the action runtime has the needed permissions."
+            )
+        if verb == "POST":
+            if _matches_any_path(path, self.manifest.allowed_post_paths):
+                return True
+            allowed = ", ".join(self.manifest.allowed_post_paths) or "(none)"
+            raise MethodPolicyError(
+                f"POST {path!r} is not in integration {self.manifest.key!r}'s read-only POST allowlist "
+                f"{allowed}. If this endpoint is truly non-mutating search/list/RPC, add it to the "
+                "connector manifest's read_endpoints.post allowlist. Otherwise use the action plane "
+                "for a human-confirmed state-changing workflow."
+            )
+        raise MethodPolicyError(f"HTTP method {verb!r} is not supported by lib.api read-tier grounding")
 
     def _retry_delay(self, resp, attempt: int) -> float:
         """Wait before the next retry: honour ``Retry-After`` on a 429 (capped), else jittered
@@ -403,11 +445,15 @@ class Client:
         self,
         path: str,
         *,
+        method: str = "GET",
         query: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        json_body: Any | None = None,
+        data: dict[str, Any] | None = None,
+        files: dict[str, Any] | None = None,
     ) -> Page:
         """Fetch one page and extract its items + next token per the manifest pagination style."""
-        resp = self._send("GET", path, query=query, headers=headers)
+        resp = self._send(method, path, query=query, headers=headers, json_body=json_body, data=data, files=files)
         body = _parse_json(resp)
         items = self._extract_items(body)
         nxt = self._next_token(body, resp)
@@ -417,8 +463,12 @@ class Client:
         self,
         path: str,
         *,
+        method: str = "GET",
         query: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        json_body: Any | None = None,
+        data: dict[str, Any] | None = None,
+        files: dict[str, Any] | None = None,
         max_pages: int | None = None,
     ) -> Iterator[Page]:
         """Auto-page: yield ``Page`` objects following the server's opaque next token until exhausted.
@@ -429,31 +479,39 @@ class Client:
         never hand-rolls a ``while has_more``.
         """
         p = self.manifest.pagination
+        verb = method.upper()
+        if verb != "GET" and p.style != "none":
+            raise MethodPolicyError(
+                f"integration {self.manifest.key!r}: generic {verb} pagination is not supported by "
+                "lib.api. Use a single-page POST, or add a connector script for POST pagination that "
+                "needs cursor placement in the body, a repeated body, or a different continuation "
+                "endpoint."
+            )
         cap = self.max_pages if max_pages is None else max_pages
         base_query = dict(query or {})
         seen = 0
         if p.style == "none":
-            yield self.fetch_page(path, query=base_query, headers=headers)
+            yield self.fetch_page(path, method=method, query=base_query, headers=headers, json_body=json_body, data=data, files=files)
             return
         if p.style == "offset":
             base_query.setdefault(p.limit_param, p.page_size)
             offset = int(base_query.get(p.offset_param, 0) or 0)
             while seen < cap:
                 q = dict(base_query, **{p.offset_param: offset})
-                page = self.fetch_page(path, query=q, headers=headers)
+                page = self.fetch_page(path, method=method, query=q, headers=headers, json_body=json_body, data=data, files=files)
                 yield page
                 seen += 1
                 if not page.items or len(page.items) < p.page_size:
                     return
                 offset += len(page.items)
-            return
+            raise ApiError(0, f"pagination reached max_pages={cap}", url=_join(self.manifest.base_url, path))
         if p.style == "page":
             # Page-NUMBER paging: advance page_param by 1 from page_start (not by item count).
             base_query.setdefault(p.limit_param, p.page_size)
             page_num = int(base_query.get(p.page_param, p.page_start) or p.page_start)
             while seen < cap:
                 q = dict(base_query, **{p.page_param: page_num})
-                page = self.fetch_page(path, query=q, headers=headers)
+                page = self.fetch_page(path, method=method, query=q, headers=headers, json_body=json_body, data=data, files=files)
                 yield page
                 seen += 1
                 # Stop on a short/empty page; or, when the API declares one, an explicit
@@ -464,7 +522,7 @@ class Client:
                 if p.has_more_field and not _truthy(_dotted(page.body, p.has_more_field)):
                     return
                 page_num += 1
-            return
+            raise ApiError(0, f"pagination reached max_pages={cap}", url=_join(self.manifest.base_url, path))
         # cursor / link / body_url all drive off page.next (an opaque token or URL). For link and
         # body_url, page.next is a URL/path we follow directly (a relative path is _joined to base_url
         # inside _send_url); for cursor it's a token re-sent as a query param.
@@ -483,7 +541,7 @@ class Client:
                 q = dict(base_query)
                 if next_token is not None:
                     q[p.cursor_param] = next_token
-                page = self.fetch_page(path, query=q, headers=headers)
+                page = self.fetch_page(path, method=method, query=q, headers=headers, json_body=json_body, data=data, files=files)
             yield page
             seen += 1
             if page.next is None:
@@ -492,13 +550,18 @@ class Client:
                 next_url = page.next
             else:
                 next_token = page.next
+        raise ApiError(0, f"pagination reached max_pages={cap}", url=origin_url)
 
     def collect(
         self,
         path: str,
         *,
+        method: str = "GET",
         query: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        json_body: Any | None = None,
+        data: dict[str, Any] | None = None,
+        files: dict[str, Any] | None = None,
         max_items: int | None = None,
         max_pages: int | None = None,
     ) -> dict:
@@ -514,7 +577,16 @@ class Client:
         reason = ""
         pages = 0
         try:
-            for page in self.paginate(path, query=query, headers=headers, max_pages=max_pages):
+            for page in self.paginate(
+                path,
+                method=method,
+                query=query,
+                headers=headers,
+                json_body=json_body,
+                data=data,
+                files=files,
+                max_pages=max_pages,
+            ):
                 pages += 1
                 items.extend(page.items)
                 if max_items is not None and len(items) >= max_items:
@@ -553,7 +625,7 @@ class Client:
         # Auth that lands in the query string must survive on a verbatim follow-URL too.
         params = empty or None
         verb = method.upper()
-        idempotent = verb in _IDEMPOTENT_METHODS
+        retry_read = verb in _IDEMPOTENT_METHODS
         attempt = 0
         while True:
             resp = requests.request(
@@ -562,7 +634,7 @@ class Client:
             )
             if 200 <= resp.status_code < 300:
                 return resp
-            retryable = resp.status_code in _RETRYABLE_STATUS and idempotent
+            retryable = resp.status_code in _RETRYABLE_STATUS and retry_read
             if not retryable or attempt >= self.max_retries:
                 raise ApiError(resp.status_code, _body_text(resp), url=url,
                                retryable=resp.status_code in _RETRYABLE_STATUS)
@@ -624,6 +696,38 @@ def _join(base: str, path: str) -> str:
     return urljoin(base.rstrip("/") + "/", path.lstrip("/"))
 
 
+def _normalized_path(path: str) -> str:
+    bits = urlsplit(path)
+    raw = bits.path if bits.scheme or bits.netloc else path.split("?", 1)[0]
+    raw = "/" + raw.lstrip("/")
+    return raw.rstrip("/") or "/"
+
+
+def _matches_any_path(path: str, patterns: tuple[str, ...]) -> bool:
+    normalized = _normalized_path(path)
+    for pattern in patterns:
+        candidate = _normalized_path(pattern)
+        if _path_pattern_re(candidate).fullmatch(normalized):
+            return True
+    return False
+
+
+def _path_pattern_re(pattern: str) -> re.Pattern:
+    out = []
+    i = 0
+    while i < len(pattern):
+        if pattern[i : i + 2] == "**":
+            out.append(".*")
+            i += 2
+            continue
+        if pattern[i] == "*":
+            out.append("[^/]*")
+        else:
+            out.append(re.escape(pattern[i]))
+        i += 1
+    return re.compile("".join(out))
+
+
 def _site(host: str) -> str:
     """Registrable-ish site = the last two DNS labels (``api.github.com`` → ``github.com``,
     ``us.sentry.io`` → ``sentry.io``). Good enough to pin a pagination follow to the connector's own
@@ -681,11 +785,12 @@ def _parse_link_next(header: str | None) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# CLI: python -m lib.api get <key> <path>  (manifest-driven, no bespoke code)
+# CLI: python -m lib.api get/post <key> <path>  (manifest-driven, no bespoke code)
 # ---------------------------------------------------------------------------
 
 # Manifests the generic CLI can drive directly. A connector with its own CLI registers here too, so
 # `python -m lib.api get <key> ...` works for any catalogued integration without a per-key script.
+# `post` works only for manifest-allowlisted non-mutating read endpoints.
 MANIFESTS: dict[str, Manifest] = {}
 
 # Keys populated from a connectors/*/manifest.yaml. Tracked so loading is idempotent (re-running
@@ -704,9 +809,10 @@ def load_manifests(*, force: bool = False) -> dict[str, Manifest]:
     """Discover and register every ``lib/connectors/*/manifest.yaml`` into ``MANIFESTS``.
 
     This is what makes "a manifest row IS the integration" true at runtime: a catalogued connector
-    with NO bespoke Python is still drivable via ``python -m lib.api get <key> ...``. Idempotent —
-    only fills keys not already present, so an explicit ``register()`` (e.g. a Python connector that
-    needs a richer Manifest than the YAML expresses) is the source of truth and is never clobbered.
+    with NO bespoke Python is still drivable via ``python -m lib.api get <key> ...`` (and allowlisted
+    read-only ``post`` endpoints). Idempotent — only fills keys not already present, so an explicit
+    ``register()`` (e.g. a Python connector that needs a richer Manifest than the YAML expresses) is
+    the source of truth and is never clobbered.
 
     Discovery walks the package's ``connectors`` directory (works from the baked/installed wheel, not
     only the source tree). A single malformed manifest raises ``ManifestError`` naming the file rather
@@ -794,6 +900,14 @@ def _manifest_from_dict(raw: dict) -> Manifest:
         raise ValueError("'default_headers' must be a mapping")
     default_headers = {str(k): str(v) for k, v in dh_raw.items()}
 
+    read_raw = raw.get("read_endpoints") or {}
+    if not isinstance(read_raw, dict):
+        raise ValueError("'read_endpoints' must be a mapping")
+    post_raw = read_raw.get("post") or raw.get("allowed_post_paths") or []
+    if not isinstance(post_raw, list):
+        raise ValueError("'read_endpoints.post' must be a list")
+    allowed_post_paths = tuple(str(v) for v in post_raw if str(v).strip())
+
     return Manifest(
         key=key,
         base_url=base_url,
@@ -801,6 +915,7 @@ def _manifest_from_dict(raw: dict) -> Manifest:
         pagination=pagination,
         rate_limit_remaining_header=rate_limit_remaining_header,
         default_headers=default_headers,
+        allowed_post_paths=allowed_post_paths,
     )
 
 
@@ -810,33 +925,95 @@ def _main(argv: list[str] | None = None) -> int:
 
     p = argparse.ArgumentParser(prog="python -m lib.api", description=__doc__.split("\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
-    g = sub.add_parser("get", help="GET a path on a registered integration and print JSON")
-    g.add_argument("key", help="integration key (RC_CONN_<KEY> must be injected)")
-    g.add_argument("path", help="API path under the manifest base_url, or an absolute URL")
-    g.add_argument("--query", action="append", default=[], metavar="K=V", help="query param (repeatable)")
-    g.add_argument("--paginate", action="store_true", help="auto-page and collect all items")
-    g.add_argument("--max-items", type=int, default=None)
-    g.add_argument("--max-pages", type=int, default=None)
-    g.add_argument("--pick", default="", help="comma-separated dotted paths to select from each object")
+
+    def add_common(sp, *, body: bool = False) -> None:
+        sp.add_argument("key", help="integration key (RC_CONN_<KEY> must be injected)")
+        sp.add_argument("path", help="API path under the manifest base_url, or an absolute URL")
+        sp.add_argument("--query", action="append", default=[], metavar="K=V", help="query param (repeatable)")
+        sp.add_argument("--paginate", action="store_true", help="auto-page and collect all items")
+        sp.add_argument("--max-items", type=int, default=None)
+        sp.add_argument("--max-pages", type=int, default=None)
+        sp.add_argument("--pick", default="", help="comma-separated dotted paths to select from each object")
+        if body:
+            sp.add_argument("--json", default="", help="JSON request body")
+            sp.add_argument("--json-file", default="", help="read JSON request body from a file")
+            sp.add_argument("--form", action="append", default=[], metavar="K=V", help="form field (repeatable)")
+            sp.add_argument("--file", action="append", default=[], metavar="FIELD=PATH", help="multipart file (repeatable)")
+
+    add_common(sub.add_parser("get", help="GET a path on a registered integration and print JSON"))
+    add_common(sub.add_parser("post", help="POST to a manifest-allowlisted read endpoint"), body=True)
+    for verb in ("put", "patch", "delete"):
+        add_common(sub.add_parser(verb, help=f"{verb.upper()} is refused; use an action for writes"), body=True)
     args = p.parse_args(argv)
 
-    if args.cmd != "get":
-        p.error("unknown command")
     load_manifests()  # discover catalogued manifests so any zero-Python integration is drivable
     mani = MANIFESTS.get(args.key)
     if mani is None:
         p.error(f"no manifest registered for {args.key!r}; known: {sorted(MANIFESTS) or '(none)'}")
     query = dict(kv.split("=", 1) for kv in args.query if "=" in kv)
+    method = args.cmd.upper()
+    try:
+        Client(manifest=mani, credential="")._assert_read_tier(method, args.path)
+    except MethodPolicyError as e:
+        p.exit(2, f"{e}\n")
     c = client(mani)
-    if args.paginate:
-        result = c.collect(args.path, query=query, max_items=args.max_items, max_pages=args.max_pages)
-        if args.pick:
-            result["items"] = [pick(it, args.pick) for it in result["items"]]
-        print(json.dumps(result, indent=2, default=str))
-    else:
-        body = c.get(args.path, query=query)
-        print(json.dumps(pick(body, args.pick) if args.pick else body, indent=2, default=str))
+    json_body = data = files = None
+    open_files = []
+    try:
+        if method != "GET":
+            json_body, data, files, open_files = _request_body_from_args(args)
+        try:
+            if args.paginate:
+                result = c.collect(
+                    args.path,
+                    method=method,
+                    query=query,
+                    json_body=json_body,
+                    data=data,
+                    files=files,
+                    max_items=args.max_items,
+                    max_pages=args.max_pages,
+                )
+                if args.pick:
+                    result["items"] = [pick(it, args.pick) for it in result["items"]]
+                print(json.dumps(result, indent=2, default=str))
+            else:
+                body = c.request(method, args.path, query=query, json_body=json_body, data=data, files=files)
+                print(json.dumps(pick(body, args.pick) if args.pick else body, indent=2, default=str))
+        except MethodPolicyError as e:
+            p.exit(2, f"{e}\n")
+    finally:
+        for fh in open_files:
+            fh.close()
     return 0
+
+
+def _request_body_from_args(args) -> tuple[Any | None, dict[str, str] | None, dict[str, Any] | None, list[Any]]:
+    import json
+    from pathlib import Path
+
+    json_sources = [bool(getattr(args, "json", "")), bool(getattr(args, "json_file", ""))]
+    multipart_sources = [bool(getattr(args, "form", [])), bool(getattr(args, "file", []))]
+    if any(json_sources) and any(multipart_sources):
+        raise SystemExit("--json/--json-file cannot be combined with --form/--file")
+    if getattr(args, "json", "") and getattr(args, "json_file", ""):
+        raise SystemExit("use only one of --json or --json-file")
+    if getattr(args, "json", ""):
+        return json.loads(args.json), None, None, []
+    if getattr(args, "json_file", ""):
+        return json.loads(Path(args.json_file).read_text(encoding="utf-8")), None, None, []
+
+    data = dict(kv.split("=", 1) for kv in getattr(args, "form", []) if "=" in kv) or None
+    files = {}
+    open_files = []
+    for item in getattr(args, "file", []):
+        if "=" not in item:
+            raise SystemExit("--file must be FIELD=PATH")
+        field, raw_path = item.split("=", 1)
+        fh = open(raw_path, "rb")
+        open_files.append(fh)
+        files[field] = fh
+    return None, data, files or None, open_files
 
 
 if __name__ == "__main__":

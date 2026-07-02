@@ -1,7 +1,7 @@
 """Dropbox support connector — script connector because all API v2 endpoints are RPC POSTs.
 
 Force-code triggers:
-  (3) exotic transport — Dropbox API v2 is entirely POST-based (JSON body); lib.api is GET-only.
+  (3) exotic transport — Dropbox API v2 is entirely POST-based (JSON body).
   (4) non-standard pagination — cursor continuation requires a POST to a *different* path
       (files/list_folder/continue) with the cursor in the request body; lib.api's generic cursor
       paginator only adjusts query params on the same path.
@@ -51,9 +51,10 @@ MANIFEST = api.register(
 def _post(path: str, body: dict[str, Any]) -> Any:
     """Issue one POST to a Dropbox RPC endpoint with bearer auth.
 
-    Dropbox API v2 is entirely RPC-style: all calls are POST with a JSON body. lib.api is GET-only,
-    so this helper handles auth + error normalization for the script's calls. Retry is not replicated
-    here — reads are fast and single-shot pagination is the pattern; the caller loops with cursors.
+    Dropbox API v2 is entirely RPC-style: all calls are POST with a JSON body, and continuation posts
+    to a different path. This helper handles auth + error normalization for the script's calls. Retry
+    is not replicated here — reads are fast and single-shot pagination is the pattern; the caller loops
+    with cursors.
     """
     cred = oauth.token("dropbox")
     url = f"{_API_BASE}/{path.lstrip('/')}"

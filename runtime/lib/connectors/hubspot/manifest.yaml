@@ -24,6 +24,10 @@ pagination:
   page_size: 100          # HubSpot v3 max is 100 (200 for some archived endpoints); 100 is safe
 rate_limit:
   remaining_header: X-HubSpot-RateLimit-Remaining   # advisory; HubSpot also sends 429 + Retry-After
+read_endpoints:
+  post:
+    # HubSpot CRM search is non-mutating but POST-only because filters/properties live in the body.
+    - /crm/v3/objects/*/search
 oauth:
   auth_url: https://app.hubspot.com/oauth/authorize
   token_url: https://api.hubapi.com/oauth/v1/token
@@ -43,7 +47,7 @@ help_md: |
   HubSpot CRM v3 list responses carry objects under `results` with cursor paging via
   `paging.next.after`. Pass `--paginate` to auto-follow pages.
 
-  Common paths (all GET, all cursor-paged):
+  Common paths (GET, cursor-paged):
 
       # List contacts (default properties: firstname, lastname, email)
       python -m lib.api get hubspot /crm/v3/objects/contacts \
@@ -73,8 +77,12 @@ help_md: |
       python -m lib.api get hubspot /crm/v3/owners \
         --pick id,email,firstName,lastName
 
-      # Search contacts by email (POST — use direct curl; lib.api is GET-only)
-      # For search, use the CRM search endpoint with a POST body outside this client.
+  Search endpoints are non-mutating but POST-only; they are explicitly allowlisted:
+
+      # Search contacts by email
+      python -m lib.api post hubspot /crm/v3/objects/contacts/search \
+        --json '{"filterGroups":[{"filters":[{"propertyName":"email","operator":"EQ","value":"user@example.com"}]}],"properties":["email","firstname","lastname"],"limit":10}' \
+        --pick results.*.id,results.*.properties.email,results.*.properties.firstname
 
   Tip: HubSpot only returns a curated default set of properties per object. Pass
   `--query properties=prop1,prop2` to request additional fields. See available properties at

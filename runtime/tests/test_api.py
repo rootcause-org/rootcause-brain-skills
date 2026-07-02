@@ -8,6 +8,7 @@ mocked with the `responses` library. These lock down the logic that decides *wha
 import random
 import sys
 import unittest
+from io import BytesIO
 from pathlib import Path
 from unittest import mock
 
@@ -166,9 +167,27 @@ class RetryBackoff(unittest.TestCase):
     def test_post_not_retried_by_default(self):
         responses.add(responses.POST, "https://api.demo.test/v1/x", json={"e": 1}, status=503)
         c, _ = _client()
-        with self.assertRaises(api.ApiError):
+        with self.assertRaises(api.MethodPolicyError):
             c.request("POST", "x")
-        self.assertEqual(len(responses.calls), 1)  # non-idempotent ⇒ no blind retry
+        self.assertEqual(len(responses.calls), 0)  # rejected before any network call
+
+    @responses.activate
+    def test_allowlisted_read_post_retries(self):
+        responses.add(responses.POST, "https://api.demo.test/v1/search", json={"e": 1}, status=503)
+        responses.add(responses.POST, "https://api.demo.test/v1/search", json={"ok": True}, status=200)
+        c, sleeps = _client(_manifest(allowed_post_paths=("/search",)))
+        self.assertEqual(c.request("POST", "search", json_body={"term": "alice"}), {"ok": True})
+        self.assertEqual(len(responses.calls), 2)
+        self.assertEqual(len(sleeps), 1)
+
+    @responses.activate
+    def test_allowlisted_post_with_files_not_retried(self):
+        responses.add(responses.POST, "https://api.demo.test/v1/upload", json={"e": 1}, status=503)
+        c, sleeps = _client(_manifest(allowed_post_paths=("/upload",)))
+        with self.assertRaises(api.ApiError):
+            c.post("/upload", files={"attachment": BytesIO(b"abc")})
+        self.assertEqual(len(responses.calls), 1)
+        self.assertEqual(sleeps, [])
 
 
 class RetryAfterParsing(unittest.TestCase):
@@ -499,6 +518,73 @@ class NonePagination(unittest.TestCase):
         self.assertEqual(len(responses.calls), 1)
 
 
+class ReadMethodPolicy(unittest.TestCase):
+    @responses.activate
+    def test_allowlisted_post_with_json_body(self):
+        def cb(request):
+            self.assertEqual(request.body, b'{"filter": "alice"}')
+            return (200, {"Content-Type": "application/json"}, '{"results":[{"id":"1"}]}')
+
+        responses.add_callback(responses.POST, "https://api.demo.test/v1/crm/search", callback=cb)
+        c, _ = _client(_manifest(allowed_post_paths=("/crm/*",)))
+        got = c.post("/crm/search", json_body={"filter": "alice"})
+        self.assertEqual(got, {"results": [{"id": "1"}]})
+
+    @responses.activate
+    def test_unallowlisted_post_refused_with_manifest_guidance(self):
+        c, _ = _client(_manifest())
+        with self.assertRaises(api.MethodPolicyError) as cm:
+            c.post("/crm/search", json_body={"filter": "alice"})
+        self.assertIn("read-only POST allowlist", str(cm.exception))
+        self.assertIn("action plane", str(cm.exception))
+        self.assertEqual(len(responses.calls), 0)
+
+    def test_allowlist_wildcard_is_one_path_segment(self):
+        self.assertTrue(api._matches_any_path("/crm/v3/objects/contacts/search", ("/crm/v3/objects/*/search",)))
+        self.assertFalse(api._matches_any_path("/crm/v3/objects/contacts/extra/search", ("/crm/v3/objects/*/search",)))
+
+    @responses.activate
+    def test_write_verbs_refused_with_action_guidance(self):
+        c, _ = _client(_manifest(allowed_post_paths=("/safe-search",)))
+        for verb in ("PUT", "PATCH", "DELETE"):
+            with self.assertRaises(api.MethodPolicyError) as cm:
+                c.request(verb, "/customers/1", json_body={"name": "x"})
+            self.assertIn("human-confirmed action", str(cm.exception))
+        self.assertEqual(len(responses.calls), 0)
+
+    def test_manifest_parses_read_post_allowlist(self):
+        mani = api._manifest_from_dict({
+            "key": "demo",
+            "base_url": "https://api.demo.test/v1",
+            "read_endpoints": {"post": ["/search", "crm/*/search"]},
+        })
+        self.assertEqual(mani.allowed_post_paths, ("/search", "crm/*/search"))
+
+    def test_post_next_url_pagination_refused(self):
+        m = _manifest(
+            allowed_post_paths=("/search",),
+            pagination=api.Pagination(style="body_url", next_url_field="next", items_field="data"),
+        )
+        c, _ = _client(m)
+        with self.assertRaises(api.MethodPolicyError) as cm:
+            c.collect("/search", method="POST", json_body={"term": "alice"})
+        self.assertIn("POST pagination", str(cm.exception))
+
+    def test_cli_write_verb_policy_precedes_credential_resolution(self):
+        old = dict(api.MANIFESTS)
+        try:
+            api.MANIFESTS.clear()
+            api.MANIFESTS["demo"] = _manifest(key="demo", auth=api.Auth(strategy="bearer"))
+            with mock.patch.object(api, "load_manifests"), mock.patch.object(api.oauth, "token") as token:
+                with self.assertRaises(SystemExit) as cm:
+                    api._main(["put", "demo", "/customers/1"])
+            self.assertEqual(cm.exception.code, 2)
+            token.assert_not_called()
+        finally:
+            api.MANIFESTS.clear()
+            api.MANIFESTS.update(old)
+
+
 class PartialFailure(unittest.TestCase):
     @responses.activate
     def test_mid_stream_error_returns_partial_with_flag(self):
@@ -539,6 +625,20 @@ class PartialFailure(unittest.TestCase):
         self.assertEqual(len(responses.calls), 2)
         self.assertTrue(result["incomplete"])
         self.assertIn("max_pages", result["reason"])
+
+    @responses.activate
+    def test_default_max_pages_marks_incomplete(self):
+        m = _manifest(pagination=api.Pagination(
+            style="cursor", cursor_field="next", has_more_field="has_more", items_field="data",
+        ))
+        for _ in range(3):
+            responses.add(responses.GET, "https://api.demo.test/v1/list",
+                          json={"data": [{"id": 1}], "has_more": True, "next": "c"})
+        c, _ = _client(m, max_pages=2)
+        result = c.collect("list")
+        self.assertEqual(len(responses.calls), 2)
+        self.assertTrue(result["incomplete"])
+        self.assertIn("max_pages=2", result["reason"])
 
 
 class Pick(unittest.TestCase):
