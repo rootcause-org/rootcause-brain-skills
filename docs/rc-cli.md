@@ -52,8 +52,8 @@ In a brain checkout, `.rootcause.toml` carries the non-secret project/base URL b
 explicit --profile <name>          -> that profile's stored token
 inside a brain + project token     -> profile named by .rootcause.toml project
 inside a brain + no project token  -> default profile + .rootcause.toml project as ?project=
-outside any brain                  -> default profile / built-in default
-base_url: ROOTCAUSE_BASE_URL > .rootcause.toml base_url > profile base_url > built-in default
+outside any brain                  -> default profile / built-in default (https://app.replypen.com)
+base_url: ROOTCAUSE_BASE_URL > .rootcause.toml base_url > profile base_url > built-in default (https://app.replypen.com)
 ```
 
 Use `rc whoami` to confirm project, tenant, profile, and sign-in status. On tenant-enabled projects,

@@ -12,7 +12,7 @@ import statistics
 from datetime import datetime
 from typing import Iterable
 
-PUBLIC_BASE_URL = "https://rootcause.probackup.io"
+PUBLIC_BASE_URL = "https://app.replypen.com"
 PROJECTION_BRANCH_KEYS = (
     "newpatient_method",
     "existingpatient_method",
