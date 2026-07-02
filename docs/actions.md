@@ -86,7 +86,7 @@ def run(p):
 ## Write Connections
 
 Hosted OAuth/API writes go through `lib.action.client("<capability>")` or provider helpers under
-`lib.action.*`. Action code should not read env vars directly.
+`lib.action.*`. For brokered write connections, action code should not read env vars directly.
 
 ```yaml
 connections:
@@ -146,9 +146,11 @@ Do not author an action blind:
 5. Push a dev branch and run `rc ask --brain-ref dev/<branch>` to see whether the agent proposes the
    action with sane params.
 6. Use `brain-publish` for live publish/promote/support handoff.
+7. For an explicit production action, use `prod-console` / `rc action preflight` / `rc action run`
+   after params are grounded.
 
-Public `rc` does not currently expose every action publish/execute trigger. Do not document private
-RootCause commands here; use `brain-publish` to prepare the support request when needed.
+Do not document private RootCause commands here. Use public `rc` surfaces; if a publish/support step is
+missing, route through `brain-publish`.
 
 ## Triage
 

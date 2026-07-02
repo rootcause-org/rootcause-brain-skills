@@ -6,7 +6,7 @@ Goal: tell whether the run only drafted text, proposed an action, or an action a
 ## First rule
 
 A run never executes an action. It can only propose `reply.actions`. Execution happens later when a
-reviewer clicks the confirm link, or when a public/support-gated trigger executes the action.
+reviewer clicks the confirm link, or when `rc action run` executes the action.
 
 ## Quick checks
 
@@ -24,7 +24,7 @@ Read the events around `preflight`, `reply`, and any proposed actions.
 | `reply.actions` / proposed action exists | Human still has to confirm. No mutation yet. | "Action proposed, pending reviewer confirm." |
 | Action status `succeeded` / result note after confirm | Post-loop execution happened. | "Action executed; result says ..." |
 | Action status `failed` / error result | Post-loop execution was attempted and failed. | "Action execution failed; hold draft." |
-| Public/support dev-trigger output | Dev-trigger executed the action for real, usually runless. | "Dev-trigger executed; not just a run proposal." |
+| `rc action run` output | Dev-trigger executed the action for real, usually runless. | "Dev-trigger executed; not just a run proposal." |
 
 ## Optimistic drafts
 
@@ -41,8 +41,8 @@ needed.
   plane, with action credentials or the customer's app credentials.
 - For hosted Python actions, `brain_action.py <id> --params ... --preflight-only` reproduces Layer 1 +
   preflight locally. Without `--preflight-only`, it also runs the body in local dry-run mode by default.
-- For Embassy/gem actions, there is no local write-body dry run; use a public/support-gated wire check
-  or real dev-trigger against a safe target when available.
+- For Embassy/gem actions, there is no local write-body dry run; use `rc action preflight` or
+  `rc action run` against a safe target when real execution is intended.
 
 ## Common diagnosis
 
