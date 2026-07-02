@@ -47,8 +47,23 @@ Read:
    ```bash
    rc db query <db> "SELECT ..." -o json | jq '.rows[]'
    ```
+   If a query fails on a column name, stop and inspect schema:
+   ```bash
+   rc db schema <db> --table <table> -o json |
+     jq -r '.. | objects | select(has("name") and has("type")) | [.name,.type] | @tsv'
+   ```
 
-3. For scripts/logs, inspect the catalog:
+3. For mounted workspace files, inspect before assuming paths:
+   ```bash
+   rc bash run 'find /brain -maxdepth 2 -type f | sed -n "1,80p"'
+   rc bash run 'find /kb -maxdepth 3 -type d -print | sed -n "1,120p"'
+   rc bash run 'rg -n -i "invoice|payment|refund" /kb /brain/knowledge -g "*.md" 2>/dev/null | sed -n "1,60p"'
+   ```
+   Use `/kb` for synced knowledge-base articles when configured; use `/brain/knowledge` when the brain
+   commits its own knowledge articles. For title and frontmatter filters, read
+   [docs/knowledge-base.md](../../docs/knowledge-base.md).
+
+4. For scripts/logs, inspect the catalog:
    ```bash
    rc bash list
    ```
@@ -57,7 +72,7 @@ Read:
    run remounts the refreshed `/brain`. Logs are reached through that exec plane, usually with `python -m
    lib.cloudwatch ...`, not a separate log verb.
 
-4. For actions, preflight before running:
+5. For actions, preflight before running:
    ```bash
    rc action list
    rc action show <id>

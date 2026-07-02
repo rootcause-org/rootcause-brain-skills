@@ -72,7 +72,7 @@ Useful brain conventions:
 - Maintain a small source map when source mirrors are important: product area -> `/mirrors/<name>/...`
   paths -> useful search terms, classes, jobs, routes, or log events.
 - If KB snapshot filenames are opaque, add searchable titles/frontmatter or an index that maps customer
-  article titles to `/kb` paths.
+  article titles to `/kb` paths. For traversal examples, see [knowledge-base.md](knowledge-base.md).
 - Put customer symptom language beside internal feature names so support emails and source searches
   meet in the same doc.
 - For action-backed outcomes, route to the action doc's safety guards and verification checks before

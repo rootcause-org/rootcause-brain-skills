@@ -115,6 +115,38 @@ staleness, and sync time. `sync` fast-forwards the deployed cache when safe and 
 workspaces; the next `rc bash run` remounts the refreshed `/brain`. If sync reports manual reconcile,
 use `brain-publish` with the status output.
 
+## DB And Bash Examples
+
+Discover before querying:
+
+```bash
+rc whoami -o json
+rc db list -o json
+rc db schema <db> --table <table> -o json
+rc db schema <db> --table <table> -o json |
+  jq -r '.. | objects | select(has("name") and has("type")) | [.name,.type] | @tsv'
+```
+
+Then run narrow read-only SQL:
+
+```bash
+rc db query <db> "select count(*) as row_count from <table>" -o json | jq '.rows[0]'
+rc db query <db> "select id::text, created_at from <table> order by created_at desc limit 5" -o json
+```
+
+If a query fails with an unknown column, go back to `rc db schema`; do not keep guessing names. For
+large result handling, keep SQL narrow and post-process JSON locally with `jq`.
+
+Use `rc bash run` for workspace files and mounted context:
+
+```bash
+rc bash run 'find /brain -maxdepth 2 -type f | sed -n "1,80p"'
+rc bash run 'find /kb -maxdepth 3 -type d -print | sed -n "1,120p"'
+rc bash run 'rg -n -i "invoice|payment|refund" /kb /brain/knowledge -g "*.md" 2>/dev/null | sed -n "1,60p"'
+```
+
+For KB title/frontmatter indexes, see [knowledge-base.md](knowledge-base.md).
+
 ## Author -> Verify Loop
 
 Before changing a brain or action blindly:

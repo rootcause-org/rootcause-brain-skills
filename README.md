@@ -76,6 +76,7 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 | [docs/brain-model.md](docs/brain-model.md) | Audience, brain-vs-external context, prompt boundary, layout, mounts, refs. |
 | [docs/run-trace-model.md](docs/run-trace-model.md) | How to read `rc run --debug` index/JSONL. |
 | [docs/mirrors.md](docs/mirrors.md) | Source mirrors and freshness/debug rules. |
+| [docs/knowledge-base.md](docs/knowledge-base.md) | Traverse `/kb` and committed `knowledge/`, including frontmatter search from `rc bash`. |
 | [docs/support-boundary.md](docs/support-boundary.md) | Brain-change vs RootCause-support decision tree. |
 | [docs/actions.md](docs/actions.md) | Action plane and local hosted-Python action tests. |
 | [docs/rc-cli.md](docs/rc-cli.md) | Public `rc` CLI reference for this kit. |
@@ -83,11 +84,11 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 ## Single Version Line
 
 The plugin versions, `rootcause-runtime` pin, workspace image tag, and production runtime pin move
-together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.41`**.
+together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.42`**.
 
 - Runtime pin:
-  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.41#subdirectory=runtime`
-- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.41`
+  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.42#subdirectory=runtime`
+- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.42`
 
 Check coherence:
 
