@@ -1,24 +1,29 @@
-"""Notion support connector — script connector because search and database-query are POSTs.
+"""Notion support connector — script connector for Notion's body-heavy read APIs.
 
 Force-code triggers:
-  (3) exotic transport — Notion's ``POST /v1/search`` and ``POST /v1/databases/{id}/query``
-      send query params in a JSON request body; lib.api is GET-only.
+  (3) exotic transport — Notion's ``POST /v1/search`` and ``POST /v1/data_sources/{id}/query``
+      send query params in a JSON request body.
   (1) field pre-selection — raw page ``properties`` objects are enormous (hundreds of nested keys);
-      the script extracts the 4-6 support-relevant text/title/url/date fields.
+      the script extracts support-relevant fields.
 
-For plain GET endpoints (retrieve page, retrieve database, block children) the agent drives
-``python -m lib.api get notion …`` directly — the manifest row handles those with zero bespoke code.
+For plain GET endpoints that do not need response shaping (retrieve page, retrieve data source, block
+children) the agent can still drive ``python -m lib.api get notion …`` directly.
 
 CLI:
     python -m lib.connectors.notion search "onboarding checklist"
     python -m lib.connectors.notion search "bug" --filter page --page-size 10
-    python -m lib.connectors.notion query-db <database_id>
-    python -m lib.connectors.notion query-db <database_id> --page-size 50
+    python -m lib.connectors.notion search "roadmap" --filter data_source
+    python -m lib.connectors.notion query-db <data_source_id>
+    python -m lib.connectors.notion query-db <data_source_id> --page-size 50
+    python -m lib.connectors.notion page-md <page_id>
+    python -m lib.connectors.notion row <page_id>
 """
 
 from __future__ import annotations
 
 import argparse
+import json
+import sys
 from typing import Any
 
 import requests as _requests
@@ -26,10 +31,10 @@ import requests as _requests
 from lib import api, oauth
 
 API_BASE = "https://api.notion.com/v1"
-_NOTION_VERSION = "2022-06-28"
+_NOTION_VERSION = "2026-03-11"
 
 # The manifest row registered here is the lib.api declaration used by GET-based calls. Script calls
-# (POST /search, POST /databases/{id}/query) bypass lib.api's request() and call _post() directly,
+# (POST /search, POST /data_sources/{id}/query) bypass lib.api and call _request() directly,
 # but still share the credential resolution, retry, and backoff via lib.api.Client.
 MANIFEST = api.register(
     api.Manifest(
@@ -54,18 +59,25 @@ def _client() -> api.Client:
     return api.client(MANIFEST, token_key="notion")
 
 
-def _post(path: str, body: dict[str, Any]) -> Any:
-    """Issue one ``POST`` to a Notion endpoint with bearer auth + version header.
+def _request(
+    method: str,
+    path: str,
+    *,
+    body: dict[str, Any] | None = None,
+    query: dict[str, Any] | None = None,
+) -> Any:
+    """Issue one Notion request with bearer auth + version header.
 
-    lib.api is GET-only; search and database-query require a JSON POST body, so we call
-    requests directly. Retry/backoff is intentionally not replicated here — single-call POSTs for
-    search are idiomatic; the caller refreshes with a new cursor on pagination.
+    lib.api's generic client is GET-oriented; Notion's useful read surfaces include POST JSON-body
+    calls, so the connector owns these few verbs directly.
     """
     cred = oauth.token("notion")
     url = f"{API_BASE}/{path.lstrip('/')}"
-    resp = _requests.post(
+    resp = _requests.request(
+        method.upper(),
         url,
         json=body,
+        params=query,
         headers={
             "Authorization": f"Bearer {cred}",
             "Notion-Version": _NOTION_VERSION,
@@ -83,6 +95,14 @@ def _post(path: str, body: dict[str, Any]) -> Any:
         return resp.json()
     except ValueError:
         raise api.ApiError(resp.status_code, f"non-JSON response: {resp.text[:200]}", url=url)
+
+
+def _get(path: str, *, query: dict[str, Any] | None = None) -> Any:
+    return _request("GET", path, query=query)
+
+
+def _post(path: str, body: dict[str, Any]) -> Any:
+    return _request("POST", path, body=body)
 
 
 def _post_paginate(path: str, body: dict[str, Any], *, page_size: int = 100) -> list[dict]:
@@ -119,7 +139,11 @@ def _plain_text(rich_text_arr: Any) -> str:
 
 
 def _extract_title(page: dict) -> str:
-    """Return the human-readable title of a page object (the first title-type property)."""
+    """Return the human-readable title of a page/data source object."""
+    if isinstance(page.get("title"), list):
+        title = _plain_text(page.get("title") or [])
+        if title:
+            return title
     props = page.get("properties") or {}
     for val in props.values():
         if isinstance(val, dict) and val.get("type") == "title":
@@ -191,15 +215,16 @@ def search(
 ) -> list[dict]:
     """POST /v1/search — find pages/databases matching a keyword, return compact page objects.
 
-    ``filter_type`` is ``"page"`` or ``"database"`` (Notion calls this value ``"page"`` for
-    pages and ``"data_source"`` for database-backed sources, but the documented filter object
-    uses ``"page"`` for pages and omits the key or passes ``"database"`` for databases).
+    ``filter_type`` is ``"page"`` or ``"data_source"``. ``"database"`` is accepted as a legacy
+    alias and mapped to ``"data_source"`` for the pinned 2026 API version.
     """
     body: dict[str, Any] = {}
     if query:
         body["query"] = query
     if filter_type:
-        # Notion's filter object: {"value": "page"|"database", "property": "object"}
+        if filter_type == "database":
+            filter_type = "data_source"
+        # Notion's filter object: {"value": "page"|"data_source", "property": "object"}
         body["filter"] = {"value": filter_type, "property": "object"}
     # Paths are relative to API_BASE (https://api.notion.com/v1); no leading "v1/" prefix.
     results = _post_paginate("search", body, page_size=page_size)
@@ -207,18 +232,43 @@ def search(
 
 
 def query_database(
-    database_id: str,
+    data_source_id: str,
     *,
     page_size: int = 100,
+    filter_json: dict[str, Any] | None = None,
+    sorts_json: list[dict[str, Any]] | None = None,
 ) -> list[dict]:
-    """POST /v1/databases/{id}/query — return all rows of a database as compact page objects.
+    """POST /v1/data_sources/{id}/query — return all rows as compact page objects.
 
-    No filter is applied (all rows returned). The agent can pipe this through ``jq`` or pass
-    ``--pick`` to narrow further.
+    ``filter_json`` and ``sorts_json`` are passed through as Notion's native query DSL. The
+    convenience wrapper exists for transport, pagination, and compact row rendering; it does not
+    reimplement Notion's full filter language.
     """
-    path = f"databases/{database_id}/query"
-    results = _post_paginate(path, {}, page_size=page_size)
+    path = f"data_sources/{data_source_id}/query"
+    body: dict[str, Any] = {}
+    if filter_json:
+        body["filter"] = filter_json
+    if sorts_json:
+        body["sorts"] = sorts_json
+    results = _post_paginate(path, body, page_size=page_size)
     return [_compact_page(r) for r in results]
+
+
+def retrieve_markdown(page_id: str, *, include_transcript: bool = False) -> dict[str, Any]:
+    """GET /v1/pages/{id}/markdown — return Notion-flavored Markdown for one page."""
+    query = {"include_transcript": "true"} if include_transcript else None
+    return _get(f"pages/{page_id}/markdown", query=query)
+
+
+def _loads_json_arg(value: str) -> Any:
+    if value == "-":
+        value = sys.stdin.read()
+    return json.loads(value)
+
+
+def retrieve_row(page_id: str) -> dict[str, Any]:
+    """GET /v1/pages/{id} with compact property rendering."""
+    return _compact_page(_get(f"pages/{page_id}"))
 
 
 def _results_to_markdown(results: list[dict], heading: str) -> str:
@@ -241,19 +291,45 @@ def _results_to_markdown(results: list[dict], heading: str) -> str:
     return "\n".join(lines)
 
 
+def _page_markdown_to_markdown(result: dict[str, Any]) -> str:
+    md = result.get("markdown") or ""
+    lines = [md.rstrip(), ""]
+    if result.get("truncated"):
+        unknown = result.get("unknown_block_ids") or []
+        lines.append(f"\n<!-- truncated; unknown_block_ids={unknown} -->")
+    return "\n".join(lines).lstrip()
+
+
+def _page_to_markdown(page: dict[str, Any], heading: str = "Notion page") -> str:
+    return _results_to_markdown([page], heading)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m lib.connectors.notion")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("search", help="search pages/databases by keyword (POST /v1/search)")
     s.add_argument("query", nargs="?", default="", help="keyword to search (omit for all)")
-    s.add_argument("--filter", dest="filter_type", choices=["page", "database"],
-                   help="restrict to pages or databases")
+    s.add_argument(
+        "--filter",
+        dest="filter_type",
+        choices=["page", "data_source", "database"],
+        help="restrict to pages or data sources (database is a legacy alias)",
+    )
     s.add_argument("--page-size", type=int, default=100)
 
-    q = sub.add_parser("query-db", help="list all rows in a database (POST /v1/databases/{id}/query)")
-    q.add_argument("database_id", help="Notion database UUID")
+    q = sub.add_parser("query-db", help="list rows in a data source")
+    q.add_argument("data_source_id", help="Notion data source UUID")
     q.add_argument("--page-size", type=int, default=100)
+    q.add_argument("--filter-json", help="Notion data source query filter JSON")
+    q.add_argument("--sorts-json", help="Notion data source query sorts JSON array")
+
+    pm = sub.add_parser("page-md", help="read one page as Notion-flavored Markdown")
+    pm.add_argument("page_id")
+    pm.add_argument("--include-transcript", action="store_true")
+
+    rr = sub.add_parser("row", help="read one database row/page by id")
+    rr.add_argument("page_id")
 
     args = parser.parse_args(argv)
 
@@ -261,8 +337,21 @@ def main(argv: list[str] | None = None) -> int:
         results = search(args.query, filter_type=args.filter_type, page_size=args.page_size)
         print(_results_to_markdown(results, f'Notion search: "{args.query}"'))
     elif args.cmd == "query-db":
-        results = query_database(args.database_id, page_size=args.page_size)
-        print(_results_to_markdown(results, f"Notion database: {args.database_id}"))
+        filter_json = _loads_json_arg(args.filter_json) if args.filter_json else None
+        sorts_json = _loads_json_arg(args.sorts_json) if args.sorts_json else None
+        results = query_database(
+            args.data_source_id,
+            page_size=args.page_size,
+            filter_json=filter_json,
+            sorts_json=sorts_json,
+        )
+        print(_results_to_markdown(results, f"Notion data source: {args.data_source_id}"))
+    elif args.cmd == "page-md":
+        print(_page_markdown_to_markdown(
+            retrieve_markdown(args.page_id, include_transcript=args.include_transcript),
+        ))
+    elif args.cmd == "row":
+        print(_page_to_markdown(retrieve_row(args.page_id), f"Notion row: {args.page_id}"))
     else:
         parser.error("unknown command")
         return 2

@@ -1,4 +1,4 @@
-"""Fixture tests for the Notion connector (script connector — POST-backed search + query-db).
+"""Fixture tests for the Notion connector (script connector — body-backed Notion read APIs).
 
 No live creds, no network: HTTP is mocked with ``responses``. Bodies are Notion's documented
 example payloads (developers.notion.com/reference/pagination + /reference/page-object), trimmed to
@@ -6,11 +6,11 @@ support-relevant fields.
 
 Tests cover:
   - YAML manifest loads via lib.api's loader and maps every field correctly.
-  - Cursor pagination stitches ≥2 pages on both POST endpoints (search + query-db).
+  - Cursor pagination stitches ≥2 pages on POST endpoints (search + query-db).
   - Bearer credential rides every POST request (auth strategy consistent with manifest).
   - Notion-Version header is present on every request.
   - ``api.pick`` selects support fields from GET-based pages.
-  - CLI drives the script connector (search and query-db subcommands).
+  - CLI drives the script connector (search, markdown, and compact row-read subcommands).
   - Token-hygiene guard: no real Notion token prefix leaks into the connector dir.
 
     cd runtime && uv run --with . --with pytest --with responses --with vcrpy --no-project pytest tests/test_notion_connector.py -q
@@ -34,7 +34,9 @@ from lib.connectors import notion as notion_conn  # noqa: E402
 API_BASE = "https://api.notion.com/v1"
 SEARCH_URL = f"{API_BASE}/search"
 DB_ID = "a7c5e2d9-1234-4abc-8def-000000000001"
-DB_QUERY_URL = f"{API_BASE}/databases/{DB_ID}/query"
+DB_QUERY_URL = f"{API_BASE}/data_sources/{DB_ID}/query"
+PAGE_1_URL = f"{API_BASE}/pages/a7c5e2d9-1234-4abc-8def-000000000002"
+PAGE_1_MARKDOWN_URL = f"{PAGE_1_URL}/markdown"
 
 # ---------------------------------------------------------------------------
 # Documented example page objects (trimmed to support-relevant fields)
@@ -91,6 +93,25 @@ _PAGE_2 = {
             "rich_text": [{"plain_text": "All steps completed."}],
         },
     },
+}
+
+_PAGE_MARKDOWN = {
+    "object": "page_markdown",
+    "id": _PAGE_1["id"],
+    "markdown": "Body line\n- [ ] old task",
+    "truncated": False,
+    "unknown_block_ids": [],
+}
+
+_DATA_SOURCE_SEARCH_RESULT = {
+    "object": "data_source",
+    "id": DB_ID,
+    "url": "https://www.notion.so/Data-Source-a7c5e2d912344abc8def000000000001",
+    "created_time": "2024-01-01T00:00:00.000Z",
+    "last_edited_time": "2024-06-15T09:30:00.000Z",
+    "parent": {"type": "database_id", "database_id": "db-container"},
+    "title": [{"type": "text", "text": {"content": "Support Queue"}, "plain_text": "Support Queue"}],
+    "properties": {},
 }
 
 # Two-page search response: page 1 has has_more=True + next_cursor; page 2 is the last page.
@@ -155,7 +176,7 @@ class NotionManifest(unittest.TestCase):
         self.assertEqual(n.auth.strategy, "bearer")
         # Notion-Version required header must be declared
         self.assertIn("Notion-Version", n.default_headers)
-        self.assertEqual(n.default_headers["Notion-Version"], "2022-06-28")
+        self.assertEqual(n.default_headers["Notion-Version"], "2026-03-11")
 
     def test_manifest_pagination_fields(self):
         m = api.load_manifests()
@@ -250,7 +271,7 @@ class NotionSearchPagination(unittest.TestCase):
         for call in responses_lib.calls:
             version = call.request.headers.get("Notion-Version", "")
             self.assertEqual(
-                version, "2022-06-28",
+                version, "2026-03-11",
                 f"Notion-Version header missing or wrong on POST: {version!r}",
             )
 
@@ -269,16 +290,42 @@ class NotionSearchPagination(unittest.TestCase):
     def test_search_filter_type_sent_in_body(self):
         responses_lib.add(responses_lib.POST, SEARCH_URL, json=_SEARCH_PAGE_2, status=200)
 
-        notion_conn.search("pages only", filter_type="page")
+        notion_conn.search("data sources only", filter_type="data_source")
 
         call_body = json.loads(responses_lib.calls[0].request.body)
         self.assertIn("filter", call_body)
-        self.assertEqual(call_body["filter"]["value"], "page")
+        self.assertEqual(call_body["filter"]["value"], "data_source")
         self.assertEqual(call_body["filter"]["property"], "object")
+
+    @responses_lib.activate
+    def test_search_database_alias_maps_to_data_source(self):
+        responses_lib.add(responses_lib.POST, SEARCH_URL, json=_SEARCH_PAGE_2, status=200)
+
+        notion_conn.search("legacy alias", filter_type="database")
+
+        call_body = json.loads(responses_lib.calls[0].request.body)
+        self.assertEqual(call_body["filter"]["value"], "data_source")
+
+    @responses_lib.activate
+    def test_search_data_source_extracts_top_level_title(self):
+        responses_lib.add(
+            responses_lib.POST, SEARCH_URL,
+            json={
+                "object": "list",
+                "results": [_DATA_SOURCE_SEARCH_RESULT],
+                "has_more": False,
+                "next_cursor": None,
+            },
+            status=200,
+        )
+
+        results = notion_conn.search("support", filter_type="data_source")
+
+        self.assertEqual(results[0]["title"], "Support Queue")
 
 
 class NotionQueryDatabase(unittest.TestCase):
-    """POST /v1/databases/{id}/query stitches pages and pre-selects fields."""
+    """POST /v1/data_sources/{id}/query stitches pages and pre-selects fields."""
 
     def setUp(self):
         self._saved = os.environ.get("RC_CONN_NOTION")
@@ -322,6 +369,67 @@ class NotionQueryDatabase(unittest.TestCase):
         call2_body = json.loads(responses_lib.calls[1].request.body)
         self.assertEqual(call2_body.get("start_cursor"), "db-cursor-xyz789")
 
+    @responses_lib.activate
+    def test_query_db_passes_filter_and_sorts_json(self):
+        responses_lib.add(responses_lib.POST, DB_QUERY_URL, json=_DB_QUERY_PAGE_2, status=200)
+
+        notion_conn.query_database(
+            DB_ID,
+            filter_json={"property": "Status", "status": {"equals": "Open"}},
+            sorts_json=[{"property": "Due", "direction": "ascending"}],
+        )
+
+        call_body = json.loads(responses_lib.calls[0].request.body)
+        self.assertEqual(call_body["filter"]["property"], "Status")
+        self.assertEqual(call_body["sorts"][0]["property"], "Due")
+
+
+class NotionMarkdown(unittest.TestCase):
+    """Current Notion Markdown API wrapper reads page content."""
+
+    def setUp(self):
+        self._saved = os.environ.get("RC_CONN_NOTION")
+        os.environ["RC_CONN_NOTION"] = "secret_" + "notion_markdown_test"
+
+    def tearDown(self):
+        if self._saved is None:
+            os.environ.pop("RC_CONN_NOTION", None)
+        else:
+            os.environ["RC_CONN_NOTION"] = self._saved
+
+    @responses_lib.activate
+    def test_retrieve_markdown_uses_current_version_and_query(self):
+        responses_lib.add(responses_lib.GET, PAGE_1_MARKDOWN_URL, json=_PAGE_MARKDOWN, status=200)
+
+        result = notion_conn.retrieve_markdown(_PAGE_1["id"], include_transcript=True)
+
+        self.assertEqual(result["markdown"], _PAGE_MARKDOWN["markdown"])
+        call = responses_lib.calls[0].request
+        self.assertEqual(call.headers.get("Notion-Version"), "2026-03-11")
+        self.assertIn("include_transcript=true", call.url)
+
+class NotionDatabaseRows(unittest.TestCase):
+    """Rows are pages; the connector reads and renders them compactly."""
+
+    def setUp(self):
+        self._saved = os.environ.get("RC_CONN_NOTION")
+        os.environ["RC_CONN_NOTION"] = "secret_" + "notion_rows_test"
+
+    def tearDown(self):
+        if self._saved is None:
+            os.environ.pop("RC_CONN_NOTION", None)
+        else:
+            os.environ["RC_CONN_NOTION"] = self._saved
+
+    @responses_lib.activate
+    def test_retrieve_row_compacts_page_properties(self):
+        responses_lib.add(responses_lib.GET, PAGE_1_URL, json=_PAGE_1, status=200)
+
+        row = notion_conn.retrieve_row(_PAGE_1["id"])
+
+        self.assertEqual(row["title"], "Meeting Notes")
+        self.assertEqual(row["properties"]["Status"], "In Progress")
+
 
 class NotionPickViaLibApi(unittest.TestCase):
     """lib.api's GET client + pick() work on Notion GET endpoints (pages, databases, blocks)."""
@@ -350,7 +458,7 @@ class NotionPickViaLibApi(unittest.TestCase):
         # Verify Notion-Version rode along on the GET too.
         self.assertEqual(
             responses_lib.calls[0].request.headers.get("Notion-Version"),
-            "2022-06-28",
+            "2026-03-11",
         )
         # pick() extracts dotted paths from the raw body
         picked = api.pick(body, "id,url,last_edited_time")
@@ -407,8 +515,30 @@ class NotionCLIDrive(unittest.TestCase):
 
         self.assertEqual(rc, 0)
         output = buf.getvalue()
-        self.assertIn(f"Notion database: {DB_ID}", output)
+        self.assertIn(f"Notion data source: {DB_ID}", output)
         self.assertIn("Onboarding Checklist", output)
+
+    @responses_lib.activate
+    def test_cli_page_md_prints_markdown(self):
+        responses_lib.add(responses_lib.GET, PAGE_1_MARKDOWN_URL, json=_PAGE_MARKDOWN, status=200)
+
+        buf = io.StringIO()
+        with patch("sys.stdout", buf):
+            rc = notion_conn.main(["page-md", _PAGE_1["id"]])
+
+        self.assertEqual(rc, 0)
+        self.assertIn("Body line", buf.getvalue())
+
+    @responses_lib.activate
+    def test_cli_row_prints_markdown(self):
+        responses_lib.add(responses_lib.GET, PAGE_1_URL, json=_PAGE_1, status=200)
+
+        buf = io.StringIO()
+        with patch("sys.stdout", buf):
+            rc = notion_conn.main(["row", _PAGE_1["id"]])
+
+        self.assertEqual(rc, 0)
+        self.assertIn("Meeting Notes", buf.getvalue())
 
     @responses_lib.activate
     def test_cli_lib_api_get_notion(self):

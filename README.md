@@ -84,11 +84,11 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 ## Single Version Line
 
 The plugin versions, `rootcause-runtime` pin, workspace image tag, and production runtime pin move
-together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.43`**.
+together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.44`**.
 
 - Runtime pin:
-  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.43#subdirectory=runtime`
-- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.43`
+  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.44#subdirectory=runtime`
+- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.44`
 
 Check coherence:
 

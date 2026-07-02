@@ -1,17 +1,17 @@
 key: notion
 name: Notion
 kinds: [token, oauth]
-# Script connector: Notion's search and database-query endpoints are POSTs with JSON bodies —
-# lib.api is GET-only. The script wraps those POST calls with field pre-selection and delegates
-# plain GETs (retrieve page, retrieve database, block children) to lib.api's generic cursor client.
+# Script connector: Notion's search, data-source-query, and markdown-read endpoints use request
+# shapes that lib.api's GET CLI cannot express ergonomically. The script wraps those calls with
+# field pre-selection while plain GETs can still use lib.api's generic client.
 # Force-code triggers fired: (3) POST transport for search/query DSL + (1) field pre-selection
-# (raw page `properties` objects are enormous; the script extracts the 4-6 support fields).
+# (raw page `properties` objects are enormous; the script extracts support fields).
 connector_module: lib.connectors.notion
 env_var: RC_CONN_NOTION
 egress_hosts:
   - api.notion.com
 # --- Generic lib.api caller fields (the compact declarative row) ---
-# Used for GET endpoints: /v1/pages/{id}, /v1/databases/{id}, /v1/blocks/{id}/children.
+# Used for GET endpoints: /v1/pages/{id}, /v1/data_sources/{id}, /v1/blocks/{id}/children.
 base_url: https://api.notion.com/v1
 auth:
   strategy: bearer          # integration token or OAuth access token, both as `Authorization: Bearer …`
@@ -23,7 +23,7 @@ pagination:
   items_field: results      # all Notion list responses wrap items under `results`
   page_size: 100            # maximum page_size Notion allows
 default_headers:
-  Notion-Version: "2022-06-28"   # required by Notion; pinned stable version
+  Notion-Version: "2026-03-11"   # required by Notion; markdown API lives in this version
 rate_limit:
   # Notion does not expose a remaining-count header — it returns 429 + Retry-After (seconds),
   # which lib.api already honours.
@@ -35,29 +35,39 @@ oauth:
   # page-picker UX at authorization time. Pass an empty default_scopes list.
   default_scopes: []
 help_md: |
-  Reads Notion pages, databases, blocks, and search results for support grounding. Read-only
-  (GETs + POST-based search/query that only read). Integration token or OAuth; token needs to
-  be shared with the pages/databases you want the agent to read.
+  Reads Notion pages, data sources/databases, blocks, search results, and Notion-flavored Markdown.
+  Integration token or OAuth; the token needs to be shared with the pages/databases you want the
+  agent to access. Prefer the script CLI for markdown reads and data source queries; use lib.api
+  for simple raw GETs.
 
-  The script connector exposes two POST-based operations (search, database query) that lib.api
-  cannot express as GETs, plus field pre-selection over the large `properties` objects.
+  Notion write APIs (create/update Markdown, row create/update/archive) are intentionally not exposed
+  from this read-tier grounding connector. Use the action plane for state-changing workflows so the
+  human review gate stays intact.
 
-  Script CLI (POST-backed operations):
+  Script CLI:
       # Find pages/databases by title keyword
       python -m lib.connectors.notion search "customer onboarding"
       python -m lib.connectors.notion search "bug report" --filter page
+      python -m lib.connectors.notion search "roadmap" --filter data_source
 
-      # List all entries in a database (no filter)
-      python -m lib.connectors.notion query-db <database_id>
-      python -m lib.connectors.notion query-db <database_id> --page-size 50
+      # List/query data source entries
+      python -m lib.connectors.notion query-db <data_source_id>
+      python -m lib.connectors.notion query-db <data_source_id> --page-size 50
+      python -m lib.connectors.notion query-db <data_source_id> --filter-json '{"property":"Status","status":{"equals":"Open"}}'
+
+      # Markdown page flows
+      python -m lib.connectors.notion page-md <page_id>
+
+      # Data source rows are Notion pages
+      python -m lib.connectors.notion row <page_id>
 
   Generic lib.api CLI (GET endpoints — paths relative to base_url https://api.notion.com/v1):
       # Retrieve a single page
       python -m lib.api get notion pages/<page_id> \
         --pick id,url,created_time,last_edited_time
 
-      # Retrieve a database schema
-      python -m lib.api get notion databases/<database_id> \
+      # Retrieve a data source schema
+      python -m lib.api get notion data_sources/<data_source_id> \
         --pick id,url,title.*.plain_text
 
       # Walk block children (page body)
