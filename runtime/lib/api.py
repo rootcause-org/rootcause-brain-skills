@@ -18,9 +18,10 @@ guidance), raise LOUDLY with the failing provider detail on error rather than re
 empty/partial, and take the credential from ``lib.oauth.token`` so it never lands in argv, logs, or
 model context.
 
-Auth is the credential VALUE injected as ``RC_CONN_<KEY>`` plus a manifest-declared *strategy* that
-says where it goes (bearer header / basic / api-key header / query param / oauth2 client-credentials).
-An API key always goes in a HEADER, never the query string.
+Env-token auth is the credential VALUE injected as ``RC_CONN_<KEY>`` plus a manifest-declared
+*strategy* that says where it goes (bearer header / basic / api-key header / query param / oauth2
+client-credentials). Brokered connectors route through ``http://rc-broker.internal/<key>/...`` and
+attach no credential client-side. An API key always goes in a HEADER, never the query string.
 
 ``requests`` is imported lazily so ``from lib import api`` loads even where it isn't installed (the
 manifest helpers and CLI ``--help`` work on a bare host).
@@ -29,13 +30,14 @@ manifest helpers and CLI ``--help`` work on a bare host).
 from __future__ import annotations
 
 import json
+import os
 import random
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Iterator
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 
 from lib import oauth
 
@@ -63,6 +65,10 @@ MAX_RETRY_AFTER = 120.0
 
 # Hard ceiling on auto-paging so a runaway cursor (server bug, our bug) can't loop forever.
 DEFAULT_MAX_PAGES = 1000
+
+_BROKER_BASE_URL = "http://rc-broker.internal"
+_BROKERED_KEYS_ENV = "RC_API_BROKERED_KEYS"
+_ROSTER_ENVS = ("RC_INTEGRATIONS", "RC_ACTIVE_INTEGRATIONS", "RC_CONNECTIONS")
 
 
 class ApiError(RuntimeError):
@@ -154,6 +160,7 @@ class Manifest:
     rate_limit_remaining_header: str = ""  # e.g. "X-RateLimit-Remaining"; advisory pacing only
     default_headers: dict[str, str] = field(default_factory=dict)
     allowed_post_paths: tuple[str, ...] = ()
+    brokered: bool = False
 
 
 @dataclass
@@ -443,7 +450,7 @@ class Client:
 
         verb = method.upper()
         read_tier = self._assert_method_allowed(verb, path)
-        url = _join(self.manifest.base_url, path)
+        url = self._request_url(path)
         req_headers = dict(self.manifest.default_headers)
         req_headers.update(headers or {})
         if idempotency_key:
@@ -514,6 +521,8 @@ class Client:
     def _apply_auth(self, headers: dict, query: dict) -> None:
         """Place the credential per the manifest auth strategy. An api-key always goes in a HEADER;
         ``query_param`` exists only for APIs that genuinely require it and is used sparingly."""
+        if self.manifest.brokered:
+            return
         cred = self.credential
         a = self.manifest.auth
         strat = a.strategy
@@ -720,13 +729,14 @@ class Client:
         """
         import requests
 
-        url = _join(self.manifest.base_url, url)
+        upstream_url = _join(self.manifest.base_url, url)
         # SECURITY: the next-page URL comes from the upstream RESPONSE (body field or Link header). We are
         # about to re-attach the connector's live credential to it, so a hostile/compromised upstream that
         # returns `next: https://attacker/…` would otherwise exfiltrate the token (the run egress can be in
         # wildcard mode). Pin the follow to the ORIGIN request's site; a cross-site next is a hard refusal,
         # never a silent partial. (origin_url defaults to base_url for any non-paginated direct call.)
-        _assert_same_site(self.manifest.key, origin_url or self.manifest.base_url, url)
+        _assert_same_site(self.manifest.key, origin_url or self.manifest.base_url, upstream_url)
+        request_url = self._request_url(url)
         req_headers = dict(self.manifest.default_headers)
         req_headers.update(headers or {})
         empty: dict[str, Any] = {}
@@ -738,17 +748,22 @@ class Client:
         attempt = 0
         while True:
             resp = requests.request(
-                verb, url, params=params, headers=req_headers,
+                verb, request_url, params=params, headers=req_headers,
                 timeout=(self.connect_timeout, self.read_timeout),
             )
             if 200 <= resp.status_code < 300:
                 return resp
             retryable = resp.status_code in _RETRYABLE_STATUS and retry_read
             if not retryable or attempt >= self.max_retries:
-                raise ApiError(resp.status_code, _body_text(resp), url=url,
+                raise ApiError(resp.status_code, _body_text(resp), url=request_url,
                                retryable=resp.status_code in _RETRYABLE_STATUS)
             _sleep(self._retry_delay(resp, attempt), self._sleeper)
             attempt += 1
+
+    def _request_url(self, path: str) -> str:
+        if self.manifest.brokered:
+            return _broker_url(self.manifest.key, path, base_url=self.manifest.base_url)
+        return _join(self.manifest.base_url, path)
 
     def _extract_items(self, body: Any) -> list:
         p = self.manifest.pagination
@@ -778,14 +793,15 @@ class Client:
 
 
 def client(manifest: Manifest, *, token_key: str | None = None, **kw) -> Client:
-    """Build a ``Client``, resolving the credential from ``lib.oauth.token`` (``RC_CONN_<KEY>``).
+    """Build a ``Client``, resolving env-token credentials or selecting broker mode.
 
-    Raises loudly (via ``oauth.token``) when the connection isn't configured, so a script fails with
-    the exact missing ``RC_CONN_*`` instead of making anonymous calls. ``auth.strategy == "none"``
-    skips credential resolution.
+    Env-token connectors raise loudly (via ``oauth.token``) when the connection isn't configured, so
+    a script fails with the exact missing ``RC_CONN_*`` instead of making anonymous calls.
+    ``auth.strategy == "none"`` and brokered connectors skip credential resolution.
     """
+    manifest = _manifest_with_runtime_broker_flag(manifest, token_key=token_key)
     cred = ""
-    if manifest.auth.strategy not in ("none", ""):
+    if not manifest.brokered and manifest.auth.strategy not in ("none", ""):
         cred = oauth.token(token_key or manifest.key)
     return Client(manifest=manifest, credential=cred, **kw)
 
@@ -803,6 +819,92 @@ def _join(base: str, path: str) -> str:
     # urljoin drops the base path unless it ends in "/"; we want base_url to be a prefix, so join
     # against base_url + "/" and strip the leading "/" off path.
     return urljoin(base.rstrip("/") + "/", path.lstrip("/"))
+
+
+def _broker_url(key: str, path: str, *, base_url: str = "") -> str:
+    broker_base = f"{_BROKER_BASE_URL}/{quote(key.strip(), safe='')}"
+    return _join(broker_base, _broker_relative_path(path, base_url))
+
+
+def _broker_relative_path(path: str, base_url: str) -> str:
+    if path.startswith("http://"):
+        raise RuntimeError("brokered integration URLs must use https")
+    if not path.startswith("https://"):
+        return path
+    return "__url/" + quote(path, safe="")
+
+
+def _manifest_with_runtime_broker_flag(manifest: Manifest, *, token_key: str | None = None) -> Manifest:
+    if manifest.brokered:
+        return manifest
+    if _roster_marks_brokered(token_key or manifest.key):
+        return replace(manifest, brokered=True)
+    return manifest
+
+
+def _roster_marks_brokered(key: str) -> bool:
+    key = (key or "").strip()
+    if not key:
+        return False
+    if _key_in_brokered_keys_env(key):
+        return True
+    for name in _ROSTER_ENVS:
+        raw = os.environ.get(name, "").strip()
+        if not raw:
+            continue
+        try:
+            roster = json.loads(raw)
+        except ValueError:
+            continue
+        if _json_roster_marks_brokered(roster, key):
+            return True
+    return False
+
+
+def _key_in_brokered_keys_env(key: str) -> bool:
+    raw = os.environ.get(_BROKERED_KEYS_ENV, "").strip()
+    if not raw:
+        return False
+    try:
+        parsed = json.loads(raw)
+    except ValueError:
+        parsed = re.split(r"[\s,]+", raw)
+    if isinstance(parsed, dict):
+        return _json_roster_marks_brokered(parsed, key)
+    if isinstance(parsed, list):
+        return any(str(v).strip() == key for v in parsed)
+    return False
+
+
+def _json_roster_marks_brokered(roster: Any, key: str) -> bool:
+    if isinstance(roster, dict):
+        direct = roster.get(key)
+        if _entry_marks_brokered(direct):
+            return True
+        for bucket in ("integrations", "connections", "active_integrations"):
+            if _json_roster_marks_brokered(roster.get(bucket), key):
+                return True
+        return False
+    if isinstance(roster, list):
+        for entry in roster:
+            if not isinstance(entry, dict):
+                continue
+            entry_key = entry.get("key") or entry.get("integration_key") or entry.get("connector_key")
+            if str(entry_key or "").strip() == key and _entry_marks_brokered(entry):
+                return True
+    return False
+
+
+def _entry_marks_brokered(entry: Any) -> bool:
+    if isinstance(entry, bool):
+        return entry
+    if isinstance(entry, str):
+        return entry.strip().lower() in {"broker", "brokered", "true", "1", "yes"}
+    if isinstance(entry, dict):
+        for field in ("brokered", "credential_exposure", "exposure", "injection", "credential_injection"):
+            if _entry_marks_brokered(entry.get(field)):
+                return True
+    return False
 
 
 def _normalize_json_alias(kw: dict[str, Any]) -> None:
@@ -1024,6 +1126,15 @@ def _manifest_from_dict(raw: dict) -> Manifest:
     if not isinstance(post_raw, list):
         raise ValueError("'read_endpoints.post' must be a list")
     allowed_post_paths = tuple(str(v) for v in post_raw if str(v).strip())
+    brokered = _entry_marks_brokered(
+        {
+            "brokered": raw.get("brokered"),
+            "credential_exposure": raw.get("credential_exposure"),
+            "exposure": raw.get("exposure"),
+            "injection": raw.get("injection"),
+            "credential_injection": raw.get("credential_injection"),
+        }
+    )
 
     return Manifest(
         key=key,
@@ -1033,6 +1144,7 @@ def _manifest_from_dict(raw: dict) -> Manifest:
         rate_limit_remaining_header=rate_limit_remaining_header,
         default_headers=default_headers,
         allowed_post_paths=allowed_post_paths,
+        brokered=brokered,
     )
 
 
@@ -1044,7 +1156,7 @@ def _main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def add_common(sp, *, body: bool = False) -> None:
-        sp.add_argument("key", help="integration key (RC_CONN_<KEY> must be injected)")
+        sp.add_argument("key", help="integration key (env-token or brokered connection must be available)")
         sp.add_argument("path", help="API path under the manifest base_url, or an absolute URL")
         sp.add_argument("--query", action="append", default=[], metavar="K=V", help="query param (repeatable)")
         sp.add_argument("--paginate", action="store_true", help="auto-page and collect all items")

@@ -6,6 +6,7 @@ mocked with the `responses` library. These lock down the logic that decides *wha
 """
 
 import random
+import os
 import sys
 import unittest
 from io import BytesIO
@@ -96,6 +97,72 @@ class AuthPlacement(unittest.TestCase):
         c = api.Client(manifest=_manifest(auth=api.Auth(strategy="none")), credential="")
         c.get("ping")
         self.assertNotIn("Authorization", responses.calls[0].request.headers)
+
+
+class BrokeredRouting(unittest.TestCase):
+    @responses.activate
+    def test_brokered_manifest_routes_to_virtual_host_without_auth(self):
+        responses.add(responses.GET, "http://rc-broker.internal/demo/ping", json={"ok": True})
+        m = _manifest(auth=api.Auth(strategy="bearer"), brokered=True)
+        with mock.patch.object(api.oauth, "token") as token:
+            c = api.client(m)
+        token.assert_not_called()
+        self.assertEqual(c.get("ping"), {"ok": True})
+        self.assertEqual(responses.calls[0].request.url, "http://rc-broker.internal/demo/ping")
+        self.assertNotIn("Authorization", responses.calls[0].request.headers)
+
+    @responses.activate
+    def test_brokered_roster_env_routes_without_env_token(self):
+        responses.add(responses.GET, "http://rc-broker.internal/demo/ping", json={"ok": True})
+        with mock.patch.dict(os.environ, {"RC_CONNECTIONS": '[{"key":"demo","brokered":true}]'}, clear=False):
+            with mock.patch.object(api.oauth, "token") as token:
+                c = api.client(_manifest(auth=api.Auth(strategy="api_key_header", name="X-Api-Key")))
+        token.assert_not_called()
+        c.get("/ping")
+        self.assertNotIn("X-Api-Key", responses.calls[0].request.headers)
+
+    @responses.activate
+    def test_brokered_keeps_read_tier_post_policy(self):
+        responses.add(responses.POST, "http://rc-broker.internal/demo/crm/search", json={"ok": True})
+        c, _ = _client(_manifest(brokered=True, allowed_post_paths=("/crm/*",)))
+        self.assertEqual(c.post("/crm/search", json_body={"filter": "alice"}), {"ok": True})
+        with self.assertRaises(api.MethodPolicyError):
+            c.post("/billing/write", json_body={"name": "alice"})
+        self.assertEqual(len(responses.calls), 1)
+
+    @responses.activate
+    def test_brokered_pagination_follow_uses_broker_and_no_auth(self):
+        m = _manifest(
+            brokered=True,
+            pagination=api.Pagination(style="link"),
+        )
+        responses.add(
+            responses.GET,
+            "http://rc-broker.internal/demo/list",
+            json=[{"id": 1}],
+            headers={"Link": '<https://api.demo.test/v1/list?page=2>; rel="next"'},
+        )
+        responses.add(
+            responses.GET,
+            "http://rc-broker.internal/demo/__url/https%3A%2F%2Fapi.demo.test%2Fv1%2Flist%3Fpage%3D2",
+            json=[{"id": 2}],
+        )
+        c, _ = _client(m)
+        result = c.collect("list")
+        self.assertEqual([it["id"] for it in result["items"]], [1, 2])
+        for call in responses.calls:
+            self.assertNotIn("Authorization", call.request.headers)
+
+    def test_brokered_absolute_url_is_encoded_for_host_broker(self):
+        got = api._broker_url("freshdesk", "https://acme.freshdesk.com/api/v2/tickets?per_page=100")
+        self.assertEqual(
+            got,
+            "http://rc-broker.internal/freshdesk/__url/https%3A%2F%2Facme.freshdesk.com%2Fapi%2Fv2%2Ftickets%3Fper_page%3D100",
+        )
+
+    def test_brokered_absolute_url_refuses_plain_http(self):
+        with self.assertRaisesRegex(RuntimeError, "https"):
+            api._broker_url("stripe", "http://api.stripe.com/v1/customers")
 
 
 class ErrorNormalization(unittest.TestCase):
@@ -630,6 +697,14 @@ class ReadMethodPolicy(unittest.TestCase):
             "read_endpoints": {"post": ["/search", "crm/*/search"]},
         })
         self.assertEqual(mani.allowed_post_paths, ("/search", "crm/*/search"))
+
+    def test_manifest_parses_broker_exposure(self):
+        mani = api._manifest_from_dict({
+            "key": "demo",
+            "base_url": "https://api.demo.test/v1",
+            "credential_exposure": "broker",
+        })
+        self.assertTrue(mani.brokered)
 
     def test_post_next_url_pagination_refused(self):
         m = _manifest(

@@ -9,6 +9,7 @@ kinds: [token, oauth]
 # `next` is correct.
 connector_module: ""
 env_var: RC_CONN_PADDLE
+credential_exposure: broker
 egress_hosts:
   - api.paddle.com
 # --- Generic lib.api caller fields (the compact declarative row) ---

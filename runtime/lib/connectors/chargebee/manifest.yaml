@@ -6,6 +6,7 @@ kinds: [token, oauth]
 # handled natively by lib.api. The agent drives it directly via `python -m lib.api get chargebee …`.
 connector_module: ""
 env_var: RC_CONN_CHARGEBEE
+credential_exposure: broker
 egress_hosts:
   - "*.chargebee.com"     # per-account subdomain: {site}.chargebee.com
 # --- Generic lib.api caller fields (the compact declarative row) ---

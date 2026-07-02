@@ -6,6 +6,7 @@ kinds: [token]
 # multi-call join or field pre-selection — the agent drives them directly with `python -m lib.api`.
 connector_module: ""
 env_var: RC_CONN_FRESHDESK
+credential_exposure: broker
 egress_hosts:
   - "*.freshdesk.com"
 # --- Generic lib.api caller fields ---

@@ -12,6 +12,7 @@ kinds: [token]
 # (a different `X-Postmark-Account-Token`) are NOT support-grounding surface and are not offered.
 connector_module: ""
 env_var: RC_CONN_POSTMARK
+credential_exposure: broker
 egress_hosts:
   - api.postmarkapp.com
 # --- Generic lib.api caller fields (the compact declarative row) ---

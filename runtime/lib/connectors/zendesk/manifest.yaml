@@ -7,6 +7,7 @@ kinds: [token, oauth]
 # extracts items dynamically from the response envelope (same pattern as lib.connectors.intercom).
 connector_module: lib.connectors.zendesk
 env_var: RC_CONN_ZENDESK
+credential_exposure: broker
 egress_hosts:
   - "*.zendesk.com"
 # --- Generic lib.api caller fields (the compact declarative row) ---

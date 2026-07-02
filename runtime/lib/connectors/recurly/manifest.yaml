@@ -9,6 +9,7 @@ kinds: [token]
 # host preserved). No per-key Python is needed.
 connector_module: ""
 env_var: RC_CONN_RECURLY
+credential_exposure: broker
 egress_hosts:
   - v3.recurly.com
   - v3.eu.recurly.com     # EU region; omit if not used but cheap to allow

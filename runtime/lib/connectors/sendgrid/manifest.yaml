@@ -7,6 +7,7 @@ kinds: [token]
 # with --query page_token=<token> since it is one-shot per support query.
 connector_module: ""
 env_var: RC_CONN_SENDGRID
+credential_exposure: broker
 egress_hosts:
   - api.sendgrid.com
 # --- Generic lib.api caller fields (the compact declarative row) ---

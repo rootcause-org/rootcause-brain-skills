@@ -11,6 +11,7 @@ kinds: [token, oauth]
 # use the same header; the host injects either as the env var value, so the strategy is consistent.
 connector_module: ""
 env_var: RC_CONN_CLICKUP
+credential_exposure: broker
 egress_hosts:
   - api.clickup.com
 # --- Generic lib.api caller fields (the compact declarative row) ---

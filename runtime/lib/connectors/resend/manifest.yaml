@@ -7,6 +7,7 @@ kinds: [token]
 # other single-page reads are still drivable via `python -m lib.api get resend <path>`.
 connector_module: lib.connectors.resend
 env_var: RC_CONN_RESEND
+credential_exposure: broker
 egress_hosts:
   - api.resend.com
 # --- Generic lib.api caller fields (the compact declarative row) ---

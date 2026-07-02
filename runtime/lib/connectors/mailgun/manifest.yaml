@@ -9,6 +9,7 @@ kinds: [token]
 # The /domains endpoint supports ?skip=N but support queries rarely need full-scan paging.
 connector_module: ""
 env_var: RC_CONN_MAILGUN
+credential_exposure: broker
 egress_hosts:
   - api.mailgun.net
   - api.eu.mailgun.net

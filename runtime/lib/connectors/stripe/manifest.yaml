@@ -3,6 +3,7 @@ name: Stripe
 kinds: [token]
 connector_module: lib.connectors.stripe
 env_var: RC_CONN_STRIPE
+credential_exposure: broker
 egress_hosts:
   - api.stripe.com
 # Generic lib.api caller fields (the compact declarative row). A connector exists here only because
