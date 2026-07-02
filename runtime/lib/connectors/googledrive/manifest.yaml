@@ -24,21 +24,22 @@ rate_limit:
 oauth:
   auth_url: https://accounts.google.com/o/oauth2/v2/auth
   token_url: https://oauth2.googleapis.com/token
-  # CASA footgun: drive.readonly is a RESTRICTED scope (triggers OAuth App Verification + security
-  # assessment for server-side storage). For metadata-only use cases, prefer
-  # drive.metadata.readonly (sensitive, not restricted). Use drive.readonly only when file content
-  # download is required. Both are listed here; operators should pick the narrowest that fits.
+  # Drive is the "Google document tree" bundle: consent once for Drive file reads plus native Google
+  # Docs and Sheets reads. drive.readonly is RESTRICTED (OAuth App Verification + security assessment)
+  # but required for files.export / content sync; metadata-only is not enough for KB mirroring.
   default_scopes:
-    - https://www.googleapis.com/auth/drive.metadata.readonly
+    - https://www.googleapis.com/auth/drive.readonly
+    - https://www.googleapis.com/auth/documents.readonly
+    - https://www.googleapis.com/auth/spreadsheets.readonly
 help_md: |
-  Reads Google Drive file metadata, folder contents, and shared drive listings for support
-  diagnosis ("which files exist, who owns them, when were they last modified"). Read-only — only
-  ever issues GETs against the Drive v3 REST API.
+  Reads Google Drive file metadata, folder contents, shared drive listings, and native Google
+  document/sheet content for support diagnosis. Read-only — only ever issues GETs against the
+  Drive v3 REST API.
 
-  **CASA scope note:** `drive.metadata.readonly` (sensitive) covers listing/searching file metadata
-  and is sufficient for most support cases. `drive.readonly` (restricted, requires Google security
-  assessment for server-side storage) is needed only if downloading file content. Use the narrowest
-  scope that fits the project's need.
+  **OAuth scope bundle:** the Drive connection asks for `drive.readonly`, `documents.readonly`,
+  and `spreadsheets.readonly` together. That single Google read consent supports Drive listings,
+  Google Docs reads, and Google Sheets reads; `drive.readonly` is restricted but needed for
+  Drive file export / content mirroring.
 
   **Pagination:** cursor-based via `nextPageToken` / `pageToken`. Use `--paginate` to auto-collect
   all pages. `pageSize` max is 100.
