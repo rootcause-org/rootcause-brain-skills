@@ -64,6 +64,8 @@ Details: [docs/side-effects.md](docs/side-effects.md).
   it does not reproduce read-only mounts, container isolation, OS behavior, or production egress.
 - `docker` mode uses the published workspace image and read-only mounts. It still does not prove the
   production egress allowlist.
+- `rc db` / `rc bash` are the preferred production debugging path for exact SQL, scripts, logs, and
+  tool parity; they are much faster than wrapping the check in an LLM run.
 - `rc ask --brain-ref dev/<branch>` is the full production-loop confidence check without moving live
   refs.
 - `rc brain sync` refreshes the deployed brain cache from `origin/main` and invalidates warm `rc bash`
@@ -84,11 +86,11 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 ## Single Version Line
 
 The plugin versions, `rootcause-runtime` pin, workspace image tag, and production runtime pin move
-together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.49`**.
+together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.50`**.
 
 - Runtime pin:
-  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.49#subdirectory=runtime`
-- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.49`
+  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.50#subdirectory=runtime`
+- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.50`
 
 Check coherence:
 

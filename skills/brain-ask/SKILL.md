@@ -5,9 +5,10 @@ description: Ask a real production rootcause brain using `rc ask`, then verify t
 
 # brain-ask - ask a real prod brain
 
-Use Brain Ask for production-loop `rc ask` validation, usually after a pushed `dev/*` ref. If
-validating local/unpushed brain edits, running grounding scripts, tenant projection, local tests,
-mirror-dependent checks, or action dry-runs, use Local Brain Work (`local-brain-work`) first.
+Use Brain Ask for production-loop `rc ask` validation, usually after a pushed `dev/*` ref. It is the
+full LLM wrapper, not the fast path for debugging scripts. If validating a known production primitive,
+checking tool parity, running grounding scripts, inspecting schemas, reading logs, tenant projection,
+local tests, mirror-dependent checks, or action dry-runs, use `prod-console` / Local Brain Work first.
 
 Run `rc ask` from inside the current brain checkout. The `rc` CLI auto-targets the project from the
 brain metadata and uses the logged-in OAuth token; no SSM or operator access.
@@ -26,8 +27,9 @@ Read:
 ## Workflow
 
 1. Require a question. If absent, ask for it and stop. Use default `rc ask` for a customer-style
-   support email simulation. Add `--scenario raw` for direct investigations, debugging, schema/data
-   questions, or downstream-AI answers.
+   support email simulation. Add `--scenario raw` for direct investigations or downstream-AI answers
+   only when the full LLM loop is what needs validation; use `rc db` / `rc bash` for exact script,
+   schema, data, and log checks.
 
 2. Trigger and wait:
    ```bash

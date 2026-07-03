@@ -147,6 +147,10 @@ rc bash run 'rg -n -i "invoice|payment|refund" /kb /brain/knowledge -g "*.md" 2>
 
 For KB title/frontmatter indexes, see [knowledge-base.md](knowledge-base.md).
 
+Prefer `rc db` and `rc bash` for debugging, tool parity, and "does this script/query work?" loops.
+They run the production primitive directly and return faster than `rc ask`, which adds the LLM wrapper
+and is best for full-loop behavior checks or ambiguous investigations.
+
 ## Author -> Verify Loop
 
 Before changing a brain or action blindly:

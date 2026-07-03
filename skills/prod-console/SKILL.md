@@ -13,6 +13,10 @@ The console is public `rc` only. Do not use private RootCause repos, host shells
 customer credentials. Scope comes from `.rootcause.toml`, the active OAuth login, and optional
 `--project` / `--tenant`.
 
+For debugging, tool parity, and "does this script/query work?" checks, prefer `rc db` and `rc bash`.
+They are the fast production primitives. `rc ask` wraps those primitives in an LLM run and should be
+reserved for full-loop behavior validation, ambiguous investigations, or customer-style simulations.
+
 ## Required Context
 
 Read:
