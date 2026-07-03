@@ -134,7 +134,9 @@ rc env pull
 
 `rc env pull` writes the production grounding `.env` using the logged-in OAuth token. It prints no
 secret values. If a private DB is not reachable from the laptop, treat that as an infra boundary and
-verify with `rc ask` instead of forcing local live tests.
+verify with `rc db` or `rc bash` instead of forcing local live tests. Local `lib.db` connection attempts
+fail after 15 seconds with that guidance because production DSNs are often IP/region allowlisted for
+RootCause infra.
 
 If a brain edit introduces a new read-only credential, follow `docs/secrets.md`: document the env var
 name only, set it with `printf %s "$SECRET_VALUE" | rc env set key=NAME`, then `rc env pull` before live

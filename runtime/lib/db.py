@@ -31,6 +31,7 @@ import re
 import warnings
 
 DEFAULT_TIMEOUT_MS = 30_000
+DEFAULT_CONNECT_TIMEOUT_SECONDS = 15
 
 # The host's own operational store (registry + River + audit log) — never a grounding target.
 # Excluded from discovery so the agent can't accidentally pick it.
@@ -502,7 +503,32 @@ def query(
             f"scope_manifest. Ran the trimmed query; the rest of your result is intact.",
             stacklevel=2,
         )
-    with psycopg.connect(dsn, autocommit=False) as conn:
+    try:
+        conn_cm = psycopg.connect(
+            dsn,
+            autocommit=False,
+            connect_timeout=DEFAULT_CONNECT_TIMEOUT_SECONDS,
+        )
+    except Exception as e:  # noqa: BLE001 - psycopg connection errors vary by driver/libpq path.
+        hint = (
+            f"Database connection failed before the query could run "
+            f"(connect_timeout={DEFAULT_CONNECT_TIMEOUT_SECONDS}s)."
+        )
+        if os.environ.get("RC_LOCAL_BRAIN_RUN"):
+            hint += (
+                " This was a local brain_run.py live check; project DSNs are often IP/region "
+                "allowlisted for RootCause production. Use `rc db ...` for direct SQL or "
+                "`rc bash run 'python /brain/skills/.../scripts/<script>.py ...'` to run the "
+                "same brain script on RootCause infra."
+            )
+        else:
+            hint += (
+                " If this happened from a laptop/local live check, prefer `rc db ...` or `rc bash run ...` "
+                "so the read executes on RootCause production infra."
+            )
+        raise RuntimeError(f"{hint}\n\nOriginal error: {type(e).__name__}: {e}") from e
+
+    with conn_cm as conn:
         # Read-only transaction: a write attempt errors instead of mutating customer data.
         conn.read_only = True
         with conn.cursor() as cur:

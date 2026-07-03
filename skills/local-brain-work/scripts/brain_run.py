@@ -145,6 +145,7 @@ def _run_uv(brain_dir: Path, mirrors: dict[str, Path], args, module, target, res
             return 1
         invocation, script_dir = [str(script), *rest], script.parent
     child = E.uv_child_env(secrets, [script_dir] if script_dir else [], args.mirrors_root)
+    child["RC_LOCAL_BRAIN_RUN"] = "1"
     if not E.preflight_lib_db(child):
         return 1
     print(f"[uv mode] {E.UV_MODE_CAVEATS}", file=sys.stderr)

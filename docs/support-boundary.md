@@ -9,7 +9,7 @@ surface or in managed infrastructure.
 | Wrong query, missing playbook, bad prompt knowledge, missing action description | Brain change. |
 | `.rootcause.toml` missing or wrong | Brain repo setup; ask RootCause support if you cannot edit it. |
 | OAuth/login/scope failure | Project auth setup or RootCause support. Include `rc whoami` output. |
-| Private DB unreachable from laptop | Expected infra boundary. Verify with `rc ask`, not local live tests. |
+| Private DB unreachable from laptop | Expected infra boundary. Local `lib.db` fails after a 15s connect timeout; verify with `rc db` / `rc bash`, not local live tests. |
 | Stale or failed mirror | RootCause mirror pipeline/support. Brain changes do not refresh mirrors. |
 | No inbound email run at all | Upstream channel/ReplyPen routing or RootCause support. |
 | Callback rejected or dead-lettered | RootCause/channel integration. Use `rc thread`/`rc health` evidence. |
