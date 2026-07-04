@@ -11,6 +11,9 @@ egress_hosts:
   - api.intercom.io
   - api.eu.intercom.io
   - api.au.intercom.io
+inbox:
+  capability_key: intercom.inbox
+kb_source: true
 # --- Generic lib.api caller fields (the compact declarative row) ---
 base_url: https://api.intercom.io
 auth:

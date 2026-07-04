@@ -10,6 +10,8 @@ env_var: RC_CONN_GMAIL
 egress_hosts:
   - gmail.googleapis.com
   - oauth2.googleapis.com     # token refresh endpoint
+inbox:
+  capability_key: gmail.inbox
 # --- Generic lib.api caller fields (the compact declarative row) ---
 base_url: https://gmail.googleapis.com/gmail/v1
 auth:

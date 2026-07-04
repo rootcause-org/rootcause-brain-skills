@@ -11,6 +11,8 @@ env_var: RC_CONN_MSOUTLOOKMAIL
 egress_hosts:
   - graph.microsoft.com
   - login.microsoftonline.com   # OAuth token refresh (host-side) — egress guard coverage
+inbox:
+  capability_key: outlook.inbox
 # --- Generic lib.api caller fields (the compact declarative row) ---
 base_url: https://graph.microsoft.com/v1.0
 auth:
