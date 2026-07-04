@@ -1,14 +1,16 @@
-"""Mollie support connector: read payments/refunds and prepare refund evidence.
+"""Mollie support connector: read payment state and prepare action evidence.
 
 Force-code trigger: Mollie v2 paginates with HAL ``_links.next.href`` while list items sit under a
 resource-specific ``_embedded.<resource>`` key. The connector extracts that variable envelope and keeps
-the common support reads compact. It remains read-only; refund POSTs live under ``lib.action.mollie``.
+the common support reads compact. It remains read-only; money-moving POSTs live under
+``lib.action.mollie``.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -23,6 +25,7 @@ MANIFEST = _MANIFEST
 
 _LIST_RESOURCES = {
     "payments": "/payments",
+    "payment-links": "/payment-links",
     "refunds": "/refunds",
     "balances": "/balances",
     "settlements": "/settlements",
@@ -33,6 +36,7 @@ _LIST_RESOURCES = {
 
 _GET_RESOURCES = {
     "payment": "/payments/{id}",
+    "payment-link": "/payment-links/{id}",
     "refund": "/payments/{payment_id}/refunds/{id}",
     "balance": "/balances/{id}",
     "settlement": "/settlements/{id}",
@@ -49,6 +53,10 @@ _PICK_FIELDS = {
     "refunds": (
         "id,paymentId,mode,createdAt,status,amount.value,amount.currency,description,metadata,"
         "_links.payment.href"
+    ),
+    "payment-links": (
+        "id,mode,createdAt,paidAt,expiresAt,status,description,reusable,amount.value,amount.currency,"
+        "profileId,customerId,metadata,_links.paymentLink.href,_links.payments.href"
     ),
     "balances": "id,mode,createdAt,status,transferFrequency,transferThreshold,value.value,value.currency",
     "settlements": "id,reference,createdAt,settledAt,status,amount.value,amount.currency,periods",
@@ -177,6 +185,35 @@ def payment_refunds(payment_id: str, *, query: dict[str, Any] | None = None, max
     return {"items": items, "incomplete": incomplete, "reason": reason}
 
 
+def payment_link_payments(
+    payment_link_id: str,
+    *,
+    query: dict[str, Any] | None = None,
+    max_pages: int = 10,
+) -> dict[str, Any]:
+    c = _client()
+    current: str | None = f"/payment-links/{payment_link_id}/payments"
+    current_query = dict(query or {})
+    items: list[Any] = []
+    pages = 0
+    incomplete = False
+    reason = ""
+    try:
+        while current and pages < max_pages:
+            body = c.get(current, query=current_query if pages == 0 else None)
+            items.extend(_items_from_body(body, "payments"))
+            current = _guard_next_url(c, _next_url(body))
+            current_query = {}
+            pages += 1
+        if current:
+            incomplete = True
+            reason = f"reached max_pages={max_pages}"
+    except api.ApiError as e:
+        incomplete = True
+        reason = f"payment-link payment fetch failed after {len(items)} item(s): {e}"
+    return {"items": items, "incomplete": incomplete, "reason": reason}
+
+
 def refund_plan(
     payment_id: str,
     *,
@@ -209,6 +246,51 @@ def refund_plan(
         "available_amount": available,
         "checks": checks,
         "action_capability": "mollie.write",
+    }
+
+
+def payment_link_plan(
+    *,
+    amount: str,
+    currency: str,
+    description: str,
+    profile_id: str = "",
+    redirect_url: str = "",
+    webhook_url: str = "",
+    expires_at: str = "",
+    reusable: bool = False,
+    lines: list[dict[str, Any]] | None = None,
+    testmode: bool | None = None,
+) -> dict[str, Any]:
+    body = {
+        "amount": {"value": amount, "currency": currency},
+        "description": description,
+    }
+    if profile_id:
+        body["profileId"] = profile_id
+    if redirect_url:
+        body["redirectUrl"] = redirect_url
+    if webhook_url:
+        body["webhookUrl"] = webhook_url
+    if expires_at:
+        body["expiresAt"] = expires_at
+    if reusable:
+        body["reusable"] = True
+    if lines:
+        body["lines"] = lines
+    if testmode is not None:
+        body["testmode"] = bool(testmode)
+    return {
+        "proposed_body": body,
+        "checks": _payment_link_checks(
+            amount=amount,
+            currency=currency,
+            description=description,
+            expires_at=expires_at,
+            lines=lines or [],
+        ),
+        "action_capability": "mollie.write",
+        "action_helper": "lib.action.mollie.create_payment_link",
     }
 
 
@@ -263,6 +345,55 @@ def _refund_checks(
     return checks
 
 
+def _payment_link_checks(
+    *,
+    amount: str,
+    currency: str,
+    description: str,
+    expires_at: str,
+    lines: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    requested = _decimal(amount)
+    checks.append({"name": "amount_positive", "ok": requested is not None and requested > 0, "observed": amount})
+    checks.append({"name": "currency_present", "ok": bool(currency), "observed": currency})
+    checks.append({"name": "description_present", "ok": bool(description.strip()), "observed": bool(description.strip())})
+    checks.append({"name": "description_length", "ok": len(description) <= 255, "observed": len(description)})
+    if expires_at:
+        checks.append({"name": "expires_at_iso8601", "ok": _is_iso8601(expires_at), "observed": expires_at})
+    if lines:
+        line_total = _lines_total(lines)
+        checks.append({
+            "name": "line_currency_matches",
+            "ok": all(_amount_currency(line.get("totalAmount")) == currency for line in lines),
+            "observed": currency,
+        })
+        checks.append({
+            "name": "line_total_matches_amount",
+            "ok": requested is not None and line_total is not None and line_total == requested,
+            "observed": str(line_total) if line_total is not None else "",
+        })
+    return checks
+
+
+def _lines_total(lines: list[dict[str, Any]]) -> Decimal | None:
+    total = Decimal("0")
+    for line in lines:
+        value = _amount_decimal(line.get("totalAmount"))
+        if value is None:
+            return None
+        total += value
+    return total
+
+
+def _is_iso8601(value: str) -> bool:
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return True
+    except ValueError:
+        return False
+
+
 def _amount_decimal(value: Any) -> Decimal | None:
     if isinstance(value, dict):
         return _decimal(str(value.get("value", "")))
@@ -292,7 +423,7 @@ def _compact(resource: str, obj: Any) -> Any:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m lib.connectors.mollie",
-        description="Read-only Mollie grounding for payments, refunds, balances, and settlements.",
+        description="Read-only Mollie grounding for payments, payment links, refunds, balances, and settlements.",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -327,6 +458,24 @@ def main(argv: list[str] | None = None) -> int:
     plan.add_argument("--description", default="")
     plan.add_argument("--testmode", default="")
 
+    link_pays = sub.add_parser("payment-link-payments", help="list payments initiated from one payment link")
+    link_pays.add_argument("payment_link_id")
+    link_pays.add_argument("--query", action="append", default=[], metavar="K=V")
+    link_pays.add_argument("--max-pages", type=int, default=10)
+    link_pays.add_argument("--no-pick", action="store_true")
+
+    link_plan = sub.add_parser("payment-link-plan", help="read-only evidence for a proposed payment link")
+    link_plan.add_argument("--amount", required=True)
+    link_plan.add_argument("--currency", required=True)
+    link_plan.add_argument("--description", required=True)
+    link_plan.add_argument("--profile-id", default="")
+    link_plan.add_argument("--redirect-url", default="")
+    link_plan.add_argument("--webhook-url", default="")
+    link_plan.add_argument("--expires-at", default="")
+    link_plan.add_argument("--reusable", action="store_true")
+    link_plan.add_argument("--lines-json", default="", help="optional JSON array of Mollie order lines")
+    link_plan.add_argument("--testmode", choices=["true", "false"], default="")
+
     args = parser.parse_args(argv)
 
     if args.cmd == "list":
@@ -360,6 +509,13 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, indent=2, default=str))
         return 0
 
+    if args.cmd == "payment-link-payments":
+        result = payment_link_payments(args.payment_link_id, query=_parse_query(args.query), max_pages=args.max_pages)
+        if not args.no_pick:
+            result["items"] = [_compact("payments", item) for item in result["items"]]
+        print(json.dumps(result, indent=2, default=str))
+        return 0
+
     if args.cmd == "refund-plan":
         print(json.dumps(refund_plan(
             args.payment_id,
@@ -367,6 +523,25 @@ def main(argv: list[str] | None = None) -> int:
             currency=args.currency,
             description=args.description,
             testmode=args.testmode,
+        ), indent=2, default=str))
+        return 0
+
+    if args.cmd == "payment-link-plan":
+        lines = json.loads(args.lines_json) if args.lines_json else None
+        if lines is not None and not isinstance(lines, list):
+            raise SystemExit("--lines-json must be a JSON array")
+        testmode = {"true": True, "false": False}.get(args.testmode)
+        print(json.dumps(payment_link_plan(
+            amount=args.amount,
+            currency=args.currency,
+            description=args.description,
+            profile_id=args.profile_id,
+            redirect_url=args.redirect_url,
+            webhook_url=args.webhook_url,
+            expires_at=args.expires_at,
+            reusable=args.reusable,
+            lines=lines,
+            testmode=testmode,
         ), indent=2, default=str))
         return 0
 

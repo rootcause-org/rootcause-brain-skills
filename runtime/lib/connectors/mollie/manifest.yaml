@@ -25,6 +25,7 @@ oauth:
   token_url: https://api.mollie.com/oauth2/tokens
   default_scopes:
     - payments.read
+    - payment-links.read
     - refunds.read
     - balances.read
     - settlements.read
@@ -32,19 +33,23 @@ oauth:
     - profiles.read
     - organizations.read
 help_md: |
-  Reads Mollie payments, refunds, balances, settlements, customers, and profiles for
+  Reads Mollie payments, payment links, refunds, balances, settlements, customers, and profiles for
   payment-support diagnosis. OAuth is preferred; API keys also work. The run connector is
-  read-only and only issues GETs. Refund creation belongs in a human-confirmed action.
+  read-only and only issues GETs. Refund and payment-link creation belong in human-confirmed actions.
 
   Best first reads:
 
       python -m lib.connectors.mollie list payments --query limit=50 --max-pages 2
+      python -m lib.connectors.mollie list payment-links --query limit=50 --max-pages 2
       python -m lib.connectors.mollie payment tr_7UhSN1zuXS --embed refunds,chargebacks
       python -m lib.connectors.mollie refund-plan tr_7UhSN1zuXS --amount 12.34 --currency EUR
+      python -m lib.connectors.mollie payment-link-plan --amount 20.00 --currency EUR --description "Invoice INV-2026-0042"
 
   Common reads:
 
       python -m lib.connectors.mollie list refunds --query limit=50 --query embed=payment
+      python -m lib.connectors.mollie get payment-link pl_4Y0eZitmBnQ6IDoMqZQKh
+      python -m lib.connectors.mollie payment-link-payments pl_4Y0eZitmBnQ6IDoMqZQKh
       python -m lib.connectors.mollie list balances
       python -m lib.connectors.mollie list settlements --query limit=25
       python -m lib.connectors.mollie get customer cst_123
@@ -53,13 +58,22 @@ help_md: |
   OAuth organization-level tokens may need `profileId=<pfl_...>` and may use `testmode=true` for test
   resources. API keys are usually profile-bound and should not send `profileId` or `testmode`.
 
-  IDs: payments usually start with `tr_`, refunds with `re_`, profiles with `pfl_`, customers with
-  `cst_`, balances with `bal_`, settlements with `stl_`. Use `--pick`-style compact output from this
-  connector first, then raw `python -m lib.api get mollie /path` only when a rare field is missing.
+  IDs: payments usually start with `tr_`, refunds with `re_`, payment links with `pl_`, profiles with
+  `pfl_`, customers with `cst_`, balances with `bal_`, settlements with `stl_`. Use `--pick`-style
+  compact output from this connector first, then raw `python -m lib.api get mollie /path` only when a
+  rare field is missing.
 
   Refunds:
   - Grounding/preflight: `refund-plan` reads the payment plus existing refunds and returns compact
     evidence for whether the amount/currency/description are plausible.
   - Execution: hosted actions can declare `connections: [mollie.write]` and call
     `from lib.action import mollie; mollie.create_payment_refund(...)`. Never POST refunds from the
+    standard run loop.
+
+  Payment links:
+  - Grounding/preflight: `payment-link-plan` validates the amount, currency, description, expiry, and
+    optional order-line totals. Use project brain guidance to decide whether a link must be attached to
+    an invoice before proposing the action.
+  - Execution: hosted actions can declare `connections: [mollie.write]` and call
+    `from lib.action import mollie; mollie.create_payment_link(...)`. Never POST payment links from the
     standard run loop.

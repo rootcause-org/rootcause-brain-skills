@@ -56,6 +56,22 @@ _REFUND_1 = {
     "description": "Partial refund",
 }
 
+_PAYMENT_LINK_1 = {
+    "resource": "payment-link",
+    "id": "pl_4Y0eZitmBnQ6IDoMqZQKh",
+    "mode": "test",
+    "createdAt": "2026-07-04T10:00:00Z",
+    "status": "open",
+    "description": "Invoice INV-2026-0042",
+    "amount": {"value": "20.00", "currency": "EUR"},
+    "profileId": "pfl_QkEhN94Ba",
+    "reusable": False,
+    "_links": {
+        "paymentLink": {"href": "https://www.mollie.com/checkout/select-method/pl_4Y0eZitmBnQ6IDoMqZQKh"},
+        "payments": {"href": f"{API_BASE}/payment-links/pl_4Y0eZitmBnQ6IDoMqZQKh/payments"},
+    },
+}
+
 
 def _page(resource: str, items: list, next_url: str | None = None) -> dict:
     return {
@@ -159,6 +175,54 @@ class TestMollieReadConnector(_MollieBase):
         self.assertTrue(checks["amount_within_remaining"])
 
     @responses_lib.activate
+    def test_payment_links_can_be_listed_and_payments_read(self):
+        responses_lib.add(
+            responses_lib.GET,
+            f"{API_BASE}/payment-links",
+            json={**_page("payment_links", [_PAYMENT_LINK_1]), "count": 1},
+            status=200,
+        )
+        responses_lib.add(
+            responses_lib.GET,
+            f"{API_BASE}/payment-links/pl_4Y0eZitmBnQ6IDoMqZQKh/payments",
+            json=_page("payments", [_PAYMENT_1]),
+            status=200,
+        )
+
+        links = mollie.list_resource("payment-links", query={"limit": "50"})
+        payments = mollie.payment_link_payments("pl_4Y0eZitmBnQ6IDoMqZQKh")
+
+        self.assertFalse(links["incomplete"], links["reason"])
+        self.assertEqual(links["items"][0]["id"], "pl_4Y0eZitmBnQ6IDoMqZQKh")
+        picked = api.pick(links["items"][0], mollie._PICK_FIELDS["payment-links"])
+        self.assertEqual(picked["amount.value"], "20.00")
+        self.assertEqual(picked["_links.paymentLink.href"], "https://www.mollie.com/checkout/select-method/pl_4Y0eZitmBnQ6IDoMqZQKh")
+        self.assertEqual(payments["items"][0]["id"], "tr_7UhSN1zuXS")
+
+    def test_payment_link_plan_validates_amount_and_line_totals(self):
+        plan = mollie.payment_link_plan(
+            amount="20.00",
+            currency="EUR",
+            description="Invoice INV-2026-0042",
+            expires_at="2026-07-31T23:59:59+00:00",
+            lines=[
+                {
+                    "description": "Open amount for invoice INV-2026-0042",
+                    "quantity": 1,
+                    "unitPrice": {"value": "20.00", "currency": "EUR"},
+                    "totalAmount": {"value": "20.00", "currency": "EUR"},
+                }
+            ],
+        )
+
+        checks = {check["name"]: check["ok"] for check in plan["checks"]}
+        self.assertTrue(checks["amount_positive"])
+        self.assertTrue(checks["expires_at_iso8601"])
+        self.assertTrue(checks["line_currency_matches"])
+        self.assertTrue(checks["line_total_matches_amount"])
+        self.assertEqual(plan["action_helper"], "lib.action.mollie.create_payment_link")
+
+    @responses_lib.activate
     def test_refund_plan_marks_incomplete_refund_history_unsafe(self):
         responses_lib.add(responses_lib.GET, f"{API_BASE}/payments/tr_7UhSN1zuXS", json=_PAYMENT_1, status=200)
         responses_lib.add(responses_lib.GET, f"{API_BASE}/payments/tr_7UhSN1zuXS/refunds", body="nope", status=500)
@@ -199,6 +263,38 @@ class TestMollieActionHelper(_MollieBase):
         self.assertEqual(req.headers.get("Authorization"), "Bearer access_fake_action_token")
         self.assertEqual(req.headers.get("Idempotency-Key"), "refund-tr_7UhSN1zuXS-1234")
         self.assertIn(b'"description": "Goodwill refund"', req.body)
+
+    @responses_lib.activate
+    def test_create_payment_link_uses_action_credential_and_returns_customer_url(self):
+        responses_lib.add(
+            responses_lib.POST,
+            f"{API_BASE}/payment-links",
+            json=_PAYMENT_LINK_1,
+            status=201,
+        )
+
+        link = action_mollie.create_payment_link(
+            amount_value="20.00",
+            currency="EUR",
+            description="Invoice INV-2026-0042",
+            profile_id="pfl_QkEhN94Ba",
+            lines=[
+                {
+                    "description": "Open amount for invoice INV-2026-0042",
+                    "quantity": 1,
+                    "unitPrice": {"value": "20.00", "currency": "EUR"},
+                    "totalAmount": {"value": "20.00", "currency": "EUR"},
+                }
+            ],
+            idempotency_key="payment-link-INV-2026-0042-2000",
+        )
+
+        self.assertEqual(link.id, "pl_4Y0eZitmBnQ6IDoMqZQKh")
+        self.assertEqual(link.payment_link, "https://www.mollie.com/checkout/select-method/pl_4Y0eZitmBnQ6IDoMqZQKh")
+        req = responses_lib.calls[0].request
+        self.assertEqual(req.headers.get("Authorization"), "Bearer access_fake_action_token")
+        self.assertEqual(req.headers.get("Idempotency-Key"), "payment-link-INV-2026-0042-2000")
+        self.assertIn(b'"profileId": "pfl_QkEhN94Ba"', req.body)
 
 
 if __name__ == "__main__":
