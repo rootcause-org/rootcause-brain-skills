@@ -1,0 +1,46 @@
+key: fireflies
+name: Fireflies.ai
+kinds: [token]
+credential_exposure: env
+credential_exposure_reason: provider-enforced read-only credential
+# Script connector: Fireflies exposes a single GraphQL endpoint and transcript search is a filter DSL.
+# Force-code trigger fired: (5) GraphQL transport / search DSL with field pre-selection.
+connector_module: lib.connectors.fireflies
+env_var: RC_CONN_FIREFLIES
+egress_hosts:
+  - api.fireflies.ai
+# --- Generic lib.api caller fields ---
+# The script owns useful reads because GraphQL POST bodies need query whitelisting. This row exists so
+# the host catalog and runtime loader know the credential, base URL, and egress shape.
+base_url: https://api.fireflies.ai/graphql
+auth:
+  strategy: bearer
+pagination:
+  style: none
+rate_limit:
+  remaining_header: ""
+help_md: |
+  Reads Fireflies.ai meeting transcript metadata, summaries, attendees, and transcript sentences for
+  support diagnosis. Read-only grounding only; this connector intentionally exposes query operations,
+  not mutations such as upload, delete, privacy, channel, AskFred thread creation, or live meeting bot
+  changes.
+
+  Prefer the script CLI because Fireflies is GraphQL and transcript search uses a provider-specific
+  filter DSL:
+      # Find recent meetings by attendee or organizer email
+      python -m lib.connectors.fireflies search --participant customer@example.com --from-date 2026-07-01 --limit 10
+      python -m lib.connectors.fireflies search --organizer teammate@example.com --to-date 2026-07-04T23:59:59Z
+
+      # Keyword search in titles or transcript text
+      python -m lib.connectors.fireflies search --keyword onboarding --scope all --limit 10
+
+      # Show one transcript summary and metadata
+      python -m lib.connectors.fireflies show <transcript_id>
+
+      # Keep stdout compact and write full sentence transcript to a temp file
+      python -m lib.connectors.fireflies show <transcript_id> --sentences-file /tmp/fireflies-transcript.txt
+
+  Date flags accept YYYY-MM-DD or ISO-8601 date-times. Fireflies caps transcript list queries at 50
+  results per request, so keep --limit small and search by participant/organizer/date first. The
+  connector returns compact Markdown by default; import lib.connectors.fireflies from a /tmp script when
+  a support investigation needs a custom read-only join.
