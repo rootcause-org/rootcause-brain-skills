@@ -1,0 +1,58 @@
+key: yuki
+name: Yuki
+kinds: [token]
+credential_exposure: env
+credential_exposure_reason: provider-enforced read-only credential
+# Script connector: Yuki is a SOAP API where the access key is exchanged for a session ID in the XML
+# body, then subsequent read methods use service-specific SOAP actions. The REST manifest caller cannot
+# represent the XML auth/session flow or the support-shaped joins, so the connector owns the SOAP
+# envelope/parsing while keeping writes out of the run-time surface.
+connector_module: lib.connectors.yuki
+env_var: RC_CONN_YUKI
+egress_hosts:
+  - api.yukiworks.be
+base_url: https://api.yukiworks.be/ws
+auth:
+  strategy: none
+pagination:
+  style: none
+help_md: |
+  Reads Yuki accounting data for support diagnosis: domains, administrations, outstanding supplier
+  invoices/payables, transaction details, archive document search, and paid/open status checks.
+  Read-only grounding only: seed a read-scoped Yuki web-service key for this connector. Uploading or
+  processing invoice files must run as a separate human-confirmed action with action credentials.
+
+  **Best first commands:**
+
+      # Discover domain and administration IDs:
+      python -m lib.connectors.yuki domains
+      python -m lib.connectors.yuki administrations --domain-id <domain-uuid>
+
+      # See open supplier invoices / purchases still needing attention:
+      python -m lib.connectors.yuki outstanding-purchases --administration-id <admin-uuid> --max-items 50
+
+      # Check whether a supplier invoice/reference is still open:
+      python -m lib.connectors.yuki invoice-status --administration-id <admin-uuid> --supplier "Acme BV" --reference "INV-2026-0042"
+
+      # Search archive documents before proposing an upload action (set domain when multi-domain):
+      python -m lib.connectors.yuki --domain-id <domain-uuid> search-documents --text "INV-2026-0042" --max-items 20
+
+  Common read flows:
+  - Use `domains`, then `administrations --domain-id ...` unless the project wrapper documents fixed IDs.
+  - Use `outstanding-purchases` to mirror the "Aan te leveren aankoopfacturen" / open creditor view.
+    It includes bank/card transactions by default because that is what the Yuki UI normally shows.
+  - Use `invoice-status` for a support answer like "is this supplier invoice already paid?" It treats a
+    matching outstanding creditor item as open/unpaid; no match means not currently open in Yuki, which
+    is usually paid/settled but should be phrased with that caveat.
+  - Use `search-documents` by supplier, invoice number, amount, or subject before proposing an upload.
+    It searches all folders/tabs by default (`-1`); pass `--domain-id` before the subcommand when the
+    connection can see multiple Yuki domains.
+
+  Upload helper posture:
+  - Runtime helpers can prepare UploadDocument/UploadDocumentWithData SOAP payload dictionaries, but they
+    do not execute uploads. Action code should import `lib.connectors.yuki.prepare_upload_document(...)`
+    or `prepare_upload_document_with_data(...)`, authenticate with action credentials, and perform the
+    SOAP write only after human confirmation. The runtime SOAP client fail-closes to read operations and
+    refuses upload/process operations.
+  - Future project-specific rules such as folder IDs, payment method IDs, cost categories, and supplier
+    naming conventions belong in `/brain/integrations/yuki/AGENTS.md`.
