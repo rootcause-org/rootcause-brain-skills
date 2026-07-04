@@ -50,7 +50,7 @@ def _load_renderer():
 
 
 def fetch_via_api(run_id: str) -> dict:
-    """The run-dump bundle (`{run, events}`) = `rc run <id> --full -o json`. `rc` carries the auth
+    """The run-dump trace bundle (`{run, events}`) = `rc run <id> --full -o json`. `rc` carries the auth
     from `rc login` and the current brain checkout; we only parse its output. Raises on a CLI/parse
     failure.
 
@@ -82,7 +82,7 @@ def fetch_via_api(run_id: str) -> dict:
     events = [strip(o) for o in objs if o.get("type") == "event"]
     if run is None:
         raise RuntimeError("`rc run --full` output has no run-header line ({type:run}) — "
-                           "is the `rc` / API version recent enough? (needs the /full endpoint)")
+                           "is the `rc` / API version recent enough? (needs the trace bundle endpoint)")
     return {"run": run, "events": events}
 
 

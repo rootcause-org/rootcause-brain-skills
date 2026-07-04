@@ -4,7 +4,7 @@
 # ///
 """Inspect the tenant projection inputs for a templated project brain.
 
-Read-only by default: fetches one tenant's settings through `rc tenant settings get`, reads the local
+Read-only by default: fetches one tenant's profile values through `rc tenant profile get`, reads the local
 `projection.yaml`, and prints the choices prod will make before mounting the ephemeral compiled view at
 `/brain`. It never writes compiled files into the brain tree. With `--write-summary`, it writes only
 debug artifacts under `.rootcause/projection/<tenant>/`.
@@ -63,23 +63,23 @@ def _load_spec(brain_dir: Path) -> dict[str, Any]:
 
 def _fetch_settings(brain_dir: Path, tenant: str) -> dict[str, Any]:
     proc = subprocess.run(
-        ["rc", "tenant", "settings", "get", "--tenant", tenant, "-o", "json"],
+        ["rc", "tenant", "profile", "get", "--tenant", tenant, "-o", "json"],
         cwd=brain_dir,
         capture_output=True,
         text=True,
     )
     if proc.returncode != 0:
         detail = proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}"
-        raise RuntimeError(f"`rc tenant settings get --tenant {tenant} -o json` failed: {detail}")
+        raise RuntimeError(f"`rc tenant profile get --tenant {tenant} -o json` failed: {detail}")
     try:
         data = json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"`rc tenant settings get` did not return JSON ({exc}): {proc.stdout[:200]!r}") from exc
+        raise RuntimeError(f"`rc tenant profile get` did not return JSON ({exc}): {proc.stdout[:200]!r}") from exc
     if not isinstance(data, dict):
-        raise RuntimeError("`rc tenant settings get` returned non-object JSON")
+        raise RuntimeError("`rc tenant profile get` returned non-object JSON")
     settings = data.get("settings") or {}
     if not isinstance(settings, dict):
-        raise RuntimeError("tenant settings response has non-object `settings`")
+        raise RuntimeError("tenant profile response has non-object `settings`")
     return data
 
 
@@ -149,7 +149,7 @@ def projection_summary(brain_dir: Path, tenant: str, spec: dict[str, Any], recor
         f"# Projection preview — {tenant}",
         "",
         f"- **Brain:** `{brain_dir}`",
-        f"- **Runtime values:** `rc tenant settings get --tenant {tenant} -o json`",
+        f"- **Runtime values:** `rc tenant profile get --tenant {tenant} -o json`",
         f"- **Tenant ID:** `{record.get('tenant_id') or '?'}`",
         f"- **Version:** `{record.get('version') or '?'}`",
         f"- **Applied at:** `{record.get('applied_at') or '?'}`",
@@ -227,7 +227,7 @@ def _safe_out_dir(brain_dir: Path, tenant: str) -> Path:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="brain_projection.py", description=__doc__.split("\n")[0])
     p.add_argument("--brain", help="project brain dir (default: cwd)")
-    p.add_argument("--tenant", required=True, help="tenant slug passed to `rc tenant settings get`")
+    p.add_argument("--tenant", required=True, help="tenant slug passed to `rc tenant profile get`")
     p.add_argument("--write-summary", action="store_true",
                    help="write summary.md + settings.json under .rootcause/projection/<tenant>/")
     args = p.parse_args(sys.argv[1:] if argv is None else argv)

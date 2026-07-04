@@ -6,7 +6,7 @@ one untruncated JSON object per tool call). This module is the single source of 
 rendering, imported by public `rc`/Local Brain Work consumers so their output stays stable:
 
   * the project-dev path — `skills/local-brain-work/scripts/brain_dump.py` here, fed by the public-API
-    bundle (`rc run <id> --full -o json`);
+    trace bundle (`rc run <id> --full -o json`);
 
 The producer normalizes its source to the **bundle dict** (`{"run": {...}, "events": [...]}`) and hands
 it here. The server

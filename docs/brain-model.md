@@ -130,7 +130,7 @@ test artifacts stay on the laptop.
 - A tenant brain, when present, holds tenant-specific natural-language overlay. Tenant values may live
   in RootCause settings rather than committed files.
 - A templated project brain may compile a tenant-specific `/brain` view from `projection.yaml` plus
-  tenant settings. Preview locally with `brain_projection.py` when present.
+  tenant profile values. Preview locally with `brain_projection.py` when present.
 
 ## Channels And Refs
 

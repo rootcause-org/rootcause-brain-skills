@@ -12,11 +12,12 @@ Committed source:
 
 - `projection.yaml` — declares placeholders, branch selectors, variants, defaults, gated files.
 - Markdown templates — contain `{{ placeholder }}` and `<!-- rc:branch -->` markers.
-- `tenant.schema.json` — validates and renders the editing surface for tenant settings.
+- `tenant.schema.json` — validates and renders the editing surface for tenant profile values.
 
 Runtime input:
 
-- Tenant settings record — the actual values in rootcause DB, under `config["dentai_settings"].settings`.
+- Tenant profile record — the actual projection values in rootcause DB, under
+  `config["dentai_settings"].settings`.
 
 Runtime output:
 
@@ -32,8 +33,8 @@ record.
 Prod uses it today:
 
 - rootcause loads `<brainRoot>/<project>/brain/tenant.schema.json` at request time.
-- `GET /api/v1/tenants/settings/schema` returns it.
-- `PATCH /api/v1/tenants/{slug}/settings` validates the merged settings record against it.
+- `rc tenant profile schema` returns it.
+- `rc tenant profile set --tenant <slug> ...` validates the merged profile record against it.
 - The operator Configuration form renders from it.
 - A project with no schema has no tenant-settings surface.
 
@@ -46,14 +47,14 @@ When editing a templated project brain for a tenant, get three things in view:
 
 ```bash
 sed -n '1,180p' projection.yaml
-rc tenant settings schema -o json
-rc tenant settings get --tenant <slug> -o json
+rc tenant profile schema -o json
+rc tenant profile get --tenant <slug> -o json
 ```
 
 The useful mental model is:
 
 ```text
-templates + projection.yaml + tenant settings record
+templates + projection.yaml + tenant profile record
   -> deterministic projection compile
   -> resolved /brain view for that one tenant
 ```
@@ -75,7 +76,7 @@ uv run "$SKILL/scripts/brain_projection.py" --tenant <slug> --write-summary
 Good behavior:
 
 - Read local `projection.yaml`.
-- Fetch tenant settings via `rc`.
+- Fetch tenant profile values via `rc`.
 - Print a concise markdown summary: settings version, branch choices, placeholder defaults used,
   gated files kept/dropped.
 - With `--write-summary`, write only the summary and fetched settings snapshot under

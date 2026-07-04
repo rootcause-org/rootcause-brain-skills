@@ -97,7 +97,7 @@ user intentionally asked for a real write. Read [docs/actions.md](../../docs/act
 ## Tenant Projection
 
 For templated shared project brains, production may compile a tenant-specific `/brain` view from
-`projection.yaml` plus tenant settings. Preview locally:
+`projection.yaml` plus tenant profile values. Preview locally:
 
 ```bash
 uv run "$SKILL/scripts/brain_projection.py" --tenant <slug>
