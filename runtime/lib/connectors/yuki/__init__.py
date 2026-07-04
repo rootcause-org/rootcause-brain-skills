@@ -39,11 +39,22 @@ SERVICES = {
 }
 
 SORT_ORDERS = {"ContactAsc", "ContactDesc", "AmountAsc", "AmountDesc", "DateAsc", "DateDesc"}
+DOCUMENT_SORT_ORDERS = {
+    "CreatedDesc",
+    "CreatedAsc",
+    "ModifiedDesc",
+    "ModifiedAsc",
+    "DocumentDateDesc",
+    "DocumentDateAsc",
+    "ContactNameAsc",
+    "ContactNameDesc",
+}
 READ_SOAP_OPERATIONS = {
     "Authenticate",
     "SetCurrentDomain",
     "Domains",
     "Administrations",
+    "AdministrationID",
     "GetTransactionDetails",
     "GetTransactions",
     "OutstandingCreditorItems",
@@ -114,6 +125,19 @@ class Client:
             self.set_current_domain(domain_id)
         result = self._session_call("accounting_info", "Administrations", {}, result_name="AdministrationsResult")
         return _records(result, preferred=("administration", "item"))
+
+    def administration_id(self, administration_name: str, *, domain_id: str | None = None) -> str:
+        if domain_id:
+            self.set_current_domain(domain_id)
+        result = self._session_call(
+            "accounting_info",
+            "AdministrationID",
+            {"administrationName": administration_name},
+            result_name="AdministrationIDResult",
+        )
+        if not isinstance(result, str) or not result.strip():
+            raise YukiError(f"Yuki administration not found: {administration_name!r}")
+        return result.strip()
 
     def set_current_domain(self, domain_id: str) -> None:
         self._session_call("accounting_info", "SetCurrentDomain", {"domainID": domain_id}, result_name=None)
@@ -190,12 +214,14 @@ class Client:
         search_option: str = "All",
         folder_id: int = -1,
         tab_id: int = -1,
-        sort_order: str = "DateDesc",
+        sort_order: str = "DocumentDateDesc",
         start_date: str = "2000-01-01",
         end_date: str | None = None,
         number_of_records: int = 50,
         start_record: int = 0,
     ) -> list[dict[str, Any]]:
+        if sort_order not in DOCUMENT_SORT_ORDERS:
+            raise YukiError(f"unsupported Yuki document sort order: {sort_order}")
         result = self._session_call(
             "archive",
             "SearchDocuments",
@@ -579,6 +605,10 @@ def main(argv: list[str] | None = None) -> int:
     admins = sub.add_parser("administrations", help="list administrations in current/domain-id domain")
     admins.add_argument("--domain-id", dest="admin_domain_id", default=None, help="domain UUID; overrides the global --domain-id")
 
+    admin_id = sub.add_parser("administration-id", help="resolve an administration UUID by name")
+    admin_id.add_argument("--name", required=True, help='administration name, e.g. "KampAdmin BV"')
+    admin_id.add_argument("--domain-id", dest="admin_id_domain_id", default=None, help="domain UUID; overrides the global --domain-id")
+
     outstanding = sub.add_parser("outstanding-purchases", help="list open supplier invoices/payables")
     outstanding.add_argument("--administration-id", required=True)
     outstanding.add_argument("--supplier", default=None)
@@ -598,6 +628,7 @@ def main(argv: list[str] | None = None) -> int:
     search.add_argument("--option", default="All", choices=["All", "Creator", "Contact", "Subject", "Tag", "Type"])
     search.add_argument("--folder-id", type=int, default=-1, help="-1 searches all folders")
     search.add_argument("--tab-id", type=int, default=-1, help="-1 searches all tabs")
+    search.add_argument("--sort-order", default="DocumentDateDesc", choices=sorted(DOCUMENT_SORT_ORDERS))
     search.add_argument("--max-items", type=int, default=50)
 
     tx = sub.add_parser("transaction-details", help="list transaction details for an administration/date range")
@@ -655,6 +686,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "administrations":
         _print_json(yuki.administrations(domain_id=args.admin_domain_id or args.global_domain_id))
         return 0
+    if args.cmd == "administration-id":
+        _print_json({"name": args.name, "administration_id": yuki.administration_id(args.name, domain_id=args.admin_id_domain_id or args.global_domain_id)})
+        return 0
     if args.cmd == "outstanding-purchases":
         items = yuki.outstanding_creditor_items(
             args.administration_id,
@@ -680,6 +714,7 @@ def main(argv: list[str] | None = None) -> int:
             search_option=args.option,
             folder_id=args.folder_id,
             tab_id=args.tab_id,
+            sort_order=args.sort_order,
             number_of_records=args.max_items,
         )
         _print_json(_limit(docs, args.max_items))

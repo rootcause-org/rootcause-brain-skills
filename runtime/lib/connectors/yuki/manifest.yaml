@@ -27,6 +27,7 @@ help_md: |
       # Discover domain and administration IDs:
       python -m lib.connectors.yuki domains
       python -m lib.connectors.yuki administrations --domain-id <domain-uuid>
+      python -m lib.connectors.yuki administration-id --domain-id <domain-uuid> --name "KampAdmin BV"
 
       # See open supplier invoices / purchases still needing attention:
       python -m lib.connectors.yuki outstanding-purchases --administration-id <admin-uuid> --max-items 50
@@ -38,7 +39,9 @@ help_md: |
       python -m lib.connectors.yuki --domain-id <domain-uuid> search-documents --text "INV-2026-0042" --max-items 20
 
   Common read flows:
-  - Use `domains`, then `administrations --domain-id ...` unless the project wrapper documents fixed IDs.
+  - Use `domains`, then `administrations --domain-id ...`, then `administration-id --name ...` unless
+    the project wrapper documents fixed IDs. Some Yuki `Administrations` responses show metadata but
+    omit the administration UUID.
   - Use `outstanding-purchases` to mirror the "Aan te leveren aankoopfacturen" / open creditor view.
     It includes bank/card transactions by default because that is what the Yuki UI normally shows.
   - Use `invoice-status` for a support answer like "is this supplier invoice already paid?" It treats a

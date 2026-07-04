@@ -67,6 +67,11 @@ ADMINISTRATIONS_BODY = _soap(
     """,
 )
 
+ADMINISTRATION_ID_BODY = _soap(
+    "AdministrationIDResponse",
+    f"<AdministrationIDResult>{ADMIN_ID}</AdministrationIDResult>",
+)
+
 OUTSTANDING_BODY = _soap(
     "OutstandingCreditorItemsResponse",
     """
@@ -187,6 +192,17 @@ class TestYukiSoapClient(unittest.TestCase):
         self.assertIn(f"<domainID>{DOMAIN_ID}</domainID>", set_domain_body)
 
     @responses_lib.activate
+    def test_administration_id_resolves_name(self):
+        _add_auth()
+        responses_lib.add(responses_lib.POST, f"{BASE}/AccountingInfo.asmx", body=ADMINISTRATION_ID_BODY, status=200)
+
+        admin_id = yuki.Client().administration_id("KampAdmin BV")
+
+        self.assertEqual(admin_id, ADMIN_ID)
+        request_body = responses_lib.calls[1].request.body.decode()
+        self.assertIn("<administrationName>KampAdmin BV</administrationName>", request_body)
+
+    @responses_lib.activate
     def test_outstanding_invoice_status_matches_supplier_reference_amount(self):
         _add_auth()
         responses_lib.add(responses_lib.POST, f"{BASE}/Accounting.asmx", body=OUTSTANDING_BODY, status=200)
@@ -224,6 +240,7 @@ class TestYukiSoapClient(unittest.TestCase):
         search_body = responses_lib.calls[1].request.body.decode()
         self.assertIn("<folderID>-1</folderID>", search_body)
         self.assertIn("<tabID>-1</tabID>", search_body)
+        self.assertIn("<sortOrder>DocumentDateDesc</sortOrder>", search_body)
 
     @responses_lib.activate
     def test_archive_search_can_set_domain_before_read(self):
