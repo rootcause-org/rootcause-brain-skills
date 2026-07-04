@@ -1,0 +1,59 @@
+key: myponto
+name: myPonto
+kinds: [oauth]
+credential_exposure: broker
+# Manifest-only integration: Ponto Connect account/transaction reads are standard JSON:API GETs with
+# bearer OAuth, host-side mTLS from oauth_app, and body-embedded `links.next` pagination. The agent can
+# compose account -> transaction reads directly with `lib.api`; no force-code trigger is present.
+connector_module: ""
+env_var: RC_CONN_MYPONTO
+egress_hosts:
+  - api.ibanity.com
+# --- Generic lib.api caller fields (the compact declarative row) ---
+base_url: https://api.ibanity.com/ponto-connect
+auth:
+  strategy: bearer
+pagination:
+  style: body_url
+  next_url_field: links.next
+  items_field: data
+  page_size: 100
+default_headers:
+  Accept: application/vnd.api+json
+rate_limit:
+  remaining_header: ""
+oauth:
+  auth_url: https://authorization.myponto.com/oauth2/auth
+  token_url: https://api.ibanity.com/ponto-connect/oauth2/token
+  pkce: true
+  default_scopes:
+    - ai
+    - offline_access
+help_md: |
+  Reads myPonto/Ponto Connect bank accounts, balances, settled transactions, and pending transactions
+  for financial support diagnosis. OAuth only; account-information scope is read-only (`ai`) and the
+  run loop only issues GETs. Ponto Connect also requires a client certificate; rootcause attaches it
+  host-side through the API broker, so it is not visible inside the run.
+
+  Best first step: list linked accounts, then use an account id to inspect transactions. Pass
+  `page[limit]=100` on list endpoints and keep output tight with `--pick`.
+
+      python -m lib.api get myponto /accounts \
+        --query 'page[limit]=100' --paginate --max-items 200 \
+        --pick id,attributes.reference,attributes.referenceType,attributes.currency,attributes.currentBalance,attributes.availableBalance,attributes.description,attributes.holderName,attributes.synchronizedAt,relationships.financialInstitution.data.id
+
+      python -m lib.api get myponto /accounts/<account_id>/transactions \
+        --query 'page[limit]=100' --query from=2026-01-01 --paginate --max-items 200 \
+        --pick id,attributes.amount,attributes.currency,attributes.status,attributes.executionDate,attributes.valueDate,attributes.counterpartName,attributes.counterpartReference,attributes.remittanceInformation,attributes.remittanceInformationType,attributes.description
+
+  Common reads:
+  - `GET /accounts` - accounts authorized during the Ponto OAuth flow, including balances and sync time.
+  - `GET /accounts/{account_id}` - one account.
+  - `GET /accounts/{account_id}/transactions` - settled transactions; supports `from`, `to`, and `page[limit]`.
+  - `GET /accounts/{account_id}/pending-transactions` - pending/unsettled transactions when the bank supports them.
+  - `GET /financial-institutions` and `/financial-institutions/{id}` - bank metadata and capabilities.
+
+  Ponto returns JSON:API envelopes under `data` and follows pagination through body `links.next`.
+  Transaction freshness depends on Ponto/bank synchronization; use `attributes.synchronizedAt` on
+  accounts when explaining whether the data is current. For deeper joins, write a short `/tmp` script
+  that lists accounts, then loops over `/accounts/{id}/transactions` with date filters.
