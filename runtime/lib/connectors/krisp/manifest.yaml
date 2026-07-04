@@ -14,8 +14,9 @@ pagination:
   style: none
 mcp_url_template: https://mcp.krisp.ai/mcp
 help_md: |
-  Reads Krisp meeting data through the hosted MCP server at `https://mcp.krisp.ai/mcp`.
-  Authentication is OAuth 2.0 with PKCE; the run receives an MCP bearer as `RC_CONN_KRISP_MCP`.
+  Reads Krisp meeting data through the hosted MCP server.
+  Server URL: `https://mcp.krisp.ai/mcp`. Authentication is OAuth 2.0 with PKCE; the run receives
+  an MCP bearer as `RC_CONN_KRISP_MCP`.
 
       python -m lib.mcp tools krisp
       python -m lib.mcp call krisp search_meetings --params '{"query":"person@example.com","limit":10}'

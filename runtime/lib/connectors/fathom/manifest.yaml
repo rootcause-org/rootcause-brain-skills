@@ -20,7 +20,7 @@ pagination:
 rate_limit:
   remaining_header: RateLimit-Remaining
 oauth:
-  auth_url: https://api.fathom.ai/external/v1/oauth2/authorize
+  auth_url: https://fathom.video/external/v1/oauth2/authorize
   token_url: https://api.fathom.ai/external/v1/oauth2/token
   default_scopes: [public_api]
 help_md: |
@@ -35,8 +35,8 @@ help_md: |
         --pick items.*.recording_id,items.*.title,items.*.created_at,items.*.calendar_invitees.*.email,items.*.crm_matches.contacts.*.email
 
       python -m lib.api get fathom meetings \
-        --query limit=100 --query "calendar_invitee_email=person@example.com" \
-        --pick items.*.recording_id,items.*.title,items.*.created_at
+        --query limit=100 --query "calendar_invitees_domains[]=example.com" \
+        --pick items.*.recording_id,items.*.title,items.*.created_at,items.*.calendar_invitees.*.email
 
       python -m lib.api get fathom recordings/RECORDING_ID/summary \
         --pick summary.template_name,summary.markdown_formatted

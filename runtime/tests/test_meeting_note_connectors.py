@@ -90,6 +90,7 @@ class ManifestRows(MeetingNoteBase):
         self.assertEqual(api.MANIFESTS["readai"].auth.strategy, "bearer")
         self.assertIn("meeting:read", readai_raw["oauth"]["default_scopes"])
         self.assertIn("mcp:execute", readai_raw["oauth"]["default_scopes"])
+        self.assertEqual(readai_raw["oauth"]["auth_url"], "https://authn.read.ai/oauth2/auth")
         self.assertEqual(readai_raw["mcp_url_template"], "https://api.read.ai/mcp")
 
         krisp_raw = self.raw_manifest("krisp")

@@ -20,13 +20,13 @@ rate_limit:
 default_headers:
   Accept: application/json
 oauth:
-  auth_url: https://api.read.ai/oauth/ui
+  auth_url: https://authn.read.ai/oauth2/auth
   token_url: https://authn.read.ai/oauth2/token
   default_scopes: [openid, email, offline_access, profile, meeting:read, mcp:execute]
 mcp_url_template: https://api.read.ai/mcp
 help_md: |
-  Reads Read AI meeting reports, summaries, chapter summaries, action items, key questions, topics,
-  transcripts, metrics, and recording-download metadata. OAuth bearer tokens are short-lived; the
+  Reads Read AI meeting reports, summaries, transcripts, action items, key questions, topics, metrics, and recording-download metadata.
+  OAuth bearer tokens are short-lived; the
   host must refresh and inject the access token.
 
   REST examples:
