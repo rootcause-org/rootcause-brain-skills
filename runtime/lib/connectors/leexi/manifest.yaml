@@ -1,0 +1,47 @@
+key: leexi
+name: Leexi
+kinds: [token]
+credential_exposure: broker
+# Manifest-only integration: Leexi API key ID + secret are sent as HTTP Basic auth.
+connector_module: ""
+env_var: RC_CONN_LEEXI
+egress_hosts:
+  - public-api.leexi.ai
+base_url: https://public-api.leexi.ai/v1
+auth:
+  strategy: basic
+pagination:
+  style: page
+  page_param: page
+  limit_param: items
+  items_field: data
+  page_size: 100
+  page_start: 1
+rate_limit:
+  remaining_header: ""
+help_md: |
+  Reads Leexi users, calls/meetings, call notes, summaries, transcripts, and AI-generated content.
+  Store the credential as `API_KEY_ID:KEY_SECRET`; lib.api sends it with HTTP Basic auth.
+
+  API-key call access scope is enforced by Leexi. If a call is outside that scope it will not list
+  and direct lookup returns 404.
+
+      python -m lib.api get leexi users \
+        --query items=100 --paginate \
+        --pick data.*.uuid,data.*.email,data.*.first_name,data.*.last_name,data.*.name
+
+      python -m lib.api get leexi calls \
+        --query items=100 --paginate \
+        --pick data.*.uuid,data.*.title,data.*.performed_at,data.*.direction,data.*.owner.email,data.*.customers.*.email,data.*.simple_transcript
+
+      python -m lib.api get leexi calls/CALL_UUID \
+        --pick uuid,title,performed_at,user.email,customers.*.email,summary,simple_transcript,topics
+
+      python -m lib.api get leexi call_notes \
+        --query items=100 --paginate \
+        --pick data.*.call_uuid,data.*.title,data.*.content,data.*.customers.*.email
+
+  For participant email search, list calls with narrow date/user filters where available, then use
+  `rg -i "person@example.com|Customer Name" /tmp/leexi-*.json` against temp files. Keep full
+  `transcript`/`simple_transcript` JSON on disk under `/tmp`; include only relevant timestamped
+  excerpts in the final draft.

@@ -1,0 +1,54 @@
+key: readai
+name: Read AI
+kinds: [oauth, mcp]
+credential_exposure: broker
+# Manifest-only REST row with optional remote MCP metadata. Read AI uses OAuth 2.1 bearer tokens.
+connector_module: ""
+env_var: RC_CONN_READAI
+egress_hosts:
+  - api.read.ai
+  - authn.read.ai
+base_url: https://api.read.ai/v1
+auth:
+  strategy: bearer
+pagination:
+  # Read AI advances list pages by passing the last meeting id as cursor. The generic pager cannot
+  # derive "last item id", so callers page manually when more than one page is needed.
+  style: none
+rate_limit:
+  remaining_header: ""
+default_headers:
+  Accept: application/json
+oauth:
+  auth_url: https://api.read.ai/oauth/ui
+  token_url: https://authn.read.ai/oauth2/token
+  default_scopes: [openid, email, offline_access, profile, meeting:read, mcp:execute]
+mcp_url_template: https://api.read.ai/mcp
+help_md: |
+  Reads Read AI meeting reports, summaries, chapter summaries, action items, key questions, topics,
+  transcripts, metrics, and recording-download metadata. OAuth bearer tokens are short-lived; the
+  host must refresh and inject the access token.
+
+  REST examples:
+
+      python -m lib.api get readai meetings \
+        --query limit=10 \
+        --pick data.*.id,data.*.title,data.*.start_time_ms,data.*.participants.*.email,data.*.summary
+
+      python -m lib.api get readai meetings \
+        --query limit=10 --query "expand[]=transcript" --query "expand[]=summary" \
+        --pick data.*.id,data.*.title,data.*.participants.*.email,data.*.summary,data.*.transcript
+
+      python -m lib.api get readai meetings/MEETING_ULID \
+        --query "expand[]=transcript" --query "expand[]=action_items" --query "expand[]=topics" \
+        --pick id,title,participants.*.email,summary,action_items,topics,transcript
+
+  Pagination is manual: when `has_more` is true, pass `cursor=<last data item id>` on the next call.
+
+  Optional MCP:
+
+      python -m lib.mcp tools readai
+      python -m lib.mcp call readai get_meeting --params '{"id":"MEETING_ULID"}'
+
+  Store large expanded meeting reports under `/tmp/readai-*.json`; use `jq`/`rg` for participant
+  emails and phrases before bringing concise transcript excerpts back into context.

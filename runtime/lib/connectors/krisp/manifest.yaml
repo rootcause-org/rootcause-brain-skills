@@ -1,0 +1,31 @@
+key: krisp
+name: Krisp
+kinds: [mcp]
+credential_exposure: broker
+# MCP-only connector. The remote server is Streamable HTTP; use lib.mcp, not lib.api.
+connector_module: ""
+env_var: RC_CONN_KRISP_MCP
+egress_hosts:
+  - mcp.krisp.ai
+base_url: ""
+auth:
+  strategy: none
+pagination:
+  style: none
+mcp_url_template: https://mcp.krisp.ai/mcp
+help_md: |
+  Reads Krisp meeting data through the hosted MCP server at `https://mcp.krisp.ai/mcp`.
+  Authentication is OAuth 2.0 with PKCE; the run receives an MCP bearer as `RC_CONN_KRISP_MCP`.
+
+      python -m lib.mcp tools krisp
+      python -m lib.mcp call krisp search_meetings --params '{"query":"person@example.com","limit":10}'
+      python -m lib.mcp call krisp get_document --params '{"id":"32charlowercasehexdocumentid"}'
+      python -m lib.mcp call krisp list_action_items --params '{"status":"pending","limit":30}'
+      python -m lib.mcp call krisp list_upcoming_meetings --params '{"days":7}'
+
+  Use `search_meetings` for participant email/name, date range, account, or phrase searches.
+  Search results include metadata, summaries, key points, and action items; call `get_document`
+  only when the full transcript or agenda is needed.
+
+  MCP results can be verbose. Save full JSON tool output to `/tmp/krisp-*.json`, inspect with
+  `jq`/`rg`, and carry back only the relevant summary/action item/transcript lines.

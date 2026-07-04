@@ -1,0 +1,53 @@
+key: fathom
+name: Fathom
+kinds: [oauth]
+credential_exposure: broker
+# Manifest-only integration: Fathom REST reads are bearer auth plus simple cursor pagination.
+connector_module: ""
+env_var: RC_CONN_FATHOM
+egress_hosts:
+  - api.fathom.ai
+base_url: https://api.fathom.ai/external/v1
+auth:
+  strategy: bearer
+pagination:
+  style: cursor
+  cursor_param: cursor
+  cursor_field: next_cursor
+  has_more_field: ""
+  items_field: items
+  page_size: 100
+rate_limit:
+  remaining_header: RateLimit-Remaining
+oauth:
+  auth_url: https://api.fathom.ai/external/v1/oauth2/authorize
+  token_url: https://api.fathom.ai/external/v1/oauth2/token
+  default_scopes: [public_api]
+help_md: |
+  Reads Fathom meetings, summaries, transcripts, teams, and team members for support grounding.
+  OAuth access tokens are sent as `Authorization: Bearer ...`; request the `public_api` scope.
+
+  Start by searching recent meetings for participant emails. Keep list output compact, then fetch
+  heavy transcript/summary data only for the recording you need:
+
+      python -m lib.api get fathom meetings \
+        --query limit=100 --paginate \
+        --pick items.*.recording_id,items.*.title,items.*.created_at,items.*.calendar_invitees.*.email,items.*.crm_matches.contacts.*.email
+
+      python -m lib.api get fathom meetings \
+        --query limit=100 --query "calendar_invitee_email=person@example.com" \
+        --pick items.*.recording_id,items.*.title,items.*.created_at
+
+      python -m lib.api get fathom recordings/RECORDING_ID/summary \
+        --pick summary.template_name,summary.markdown_formatted
+
+      python -m lib.api get fathom recordings/RECORDING_ID/transcript \
+        --pick transcript.*.speaker.display_name,transcript.*.speaker.matched_calendar_invitee_email,transcript.*.timestamp,transcript.*.text
+
+  Fathom's heavy endpoints are rate-limited more tightly. Avoid `include_transcript=true` or
+  `include_summary=true` on broad meeting scans with OAuth; fetch `/recordings/{id}/summary` and
+  `/recordings/{id}/transcript` by ID instead.
+
+  Transcript and summary payloads can be large. For analysis, write full JSON to a temp file under
+  `/tmp`, use `jq`/`rg` to search participant emails or quoted phrases, and paste back only the
+  relevant excerpts.

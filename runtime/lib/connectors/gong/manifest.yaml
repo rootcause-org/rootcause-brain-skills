@@ -1,0 +1,50 @@
+key: gong
+name: Gong
+kinds: [token]
+credential_exposure: broker
+# Manifest-only read tier for Gong's Public API. Credential is "access_key:access_key_secret".
+connector_module: ""
+env_var: RC_CONN_GONG
+egress_hosts:
+  - api.gong.io
+base_url: https://api.gong.io/v2
+auth:
+  strategy: basic
+pagination:
+  # Gong list/detail/transcript endpoints use different wrapper fields and POST-body cursors for
+  # some reads, so generic auto-pagination is intentionally disabled.
+  style: none
+rate_limit:
+  remaining_header: ""
+default_headers:
+  Accept: application/json
+  Content-Type: application/json
+read_endpoints:
+  post:
+    - /calls/extensive
+    - /calls/transcript
+help_md: |
+  Reads Gong users, calls, call details, analyzed call data, and transcripts. Store the credential
+  as `ACCESS_KEY:ACCESS_KEY_SECRET`; lib.api sends HTTP Basic auth.
+
+  Useful read paths:
+
+      python -m lib.api get gong users \
+        --pick users.*.id,users.*.emailAddress,users.*.firstName,users.*.lastName,records.cursor
+
+      python -m lib.api get gong calls \
+        --query fromDateTime=2026-01-01T00:00:00Z --query toDateTime=2026-01-31T23:59:59Z \
+        --pick calls.*.id,calls.*.title,calls.*.started,calls.*.participants.*.emailAddress,records.cursor
+
+      python -m lib.api post gong calls/extensive \
+        --json '{"filter":{"callIds":["CALL_ID"]},"contentSelector":{"context":"Extended","exposedFields":{"parties":true,"content":true,"interaction":true}}}' \
+        --pick calls.*.metaData.id,calls.*.parties,calls.*.content
+
+      python -m lib.api post gong calls/transcript \
+        --json '{"filter":{"callIds":["CALL_ID"]}}' \
+        --pick callTranscripts.*.callId,callTranscripts.*.transcript
+
+  Prefer searching calls by date window plus participant/customer email before requesting extensive
+  content or transcripts. Gong may require splitting date ranges and manually passing returned cursor
+  values. Save large transcript/extensive responses under `/tmp/gong-*.json`, use `jq`/`rg` to locate
+  participant emails and quoted phrases, then include only relevant excerpts in model context.

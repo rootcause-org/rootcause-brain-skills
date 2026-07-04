@@ -1,0 +1,43 @@
+key: fathom_apikey
+name: Fathom API Key
+kinds: [token]
+credential_exposure: broker
+# API-key fallback for private/project-owned Fathom access. Prefer the OAuth connector for public apps.
+connector_module: ""
+env_var: RC_CONN_FATHOM_APIKEY
+egress_hosts:
+  - api.fathom.ai
+base_url: https://api.fathom.ai/external/v1
+auth:
+  strategy: api_key_header
+  name: X-Api-Key
+pagination:
+  style: cursor
+  cursor_param: cursor
+  cursor_field: next_cursor
+  has_more_field: ""
+  items_field: items
+  page_size: 100
+rate_limit:
+  remaining_header: RateLimit-Remaining
+help_md: |
+  Reads Fathom meeting notes with a user-generated API key sent as `X-Api-Key`. API keys are scoped
+  to meetings recorded by the key owner or shared with that user/team; they do not bypass Fathom's
+  sharing permissions.
+
+  Use this fallback when OAuth is not provisioned:
+
+      python -m lib.api get fathom_apikey meetings \
+        --query limit=100 --paginate \
+        --pick items.*.recording_id,items.*.title,items.*.created_at,items.*.calendar_invitees.*.email
+
+      python -m lib.api get fathom_apikey meetings \
+        --query include_transcript=true --query include_summary=true --query limit=10 \
+        --pick items.*.recording_id,items.*.title,items.*.summary.markdown_formatted,items.*.transcript.*.text
+
+      python -m lib.api get fathom_apikey recordings/RECORDING_ID/transcript \
+        --pick transcript.*.speaker.display_name,transcript.*.speaker.matched_calendar_invitee_email,transcript.*.timestamp,transcript.*.text
+
+  Prefer participant email filters or date windows before requesting transcripts. Store broad raw
+  results in `/tmp/fathom-*.json`, inspect with `jq`/`rg`, and keep only short relevant transcript
+  excerpts in the model context.

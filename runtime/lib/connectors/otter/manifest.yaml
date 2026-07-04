@@ -1,0 +1,45 @@
+key: otter
+name: Otter.ai
+kinds: [token]
+credential_exposure: broker
+# Manifest-only integration: Enterprise Public API uses bearer API keys and cursor pagination.
+connector_module: ""
+env_var: RC_CONN_OTTER
+egress_hosts:
+  - api.otter.ai
+base_url: https://api.otter.ai/v1
+auth:
+  strategy: bearer
+pagination:
+  style: cursor
+  cursor_param: cursor
+  cursor_field: meta.next_cursor
+  has_more_field: meta.has_more
+  items_field: data
+  page_size: 100
+rate_limit:
+  remaining_header: ""
+help_md: |
+  Reads Otter.ai Enterprise channels, conversations, summaries, transcripts, action items, insights,
+  outlines, and workspace details. The Public API key is sent as `Authorization: Bearer ...`.
+
+  Search by participant email through conversation metadata first, then fetch one conversation with
+  expanded relationships:
+
+      python -m lib.api get otter conversations \
+        --query include_shared=true --query limit=100 --paginate \
+        --pick data.*.id,data.*.title,data.*.created_at,data.*.owner.email,data.*.calendar_guests.*.email,data.*.shared_emails.*.email,data.*.abstract_summary
+
+      python -m lib.api get otter conversations/CONVERSATION_ID \
+        --query include=all \
+        --pick data.id,data.title,data.owner.email,data.abstract_summary,data.relationships.transcript,data.relationships.action_items
+
+      python -m lib.api get otter channels \
+        --pick data.*.id,data.*.name,data.*.owner.email,data.*.member_count
+
+      python -m lib.api get otter channels/CHANNEL_ID/members \
+        --pick data.*.id,data.*.name,data.*.email
+
+  Transcript payloads are large. Save full conversation JSON to `/tmp/otter-CONVERSATION_ID.json`,
+  use `jq`/`rg` for participant emails, timestamps, and quoted phrases, then quote only the minimal
+  relevant snippets in the answer.
