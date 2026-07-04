@@ -1,0 +1,35 @@
+key: billit_apikey
+name: Billit API Key
+kinds: [token]
+credential_exposure: broker
+# API-key fallback for private/non-commercial Billit integrations. The token value is the ApiKey only;
+# PartyID remains a non-secret command argument/header because it may vary per company.
+connector_module: lib.connectors.billit_apikey
+env_var: RC_CONN_BILLIT_APIKEY
+egress_hosts:
+  - api.billit.be
+base_url: https://api.billit.be
+auth:
+  strategy: api_key_header
+  name: ApiKey
+pagination:
+  style: none
+default_headers:
+  Accept: application/json
+  Content-Type: application/json
+help_md: |
+  Reads Billit Belgian invoicing and Peppol data using a Billit API key. Prefer the `billit` OAuth
+  connector when possible; Billit documents API keys as allowed only for non-commercial/private
+  integrations.
+
+  Store the Billit secret API key as this connector's token. Pass the non-secret company PartyID on
+  each command:
+
+      python -m lib.connectors.billit_apikey --party-id <party-id> account
+      python -m lib.connectors.billit_apikey --party-id <party-id> orders --direction Cost --max-items 25
+      python -m lib.connectors.billit_apikey --party-id <party-id> order <order-id>
+      python -m lib.connectors.billit_apikey --party-id <party-id> peppol-inbox
+
+  The shared Billit connector CLI applies the `PartyID` header and keeps large file content out of
+  normal output. Direct `python -m lib.api get billit_apikey ...` attaches only `ApiKey`; it will fail
+  on Billit endpoints that require PartyID unless a temporary script calls `lib.api` with headers.

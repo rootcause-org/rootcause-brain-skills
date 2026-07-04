@@ -1,0 +1,70 @@
+key: billit
+name: Billit
+kinds: [oauth]
+credential_exposure: broker
+# Script connector: Billit needs a non-secret PartyID header on every useful API read, and its OAuth
+# token endpoint uses JSON bodies rather than the standard form-encoded OAuth request. The host owns the
+# JSON token exchange; this wrapper owns PartyID threading and support-shaped read commands.
+connector_module: lib.connectors.billit
+env_var: RC_CONN_BILLIT
+egress_hosts:
+  - api.billit.be
+base_url: https://api.billit.be
+auth:
+  strategy: bearer
+pagination:
+  style: none
+default_headers:
+  Accept: application/json
+  Content-Type: application/json
+oauth:
+  auth_url: https://my.billit.be/Account/Logon
+  token_url: https://api.billit.be/OAuth2/token
+  default_scopes: []
+help_md: |
+  Reads Billit Belgian invoicing and Peppol data for support diagnosis: account/company context,
+  sales and purchase invoices, files, delivery/status fields, and Peppol inbox items. OAuth is the
+  preferred path; Billit issues bearer access/refresh tokens after an initial user login.
+
+  Billit requires a `PartyID` header to select the company context. Pass it on each command, or document
+  the project's fixed PartyID in `/brain/integrations/billit/AGENTS.md`.
+
+  **Best first commands:**
+
+      # Check the connected company/account context:
+      python -m lib.connectors.billit --party-id <party-id> account
+
+      # Find recent purchase invoices / supplier credit notes:
+      python -m lib.connectors.billit --party-id <party-id> orders --direction Cost --max-items 25
+
+      # Find a specific invoice by number:
+      python -m lib.connectors.billit --party-id <party-id> orders --number "INV-2026-0042"
+
+      # Get one invoice/credit note with file references and delivery/status fields:
+      python -m lib.connectors.billit --party-id <party-id> order <order-id>
+
+      # Retrieve a Billit file object (content is base64; keep output small with --metadata-only):
+      python -m lib.connectors.billit --party-id <party-id> file <file-id> --metadata-only
+
+      # Inspect the Peppol inbox (oldest items first, max 10 per Billit docs):
+      python -m lib.connectors.billit --party-id <party-id> peppol-inbox
+
+  Common raw paths, when a one-off read needs the generic caller:
+  - `GET /v1/account`
+  - `GET /v1/orders?$filter=OrderType eq 'Invoice' and OrderDirection eq 'Cost'`
+  - `GET /v1/orders/{orderID}`
+  - `GET /v1/files/{fileID}`
+  - `GET /v1/peppol/inbox`
+
+  Use the connector CLI for normal reads because it applies the `PartyID` header and trims large file
+  content by default. Direct `python -m lib.api get billit ...` only works for endpoints that do not
+  require PartyID, or when a temporary script passes headers through `lib.api`.
+
+  OAuth setup notes:
+  - Billit OAuth clients are requested from Billit Support with PartyID, application name, redirect URI,
+    and environment. Sandbox and production clients are separate.
+  - Billit's public docs do not list scope strings; this connector requests no explicit scope bundle.
+    If Billit returns assigned scopes during approval, add them to the manifest before sealing the real
+    client app.
+  - API keys are documented by Billit as non-commercial/private-integration only. Use the separate
+    `billit_apikey` connector only when OAuth cannot be provisioned for that project.
