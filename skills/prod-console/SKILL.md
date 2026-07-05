@@ -29,9 +29,11 @@ Read:
 1. Discover first:
    ```bash
    rc capabilities
+   rc connection ls
    ```
    Treat it as the manifest: database short names/descriptions, cataloged scripts, available actions,
-   and which console planes are live.
+   connected OAuth/API grants, and which console planes are live. Use `-o json` when comparing exact
+   permission tiers or automation output.
    If a pushed brain script is missing or `/brain` looks stale, run:
    ```bash
    rc brain status
@@ -79,6 +81,7 @@ Read:
 5. For actions, preflight before running:
    ```bash
    rc action list
+   rc action config get
    rc action show <id>
    rc action preflight <id> --params '{"key":"value"}'
    rc action run <id> --params '{"key":"value"}'

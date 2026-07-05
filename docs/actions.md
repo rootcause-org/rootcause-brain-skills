@@ -38,29 +38,50 @@ actions/<id>/
 - `script.rb` is customer-hosted Embassy mode.
 - `script.py` is hosted Python mode and should use `lib.action`.
 
+Prefer single-purpose, reviewer-legible actions with one concrete business outcome. Split multi-system
+workflows unless the combined operation is atomic and idempotent.
+
 Action docs/runbooks should put exact safety guards and verification checks near the top: required
 evidence, disqualifying states, preflight expectations, post-execution proof, and when to refuse or
 escalate.
 
+## Inspect Access
+
+Before depending on a connector or write plane, check the project from the same login/profile that will
+run the action:
+
+```bash
+rc --project <project> connection ls -o json
+rc --project <project> capabilities -o json
+rc --project <project> action list -o json
+rc --project <project> action config get -o json
+```
+
+`connection ls` shows connected OAuth/API grants. `capabilities` shows console planes such as
+`planes.action`. `action list` shows the hosted/cataloged actions visible to this login. `action config
+get` shows whether action execution is enabled and wired. For read-plane confidence, smoke-test the
+read connector through `rc bash run 'python -m lib.api get ...'` or the provider's `lib.connectors.*`
+module.
+
 ## Hosted Python Harness
 
 Hosted Python actions import the baked runtime harness instead of hand-rolling params, result files,
-credential lookup, HTTP retries, and error envelopes.
+credential lookup, HTTP retries, and error envelopes. This minimal example shows the harness shape; add
+an action-specific idempotency/reuse guard before using a write helper in production.
 
 ```python
 #!/usr/bin/env python3
 from lib import action
-from lib.action import googledrive, notion
+from lib.action import googledrive
 
 p = action.params()
 f = p.file("attachment")
 
 uploaded = googledrive.upload_file(folder_id=p["folder_id"], file=f)
-page = notion.append_file_link(page_id=p["page_id"], title=f.filename, url=uploaded.web_url)
 
 action.ok(
-    f"Saved **{f.filename}** to Drive and linked it on the Notion page.",
-    {"drive_file_id": uploaded.id, "notion_page_id": page.id},
+    f"Saved **{f.filename}** to Drive.",
+    {"drive_file_id": uploaded.id, "drive_web_url": uploaded.web_url},
 )
 ```
 
