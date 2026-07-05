@@ -31,10 +31,13 @@ actions/<id>/
   manifest.yaml
   script.rb | script.py
   preflight.py
+  policy.py
 ```
 
-- `manifest.yaml` describes the action, param schema, and any hosted write connections.
+- `manifest.yaml` describes the action, param schema, any hosted write connections, and its `autonomy`.
 - `preflight.py`, when present, is read-only and blocks unsafe/mis-grounded params before proposal.
+- `policy.py`, when present, is read-only and decides per-invocation whether an `autonomy: policy` action
+  auto-executes or escalates to a human (see [Autonomy](#autonomy-human--policy--auto)).
 - `script.rb` is customer-hosted Embassy mode.
 - `script.py` is hosted Python mode and should use `lib.action`.
 
@@ -44,6 +47,97 @@ workflows unless the combined operation is atomic and idempotent.
 Action docs/runbooks should put exact safety guards and verification checks near the top: required
 evidence, disqualifying states, preflight expectations, post-execution proof, and when to refuse or
 escalate.
+
+## Autonomy (`human` | `policy` | `auto`)
+
+By default an action is **human-gated**: the run proposes, a reviewer confirms, and only then does the
+executor run — the flow the diagram above shows. A manifest may raise its **autonomy** so eligible actions
+execute **mid-loop** (inside the run, via the agent's `action` tool) — the agent then sees the real
+`{ok, summary}` and writes a **factual** draft from it, instead of the optimistic "as-if-done" draft used
+for human-gated proposals.
+
+```yaml
+# actions/<id>/manifest.yaml
+autonomy: human   # default (omit = human)
+# autonomy: policy   # a per-invocation policy.py decides allow → auto-execute, deny → escalate to human
+# autonomy: auto     # always auto-execute — reserve for idempotent / low-blast-radius actions
+```
+
+**You only DECLARE autonomy; the host GATES it.** The effective autonomy is
+`min(manifest, project cap)`, then clamped to `human` by any of these floors — so a raised manifest never
+means "always auto":
+
+- `projects.action_autonomy_max` — an operator-set ceiling (`human` by default). It can only lower, never
+  raise. Read it with `rc --project <p> action config get -o json` (field `action_autonomy_max`); an
+  operator raises it in the console Action settings. Until the operator raises it, every action stays
+  `human` no matter what the manifest says.
+- `risk: high` in the manifest → always `human` (risk is now **load-bearing**, not just informational).
+- **brain-TEST runs** (a `--brain-ref` dev run) → always `human`, so testing a new `auto` action never
+  fires a real write.
+- **Plane**: mid-loop is **email + analysis only**. MCP / Prompt-API / chat runs always resolve to `human`.
+- **Mode**: **hosted (`script.py`) only** in v1. Embassy (`script.rb`) actions stay `human` whatever the
+  manifest says — keep their manifests `autonomy: human`.
+
+The catalog the agent sees labels each action with its **effective** autonomy (`(auto)`, `(policy-gated)`,
+or nothing for human) — so the agent is never told it can auto-run something the cap or a floor forbids.
+
+### `policy.py` — the per-invocation gate
+
+`autonomy: policy` **requires** a `policy.py` (the host refuses to resolve the action without one). It is
+**orthogonal to preflight**: preflight answers *"will these params do the intended thing?"* (advisory,
+agent-visible, runs in the live run container); policy answers *"is a human needed for THIS invocation?"*
+(authorization). An action may have either, both, or neither.
+
+Because the verdict **replaces a human**, policy runs **host-side** in a fresh one-shot **read-only
+grounding container** (the grounding `.env` read DSNs, brain `:ro`, no write plane, no agent) — a run
+cannot forge it. Contract, mirroring preflight:
+
+- params in via `$RC_POLICY_PARAMS` (JSON), verdict out to `$RC_POLICY_RESULT`:
+  `{"allow": bool, "reason": "human-readable", "observed": {...}?}`.
+- `reason` rides back to the agent and onto the human-confirm button on a deny, so write it for the reviewer.
+- **Fail-closed to escalate, NEVER allow**: a crash, timeout, non-zero exit, unparseable result, or a
+  missing `allow` key all resolve to `deny` → the action escalates to the ordinary human-confirm proposal.
+  A `deny` is never a hard refusal — the capability still runs, just with a human in the loop.
+
+```python
+#!/usr/bin/env python3
+# actions/refund_order/policy.py — auto-refund small orders, escalate the rest.
+import json, os
+from lib import db  # grounding read plane (RC_TENANT_ID/RC_TENANT_SLUG also available when tenant-bound)
+
+p = json.load(open(os.environ["RC_POLICY_PARAMS"]))
+order = db.query_one("select total_cents, status from orders where id = %s", [p["order_id"]])
+
+allow = bool(order) and order["status"] == "paid" and order["total_cents"] <= 5000
+reason = "order ≤ €50 and paid — safe to auto-refund" if allow else "over the €50 auto-refund cap or not in a refundable state — needs a human"
+
+json.dump({"allow": allow, "reason": reason, "observed": {"total_cents": order and order["total_cents"]}},
+          open(os.environ["RC_POLICY_RESULT"], "w"))
+```
+
+**Determinism is burned at approval.** `policy.py` is part of the action's composite **approval digest**
+(manifest + script + policy + preflight), so once an action version is approved the rule that gates its
+autonomy cannot silently drift. Put project-specific thresholds (refund caps, allowed settings) **in the
+script or in files in this brain** — brains are per-project, so this stays data-not-code with no host
+branching. `approved_by` on the settled row records exactly which rule authorized a write
+(`policy:<approval_digest>` or `autonomy:auto`).
+
+### Best practices
+
+- **Default to `human`.** Raise autonomy only for an action whose blast radius you would sign off on
+  unsupervised, with params a burned rule already vets.
+- **`auto` only for idempotent / low-blast-radius** actions (resend a receipt, regenerate a token,
+  re-enqueue a mailer) — something a retry or a wrong-but-valid param can't make dangerous. The mid-loop
+  path dedups real River retries by `(run_id, action_id, sha256(params))`, but design the write to be
+  safely repeatable anyway.
+- **Prefer `policy` over `auto`** whenever a data-observable precondition separates the safe cases from the
+  ones that need a human (an amount cap, a state check, a whitelist). Keep the policy tight and readable —
+  a reviewer approves it at the library gate.
+- **Scope tenant writes by the trusted identity.** On a tenant-enabled project the policy (and the body)
+  must read `RC_TENANT_ID` / `RC_TENANT_SLUG` and treat `params` as the untrusted in-tenant target only —
+  never let params choose the tenant.
+- **Write the draft factually for executed actions.** When an action auto-executes, the run already has the
+  real result — an `ok:false` outcome means adapt the draft or escalate, not claim success.
 
 ## Inspect Access
 
@@ -146,13 +240,18 @@ and opts that request into transient-status retry.
 SKILL=<local-brain-work skill dir>
 uv run "$SKILL/scripts/brain_action.py" --list
 uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --preflight-only
+uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --policy-only   # Layer-1 + preflight + the autonomy verdict
 uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>'
 uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --commit
 ```
 
-Default body execution is a local dry-run rollback. `--commit` writes for real to whatever
-`.env.action` targets; use only safe local/staging targets unless explicitly intending a real write.
-Inside scripts, `action.dry_run()` follows `--commit` > `--dry-run` > `RC_ACTION_DRY_RUN=1`.
+The runner reproduces the prod ordering — Layer-1 → preflight → **policy gate** → write body. `--policy-only`
+runs `policy.py` read-only in the grounding env and prints whether this invocation would **auto-execute**
+(allow) or **escalate to a human** (deny), with the exit code reflecting the verdict — the way to iterate on
+an `autonomy: policy` rule before publishing. Default body execution is a local dry-run rollback. `--commit`
+writes for real to whatever `.env.action` targets; use only safe local/staging targets unless explicitly
+intending a real write. Inside scripts, `action.dry_run()` follows `--commit` > `--dry-run` >
+`RC_ACTION_DRY_RUN=1`.
 
 For tenant-enabled projects, use `action.require_tenant()` and scope every write by the trusted
 `RC_TENANT_ID` / `RC_TENANT_SLUG` values, never by model-proposed params.

@@ -17,7 +17,11 @@ It gives the same feedback prod would, at the same points:
   2. **Preflight** (`preflight.py`, if present) — runs read-only in the GROUNDING env (the brain `./.env`
      read DSNs), exactly as the host's in-loop Layer-2. Fail-closed: `ok:false`/crash/unparseable stops
      the run and prints the reason.
-  3. **Write body** (`script.py`) — runs against the sealed **`./.env.action` ONLY** (never the grounding
+  3. **Policy gate** (`policy.py`, if present) — runs read-only in the same GROUNDING env, exactly as the
+     host's `PolicyRunner` does for an `autonomy: policy` action. Prints the verdict for THIS invocation:
+     `allow` (would auto-execute mid-loop) or `deny` (would escalate to human). Informational for the local
+     body test; `--policy-only` turns the verdict into the exit code.
+  4. **Write body** (`script.py`) — runs against the sealed **`./.env.action` ONLY** (never the grounding
      `.env`), mirroring the prod container env precisely: a read DSN the body needs but that's missing
      from `.env.action` fails locally the same way it would in prod. Delivered the `RC_ACTION_PARAMS` /
      `RC_ACTION_RESULT` file contract; **dry-run by default** (`RC_ACTION_DRY_RUN=1`).
@@ -221,6 +225,51 @@ def run_preflight(brain_dir: Path, action_path: Path, params: dict, mirrors_root
     return ok
 
 
+def run_policy(brain_dir: Path, action_path: Path, manifest: dict, params: dict, mirrors_root: str | None) -> bool:
+    """Run policy.py read-only in the grounding env, exactly as the host's PolicyRunner does for an
+    `autonomy: policy` action. Reports whether THIS invocation would auto-execute (allow) or escalate to
+    a human (deny). Returns True on allow / no-policy, False on deny/crash/unparseable (fail-closed).
+
+    Unlike preflight this is INFORMATIONAL for the local loop: a deny doesn't block the write-body test
+    (in prod a deny just routes the action back through human-confirm, which still runs the body later) —
+    it tells you the autonomy verdict the agent would get. `--policy-only` uses the return value as the
+    exit code so you can gate CI on it."""
+    autonomy = str(manifest.get("autonomy") or "human").strip()
+    pol = action_path / "policy.py"
+    print("\n── policy gate (read-only, grounding plane) ──────────────────────────")
+    if not pol.is_file():
+        note = "no policy.py"
+        if autonomy == "policy":
+            note += " — but manifest says `autonomy: policy`, which REQUIRES one (the host refuses to resolve this action)"
+        print(f"policy: {note} (autonomy: {autonomy})")
+        return autonomy != "policy"
+    if autonomy != "policy":
+        print(f"⚠️  policy.py present but manifest autonomy is `{autonomy}` — the gate only runs for `autonomy: policy`; showing the verdict anyway.")
+
+    secrets = E.brain_secrets(brain_dir, required=True)  # policy needs the grounding read DSNs
+    if secrets is None:
+        return False
+    child = E.uv_child_env(secrets, [pol.parent], mirrors_root)
+    with tempfile.TemporaryDirectory() as td:
+        result_file = Path(td) / "policy_result.json"
+        child["RC_POLICY_PARAMS"] = json.dumps(params)
+        child["RC_POLICY_RESULT"] = str(result_file)
+        proc = _run_child(child, pol, label="policy")
+        result = _load_result_file(result_file, proc)
+
+    if result is None:
+        _emit_child_logs(proc)
+        print("❌ policy produced no parseable verdict — treating as deny (fail-closed → escalate to human).")
+        return False
+    allow = bool(result.get("allow"))
+    print(("✅ allow — would auto-execute mid-loop" if allow else "🔒 deny — would escalate to human confirm"))
+    if result.get("reason"):
+        print(f"   reason: {result['reason']}")
+    if result.get("observed"):
+        print("   observed: " + json.dumps(result["observed"], indent=2, default=str).replace("\n", "\n   "))
+    return allow
+
+
 def run_body(brain_dir: Path, action_path: Path, manifest: dict, params: dict, *, commit: bool) -> int:
     """Run script.py against `.env.action` ONLY (faithful to the prod action container), dry-run unless
     --commit. Returns a process exit code."""
@@ -293,6 +342,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--params-file", help="read params JSON from a file instead of --params")
     p.add_argument("--preflight-only", action="store_true", help="run Layer-1 + preflight, skip the write body")
     p.add_argument("--no-preflight", action="store_true", help="skip the preflight (Layer-1 still runs)")
+    p.add_argument("--policy-only", action="store_true", help="run Layer-1 + preflight + policy gate, skip the write body; exit code reflects the allow/deny verdict")
+    p.add_argument("--no-policy", action="store_true", help="skip the policy gate (Layer-1 + preflight still run)")
     p.add_argument("--commit", action="store_true", help="really commit the write (default: dry-run/rollback)")
     p.add_argument("--mirrors-root", help="dir whose immediate subdirs are source mirrors (for the preflight)")
     p.add_argument("--list", action="store_true", help="list the brain's actions and exit")
@@ -356,7 +407,18 @@ def main(argv: list[str] | None = None) -> int:
         print("\n(--preflight-only: stopping before the write body)")
         return 0
 
-    # 3. write body
+    # 3. policy gate (informational unless --policy-only): the autonomy verdict for THIS invocation.
+    policy_allow = True
+    if not args.no_policy:
+        policy_allow = run_policy(brain_dir, action_path, manifest, params, args.mirrors_root)
+    else:
+        print("policy: skipped (--no-policy)", file=sys.stderr)
+
+    if args.policy_only:
+        print("\n(--policy-only: stopping before the write body)")
+        return 0 if policy_allow else 1
+
+    # 4. write body
     print(f"\n[brain-action] {E.UV_MODE_CAVEATS}", file=sys.stderr)
     return run_body(brain_dir, action_path, manifest, params, commit=args.commit)
 
