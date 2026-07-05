@@ -78,7 +78,7 @@ Read when relevant:
    rc triage policy get -o json
    rc triage policy set "Draft customer support questions; ignore vendor newsletters and automated alerts."
    rc triage rules ls -o json
-   rc triage rules add effect=exclude match_kind=subject_contains pattern="newsletter" reason="marketing mail"
+   rc triage rules add effect=skip match_kind=subject_contains pattern="newsletter" reason="marketing mail"
    ```
    Keep persona and triage concise. If guidance starts becoming product knowledge or a runbook, put it
    in the brain instead.

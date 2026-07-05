@@ -33,7 +33,7 @@ rc config hierarchy set persona.guidance="..."
 rc triage policy get
 rc triage policy set "..."
 rc triage rules ls
-rc triage rules add effect=exclude match_kind=subject_contains pattern="newsletter"
+rc triage rules add effect=skip match_kind=subject_contains pattern="newsletter"
 rc brain status
 rc brain sync
 rc env keys
@@ -109,7 +109,7 @@ rc config hierarchy set persona.tone="..." persona.guidance="..."
 rc triage policy get -o json
 rc triage policy set "..."
 rc triage rules ls -o json
-rc triage rules add effect=exclude match_kind=subject_contains pattern="newsletter" reason="marketing mail"
+rc triage rules add effect=skip match_kind=subject_contains pattern="newsletter" reason="marketing mail"
 ```
 
 Persona settings own voice, language, formality, signature, and wording preferences. Triage policy/rules
