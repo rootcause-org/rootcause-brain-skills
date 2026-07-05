@@ -34,6 +34,7 @@ rc triage policy get
 rc triage policy set "..."
 rc triage rules ls
 rc triage rules add effect=skip match_kind=subject_contains pattern="newsletter"
+rc triage rules add effect=force_process match_kind=sender_email pattern="vip@example.com"
 rc brain status
 rc brain sync
 rc env keys
@@ -110,6 +111,7 @@ rc triage policy get -o json
 rc triage policy set "..."
 rc triage rules ls -o json
 rc triage rules add effect=skip match_kind=subject_contains pattern="newsletter" reason="marketing mail"
+rc triage rules add effect=force_process match_kind=sender_email pattern="vip@example.com" reason="VIP support mailbox"
 ```
 
 Persona settings own voice, language, formality, signature, and wording preferences. Triage policy/rules
