@@ -58,6 +58,8 @@ Read these before changing product-facing docs/skills:
 Only these are first-class:
 
 - `local-brain-work` — local scripts/tests/projection/action checks; broad router.
+- `brain-dream-cycle` — local consolidation from run feedback/sent deltas/patterns using public `rc`,
+  including persona and triage setting updates.
 - `brain-ask` — last-mile prod/test run validation with `rc ask`.
 - `rc-debug` — one run/thread/session trace; inspect/propose/stop before edits.
 - `rc-health` — stale mirrors and dead-lettered runs.

@@ -19,6 +19,7 @@ rc run <id> --events
 rc run <id> --brain-diff
 rc run <id> --debug
 rc run <id> --full -o json
+rc dream evidence --limit 50 -o json
 rc runs [--limit N] [--kind email|prompt|mcp|analysis] [--category ok|timeout|...]
 rc status
 rc fleet [--days N] [--kind ...]
@@ -27,6 +28,12 @@ rc health [--hours N]
 rc thread <id>
 rc config get
 rc config set max_run_usd=5 default_tier=pro
+rc config hierarchy get
+rc config hierarchy set persona.guidance="..."
+rc triage policy get
+rc triage policy set "..."
+rc triage rules ls
+rc triage rules add effect=exclude match_kind=subject_contains pattern="newsletter"
 rc brain status
 rc brain sync
 rc env keys
@@ -82,6 +89,31 @@ rc run <id> --debug
 This writes `rc-debug/<run8>-<project>.{md,jsonl}`. Read the markdown index first, then query JSONL
 with `jq`. Use [`rc-debug`](../skills/rc-debug/SKILL.md) for the analysis-first workflow and
 [docs/run-trace-model.md](run-trace-model.md) for the mental model.
+
+## Dream Evidence
+
+```bash
+rc dream evidence --limit 50 -o json
+```
+
+Use this for a local dream-cycle pass from a brain checkout. It returns two ranked planes: human
+feedback on runs and sent-vs-proposed deltas. Drill only the runs that justify an edit with
+`rc run <id> --debug`. Use [`brain-dream-cycle`](../skills/brain-dream-cycle/SKILL.md) for the full
+brain/persona/triage decision workflow.
+
+## Persona And Triage
+
+```bash
+rc config hierarchy get -o json
+rc config hierarchy set persona.tone="..." persona.guidance="..."
+rc triage policy get -o json
+rc triage policy set "..."
+rc triage rules ls -o json
+rc triage rules add effect=exclude match_kind=subject_contains pattern="newsletter" reason="marketing mail"
+```
+
+Persona settings own voice, language, formality, signature, and wording preferences. Triage policy/rules
+own whether inbound mail deserves a draft. Product facts and runbooks belong in the brain.
 
 ## Env
 

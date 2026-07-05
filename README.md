@@ -35,6 +35,7 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 | Skill | Job |
 |---|---|
 | `local-brain-work` | Map a brain, run local/live/docker tests, projection, mirror checks, and action dry-runs. |
+| `brain-dream-cycle` | Learn from feedback, sent-edit deltas, patterns, and journals; update brain files plus persona/triage settings. |
 | `brain-ask` | Last-mile production-loop `rc ask` validation, usually against a pushed `dev/*` ref. |
 | `rc-debug` | One run/thread/session to trace/debug/index/JSONL drilldown; analysis-first before edits. |
 | `rc-health` | Stale mirrors plus dead-lettered runs. |
