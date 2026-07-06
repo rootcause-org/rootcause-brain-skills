@@ -5,6 +5,8 @@ Diagnosis is read-only by default. Test-run creation and action execution are ex
 | Surface | Side effect |
 |---|---|
 | `brain_run.py`, `brain_test.py`, `rc run`, `rc fleet`, `rc health`, `rc thread` | Read-only. |
+| `rc mailbox harvest <id>` | Creates a **production** export job: a heavy provider sweep of the mailbox's sent history into a stored cleaned Markdown corpus body. Bills provider/API usage. |
+| `rc export download <id>` | Marks the export **consumed** (starts server-side eviction grace) and lands the raw mail corpus on local disk. Read-only server-side, but raw customer mail now exists on the laptop. |
 | `rc ask` against `main` | Creates a real production run. It may create a draft, journal/test artifacts, proposed actions, and bill model/API usage. |
 | `rc ask --brain-ref dev/<branch>` | Creates a test run against a pushed dev ref. It does not post a callback or durable journal push; proposed actions/PRs are test artifacts. |
 | Action proposal | LLM proposes only. No customer mutation. |

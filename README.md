@@ -36,6 +36,7 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 |---|---|
 | `local-brain-work` | Map a brain, run local/live/docker tests, projection, mirror checks, and action dry-runs. |
 | [`brain-dream-cycle`](skills/brain-dream-cycle/SKILL.md) | Full local dreamcycle pass from a brain checkout: mine feedback/sent deltas/patterns with `rc`, then update brain files plus persona/triage settings. |
+| [`brain-harvest`](skills/brain-harvest/SKILL.md) | Full local harvest pass: trigger a production sent-history export, download the cleaned corpus, fan out per-topic subagents to distil patterns (privacy-linted), decide brain/persona/triage homes, verify, publish, then delete the corpus. |
 | `brain-ask` | Last-mile production-loop `rc ask` validation, usually against a pushed `dev/*` ref. |
 | `rc-debug` | One run/thread/session to trace/debug/index/JSONL drilldown; analysis-first before edits. |
 | `rc-health` | Stale mirrors plus dead-lettered runs. |
@@ -53,6 +54,8 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 | Surface | Side effect |
 |---|---|
 | `brain_run.py`, `brain_test.py`, `rc run`, `rc fleet`, `rc health`, `rc thread` | Read-only. |
+| `rc mailbox harvest` | Creates a production export job (provider sweep → stored corpus). |
+| `rc export download` | Marks the export consumed (eviction grace) and lands raw mail on local disk. |
 | `rc ask` against `main` | Creates a real production run; may create draft/journal/test artifacts and bill usage. |
 | `rc ask --brain-ref dev/<branch>` | Creates a test run; no callback or durable journal push; proposals are test artifacts. |
 | Action proposal | LLM proposes only; no mutation. |

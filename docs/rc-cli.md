@@ -26,6 +26,11 @@ rc fleet [--days N] [--kind ...]
 rc patterns [--days N]
 rc health [--hours N]
 rc thread <id>
+rc mailbox ls
+rc mailbox harvest <mailbox-id> [--max-threads N] [--clean=true] [--wait]
+rc export ls [-o json]
+rc export get <export-id>
+rc export download <export-id> [--out <file>] [--split <dir>]
 rc config get
 rc config set max_run_usd=5 default_tier=pro
 rc config hierarchy get
@@ -101,6 +106,29 @@ Use this for a local dream-cycle pass from a brain checkout. It returns two rank
 feedback on runs and sent-vs-proposed deltas. Drill only the runs that justify an edit with
 `rc run <id> --debug`. Use [`brain-dream-cycle`](../skills/brain-dream-cycle/SKILL.md) for the full
 brain/persona/triage decision workflow.
+
+## Mailbox Harvest And Exports
+
+```bash
+rc mailbox ls -o json
+rc mailbox harvest <mailbox-id> --max-threads 1000 --wait
+rc export ls -o json
+rc export get <export-id>
+rc export download <export-id> --split .rootcause/exports/<export-id>/
+```
+
+`rc mailbox harvest` triggers a **production** provider sweep of a mailbox's sent history into a stored,
+cleaned Markdown corpus; `--wait` polls to completion, `--max-threads` caps the sweep, `--clean=true`
+(default) strips quoting/signatures. `rc export ls` answers "has this mailbox been harvested?" (id, kind,
+status, thread_count, truncated, created/completed); `rc export get` shows one export's status. `rc export
+download` fetches the corpus and marks it consumed — `--split <dir>` materializes it as
+`<dir>/INDEX.md` + `<dir>/threads/<yyyy-mm>--<slug>--<idx>.md`. The default split dir
+`.rootcause/exports/<export-id>/` sits under the wholesale-gitignored `.rootcause/` and MUST stay
+gitignored: it is raw customer mail, never brain content.
+
+Use [`brain-harvest`](../skills/brain-harvest/SKILL.md) for the full acquire → cluster → distil →
+verify → publish → delete workflow. See [docs/side-effects.md](side-effects.md) for the harvest/download
+side effects before running either.
 
 ## Persona And Triage
 
