@@ -102,7 +102,7 @@ Read when relevant:
 
    rc triage policy set "Draft customer support questions; ignore vendor newsletters and automated alerts."
    rc triage rules add effect=skip match_kind=subject_contains pattern="newsletter" reason="marketing mail"
-   rc triage rules add effect=force_process match_kind=sender_email pattern="vip@example.com" reason="VIP support mailbox"
+   rc triage rules add effect=force_process match_kind=sender_address pattern="vip@example.com" reason="VIP support mailbox"
    ```
    Keep persona and triage concise. If guidance starts becoming product knowledge or a runbook, put it
    in the brain instead. Use `effect=skip` for deterministic no-draft mail and `effect=force_process`

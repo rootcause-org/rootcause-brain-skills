@@ -107,6 +107,33 @@ personal/mixed). Edit the matching skeleton in step 4 instead of inventing struc
    rg -n "<customer phrase>|<internal term>|<policy name>" AGENTS.md skills notes playbooks actions terminology.md 2>/dev/null
    ```
 
+   **Apply the non-brain-file homes (persona + triage).** The corpus is dense in exactly these signals —
+   how past replies *sound*, which mail always got answered, which senders are always in/out of scope —
+   so route them to settings, not brain prose. Re-read the current values (step 1) before overwriting;
+   set the narrowest scope that fits (project → tenant → mailbox), and keep persona/triage terse:
+   ```bash
+   # Voice the sent history reveals → persona (project, or a narrower scope). Keys: persona.tone,
+   # persona.signature, persona.language, persona.formality, persona.guidance (free-text catch-all).
+   rc config hierarchy set persona.tone="warm, concise, first-person plural" \
+                           persona.signature="— The Support Team" \
+                           persona.formality="informal (jij)" persona.guidance="..."
+   rc tenant settings set --tenant <slug> persona.guidance="..."     # tenant-specific voice
+   rc mailbox settings set <mailbox-id> persona.guidance="..."       # one mailbox only
+
+   # Broad draft / no-draft judgement the corpus shows → triage policy (natural language)
+   rc triage policy set "Draft customer support + billing questions; skip vendor newsletters and automated alerts."
+
+   # Deterministic per-sender / per-subject rules the corpus proves → triage HARD rules
+   rc triage rules add effect=force_process match_kind=sender_address pattern="vip@bigclient.com" reason="always answered, high-value account"
+   rc triage rules add effect=force_process match_kind=sender_domain pattern="partner.com"        reason="partner mailbox — always draft"
+   rc triage rules add effect=skip          match_kind=subject_contains pattern="unsubscribe"      reason="marketing noise, never drafted"
+   ```
+   Use `effect=force_process` for the **always-whitelist** senders the history shows you always reply to,
+   and `effect=skip` for mail you never answer. A temporary rule created just to verify the contract must
+   be removed with `rc triage rules rm <id>` before finishing. Rule of thumb: a *reusable how-we-answer*
+   pattern is persona/triage; a *what-is-true* fact (product, pricing, terminology, a runbook) is a brain
+   file. If persona guidance starts turning into product knowledge, move it to the brain instead.
+
 5. **Privacy gate (HARD) — before every commit.** Distilled patterns only. Never let raw thread text,
    credentials, patient data, addresses, or payment links reach a brain file. Two mechanical checks back
    the judgment call:
