@@ -217,8 +217,15 @@ def validate_page_replacement(*, page_id: str, old_str: str, new_str: str) -> Pa
 def replace_page_text(*, page_id: str, old_str: str, new_str: str) -> NotionBlock:
     match = validate_page_replacement(page_id=page_id, old_str=old_str, new_str=new_str)
     updated_text = match.plain_text.replace(old_str, new_str, 1)
-    body = {match.block_type: {"rich_text": _rich_text(updated_text)}}
+    first_line, extra_lines = _replacement_lines(updated_text)
+    body = {match.block_type: _replacement_block_body(match, first_line)}
     raw = _client().patch(f"blocks/{match.block_id}", json=body)
+    if extra_lines:
+        parent_id = _block_parent_id(match.raw, fallback_page_id=page_id)
+        _client().patch(
+            f"blocks/{parent_id}/children",
+            json={"after": match.block_id, "children": [_block_from_plain_line(line) for line in extra_lines]},
+        )
     return NotionBlock(id=str(raw.get("id", match.block_id)), raw=raw)
 
 
@@ -387,6 +394,54 @@ def _editable_plain_text(block: Mapping[str, Any]) -> str:
     if not isinstance(rich, list):
         return ""
     return notion_read._plain_text(rich)
+
+
+def _replacement_lines(text: str) -> tuple[str, list[str]]:
+    lines = text.split("\n")
+    return lines[0], lines[1:]
+
+
+def _replacement_block_body(match: PageTextMatch, text: str) -> dict[str, Any]:
+    existing = match.raw.get(match.block_type)
+    body: dict[str, Any] = {}
+    if isinstance(existing, Mapping) and match.block_type == "to_do" and isinstance(existing.get("checked"), bool):
+        body["checked"] = existing["checked"]
+    body["rich_text"] = _rich_text(text)
+    return body
+
+
+def _block_parent_id(block: Mapping[str, Any], *, fallback_page_id: str) -> str:
+    parent = block.get("parent")
+    if isinstance(parent, Mapping):
+        for key in ("page_id", "block_id"):
+            if parent.get(key):
+                return _notion_id(parent[key])
+    return _notion_id(fallback_page_id)
+
+
+def _block_from_plain_line(line: str) -> dict[str, Any]:
+    text = line.strip()
+    checked = False
+    for marker in ("[] ", "[ ] "):
+        if text.startswith(marker):
+            text = text[len(marker) :].strip()
+            return {"object": "block", "type": "to_do", "to_do": {"checked": False, "rich_text": _rich_text(text)}}
+    for marker in ("[x] ", "[X] "):
+        if text.startswith(marker):
+            checked = True
+            text = text[len(marker) :].strip()
+            return {"object": "block", "type": "to_do", "to_do": {"checked": checked, "rich_text": _rich_text(text)}}
+    if text.startswith(("- ", "* ")):
+        text = text[2:].strip()
+        return {"object": "block", "type": "bulleted_list_item", "bulleted_list_item": {"rich_text": _rich_text(text)}}
+    numbered = re.match(r"^\d+[.)]\s+(.+)$", text)
+    if numbered:
+        return {
+            "object": "block",
+            "type": "numbered_list_item",
+            "numbered_list_item": {"rich_text": _rich_text(numbered.group(1).strip())},
+        }
+    return {"object": "block", "type": "paragraph", "paragraph": {"rich_text": _rich_text(text)}}
 
 
 def _replacement_suggestions(*, page_id: str, old_str: str) -> str:

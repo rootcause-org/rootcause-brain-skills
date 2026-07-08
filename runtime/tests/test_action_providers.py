@@ -41,6 +41,7 @@ class FakeClient:
                 {
                     "id": "block_1",
                     "type": "to_do",
+                    "parent": {"page_id": "page_1"},
                     "has_children": False,
                     "to_do": {
                         "checked": False,
@@ -63,7 +64,9 @@ class FakeClient:
     def patch(self, path, **kw):
         self.calls.append(("PATCH", path, kw))
         if path.endswith("/children"):
-            return {"results": [{"id": "block_1"}]}
+            child = kw.get("json", {}).get("children", [{}])[0]
+            block_id = "block_1" if child.get("type") == "bookmark" else "block_inserted"
+            return {"results": [{"id": block_id}]}
         if path.startswith("blocks/"):
             return {"id": path.split("/")[1], "type": "to_do"}
         return {"id": "page_1", "url": "https://notion.test/page", "properties": {}}
@@ -150,8 +153,14 @@ class NotionActions(unittest.TestCase):
             )
         self.assertEqual(match.block_id, "block_1")
         self.assertEqual(block.id, "block_1")
-        self.assertEqual(fake.calls[-1][0:2], ("PATCH", "blocks/block_1"))
-        self.assertEqual(fake.calls[-1][2]["json"]["to_do"]["rich_text"][0]["text"]["content"], new_text)
+        self.assertEqual(fake.calls[-2][0:2], ("PATCH", "blocks/block_1"))
+        self.assertEqual(fake.calls[-2][2]["json"]["to_do"]["rich_text"][0]["text"]["content"], "more tips and tricks to best use Notion")
+        self.assertEqual(fake.calls[-1][0:2], ("PATCH", "blocks/page_1/children"))
+        self.assertEqual(fake.calls[-1][2]["json"]["after"], "block_1")
+        child = fake.calls[-1][2]["json"]["children"][0]
+        self.assertEqual(child["type"], "to_do")
+        self.assertFalse(child["to_do"]["checked"])
+        self.assertEqual(child["to_do"]["rich_text"][0]["text"]["content"], "and here is another bullet point")
 
     def test_page_replacement_no_match_suggests_nearby_text(self):
         fake = FakeClient()
