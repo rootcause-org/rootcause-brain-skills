@@ -20,11 +20,52 @@ from lib.action import googledrive, notion  # noqa: E402
 class FakeClient:
     def __init__(self):
         self.calls = []
+        self.data_source = {
+            "object": "data_source",
+            "id": "ds_1",
+            "title": [{"plain_text": "orders"}],
+            "properties": {
+                "product name": {"id": "title", "name": "product name", "type": "title", "title": {}},
+                "status": {
+                    "id": "status",
+                    "name": "status",
+                    "type": "status",
+                    "status": {"options": [{"name": "shipped"}, {"name": "unpaid"}]},
+                },
+                "quantity": {"id": "qty", "name": "quantity", "type": "number", "number": {}},
+                "customer email": {"id": "email", "name": "customer email", "type": "email", "email": {}},
+            },
+        }
+        self.blocks = {
+            "page_1": [
+                {
+                    "id": "block_1",
+                    "type": "to_do",
+                    "has_children": False,
+                    "to_do": {
+                        "checked": False,
+                        "rich_text": [{"type": "text", "plain_text": "more tips and tricks to best use Notion", "text": {"content": "more tips and tricks to best use Notion"}}],
+                    },
+                }
+            ]
+        }
+
+    def get(self, path, **kw):
+        self.calls.append(("GET", path, kw))
+        if path == "data_sources/ds_1":
+            return self.data_source
+        if path == "pages/page_1":
+            return {"id": "page_1", "url": "https://notion.test/page", "parent": {"data_source_id": "ds_1"}, "properties": {}}
+        if path == "blocks/page_1/children":
+            return {"results": self.blocks["page_1"], "has_more": False}
+        raise AssertionError(f"unexpected GET {path}")
 
     def patch(self, path, **kw):
         self.calls.append(("PATCH", path, kw))
-        if path.startswith("blocks/"):
+        if path.endswith("/children"):
             return {"results": [{"id": "block_1"}]}
+        if path.startswith("blocks/"):
+            return {"id": path.split("/")[1], "type": "to_do"}
         return {"id": "page_1", "url": "https://notion.test/page", "properties": {}}
 
     def post(self, path, **kw):
@@ -56,6 +97,68 @@ class NotionActions(unittest.TestCase):
         self.assertEqual(fake.calls[0][2]["json"]["parent"], {"page_id": "parent_1"})
         self.assertEqual(fake.calls[0][2]["json"]["properties"]["title"]["title"][0]["text"]["content"], "New page")
         self.assertEqual(fake.calls[1][1], "pages/page_1")
+
+    def test_database_row_create_validates_schema_and_options(self):
+        fake = FakeClient()
+        values = {
+            "product name": "baseball",
+            "status": "shipped",
+            "quantity": 5,
+            "customer email": "foo@bar.com",
+        }
+        with mock.patch.object(notion, "_client", return_value=fake):
+            checked = notion.validate_database_values("ds_1", values)
+            page = notion.create_database_row(database_id="ds_1", values=values)
+
+        self.assertEqual(page.id, "page_2")
+        self.assertEqual(checked.properties["status"], {"status": {"name": "shipped"}})
+        self.assertEqual(checked.properties["quantity"], {"number": 5})
+        _, path, kw = fake.calls[-1]
+        self.assertEqual(path, "pages")
+        self.assertEqual(kw["json"]["parent"], {"data_source_id": "ds_1"})
+        self.assertEqual(kw["json"]["properties"]["product name"]["title"][0]["text"]["content"], "baseball")
+
+    def test_database_validation_reports_bad_select_with_valid_values(self):
+        fake = FakeClient()
+        with mock.patch.object(notion, "_client", return_value=fake):
+            with self.assertRaises(action.ActionError) as cm:
+                notion.validate_database_values("ds_1", {"status": "delivered"})
+        msg = str(cm.exception)
+        self.assertIn("Valid values: shipped, unpaid", msg)
+
+    def test_database_update_checks_record_parent_and_shapes_patch(self):
+        fake = FakeClient()
+        with mock.patch.object(notion, "_client", return_value=fake):
+            page = notion.update_database_row(database_id="ds_1", record_id="page_1", values={"status": "unpaid"})
+        self.assertEqual(page.id, "page_1")
+        self.assertEqual(fake.calls[-1][0:2], ("PATCH", "pages/page_1"))
+        self.assertEqual(fake.calls[-1][2]["json"]["properties"], {"status": {"status": {"name": "unpaid"}}})
+
+    def test_page_replacement_finds_one_editable_block(self):
+        fake = FakeClient()
+        new_text = "more tips and tricks to best use Notion\n[] and here is another bullet point"
+        with mock.patch.object(notion, "_client", return_value=fake):
+            match = notion.validate_page_replacement(
+                page_id="page_1",
+                old_str="more tips and tricks to best use Notion",
+                new_str=new_text,
+            )
+            block = notion.replace_page_text(
+                page_id="page_1",
+                old_str="more tips and tricks to best use Notion",
+                new_str=new_text,
+            )
+        self.assertEqual(match.block_id, "block_1")
+        self.assertEqual(block.id, "block_1")
+        self.assertEqual(fake.calls[-1][0:2], ("PATCH", "blocks/block_1"))
+        self.assertEqual(fake.calls[-1][2]["json"]["to_do"]["rich_text"][0]["text"]["content"], new_text)
+
+    def test_page_replacement_no_match_suggests_nearby_text(self):
+        fake = FakeClient()
+        with mock.patch.object(notion, "_client", return_value=fake):
+            with self.assertRaises(action.ActionError) as cm:
+                notion.validate_page_replacement(page_id="page_1", old_str="tips to best use docs", new_str="x")
+        self.assertIn("Nearby editable text", str(cm.exception))
 
 
 class GoogleDriveActions(unittest.TestCase):

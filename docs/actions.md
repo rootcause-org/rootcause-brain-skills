@@ -221,6 +221,11 @@ Available provider helpers are intentionally small and grown as actions need the
 - `lib.action.notion.append_file_link(page_id=..., title=..., url=...)`
 - `lib.action.notion.create_page(parent_id=..., title=..., properties=...)`
 - `lib.action.notion.update_properties(page_id=..., properties=...)`
+- `lib.action.notion.validate_database_values(database_id=..., values=...)`
+- `lib.action.notion.create_database_row(database_id=..., values=...)`
+- `lib.action.notion.update_database_row(database_id=..., record_id=..., values=...)`
+- `lib.action.notion.validate_page_replacement(page_id=..., old_str=..., new_str=...)`
+- `lib.action.notion.replace_page_text(page_id=..., old_str=..., new_str=...)`
 
 One-off write calls can use the generic client:
 

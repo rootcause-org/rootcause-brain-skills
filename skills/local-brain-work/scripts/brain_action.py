@@ -94,6 +94,8 @@ def _check_type(name: str, value, typ: str) -> str | None:
     if typ == "string[]":
         ok = isinstance(value, list) and all(isinstance(x, str) for x in value)
         return None if ok else f"param {name!r} must be a string[]"
+    if typ == "object":
+        return None if isinstance(value, dict) else f"param {name!r} must be a JSON object"
     if typ == "attachment":
         if isinstance(value, str):
             trimmed = value.strip()
