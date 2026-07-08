@@ -13,13 +13,14 @@ import responses
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from lib import action  # noqa: E402
+from lib import action, api  # noqa: E402
 from lib.action import googledrive, notion  # noqa: E402
 
 
 class FakeClient:
     def __init__(self):
         self.calls = []
+        self.reject_page_after = False
         self.data_source = {
             "object": "data_source",
             "id": "ds_1",
@@ -65,6 +66,8 @@ class FakeClient:
         self.calls.append(("PATCH", path, kw))
         if path.endswith("/children"):
             child = kw.get("json", {}).get("children", [{}])[0]
+            if self.reject_page_after and path == "blocks/page_1/children" and "after" in kw.get("json", {}):
+                raise api.ApiError(400, 'body failed validation: body.after should be not present, instead was `"block_1"`.')
             block_id = "block_1" if child.get("type") == "bookmark" else "block_inserted"
             return {"results": [{"id": block_id}]}
         if path.startswith("blocks/"):
@@ -161,6 +164,22 @@ class NotionActions(unittest.TestCase):
         self.assertEqual(child["type"], "to_do")
         self.assertFalse(child["to_do"]["checked"])
         self.assertEqual(child["to_do"]["rich_text"][0]["text"]["content"], "and here is another bullet point")
+
+    def test_page_replacement_retries_without_after_when_page_append_rejects_it(self):
+        fake = FakeClient()
+        fake.reject_page_after = True
+        new_text = "more tips and tricks to best use Notion\n[] and here is another bullet point"
+        with mock.patch.object(notion, "_client", return_value=fake):
+            block = notion.replace_page_text(
+                page_id="page_1",
+                old_str="more tips and tricks to best use Notion",
+                new_str=new_text,
+            )
+        self.assertEqual(block.id, "block_1")
+        self.assertEqual(fake.calls[-2][0:2], ("PATCH", "blocks/page_1/children"))
+        self.assertIn("after", fake.calls[-2][2]["json"])
+        self.assertEqual(fake.calls[-1][0:2], ("PATCH", "blocks/page_1/children"))
+        self.assertNotIn("after", fake.calls[-1][2]["json"])
 
     def test_page_replacement_no_match_suggests_nearby_text(self):
         fake = FakeClient()

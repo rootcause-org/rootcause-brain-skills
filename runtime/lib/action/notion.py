@@ -222,10 +222,7 @@ def replace_page_text(*, page_id: str, old_str: str, new_str: str) -> NotionBloc
     raw = _client().patch(f"blocks/{match.block_id}", json=body)
     if extra_lines:
         parent_id = _block_parent_id(match.raw, fallback_page_id=page_id)
-        _client().patch(
-            f"blocks/{parent_id}/children",
-            json={"after": match.block_id, "children": [_block_from_plain_line(line) for line in extra_lines]},
-        )
+        _append_child_blocks(parent_id=parent_id, after_block_id=match.block_id, lines=extra_lines)
     return NotionBlock(id=str(raw.get("id", match.block_id)), raw=raw)
 
 
@@ -417,6 +414,16 @@ def _block_parent_id(block: Mapping[str, Any], *, fallback_page_id: str) -> str:
             if parent.get(key):
                 return _notion_id(parent[key])
     return _notion_id(fallback_page_id)
+
+
+def _append_child_blocks(*, parent_id: str, after_block_id: str, lines: list[str]) -> None:
+    children = [_block_from_plain_line(line) for line in lines]
+    try:
+        _client().patch(f"blocks/{parent_id}/children", json={"after": after_block_id, "children": children})
+    except api.ApiError as e:
+        if e.status != 400 or "after should be not present" not in str(e):
+            raise
+        _client().patch(f"blocks/{parent_id}/children", json={"children": children})
 
 
 def _block_from_plain_line(line: str) -> dict[str, Any]:
