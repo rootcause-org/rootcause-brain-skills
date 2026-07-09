@@ -21,12 +21,10 @@ uv run "$SKILL/scripts/brain_run.py" --brief
 uv run "$SKILL/scripts/brain_test.py" --live
 ```
 
-Other paths:
-
-- Claude Code plugin: `/plugin marketplace add rootcause-org/rootcause-brain-skills`, then
-  `/plugin install brain-dev`.
-- Codex plugin: `codex plugin marketplace add rootcause-org/rootcause-brain-skills`, then
-  `codex plugin install brain-dev`.
+Do not install this kit as a user/global Claude Code or Codex plugin. Brain Dev skills are
+brain-repo-relative: install them from inside each `rootcause-brain-*` checkout so agents discover
+exactly one repo-local copy, scoped to that brain. User/global installs make the same skills appear in
+unrelated projects and can drift from the pinned brain checkout.
 
 Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 
@@ -92,11 +90,11 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 ## Single Version Line
 
 The plugin versions, `rootcause-runtime` pin, workspace image tag, and production runtime pin move
-together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.68`**.
+together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.69`**.
 
 - Runtime pin:
-  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.68#subdirectory=runtime`
-- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.68`
+  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.69#subdirectory=runtime`
+- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.69`
 
 Check coherence:
 

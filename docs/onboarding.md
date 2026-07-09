@@ -32,12 +32,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brai
 This creates/updates one shared clone at `~/.rootcause-brain-skills`, symlinks shipped skills into the
 brain's gitignored `.agents/skills/` and `.claude/skills/`, and keeps the kit out of committed `/brain`.
 
-Plugin installs:
-
-- Claude Code: `/plugin marketplace add rootcause-org/rootcause-brain-skills`, then
-  `/plugin install brain-dev`.
-- Codex: `codex plugin marketplace add rootcause-org/rootcause-brain-skills`, then
-  `codex plugin install brain-dev`.
+Do not install Brain Dev as a user/global Claude Code or Codex plugin. These skills must be discovered
+from the brain checkout's `.agents/skills/` or `.claude/skills/` symlinks. A user/global install makes
+the same skills appear in unrelated projects and can drift from the brain's pinned repo-local install.
 
 Update later with `brain-dev-upgrade`.
 

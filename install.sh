@@ -9,14 +9,16 @@
 #
 # Model: ONE pinned clone on disk, SYMLINKED into each brain's gitignored `.agents/skills/` +
 # `.claude/skills/` discovery dirs. One source of truth, per-repo discovery, zero /brain footprint.
+# Do not also install this kit as a user/global Claude Code or Codex plugin; that creates a second,
+# project-agnostic discovery path and makes Brain Dev appear in unrelated repos.
 #
 #   bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh) [BRAIN_DIR]
-#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.68 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
+#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.69 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
 #   ./install.sh --latest-version
 set -euo pipefail
 
 KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}"
-TAG="${RC_BRAIN_KIT_TAG:-v0.1.68}"
+TAG="${RC_BRAIN_KIT_TAG:-v0.1.69}"
 REPO="https://github.com/rootcause-org/rootcause-brain-skills"
 LATEST_TAG_ENDPOINT="https://api.github.com/repos/rootcause-org/rootcause-brain-skills/git/matching-refs/tags/v"
 KIT_OVERRIDE="${RC_BRAIN_KIT+x}"
@@ -249,3 +251,4 @@ echo "  SKILL=$KIT/skills/local-brain-work"
 echo "  uv run \"\$SKILL/scripts/brain_run.py\" --brief"
 echo "  uv run \"\$SKILL/scripts/brain_test.py\" --live"
 echo "Claude Code auto-discovers .claude/skills; Codex auto-discovers .agents/skills."
+echo "Do not also install Brain Dev as a user/global plugin; keep discovery repo-local."

@@ -9,7 +9,7 @@
       "name": "brain-dev",
       "source": ".",
       "description": "Install the rootcause brain skills: Local Brain Work, rc ask validation, production-run debugging, health/fleet review, and publish support workflows.",
-      "version": "0.1.68"
+      "version": "0.1.69"
     }
   ]
 }
