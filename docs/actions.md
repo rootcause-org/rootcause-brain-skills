@@ -214,11 +214,14 @@ a `lib.api.Client` with write verbs enabled. Missing credentials fail closed wit
 the capability and connect a write grant (`label=actions`). Read connectors under `lib.connectors.*`
 remain read-only and `RC_CONN_*`-backed.
 
-Available provider helpers are intentionally small and grown as actions need them. The dashboard
-authoring overlay is generated from `runtime/lib/action/helpers.yaml`, an explicit whitelist beside the
-`lib.action.*` modules. Keep write-helper metadata there, not under `lib.connectors.*`; connector
-manifests and private underscored connector functions stay read-plane and are not action-authoring docs
-unless deliberately promoted as public helpers.
+Available provider helpers are intentionally small and grown as actions need them. When adding or
+changing a provider helper, update that provider's write-plane metadata file at
+`runtime/lib/action/helpers/<provider>.yaml`. The dashboard authoring overlay in the rootcause host repo
+loads those YAML files from the pinned `rootcause-runtime` tag and renders
+`dashboard-overlay/action-integrations*.generated.md`, so the YAML is model-facing downstream. Keep it as
+an explicit whitelist beside the `lib.action.*` modules, not under `lib.connectors.*`; connector manifests
+and private underscored connector functions stay read-plane and are not action-authoring docs unless
+deliberately promoted as public helpers.
 
 One-off write calls can use the generic client:
 
