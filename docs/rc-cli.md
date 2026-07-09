@@ -28,7 +28,6 @@ rc health [--hours N]
 rc thread <id>
 rc mailbox ls
 rc mailbox harvest <mailbox-id> [--max-threads N] [--clean=true] [--wait]
-# Future deep/local IMAP path; verify the command exists before relying on it.
 rc mailbox imap-env <mailbox-id> --out .rootcause/imap/<mailbox-id>.env
 rc export ls [-o json]
 rc export get <export-id>
@@ -129,10 +128,10 @@ download` fetches the corpus and marks it consumed — `--split <dir>` materiali
 gitignored: it is raw customer mail, never brain content.
 
 Hosted IMAP harvest is shallow/smoke-only when the server applies the IMAP cap (currently 100 refs) and
-returns a warning. Deep IMAP requires a local exporter path: `rc mailbox imap-env` to write a
-gitignored secret env file, plus `scripts/local_imap_harvest.py` to produce the `.rootcause/exports/...`
-tree. If either piece is absent, do not reveal credentials or use private stores; report the missing
-public surface.
+returns a warning. Deep IMAP uses `rc mailbox imap-env` to write a gitignored secret env file, then the
+`brain-harvest` script `$SKILL/scripts/local_imap_harvest.py` to produce the
+`.rootcause/exports/...` tree. The exporter v1 reads the sent folder with safe caps and groups messages
+locally; it does not full-expand every referenced inbound message across folders yet.
 
 Use [`brain-harvest`](../skills/brain-harvest/SKILL.md) for the full acquire → cluster → distil →
 verify → publish → delete workflow. See [docs/side-effects.md](side-effects.md) for the harvest/download

@@ -59,10 +59,14 @@ personal/mixed). Edit the matching skeleton in step 4 instead of inventing struc
 2. **Acquire the corpus.** Reuse a fresh export if one exists; otherwise branch by mailbox provider.
    For Gmail/Microsoft, use hosted harvest. For IMAP, treat hosted harvest as a shallow/smoke path only:
    the server may cap rendered IMAP refs (currently 100) and warn that deep IMAP belongs in local tooling.
+   Set `SKILL` to this skill directory before using bundled scripts:
+   ```bash
+   SKILL=<absolute path to skills/brain-harvest>
+   ```
    Before any deep/local IMAP run, prove both public surfaces exist:
    ```bash
    rc mailbox imap-env --help
-   test -f scripts/local_imap_harvest.py
+   test -f "$SKILL/scripts/local_imap_harvest.py"
    ```
    If either is missing, do **not** reveal credentials, scrape private stores, or invent env-file handling.
    Stop with an implementation/ops gap (missing `rc mailbox imap-env`, missing local exporter, or both) or
@@ -90,7 +94,7 @@ personal/mixed). Edit the matching skeleton in step 4 instead of inventing struc
    ```bash
    rc mailbox imap-env <mailbox-id> --out .rootcause/imap/<mailbox-id>.env
    git check-ignore .rootcause/imap/<mailbox-id>.env
-   uv run scripts/local_imap_harvest.py \
+   uv run "$SKILL/scripts/local_imap_harvest.py" \
      --env .rootcause/imap/<mailbox-id>.env \
      --out .rootcause/exports/<run-id>/
    git check-ignore .rootcause/exports/<run-id>/INDEX.md
