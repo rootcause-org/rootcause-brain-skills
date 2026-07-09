@@ -19,6 +19,122 @@ from lib import action, api
 from lib.connectors import notion as notion_read
 
 
+ACTION_HELPER_DOCS = {
+    "provider": "notion",
+    "need": "Create/update Notion pages, database rows, page text",
+    "connection": "notion.write",
+    "import": "from lib.action import notion",
+    "source_module": "lib.action.notion",
+    "manifest": [
+        "Declare `connections: [notion.write]`.",
+        "For database rows, use `database_id` plus plain `properties`; call `validate_database_values` before create/update.",
+        "For row updates, include `record_id`; `update_database_row` verifies it belongs to `database_id` before writing.",
+        "For page text, use `page_id`, `old_str`, `new_str`; validate that `old_str` is an exact unique editable-block match.",
+    ],
+    "common_params": [
+        "`database_id`: Notion data-source ID, or a legacy database ID when it resolves to one data source.",
+        "`properties`: JSON object of Notion column names to plain values; pass to `validate_database_values`, not raw Notion API JSON.",
+        "`record_id`: existing Notion row/page ID for database-row updates.",
+        "`page_id`: Notion page ID for text replacement or bookmark/link append.",
+        "`old_str` / `new_str`: exact text anchor and replacement text; `old_str` must match exactly one editable block.",
+    ],
+    "useful_for": [
+        "create a Notion database row from plain column values",
+        "update an existing Notion database row after checking its parent data source",
+        "replace one exact editable text occurrence on a Notion page",
+        "append a bookmark/file link to a Notion page",
+    ],
+    "helpers": {
+        "retrieve_data_source": "Resolve and return the live Notion data-source schema.",
+        "validate_database_values": "Validate plain column values against the live data-source schema and convert them to Notion property payloads.",
+        "database_validation_summary": "Build a reviewer-readable dry-run/preflight summary from validated row values.",
+        "create_database_row": "Create one page row in a Notion data source.",
+        "update_database_row": "Update one existing row after verifying it belongs to the requested data source.",
+        "validate_page_replacement": "Confirm exactly one editable block contains the old text.",
+        "page_replacement_summary": "Build a reviewer-readable dry-run/preflight summary for a page-text replacement.",
+        "replace_page_text": "Replace the first exact match in one editable block, preserving simple block shape.",
+        "create_page": "Create a child page under a page parent.",
+        "update_properties": "Patch native Notion page properties when the script intentionally builds the payload.",
+        "append_file_link": "Append a bookmark block pointing at an externally hosted file.",
+        "find_page_text_matches": "Inspect editable blocks whose plain text contains an exact anchor before deciding whether replacement is safe.",
+    },
+    "patterns": [
+        {
+            "title": "Create a database row",
+            "code": """
+from lib import action
+from lib.action import notion
+
+@action.main
+def run(p: action.Params) -> dict:
+    checked = notion.validate_database_values(p["database_id"], p["properties"])
+    if action.dry_run():
+        return {"summary": notion.database_validation_summary(checked, operation="Dry run: create row")}
+
+    page = notion.create_database_row(database_id=p["database_id"], values=p["properties"])
+    return {"summary": f"Created Notion row **{page.id}**.", "page_id": page.id, "url": page.url}
+""",
+        },
+        {
+            "title": "Update a database row",
+            "code": """
+from lib import action
+from lib.action import notion
+
+@action.main
+def run(p: action.Params) -> dict:
+    checked = notion.validate_database_values(p["database_id"], p["properties"])
+    if action.dry_run():
+        return {"summary": notion.database_validation_summary(checked, operation="Dry run: update row")}
+
+    page = notion.update_database_row(
+        database_id=p["database_id"],
+        record_id=p["record_id"],
+        values=p["properties"],
+    )
+    return {"summary": f"Updated Notion row **{page.id}**.", "page_id": page.id, "url": page.url}
+""",
+        },
+        {
+            "title": "Replace exact page text",
+            "code": """
+from lib import action
+from lib.action import notion
+
+@action.main
+def run(p: action.Params) -> dict:
+    match = notion.validate_page_replacement(page_id=p["page_id"], old_str=p["old_str"], new_str=p["new_str"])
+    if action.dry_run():
+        return {"summary": notion.page_replacement_summary(match)}
+
+    block = notion.replace_page_text(page_id=p["page_id"], old_str=p["old_str"], new_str=p["new_str"])
+    return {"summary": f"Updated Notion block **{block.id}**.", "block_id": block.id}
+""",
+        },
+    ],
+    "validation_failure": [
+        "All helpers use `action.client(\"notion.write\")`; missing `connections: [notion.write]` or a missing project write grant fails before/at execution.",
+        "Database helpers read the live data-source schema; unknown columns include available columns and close-name suggestions.",
+        "Plain values are coerced by property type: title/rich_text strings, JSON numbers, select/status option names, multi_select arrays, booleans, email/url/date checks, relation page IDs, and people user IDs.",
+        "Read-only/derived property types are rejected: formula, rollup, created_by, created_time, last_edited_by, last_edited_time, unique_id.",
+        "Legacy database IDs resolve only when exactly one data source exists; multi-source databases fail with the available data-source IDs.",
+        "Page text replacement fails unless `old_str` appears in exactly one editable rich-text block; no-match errors include nearby editable text hints.",
+        "Dry-run patterns call the same validators the write path uses, so reviewer-facing failures match execution failures.",
+    ],
+    "do_not": [
+        "Do not build raw Notion property payloads for database rows when plain values plus `validate_database_values` fit.",
+        "Do not skip dry-run validation; use `database_validation_summary` or `page_replacement_summary` so reviewers see the same checks before execution.",
+        "Do not guess Notion column names or select/status option labels; validate against the live schema first.",
+        "Do not pass a generic database ID when Notion reports multiple data sources; ground the exact data-source ID.",
+        "Do not pass `RC_CONN_*` tokens or raw Authorization headers; helpers use `RC_ACTION_*` via `notion.write`.",
+        "Do not set formula, rollup, created/edited, unique_id, or other read-only columns.",
+        "Do not use page text replacement for broad rewrites; `old_str` must be an exact unique anchor.",
+        "Do not import underscored `lib.connectors.notion` internals. The generated action docs list only the supported `lib.action.notion` write helpers; read-only formatting helpers such as `compact_page` stay connector-side.",
+        "Do not import sibling action files or provider SDKs; hosted scripts should use `lib` plus stdlib.",
+    ],
+}
+
+
 @dataclass(frozen=True)
 class NotionBlock:
     id: str

@@ -230,13 +230,14 @@ the capability and connect a write grant (`label=actions`). Read connectors unde
 remain read-only and `RC_CONN_*`-backed.
 
 Available provider helpers are intentionally small and grown as actions need them. When adding or
-changing a provider helper, update that provider's write-plane metadata file at
-`runtime/lib/action/helpers/<provider>.yaml`. The dashboard authoring overlay in the rootcause host repo
-loads those YAML files from the pinned `rootcause-runtime` tag and renders
-`dashboard-overlay/action-integrations*.generated.md`, so the YAML is model-facing downstream. Keep it as
-an explicit whitelist beside the `lib.action.*` modules, not under `lib.connectors.*`; connector manifests
-and private underscored connector functions stay read-plane and are not action-authoring docs unless
-deliberately promoted as public helpers.
+changing a provider helper, update that provider module's literal `ACTION_HELPER_DOCS` constant in
+`runtime/lib/action/<provider>.py`. The dashboard authoring overlay in the rootcause host repo loads
+those constants from the pinned `rootcause-runtime` tag, parses them with Python AST without importing
+the modules, derives helper signatures from real top-level functions, and renders
+`dashboard-overlay/action-integrations*.generated.md`. That constant is model-facing downstream, so keep
+it as the explicit write-plane whitelist inside `lib.action.*`, not under `lib.connectors.*`; connector
+manifests and private underscored connector functions stay read-plane and are not action-authoring docs
+unless deliberately promoted as public action helpers.
 
 One-off write calls can use the generic client:
 
