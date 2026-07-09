@@ -220,11 +220,13 @@ Hosted OAuth/API writes go through `lib.action.client("<capability>")` or provid
 
 ```yaml
 connections:
+  - airtable.write
   - googledrive.write
   - notion.write
 ```
 
-`action.client("notion.write")` resolves only `RC_ACTION_NOTION`, never `RC_CONN_NOTION`, and returns
+`action.client("airtable.write")` resolves only `RC_ACTION_AIRTABLE`, never `RC_CONN_AIRTABLE`;
+`action.client("notion.write")` resolves only `RC_ACTION_NOTION`, never `RC_CONN_NOTION`. Both return
 a `lib.api.Client` with write verbs enabled. Missing credentials fail closed with guidance to declare
 the capability and connect a write grant (`label=actions`). Read connectors under `lib.connectors.*`
 remain read-only and `RC_CONN_*`-backed.

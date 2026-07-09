@@ -156,6 +156,7 @@ class ActionHarness(unittest.TestCase):
 class ActionClientResolution(unittest.TestCase):
     def test_env_var_golden_table(self):
         cases = {
+            "airtable.write": "RC_ACTION_AIRTABLE",
             "notion.write": "RC_ACTION_NOTION",
             "googledrive.write": "RC_ACTION_GOOGLEDRIVE",
             "hubspot-eu.write": "RC_ACTION_HUBSPOT_EU",

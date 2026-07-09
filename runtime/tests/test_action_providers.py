@@ -14,7 +14,7 @@ import responses
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lib import action, api  # noqa: E402
-from lib.action import googledrive, notion  # noqa: E402
+from lib.action import airtable, googledrive, notion  # noqa: E402
 
 
 class FakeClient:
@@ -281,6 +281,197 @@ class NotionActions(unittest.TestCase):
             with self.assertRaises(action.ActionError) as cm:
                 notion.validate_page_replacement(page_id="page_1", old_str="tips to best use docs", new_str="x")
         self.assertIn("Nearby editable text", str(cm.exception))
+
+
+class AirtableFakeClient:
+    def __init__(self):
+        self.calls = []
+        self.schema = {
+            "tables": [
+                {
+                    "id": "tbl_orders",
+                    "name": "Orders",
+                    "fields": [
+                        {"id": "fld_name", "name": "Name", "type": "singleLineText"},
+                        {
+                            "id": "fld_status",
+                            "name": "Status",
+                            "type": "singleSelect",
+                            "options": {"choices": [{"id": "sel_new", "name": "New"}, {"id": "sel_done", "name": "Done"}]},
+                        },
+                        {
+                            "id": "fld_tags",
+                            "name": "Tags",
+                            "type": "multipleSelects",
+                            "options": {"choices": [{"id": "tag_vip", "name": "VIP"}, {"id": "tag_late", "name": "Late"}]},
+                        },
+                        {"id": "fld_qty", "name": "Quantity", "type": "number"},
+                        {"id": "fld_price", "name": "Price", "type": "currency"},
+                        {"id": "fld_percent", "name": "Progress", "type": "percent"},
+                        {"id": "fld_done", "name": "Done", "type": "checkbox"},
+                        {"id": "fld_email", "name": "Email", "type": "email"},
+                        {"id": "fld_url", "name": "Website", "type": "url"},
+                        {"id": "fld_phone", "name": "Phone", "type": "phoneNumber"},
+                        {"id": "fld_date", "name": "Ship date", "type": "date"},
+                        {"id": "fld_at", "name": "Ship at", "type": "dateTime"},
+                        {"id": "fld_rating", "name": "Rating", "type": "rating", "options": {"max": 5}},
+                        {"id": "fld_duration", "name": "Duration", "type": "duration"},
+                        {"id": "fld_barcode", "name": "Barcode", "type": "barcode"},
+                        {"id": "fld_notes", "name": "Notes", "type": "multilineText"},
+                        {"id": "fld_rich", "name": "Rich notes", "type": "richText"},
+                        {"id": "fld_owner", "name": "Owner", "type": "singleCollaborator"},
+                        {"id": "fld_watchers", "name": "Watchers", "type": "multipleCollaborators"},
+                        {"id": "fld_related", "name": "Related", "type": "multipleRecordLinks"},
+                        {"id": "fld_files", "name": "Files", "type": "multipleAttachments"},
+                        {"id": "fld_auto", "name": "Auto", "type": "autoNumber"},
+                        {"id": "fld_formula", "name": "Computed", "type": "formula"},
+                        {"id": "fld_lookup", "name": "Lookup", "type": "multipleLookupValues"},
+                        {"id": "fld_ai", "name": "AI", "type": "aiText"},
+                    ],
+                },
+                {"id": "tbl_other", "name": "Returns", "fields": []},
+            ]
+        }
+
+    def get(self, path, **kw):
+        self.calls.append(("GET", path, kw))
+        if path == "meta/bases/app_1/tables":
+            return self.schema
+        raise AssertionError(f"unexpected GET {path}")
+
+    def post(self, path, **kw):
+        self.calls.append(("POST", path, kw))
+        return {"id": "rec_new", "fields": kw["json"]["fields"], "createdTime": "2026-07-09T00:00:00.000Z"}
+
+    def patch(self, path, **kw):
+        self.calls.append(("PATCH", path, kw))
+        return {"id": path.split("/")[-1], "fields": kw["json"]["fields"], "createdTime": "2026-07-09T00:00:00.000Z"}
+
+
+class AirtableActions(unittest.TestCase):
+    def test_record_create_and_update_shapes(self):
+        fake = AirtableFakeClient()
+        fields = {"Name": "Baseball", "Status": "Done"}
+        with mock.patch.object(airtable, "_client", return_value=fake):
+            created = airtable.create_record(base_id="app_1", table_id_or_name="Orders", fields=fields)
+            updated = airtable.update_record(base_id="app_1", table_id_or_name="tbl_orders", record_id="rec_1", fields=fields)
+
+        self.assertEqual(created.id, "rec_new")
+        self.assertEqual(updated.id, "rec_1")
+        self.assertEqual(fake.calls[-3][0:2], ("POST", "app_1/tbl_orders"))
+        self.assertEqual(fake.calls[-3][2]["json"], {"fields": {"Name": "Baseball", "Status": "Done"}})
+        self.assertEqual(fake.calls[-1][0:2], ("PATCH", "app_1/tbl_orders/rec_1"))
+        self.assertEqual(fake.calls[-1][2]["json"]["fields"]["Status"], "Done")
+
+    def test_record_validation_covers_common_writable_field_types(self):
+        fake = AirtableFakeClient()
+        values = {
+            "Name": "Baseball",
+            "Status": "New",
+            "Tags": ["VIP", "Late"],
+            "Quantity": 2,
+            "Price": 12.5,
+            "Progress": 0.25,
+            "Done": True,
+            "Email": "customer@example.com",
+            "Website": "https://example.com/order",
+            "Phone": "+32 2 000 00 00",
+            "Ship date": "2026-07-10",
+            "Ship at": "2026-07-10T12:34:56.000Z",
+            "Rating": 5,
+            "Duration": 3600,
+            "Barcode": {"text": "1234567890", "type": "code39"},
+            "Notes": "gift wrap",
+            "Rich notes": "**gift** wrap",
+            "Owner": {"email": "owner@example.com"},
+            "Watchers": ["usr_1", "grp_1"],
+            "Related": ["rec_linked"],
+            "Files": [{"url": "https://example.com/invoice.pdf", "filename": "invoice.pdf"}],
+        }
+        with mock.patch.object(airtable, "_client", return_value=fake):
+            checked = airtable.validate_record_fields("app_1", "Orders", values)
+
+        self.assertEqual(checked.fields["Status"], "New")
+        self.assertEqual(checked.fields["Tags"], ["VIP", "Late"])
+        self.assertEqual(checked.fields["Owner"], {"email": "owner@example.com"})
+        self.assertEqual(checked.fields["Watchers"], ["usr_1", "grp_1"])
+        self.assertEqual(checked.fields["Related"], ["rec_linked"])
+        self.assertEqual(checked.fields["Files"][0]["filename"], "invoice.pdf")
+        self.assertEqual(checked.fields["Barcode"], {"text": "1234567890", "type": "code39"})
+
+    def test_record_validation_accepts_field_ids_and_reports_summary(self):
+        fake = AirtableFakeClient()
+        with mock.patch.object(airtable, "_client", return_value=fake):
+            checked = airtable.validate_record_fields("app_1", "tbl_orders", {"fld_status": "Done"})
+        self.assertEqual(checked.fields, {"Status": "Done"})
+        self.assertIn("Airtable table **Orders**", airtable.record_validation_summary(checked, operation="Dry run: update record"))
+
+    def test_record_validation_reports_bad_selects_unknown_fields_and_suggestions(self):
+        fake = AirtableFakeClient()
+        values = {"Stauts": "Done", "Status": "Shipped", "Tags": ["VIP", "Cold"]}
+        with mock.patch.object(airtable, "_client", return_value=fake):
+            with self.assertRaises(action.ActionError) as cm:
+                airtable.validate_record_fields("app_1", "Orders", values)
+        msg = str(cm.exception)
+        self.assertIn("Available fields: Name (singleLineText); Status (singleSelect: New, Done)", msg)
+        self.assertIn("Did you mean: Status", msg)
+        self.assertIn("'Shipped' is not valid. Valid values: New, Done", msg)
+        self.assertIn("'Cold' is not valid. Valid values: VIP, Late", msg)
+
+    def test_record_typecast_allows_new_select_choices_when_explicit(self):
+        fake = AirtableFakeClient()
+        values = {"Status": "Shipped", "Tags": ["VIP", "Cold"]}
+        with mock.patch.object(airtable, "_client", return_value=fake):
+            checked = airtable.validate_record_fields("app_1", "Orders", values, typecast=True)
+            created = airtable.create_record(base_id="app_1", table_id_or_name="Orders", fields=values, typecast=True)
+
+        self.assertEqual(checked.fields, values)
+        self.assertEqual(created.id, "rec_new")
+        self.assertEqual(fake.calls[-1][2]["json"], {"fields": values, "typecast": True})
+
+    def test_record_validation_reports_read_only_and_invalid_common_types(self):
+        fake = AirtableFakeClient()
+        values = {
+            "Auto": 1,
+            "Computed": 2,
+            "Lookup": "x",
+            "AI": "x",
+            "Done": "yes",
+            "Email": "not-email",
+            "Website": "ftp://example.com",
+            "Ship date": "tomorrow",
+            "Ship at": "later",
+            "Rating": 6,
+            "Duration": 1.5,
+            "Files": [{"filename": "invoice.pdf"}],
+            "Barcode": {"type": "code39"},
+        }
+        with mock.patch.object(airtable, "_client", return_value=fake):
+            with self.assertRaises(action.ActionError) as cm:
+                airtable.validate_record_fields("app_1", "Orders", values)
+        msg = str(cm.exception)
+        self.assertIn("field 'Auto' is read-only (autoNumber)", msg)
+        self.assertIn("field 'Computed' is read-only (formula)", msg)
+        self.assertIn("field 'Lookup' is read-only (multipleLookupValues)", msg)
+        self.assertIn("field 'AI' is read-only (aiText)", msg)
+        self.assertIn("field 'Done' is checkbox; provide true or false", msg)
+        self.assertIn("'not-email' is not a valid email address", msg)
+        self.assertIn("provide an http(s) URL", msg)
+        self.assertIn("'tomorrow' is not an ISO date", msg)
+        self.assertIn("'later' is not ISO-8601", msg)
+        self.assertIn("provide an integer from 1 to 5", msg)
+        self.assertIn("provide a non-negative integer number of seconds", msg)
+        self.assertIn("each attachment needs a url or existing id", msg)
+        self.assertIn("text must be a non-empty string", msg)
+
+    def test_table_schema_unknown_table_lists_available_tables(self):
+        fake = AirtableFakeClient()
+        with mock.patch.object(airtable, "_client", return_value=fake):
+            with self.assertRaises(action.ActionError) as cm:
+                airtable.retrieve_table_schema("app_1", "Order")
+        msg = str(cm.exception)
+        self.assertIn("Available tables: Orders (tbl_orders); Returns (tbl_other)", msg)
+        self.assertIn("Did you mean: Orders", msg)
 
 
 class GoogleDriveActions(unittest.TestCase):
