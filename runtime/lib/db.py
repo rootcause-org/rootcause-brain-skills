@@ -5,9 +5,10 @@ injected as its own ``*_DSN`` env var. Pick one with the ``db`` argument, which 
 name (``"powertools"``), the exact env-var name (``"MOMENTUM_POWERTOOLS_DSN"``), or a raw DSN.
 ``db`` may be omitted with a single database configured, with ``PG_DSN`` set, or when the project has
 a STANDARD database (the operator's default, injected as ``RC_DB_DEFAULT``) — a multi-DB run then
-reads the standard. ``databases()`` lists what this run has. ``--list`` (or a bad ``db=``) shows each database's purpose — the
-descriptions come from project metadata in the ``RC_DB_DESCRIPTIONS`` env var (a JSON object keyed
-by the exact DSN env-var name), so the agent learns which DB is which without trial-and-error.
+reads the standard. ``databases()`` lists what this run has. ``tables()`` / ``columns()`` introspect
+the effective schema. ``--list`` (or a bad ``db=``) shows each database's purpose — the descriptions
+come from project metadata in the ``RC_DB_DESCRIPTIONS`` env var (a JSON object keyed by the exact
+DSN env-var name), so the agent learns which DB is which without trial-and-error.
 
 On a data-scoped project, `query` AUTO-HEALS: if you SELECT a column the project hides (standard
 single-table shape), it's dropped, the trimmed query runs, and a warning names what was dropped — so
@@ -592,6 +593,21 @@ def query_one(sql: str, params: list | tuple | None = None, db: str | None = Non
     return rows[0] if rows else None
 
 
+def tables(schema: str | None = None, db: str | None = None) -> list[dict]:
+    """Table names in the run's effective schema.
+
+    ``schema=None`` (default) mirrors ``columns``: introspect ``current_schema()`` so scoped runs see
+    their projected ``scope_<id>`` views and flat runs see ``public``.
+    """
+    return query(
+        "select table_name, table_type from information_schema.tables "
+        "where table_schema = coalesce(%s::text, current_schema()) "
+        "order by table_name",
+        [schema],
+        db=db,
+    )
+
+
 def columns(table: str, schema: str | None = None, db: str | None = None) -> list[dict]:
     """Column names + types for one table — schema introspection when the layout is unknown.
 
@@ -629,6 +645,23 @@ def tables_with_column(name_like: str, schema: str | None = None, db: str | None
     )
     _warn_hidden_column_notes(_excluded_map_for_db(db), pattern=name_like)
     return rows
+
+
+# Affordance aliases for common model guesses. Keep these thin so the canonical helpers stay the
+# contract while muscle-memory names still land on the read-only path.
+sql = query
+select = query
+one = query_one
+first = query_one
+list_databases = databases
+database_names = databases
+list_tables = tables
+table_names = tables
+schema = columns
+describe_table = columns
+table_info = columns
+find_columns = tables_with_column
+tables_by_column = tables_with_column
 
 
 def _parse_duration_ms(s: str) -> int:

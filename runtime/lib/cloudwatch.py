@@ -6,6 +6,8 @@ The story behind a thread lives in the app's structured (``slog`` JSON) logs. Tw
   path: ``filter`` / ``parse`` / ``stats`` over a time range — and returns rows as dicts.
 - ``search`` / ``tail`` are thin conveniences over it for the common "find X" / "show recent"
   cases; ``log_groups`` discovers what's there.
+- ``query`` / ``logs`` / ``recent`` / ``groups`` are aliases for the same read-only helpers, so
+  common model guesses do not fall off the API.
 
 Insights matches a field in context, so prefer ``filter @message like /"thread_id":"<uuid>"/``
 over a bare id, which false-matches any field carrying those digits.
@@ -195,6 +197,16 @@ def filter_log_events(log_group: str, pattern: str, limit: int = 50) -> list[dic
     """
     events = _client().filter_log_events(logGroupName=log_group, filterPattern=pattern, limit=limit)
     return list(events.get("events", []))
+
+
+# Affordance aliases for common model guesses; all keep the same read-only implementations.
+query = insights
+logs = search
+grep = search
+recent = tail
+groups = log_groups
+list_log_groups = log_groups
+filter_events = filter_log_events
 
 
 def _main(argv=None) -> int:

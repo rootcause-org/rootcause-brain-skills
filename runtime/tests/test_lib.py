@@ -331,6 +331,30 @@ class Introspection(unittest.TestCase):
         self.assertIn("current_schema()", sql)
         self.assertEqual(params, [None, "%email%"])
 
+    def test_tables_delegates(self):
+        with mock.patch.object(db, "query", return_value=[]) as q:
+            db.tables(db="powertools")
+        sql, params = q.call_args.args[0], q.call_args.args[1]
+        self.assertIn("information_schema.tables", sql)
+        self.assertIn("current_schema()", sql)
+        self.assertEqual(params, [None])
+        self.assertEqual(q.call_args.kwargs["db"], "powertools")
+
+    def test_common_db_aliases(self):
+        self.assertIs(db.sql, db.query)
+        self.assertIs(db.select, db.query)
+        self.assertIs(db.one, db.query_one)
+        self.assertIs(db.first, db.query_one)
+        self.assertIs(db.list_databases, db.databases)
+        self.assertIs(db.database_names, db.databases)
+        self.assertIs(db.list_tables, db.tables)
+        self.assertIs(db.table_names, db.tables)
+        self.assertIs(db.schema, db.columns)
+        self.assertIs(db.describe_table, db.columns)
+        self.assertIs(db.table_info, db.columns)
+        self.assertIs(db.find_columns, db.tables_with_column)
+        self.assertIs(db.tables_by_column, db.tables_with_column)
+
     def test_columns_warns_about_hidden_and_allowlisted_columns(self):
         os.environ["APP_DSN"] = "postgres://app"
         os.environ["RC_DB_EXCLUDED_COLUMNS"] = (
@@ -734,6 +758,17 @@ class CloudWatchCredentials(unittest.TestCase):
     def test_connector_reexports_cloudwatch_helpers(self):
         self.assertIs(cloudwatch_connector.insights, cloudwatch.insights)
         self.assertIs(cloudwatch_connector.search, cloudwatch.search)
+        self.assertIs(cloudwatch_connector.query, cloudwatch.insights)
+        self.assertIs(cloudwatch_connector.logs, cloudwatch.search)
+
+    def test_common_cloudwatch_aliases(self):
+        self.assertIs(cloudwatch.query, cloudwatch.insights)
+        self.assertIs(cloudwatch.logs, cloudwatch.search)
+        self.assertIs(cloudwatch.grep, cloudwatch.search)
+        self.assertIs(cloudwatch.recent, cloudwatch.tail)
+        self.assertIs(cloudwatch.groups, cloudwatch.log_groups)
+        self.assertIs(cloudwatch.list_log_groups, cloudwatch.log_groups)
+        self.assertIs(cloudwatch.filter_events, cloudwatch.filter_log_events)
 
 
 class InsightsPolling(unittest.TestCase):
