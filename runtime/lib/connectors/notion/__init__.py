@@ -151,7 +151,7 @@ def _extract_title(page: dict) -> str:
     return ""
 
 
-def _compact_page(page: dict) -> dict:
+def compact_page(page: dict) -> dict:
     """Pre-select the support-relevant fields from a raw Notion page object.
 
     Raw pages have enormous ``properties`` objects with every database column. We extract:
@@ -203,6 +203,10 @@ def _compact_page(page: dict) -> dict:
     }
 
 
+def _compact_page(page: dict) -> dict:
+    return compact_page(page)
+
+
 # ---------------------------------------------------------------------------
 # Public operations
 # ---------------------------------------------------------------------------
@@ -228,7 +232,7 @@ def search(
         body["filter"] = {"value": filter_type, "property": "object"}
     # Paths are relative to API_BASE (https://api.notion.com/v1); no leading "v1/" prefix.
     results = _post_paginate("search", body, page_size=page_size)
-    return [_compact_page(r) for r in results]
+    return [compact_page(r) for r in results]
 
 
 def query_database(
@@ -251,7 +255,7 @@ def query_database(
     if sorts_json:
         body["sorts"] = sorts_json
     results = _post_paginate(path, body, page_size=page_size)
-    return [_compact_page(r) for r in results]
+    return [compact_page(r) for r in results]
 
 
 def retrieve_markdown(page_id: str, *, include_transcript: bool = False) -> dict[str, Any]:
@@ -268,7 +272,7 @@ def _loads_json_arg(value: str) -> Any:
 
 def retrieve_row(page_id: str) -> dict[str, Any]:
     """GET /v1/pages/{id} with compact property rendering."""
-    return _compact_page(_get(f"pages/{page_id}"))
+    return compact_page(_get(f"pages/{page_id}"))
 
 
 def _results_to_markdown(results: list[dict], heading: str) -> str:

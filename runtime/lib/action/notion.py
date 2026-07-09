@@ -467,7 +467,7 @@ def _replacement_suggestions(*, page_id: str, old_str: str) -> str:
 
 
 def _page(raw: dict[str, Any]) -> NotionPage:
-    return NotionPage(id=str(raw.get("id", "")), url=str(raw.get("url", "")), raw=notion_read._compact_page(raw))
+    return NotionPage(id=str(raw.get("id", "")), url=str(raw.get("url", "")), raw=notion_read.compact_page(raw))
 
 
 def _rich_text(text: str) -> list[dict[str, Any]]:

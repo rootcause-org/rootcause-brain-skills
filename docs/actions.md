@@ -214,18 +214,11 @@ a `lib.api.Client` with write verbs enabled. Missing credentials fail closed wit
 the capability and connect a write grant (`label=actions`). Read connectors under `lib.connectors.*`
 remain read-only and `RC_CONN_*`-backed.
 
-Available provider helpers are intentionally small and grown as actions need them:
-
-- `lib.action.googledrive.upload_file(folder_id=..., file=...)`
-- `lib.action.googledrive.upload_attachment(folder_id=..., attachment=...)`
-- `lib.action.notion.append_file_link(page_id=..., title=..., url=...)`
-- `lib.action.notion.create_page(parent_id=..., title=..., properties=...)`
-- `lib.action.notion.update_properties(page_id=..., properties=...)`
-- `lib.action.notion.validate_database_values(database_id=..., values=...)`
-- `lib.action.notion.create_database_row(database_id=..., values=...)`
-- `lib.action.notion.update_database_row(database_id=..., record_id=..., values=...)`
-- `lib.action.notion.validate_page_replacement(page_id=..., old_str=..., new_str=...)`
-- `lib.action.notion.replace_page_text(page_id=..., old_str=..., new_str=...)`
+Available provider helpers are intentionally small and grown as actions need them. The dashboard
+authoring overlay is generated from `runtime/lib/action/helpers.yaml`, an explicit whitelist beside the
+`lib.action.*` modules. Keep write-helper metadata there, not under `lib.connectors.*`; connector
+manifests and private underscored connector functions stay read-plane and are not action-authoring docs
+unless deliberately promoted as public helpers.
 
 One-off write calls can use the generic client:
 
