@@ -48,6 +48,21 @@ Action docs/runbooks should put exact safety guards and verification checks near
 evidence, disqualifying states, preflight expectations, post-execution proof, and when to refuse or
 escalate.
 
+## Param Types
+
+`manifest.yaml` params are a small closed vocabulary:
+
+- `string` (default), `integer`, `number`, `boolean`, `string[]`, `object` for JSON values.
+- `attachment` for a user-provided email/dashboard file. The agent proposes an attachment id; hosted
+  execution rewrites it to a file descriptor, consumed with `p.file("<name>")`.
+- `generated_file` for a host-rendered artifact. The manifest must name a `generator`; currently
+  `email_message_pdf` renders an email message to PDF from
+  `{"kind":"email_message_pdf","message_id":"<local_message_id>"}`. Before `script.py` starts, the host
+  rewrites it to the same file descriptor shape consumed with `p.file("<name>")`. Generated-file params
+  are hosted-only and cannot have `preflight.py`.
+
+Use `format`, `pattern`, and `enum` on scalar params; use `accept` as a MIME allowlist for file params.
+
 ## Autonomy (`human` | `policy` | `auto`)
 
 By default an action is **human-gated**: the run proposes, a reviewer confirms, and only then does the
@@ -181,7 +196,7 @@ action.ok(
 
 `action.params()` reads `$RC_ACTION_PARAMS` and installs crash capture. `p["name"]` is required;
 `p.get("name")` is optional. `p.file("attachment")` returns a `FileParam` with `path`, `filename`,
-`mime_type`, `size_bytes`, `attachment_id`, plus `open()` and `read_bytes()`.
+`mime_type`, `size_bytes`, `attachment_id`, `sha256` when provided, plus `open()` and `read_bytes()`.
 
 `action.ok(summary, data)` writes the success Result to `$RC_ACTION_RESULT`, prints it, and exits.
 `action.fail(summary, data)` is a handled negative: the executor worked, but the reviewer should not
@@ -253,6 +268,9 @@ an `autonomy: policy` rule before publishing. Default body execution is a local 
 writes for real to whatever `.env.action` targets; use only safe local/staging targets unless explicitly
 intending a real write. Inside scripts, `action.dry_run()` follows `--commit` > `--dry-run` >
 `RC_ACTION_DRY_RUN=1`.
+
+For `generated_file`, local Layer-1 accepts the hosted source object shape, but the local runner cannot
+render it. Body tests need a materialized descriptor with a local `path`.
 
 For tenant-enabled projects, use `action.require_tenant()` and scope every write by the trusted
 `RC_TENANT_ID` / `RC_TENANT_SLUG` values, never by model-proposed params.

@@ -42,6 +42,7 @@ class FileParam:
     mime_type: str = ""
     size_bytes: int | None = None
     attachment_id: str = ""
+    sha256: str = ""
 
     def open(self, mode: str = "rb"):
         return self.path.open(mode)
@@ -79,6 +80,7 @@ class Params(Mapping[str, Any]):
             mime_type=str(raw.get("mime_type") or raw.get("content_type") or ""),
             size_bytes=_maybe_int(raw.get("size_bytes") if "size_bytes" in raw else raw.get("size")),
             attachment_id=str(raw.get("attachment_id") or raw.get("id") or ""),
+            sha256=str(raw.get("sha256") or ""),
         )
 
 

@@ -6,9 +6,11 @@ source_module: lib.action.googledrive
 manifest:
   - "Declare `connections: [googledrive.write]`."
   - "Use `type: attachment` params for user-provided files; pass the file param directly to `upload_attachment`."
+  - "Use `type: generated_file` with `generator: email_message_pdf` when the host should render an email body to PDF before upload; consume it with `p.file(...)` and `upload_file`."
 common_params:
   - "`folder_id`: destination Drive folder ID."
   - "`attachment`: hosted-action attachment param when uploading a user-provided file."
+  - "`email_pdf`: hosted generated_file param when uploading a rendered email-message PDF."
   - "`name`: optional override for the Drive filename."
 useful_for:
   - upload an email/dashboard attachment into a known Drive folder

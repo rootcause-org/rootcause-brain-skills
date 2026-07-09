@@ -79,8 +79,8 @@ def load_manifest(action_path: Path) -> dict:
 def _check_type(name: str, value, typ: str) -> str | None:
     """Mirror the host's ParamType check (internal/action/action.go). Returns an error string or None.
     bool is NOT an int here (Python's bool-is-int footgun would let `true` pass as integer).
-    Attachment params also accept the delivered local file descriptor shape so body smoke tests can
-    run after the host's fetch/rewrite phase."""
+    Attachment/generated_file params also accept the delivered local file descriptor shape so body smoke
+    tests can run after the host's fetch/rewrite phase."""
     if typ in ("", "string"):
         return None if isinstance(value, str) else f"param {name!r} must be a string, got {type(value).__name__}"
     if typ == "integer":
@@ -104,11 +104,33 @@ def _check_type(name: str, value, typ: str) -> str | None:
             path = value.get("path") or value.get("local_path") or value.get("tmp_path")
             return None if isinstance(path, str) and path else f"param {name!r} local attachment descriptor must include a path"
         return f"param {name!r} must be an attachment_id UUID string, got {type(value).__name__}"
+    if typ == "generated_file":
+        if isinstance(value, dict):
+            path = value.get("path") or value.get("local_path") or value.get("tmp_path")
+            if isinstance(path, str) and path:
+                return None
+            kind = str(value.get("kind") or "").strip()
+            message_id = str(value.get("message_id") or "").strip()
+            if not kind:
+                return f"param {name!r} generated_file requires kind"
+            if not _UUID_RE.match(message_id):
+                return f"param {name!r} generated_file requires message_id UUID string"
+            return None
+        return f"param {name!r} must be a generated_file object"
     return f"param {name!r} declares an unsupported type {typ!r}"
 
 
 def _check_constraints(name: str, value, p: dict) -> str | None:
     """Layer-1 format/pattern/enum — STRING values only (a non-string passed its type check already)."""
+    if p.get("type") == "generated_file" and isinstance(value, dict):
+        path = value.get("path") or value.get("local_path") or value.get("tmp_path")
+        if path:
+            return None
+        want = str(p.get("generator") or "").strip()
+        got = str(value.get("kind") or "").strip()
+        if want and got != want:
+            return f"param {name!r} generated_file kind {got!r} does not match generator {want!r}"
+        return None
     if not isinstance(value, str):
         return None
     enum = p.get("enum") or []
@@ -284,6 +306,21 @@ def run_body(brain_dir: Path, action_path: Path, manifest: dict, params: dict, *
     if not script.is_file():
         print(f"error: no script.py in {action_path}", file=sys.stderr)
         return 1
+    for p in manifest.get("params") or []:
+        if p.get("type") != "generated_file":
+            continue
+        raw = params.get(p["name"])
+        if not isinstance(raw, dict):
+            continue
+        path = raw.get("path") or raw.get("local_path") or raw.get("tmp_path")
+        if path:
+            continue
+        print(
+            f"error: generated_file param {p['name']!r} is a hosted source object, not a materialized file. "
+            "Local body tests need the delivered descriptor shape with a path.",
+            file=sys.stderr,
+        )
+        return 2
 
     # The action container sees the sealed .env.action ONLY — never the grounding .env. Reproduce that
     # exactly: feed the body just .env.action, so a missing read DSN fails here like it would in prod.

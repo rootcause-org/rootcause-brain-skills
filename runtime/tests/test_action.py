@@ -31,6 +31,7 @@ class ActionHarness(unittest.TestCase):
                         "mime_type": "application/pdf",
                         "size_bytes": 3,
                         "attachment_id": "att_1",
+                        "sha256": "abc123",
                     },
                 }),
                 encoding="utf-8",
@@ -43,6 +44,7 @@ class ActionHarness(unittest.TestCase):
             self.assertEqual(f.mime_type, "application/pdf")
             self.assertEqual(f.size_bytes, 3)
             self.assertEqual(f.attachment_id, "att_1")
+            self.assertEqual(f.sha256, "abc123")
             self.assertEqual(f.read_bytes(), b"pdf")
 
     def test_params_from_argv_and_missing_required_param(self):
