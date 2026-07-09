@@ -115,8 +115,9 @@ def run(p: action.Params) -> dict:
     "validation_failure": [
         "All helpers use `action.client(\"notion.write\")`; missing `connections: [notion.write]` or a missing project write grant fails before/at execution.",
         "Database helpers read the live data-source schema; unknown columns include available columns and close-name suggestions.",
-        "Plain values are coerced by property type: title/rich_text strings, JSON numbers, select/status option names, multi_select arrays, booleans, email/url/date checks, relation page IDs, and people user IDs.",
-        "Read-only/derived property types are rejected: formula, rollup, created_by, created_time, last_edited_by, last_edited_time, unique_id.",
+        "Plain values are coerced by property type: title/rich_text strings, JSON numbers, select/status option names or IDs, multi_select arrays, booleans, email/url/date checks, relation page IDs, people user IDs, files arrays, and wiki verification state.",
+        "Native Notion property payloads are also validated before passing through; select/status/multi_select errors list the live valid options.",
+        "Read-only/derived/unsupported property types are rejected: formula, rollup, created_by, created_time, last_edited_by, last_edited_time, unique_id, place.",
         "Legacy database IDs resolve only when exactly one data source exists; multi-source databases fail with the available data-source IDs.",
         "Page text replacement fails unless `old_str` appears in exactly one editable rich-text block; no-match errors include nearby editable text hints.",
         "Dry-run patterns call the same validators the write path uses, so reviewer-facing failures match execution failures.",
@@ -127,7 +128,7 @@ def run(p: action.Params) -> dict:
         "Do not guess Notion column names or select/status option labels; validate against the live schema first.",
         "Do not pass a generic database ID when Notion reports multiple data sources; ground the exact data-source ID.",
         "Do not pass `RC_CONN_*` tokens or raw Authorization headers; helpers use `RC_ACTION_*` via `notion.write`.",
-        "Do not set formula, rollup, created/edited, unique_id, or other read-only columns.",
+        "Do not set formula, rollup, created/edited, unique_id, place, or other read-only/unsupported columns.",
         "Do not use page text replacement for broad rewrites; `old_str` must be an exact unique anchor.",
         "Do not import underscored `lib.connectors.notion` internals. The generated action docs list only the supported `lib.action.notion` write helpers; read-only formatting helpers such as `compact_page` stay connector-side.",
         "Do not import sibling action files or provider SDKs; hosted scripts should use `lib` plus stdlib.",
@@ -172,6 +173,7 @@ class PageTextMatch:
 
 
 _READ_ONLY_PROPERTY_TYPES = {
+    "button",
     "created_by",
     "created_time",
     "formula",
@@ -180,6 +182,8 @@ _READ_ONLY_PROPERTY_TYPES = {
     "rollup",
     "unique_id",
 }
+_UNSUPPORTED_PROPERTY_TYPES = {"place"}
+_VERIFICATION_STATES = ("verified", "unverified", "expired")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -379,9 +383,10 @@ def _property_value(name: str, schema: Mapping[str, Any], value: Any) -> dict[st
     ptype = str(schema.get("type") or "")
     if ptype in _READ_ONLY_PROPERTY_TYPES:
         raise action.ActionError(f"column {name!r} is read-only ({ptype}) and cannot be set through the API")
+    if ptype in _UNSUPPORTED_PROPERTY_TYPES:
+        raise action.ActionError(f"column {name!r} is unsupported by the Notion API ({ptype}); omit it")
     if isinstance(value, Mapping) and ptype in value:
-        _validate_native_property_value(name, schema, value[ptype])
-        return {ptype: value[ptype]}
+        return {ptype: _coerce_native_property_value(name, schema, value[ptype])}
     if ptype == "title":
         return {"title": _coerce_rich_text(name, value, "title")}
     if ptype == "rich_text":
@@ -391,14 +396,9 @@ def _property_value(name: str, schema: Mapping[str, Any], value: Any) -> dict[st
     if ptype in {"select", "status"}:
         if value is None:
             return {ptype: None}
-        label = _coerce_name(name, value, ptype)
-        _validate_option(name, schema, label)
-        return {ptype: {"name": label}}
+        return {ptype: _coerce_option(name, schema, value, ptype)}
     if ptype == "multi_select":
-        labels = _coerce_string_list(name, value, "multi_select")
-        for label in labels:
-            _validate_option(name, schema, label)
-        return {"multi_select": [{"name": label} for label in labels]}
+        return {"multi_select": _coerce_options_list(name, schema, value)}
     if ptype == "checkbox":
         if not isinstance(value, bool):
             raise action.ActionError(f"column {name!r} is checkbox; provide true or false")
@@ -412,33 +412,83 @@ def _property_value(name: str, schema: Mapping[str, Any], value: Any) -> dict[st
     if ptype == "date":
         return {"date": _coerce_date(name, value)}
     if ptype == "relation":
-        return {"relation": [{"id": _notion_id(x)} for x in _coerce_string_list(name, value, "relation page IDs")]}
+        return {"relation": _coerce_id_objects(name, value, "relation page IDs")}
     if ptype == "people":
-        return {"people": [{"id": str(x)} for x in _coerce_string_list(name, value, "people user IDs")]}
-    if ptype in {"files", "place"}:
-        if isinstance(value, list) or isinstance(value, Mapping):
-            return {ptype: value}
-        raise action.ActionError(f"column {name!r} is {ptype}; provide Notion's native {ptype} JSON value")
+        return {"people": _coerce_id_objects(name, value, "people user IDs")}
+    if ptype == "files":
+        return {"files": _coerce_files(name, value)}
+    if ptype == "verification":
+        return {"verification": _coerce_verification(name, value)}
     raise action.ActionError(f"column {name!r} has unsupported Notion property type {ptype!r}")
 
 
-def _validate_native_property_value(name: str, schema: Mapping[str, Any], value: Any) -> None:
+def _coerce_native_property_value(name: str, schema: Mapping[str, Any], value: Any) -> Any:
     ptype = str(schema.get("type") or "")
-    if ptype in {"select", "status"} and isinstance(value, Mapping) and value.get("name"):
-        _validate_option(name, schema, str(value["name"]))
-    if ptype == "multi_select" and isinstance(value, list):
-        for entry in value:
-            if isinstance(entry, Mapping) and entry.get("name"):
-                _validate_option(name, schema, str(entry["name"]))
+    if ptype == "title":
+        return _coerce_rich_text(name, value, "title")
+    if ptype == "rich_text":
+        return _coerce_rich_text(name, value, "rich_text")
+    if ptype == "number":
+        return _coerce_number(name, value)
+    if ptype in {"select", "status"}:
+        if value is None:
+            return None
+        return _coerce_option(name, schema, value, ptype)
+    if ptype == "multi_select":
+        return _coerce_options_list(name, schema, value)
+    if ptype == "checkbox":
+        if not isinstance(value, bool):
+            raise action.ActionError(f"column {name!r} is checkbox; provide true or false")
+        return value
+    if ptype == "email":
+        return _coerce_email(name, value)
+    if ptype == "url":
+        return _coerce_url(name, value)
+    if ptype == "phone_number":
+        return _coerce_string(name, value, "phone_number")
+    if ptype == "date":
+        return _coerce_date(name, value)
+    if ptype == "relation":
+        return _coerce_id_objects(name, value, "relation page IDs")
+    if ptype == "people":
+        return _coerce_id_objects(name, value, "people user IDs")
+    if ptype == "files":
+        return _coerce_files(name, value)
+    if ptype == "verification":
+        return _coerce_verification(name, value)
+    raise action.ActionError(f"column {name!r} has unsupported Notion property type {ptype!r}")
 
 
-def _validate_option(name: str, schema: Mapping[str, Any], label: str) -> None:
+def _option_catalog(schema: Mapping[str, Any]) -> tuple[dict[str, str], dict[str, str]]:
     ptype = str(schema.get("type") or "")
     options = ((schema.get(ptype) or {}).get("options") or []) if isinstance(schema.get(ptype), Mapping) else []
-    valid = [str(o.get("name")) for o in options if isinstance(o, Mapping) and o.get("name")]
-    if valid and label not in valid:
+    by_name: dict[str, str] = {}
+    by_id: dict[str, str] = {}
+    for option in options:
+        if not isinstance(option, Mapping):
+            continue
+        option_name = option.get("name")
+        option_id = option.get("id")
+        if isinstance(option_name, str) and option_name:
+            by_name[option_name] = str(option_id or "")
+        if isinstance(option_id, str) and option_id:
+            by_id[option_id] = str(option_name or "")
+    return by_name, by_id
+
+
+def _validate_option(name: str, schema: Mapping[str, Any], value: str, *, key: str) -> None:
+    by_name, by_id = _option_catalog(schema)
+    if not by_name and not by_id:
+        return
+    if key == "name" and value not in by_name:
+        valid = ", ".join(by_name)
         raise action.ActionError(
-            f"column {name!r} is {ptype}; {label!r} is not valid. Valid values: {', '.join(valid)}"
+            f"column {name!r} is {schema.get('type')}; {value!r} is not valid. Valid values: {valid}"
+        )
+    if key == "id" and value not in by_id:
+        valid = ", ".join(f"{oid} ({label})" if label else oid for oid, label in by_id.items())
+        raise action.ActionError(
+            f"column {name!r} is {schema.get('type')}; option ID {value!r} is not valid. Valid option IDs: {valid}"
         )
 
 
@@ -606,12 +656,32 @@ def _coerce_number(name: str, value: Any) -> int | float | None:
     return value
 
 
-def _coerce_name(name: str, value: Any, label: str) -> str:
+def _coerce_option(name: str, schema: Mapping[str, Any], value: Any, label: str) -> dict[str, str]:
     if isinstance(value, str) and value.strip():
-        return value.strip()
+        option_name = value.strip()
+        _validate_option(name, schema, option_name, key="name")
+        return {"name": option_name}
     if isinstance(value, Mapping) and isinstance(value.get("name"), str) and value["name"].strip():
-        return value["name"].strip()
-    raise action.ActionError(f"column {name!r} is {label}; provide one option name")
+        option_name = value["name"].strip()
+        _validate_option(name, schema, option_name, key="name")
+        return {"name": option_name}
+    if isinstance(value, Mapping) and isinstance(value.get("id"), str) and value["id"].strip():
+        option_id = value["id"].strip()
+        _validate_option(name, schema, option_id, key="id")
+        return {"id": option_id}
+    raise action.ActionError(f"column {name!r} is {label}; provide one option name or option ID")
+
+
+def _coerce_options_list(name: str, schema: Mapping[str, Any], value: Any) -> list[dict[str, str]]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, list):
+        values = value
+    else:
+        raise action.ActionError(f"column {name!r} is multi_select; provide a string array")
+    return [_coerce_option(name, schema, entry, "multi_select") for entry in values]
 
 
 def _coerce_string(name: str, value: Any, label: str) -> str | None:
@@ -648,6 +718,53 @@ def _coerce_string_list(name: str, value: Any, label: str) -> list[str]:
     return [x.strip() for x in values]
 
 
+def _coerce_id_objects(name: str, value: Any, label: str) -> list[dict[str, str]]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, list):
+        values = value
+    else:
+        raise action.ActionError(f"column {name!r} is {label}; provide a string array")
+
+    out = []
+    for entry in values:
+        if isinstance(entry, str) and entry.strip():
+            out.append({"id": _notion_id(entry)})
+            continue
+        if isinstance(entry, Mapping) and isinstance(entry.get("id"), str) and entry["id"].strip():
+            out.append({"id": _notion_id(entry["id"])})
+            continue
+        raise action.ActionError(f"column {name!r} is {label}; every item must be a non-empty ID string")
+    return out
+
+
+def _coerce_files(name: str, value: Any) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise action.ActionError(f"column {name!r} is files; provide a Notion files array")
+    out = []
+    for entry in value:
+        if not isinstance(entry, Mapping):
+            raise action.ActionError(f"column {name!r} is files; every item must be a Notion file object")
+        item = dict(entry)
+        external = item.get("external")
+        if isinstance(external, Mapping):
+            if not isinstance(item.get("name"), str) or not item["name"].strip():
+                raise action.ActionError(f"column {name!r} is files; external files require a non-empty name")
+            if not external.get("url"):
+                raise action.ActionError(f"column {name!r} is files; external.url is required")
+            _coerce_url(name, external.get("url"))
+        elif "external" in item:
+            raise action.ActionError(f"column {name!r} is files; external must be an object with a URL")
+        if "name" in item and not isinstance(item["name"], str):
+            raise action.ActionError(f"column {name!r} is files; every file name must be a string")
+        out.append(item)
+    return out
+
+
 def _coerce_date(name: str, value: Any) -> dict[str, Any] | None:
     if value is None:
         return None
@@ -661,6 +778,25 @@ def _coerce_date(name: str, value: Any) -> dict[str, Any] | None:
             _validate_isoish_date(name, str(out["end"]))
         return out
     raise action.ActionError(f"column {name!r} is date; provide an ISO date string or {{start, end?}}")
+
+
+def _coerce_verification(name: str, value: Any) -> dict[str, Any]:
+    if isinstance(value, str):
+        out: dict[str, Any] = {"state": value.strip()}
+    elif isinstance(value, Mapping):
+        out = dict(value)
+    else:
+        raise action.ActionError(f"column {name!r} is verification; provide 'verified', 'unverified', or native verification JSON")
+
+    state = out.get("state")
+    if not isinstance(state, str) or state not in _VERIFICATION_STATES:
+        valid = ", ".join(_VERIFICATION_STATES)
+        raise action.ActionError(f"column {name!r} is verification; {state!r} is not valid. Valid values: {valid}")
+    if "verified_by" in out:
+        raise action.ActionError(f"column {name!r} is verification; verified_by is read-only and must be omitted")
+    if out.get("date") is not None:
+        out["date"] = _coerce_date(name, out["date"])
+    return out
 
 
 def _validate_isoish_date(name: str, value: str) -> None:

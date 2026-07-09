@@ -31,10 +31,28 @@ class FakeClient:
                     "id": "status",
                     "name": "status",
                     "type": "status",
-                    "status": {"options": [{"name": "shipped"}, {"name": "unpaid"}]},
+                    "status": {"options": [{"id": "opt_shipped", "name": "shipped"}, {"id": "opt_unpaid", "name": "unpaid"}]},
                 },
                 "quantity": {"id": "qty", "name": "quantity", "type": "number", "number": {}},
                 "customer email": {"id": "email", "name": "customer email", "type": "email", "email": {}},
+                "notes": {"id": "notes", "name": "notes", "type": "rich_text", "rich_text": {}},
+                "tags": {
+                    "id": "tags",
+                    "name": "tags",
+                    "type": "multi_select",
+                    "multi_select": {"options": [{"id": "tag_vip", "name": "vip"}, {"id": "tag_late", "name": "late"}]},
+                },
+                "paid": {"id": "paid", "name": "paid", "type": "checkbox", "checkbox": {}},
+                "website": {"id": "website", "name": "website", "type": "url", "url": {}},
+                "phone": {"id": "phone", "name": "phone", "type": "phone_number", "phone_number": {}},
+                "due": {"id": "due", "name": "due", "type": "date", "date": {}},
+                "related": {"id": "related", "name": "related", "type": "relation", "relation": {}},
+                "owner": {"id": "owner", "name": "owner", "type": "people", "people": {}},
+                "files": {"id": "files", "name": "files", "type": "files", "files": {}},
+                "verification": {"id": "verification", "name": "verification", "type": "verification", "verification": {}},
+                "invoice no": {"id": "invoice_no", "name": "invoice no", "type": "unique_id", "unique_id": {}},
+                "computed": {"id": "computed", "name": "computed", "type": "formula", "formula": {}},
+                "place": {"id": "place", "name": "place", "type": "place", "place": None},
             },
         }
         self.blocks = {
@@ -131,6 +149,82 @@ class NotionActions(unittest.TestCase):
                 notion.validate_database_values("ds_1", {"status": "delivered"})
         msg = str(cm.exception)
         self.assertIn("Valid values: shipped, unpaid", msg)
+
+    def test_database_validation_covers_common_writable_property_types(self):
+        fake = FakeClient()
+        values = {
+            "product name": "baseball",
+            "notes": "gift wrap",
+            "status": {"id": "opt_shipped"},
+            "tags": ["vip", {"id": "tag_late"}],
+            "quantity": 5,
+            "customer email": "foo@bar.com",
+            "paid": True,
+            "website": "https://example.com/order",
+            "phone": "+32 2 000 00 00",
+            "due": {"start": "2026-07-10", "end": "2026-07-11"},
+            "related": ["9f1a4f418a25420a982b1c04128f7120"],
+            "owner": [{"id": "user_1"}],
+            "files": [{"name": "invoice.pdf", "external": {"url": "https://example.com/invoice.pdf"}}],
+            "verification": {"state": "verified", "date": "2026-07-10"},
+        }
+        with mock.patch.object(notion, "_client", return_value=fake):
+            checked = notion.validate_database_values("ds_1", values)
+
+        props = checked.properties
+        self.assertEqual(props["status"], {"status": {"id": "opt_shipped"}})
+        self.assertEqual(props["tags"], {"multi_select": [{"name": "vip"}, {"id": "tag_late"}]})
+        self.assertEqual(props["paid"], {"checkbox": True})
+        self.assertEqual(props["website"], {"url": "https://example.com/order"})
+        self.assertEqual(props["due"], {"date": {"start": "2026-07-10", "end": "2026-07-11"}})
+        self.assertEqual(props["related"], {"relation": [{"id": "9f1a4f418a25420a982b1c04128f7120"}]})
+        self.assertEqual(props["owner"], {"people": [{"id": "user_1"}]})
+        self.assertEqual(props["files"]["files"][0]["external"]["url"], "https://example.com/invoice.pdf")
+        self.assertEqual(props["verification"], {"verification": {"state": "verified", "date": {"start": "2026-07-10"}}})
+
+        with mock.patch.object(notion, "_client", return_value=fake):
+            expired = notion.validate_database_values("ds_1", {"verification": {"state": "expired"}})
+        self.assertEqual(expired.properties["verification"], {"verification": {"state": "expired"}})
+
+    def test_database_validation_checks_native_payloads_too(self):
+        fake = FakeClient()
+        values = {
+            "status": {"status": {"name": "lost"}},
+            "tags": {"multi_select": [{"id": "missing"}]},
+            "paid": {"checkbox": "yes"},
+        }
+        with mock.patch.object(notion, "_client", return_value=fake):
+            with self.assertRaises(action.ActionError) as cm:
+                notion.validate_database_values("ds_1", values)
+        msg = str(cm.exception)
+        self.assertIn("Valid values: shipped, unpaid", msg)
+        self.assertIn("Valid option IDs: tag_vip (vip), tag_late (late)", msg)
+        self.assertIn("column 'paid' is checkbox; provide true or false", msg)
+
+    def test_database_validation_reports_invalid_types_read_only_and_unsupported_columns(self):
+        fake = FakeClient()
+        values = {
+            "invoice no": "RC-1",
+            "computed": 3,
+            "place": {"name": "Brussels"},
+            "customer email": "not-an-email",
+            "website": "ftp://example.com",
+            "due": "soon",
+            "verification": {"state": "retired"},
+            "files": [{"external": {"url": "https://example.com/invoice.pdf"}}],
+        }
+        with mock.patch.object(notion, "_client", return_value=fake):
+            with self.assertRaises(action.ActionError) as cm:
+                notion.validate_database_values("ds_1", values)
+        msg = str(cm.exception)
+        self.assertIn("column 'invoice no' is read-only (unique_id)", msg)
+        self.assertIn("column 'computed' is read-only (formula)", msg)
+        self.assertIn("column 'place' is unsupported by the Notion API (place)", msg)
+        self.assertIn("'not-an-email' is not a valid email address", msg)
+        self.assertIn("provide an http(s) URL", msg)
+        self.assertIn("'soon' is not ISO-8601", msg)
+        self.assertIn("Valid values: verified, unverified, expired", msg)
+        self.assertIn("external files require a non-empty name", msg)
 
     def test_database_update_checks_record_parent_and_shapes_patch(self):
         fake = FakeClient()
