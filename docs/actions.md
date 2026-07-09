@@ -299,6 +299,13 @@ tenant middleware, callbacks, PaperTrail, Sidekiq, and service credentials all l
 preflight for data-observable checks (row exists, current state, shape/diff), Ruby syntax for cheap parse
 errors, and the signed dev-trigger for final confirmation on a safe idempotent or staging target.
 
+When a project exposes a safe Rails runner helper, add an intermediate check before the signed
+dev-trigger: run the body through the app's installed Embassy executor with non-mutating params
+(validation failure, unknown record, default-tenant refusal, or a no-change update). Transport the
+`script.rb` body as Base64 into the runner; JSON or double-quoted Ruby strings can accidentally
+interpolate `#{...}` inside the action source before the executor sees it. Current Ruby Embassies use the
+`rootcause-embassy` entrypoint and `RootCause::Embassy::Executor`.
+
 Review checklist for Embassy Ruby bodies:
 
 - Resolve every model/class/job choice through an in-script allowlist or app-owned registry lookup; never
