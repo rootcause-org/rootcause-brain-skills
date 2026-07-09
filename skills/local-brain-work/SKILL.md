@@ -94,6 +94,21 @@ uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --commit
 user intentionally asked for a real write. Read [docs/actions.md](../../docs/actions.md) and
 [action-run-triage.md](action-run-triage.md) for production action evidence.
 
+## Embassy Ruby Actions
+
+For `runtime: ruby` actions, use `brain_action.py --preflight-only` for Layer-1 + read-only preflight and
+a Ruby parse check for the body:
+
+```bash
+uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --preflight-only
+{ printf 'lambda do |params|\n'; cat actions/<id>/script.rb; printf '\nend\n'; } | ruby -c -
+```
+
+Do not treat local execution as faithful for the Ruby body. The write path depends on the customer's
+Rails app, callbacks, tenant context, jobs, and Embassy signing. Final confidence for the body comes from
+`rc action run <id> --params '<json>' --sync` against a safe/staging/idempotent target after the brain ref
+is synced.
+
 ## Tenant Projection
 
 For templated shared project brains, production may compile a tenant-specific `/brain` view from

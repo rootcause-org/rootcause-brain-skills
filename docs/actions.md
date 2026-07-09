@@ -276,6 +276,38 @@ render it. Body tests need a materialized descriptor with a local `path`.
 For tenant-enabled projects, use `action.require_tenant()` and scope every write by the trusted
 `RC_TENANT_ID` / `RC_TENANT_SLUG` values, never by model-proposed params.
 
+## Embassy Ruby Checks
+
+Embassy actions (`runtime: ruby`, `script.rb`) execute inside the customer's app, so the local brain kit
+cannot faithfully dry-run the write body. Keep the feedback loop split by fidelity:
+
+```bash
+# manifest + preflight, read-only, from the brain checkout
+uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --preflight-only
+
+# Ruby body syntax, mirroring the Embassy executor's lambda wrapper
+{ printf 'lambda do |params|\n'; cat actions/<id>/script.rb; printf '\nend\n'; } | ruby -c -
+
+# real signed path, after pushing/syncing a safe target
+rc action run <id> --params '<json>' --sync
+```
+
+For `runtime: ruby`, local body execution is not a substitute for the Embassy path: Rails constants,
+tenant middleware, callbacks, PaperTrail, Sidekiq, and service credentials all live in the app. Use
+preflight for data-observable checks (row exists, current state, shape/diff), Ruby syntax for cheap parse
+errors, and the signed dev-trigger for final confirmation on a safe idempotent or staging target.
+
+Review checklist for Embassy Ruby bodies:
+
+- Resolve every model/class/job choice through an in-script allowlist or app-owned registry lookup; never
+  `constantize` user input.
+- Re-check all params in Ruby even when manifest and preflight already passed.
+- For cross-tenant staff actions that must accept `tenant_id`, resolve `Tenant.find_by(id:)`, refuse the
+  default tenant for settings/record writes, and wrap the body in `ActsAsTenant.with_tenant`.
+- Put batch work behind an app job and return the job id; the Embassy request itself should stay bounded.
+- Return a reviewer-readable `{ok, summary, ...}` with read-back proof and any rollback handle, not just
+  "done".
+
 ## Ground First
 
 Do not author an action blind:
