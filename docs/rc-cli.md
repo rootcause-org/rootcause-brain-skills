@@ -28,6 +28,8 @@ rc health [--hours N]
 rc thread <id>
 rc mailbox ls
 rc mailbox harvest <mailbox-id> [--max-threads N] [--clean=true] [--wait]
+# Future deep/local IMAP path; verify the command exists before relying on it.
+rc mailbox imap-env <mailbox-id> --out .rootcause/imap/<mailbox-id>.env
 rc export ls [-o json]
 rc export get <export-id>
 rc export download <export-id> [--out <file>] [--split <dir>]
@@ -39,7 +41,7 @@ rc triage policy get
 rc triage policy set "..."
 rc triage rules ls
 rc triage rules add effect=skip match_kind=subject_contains pattern="newsletter"
-rc triage rules add effect=force_process match_kind=sender_email pattern="vip@example.com"
+rc triage rules add effect=force_process match_kind=sender_domain pattern="example.com"
 rc brain status
 rc brain sync
 rc env keys
@@ -111,7 +113,7 @@ brain/persona/triage decision workflow.
 
 ```bash
 rc mailbox ls -o json
-rc mailbox harvest <mailbox-id> --max-threads 1000 --wait
+rc mailbox harvest <mailbox-id> --max-threads 1000
 rc export ls -o json
 rc export get <export-id>
 rc export download <export-id> --split .rootcause/exports/<export-id>/
@@ -126,6 +128,12 @@ download` fetches the corpus and marks it consumed — `--split <dir>` materiali
 `.rootcause/exports/<export-id>/` sits under the wholesale-gitignored `.rootcause/` and MUST stay
 gitignored: it is raw customer mail, never brain content.
 
+Hosted IMAP harvest is shallow/smoke-only when the server applies the IMAP cap (currently 100 refs) and
+returns a warning. Deep IMAP requires a local exporter path: `rc mailbox imap-env` to write a
+gitignored secret env file, plus `scripts/local_imap_harvest.py` to produce the `.rootcause/exports/...`
+tree. If either piece is absent, do not reveal credentials or use private stores; report the missing
+public surface.
+
 Use [`brain-harvest`](../skills/brain-harvest/SKILL.md) for the full acquire → cluster → distil →
 verify → publish → delete workflow. See [docs/side-effects.md](side-effects.md) for the harvest/download
 side effects before running either.
@@ -139,7 +147,7 @@ rc triage policy get -o json
 rc triage policy set "..."
 rc triage rules ls -o json
 rc triage rules add effect=skip match_kind=subject_contains pattern="newsletter" reason="marketing mail"
-rc triage rules add effect=force_process match_kind=sender_email pattern="vip@example.com" reason="VIP support mailbox"
+rc triage rules add effect=force_process match_kind=sender_domain pattern="example.com" reason="VIP support domain"
 ```
 
 Persona settings own voice, language, formality, signature, and wording preferences. Triage policy/rules

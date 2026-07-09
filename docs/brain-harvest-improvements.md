@@ -282,3 +282,15 @@ and train `--no-verify`.
 **Proposed change:** Tighten the pattern to require an *instructional* context (e.g. an imperative or 2nd
 person: "sign off with…", "use a … greeting", "your salutation") rather than the bare noun. Definitions and
 the approval-sense of "sign-off" should pass. Low effort, removes the only friction in the lint on this run.
+
+## P1 — Local IMAP harvest path must fail closed when tooling is absent
+
+**Observed (Orthodusart first-run check, 2026-07-09):** The design docs mention a future deep/local IMAP
+path (`rc mailbox imap-env` + `scripts/local_imap_harvest.py`), but the installed `rc` command tree and
+brain-skill checkout did not expose either piece. Hosted `rc mailbox harvest` exists, but IMAP may be
+capped to a shallow 100-ref smoke export and production auth was unavailable in the test session.
+
+**Proposed change:** The harvest skill should explicitly check for both local-IMAP surfaces before any
+credential handling, then stop with a gap report if absent. Agents must not reveal mailbox credentials,
+scrape private stores, or improvise env files. Hosted IMAP harvest may still be used as a capped smoke test
+when useful, but it should not be presented as the deep IMAP path.

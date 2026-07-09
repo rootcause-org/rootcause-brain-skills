@@ -56,10 +56,23 @@ personal/mixed). Edit the matching skeleton in step 4 instead of inventing struc
    Preserve local work. In a tenant checkout, route tenant-specific distillations to the tenant brain or
    tenant settings unless they clearly apply to the shared project.
 
-2. **Acquire the corpus.** Reuse a fresh export if one exists; otherwise trigger a harvest and wait:
+2. **Acquire the corpus.** Reuse a fresh export if one exists; otherwise branch by mailbox provider.
+   For Gmail/Microsoft, use hosted harvest. For IMAP, treat hosted harvest as a shallow/smoke path only:
+   the server may cap rendered IMAP refs (currently 100) and warn that deep IMAP belongs in local tooling.
+   Before any deep/local IMAP run, prove both public surfaces exist:
+   ```bash
+   rc mailbox imap-env --help
+   test -f scripts/local_imap_harvest.py
+   ```
+   If either is missing, do **not** reveal credentials, scrape private stores, or invent env-file handling.
+   Stop with an implementation/ops gap (missing `rc mailbox imap-env`, missing local exporter, or both) or
+   run only the capped hosted harvest if that is explicitly useful as a smoke test.
+
+   Hosted provider path:
    ```bash
    rc export ls -o json                 # has this mailbox been harvested already?
-   rc mailbox harvest <mailbox-id> --max-threads 1000 --wait
+   rc mailbox harvest <mailbox-id> --max-threads 1000
+   rc export get <export-id>             # poll until terminal; --wait is fine for small jobs
    rc export download <export-id> --split .rootcause/exports/<export-id>/
    ```
    `rc mailbox harvest` triggers a **production** provider sweep of the mailbox's sent history into a
@@ -72,6 +85,18 @@ personal/mixed). Edit the matching skeleton in step 4 instead of inventing struc
    ```
    If that prints the path, it is ignored. If it prints nothing, stop and add the ignore rule before
    proceeding — raw mail must never be stageable.
+
+   Deep/local IMAP path, only after the two existence checks pass:
+   ```bash
+   rc mailbox imap-env <mailbox-id> --out .rootcause/imap/<mailbox-id>.env
+   git check-ignore .rootcause/imap/<mailbox-id>.env
+   uv run scripts/local_imap_harvest.py \
+     --env .rootcause/imap/<mailbox-id>.env \
+     --out .rootcause/exports/<run-id>/
+   git check-ignore .rootcause/exports/<run-id>/INDEX.md
+   ```
+   The `.rootcause/imap/*.env` file is secret material; never print it, commit it, or keep it after the
+   session.
 
 3. **Synthesize by progressive disclosure — never load the whole corpus into one context.** Read only
    the index, cluster from metadata, then fan out subagents. This is the local analog of the hosted
@@ -167,9 +192,11 @@ personal/mixed). Edit the matching skeleton in step 4 instead of inventing struc
    - Brain files changed: commit, push, then use [`brain-publish`](../brain-publish/SKILL.md).
    - Settings changed only: record the exact `rc` commands and the verification run id.
    - Public surface missing: use the `brain-publish` support-request template with evidence.
-   - **Delete the local corpus** — raw mail does not persist on the laptop beyond the session:
+   - **Delete the local corpus and IMAP env file** — raw mail and credentials do not persist on the
+     laptop beyond the session:
      ```bash
      rm -rf .rootcause/exports/<export-id>/
+     rm -f .rootcause/imap/<mailbox-id>.env
      ```
      Server-side eviction (started when you downloaded) handles the stored copy.
 
