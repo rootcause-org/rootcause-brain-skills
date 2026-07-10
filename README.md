@@ -51,7 +51,7 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 
 | Surface | Side effect |
 |---|---|
-| `brain_run.py`, `brain_test.py`, `rc run list/show/events/trace/debug/brain-diff/thread`, `rc fleet`, `rc status` | Read-only. |
+| `brain_run.py`, `brain_test.py`, `rc run list/show/events/trace/debug/brain-diff/thread`, `rc fleet runs/patterns/health`, `rc status` | Read-only. |
 | `rc project mailbox harvest` | Creates a production export job (provider sweep → stored corpus). |
 | `rc project corpus download` | Marks the export consumed (eviction grace) and lands raw mail on local disk. |
 | `rc project mailbox imap-env` | Writes IMAP/SMTP credential material to a local 0600 env file. |
@@ -91,11 +91,11 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 ## Single Version Line
 
 The plugin versions, `rootcause-runtime` pin, workspace image tag, and production runtime pin move
-together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.73`**.
+together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.74`**.
 
 - Runtime pin:
-  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.73#subdirectory=runtime`
-- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.73`
+  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.74#subdirectory=runtime`
+- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.74`
 
 Check coherence:
 

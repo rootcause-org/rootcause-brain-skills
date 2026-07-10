@@ -4,7 +4,7 @@ Diagnosis is read-only by default. Test-run creation and action execution are ex
 
 | Surface | Side effect |
 |---|---|
-| `brain_run.py`, `brain_test.py`, `rc run list/show/events/trace/debug/brain-diff/thread`, `rc fleet`, `rc status` | Read-only. |
+| `brain_run.py`, `brain_test.py`, `rc run list/show/events/trace/debug/brain-diff/thread`, `rc fleet runs/patterns/health`, `rc status` | Read-only. |
 | `rc project mailbox harvest <id>` | Creates a **production** export job: a heavy provider sweep of the mailbox's sent history into a stored cleaned Markdown corpus body. Bills provider/API usage. |
 | `rc project corpus download <id>` | Marks the export **consumed** (starts server-side eviction grace) and lands the raw mail corpus on local disk. Read-only server-side, but raw customer mail now exists on the laptop. |
 | `rc project mailbox imap-env <id> --out ...` | Writes mailbox IMAP/SMTP credential material to a local env file. Must be under a gitignored path, never printed, and deleted after the session. |
