@@ -16,7 +16,7 @@ from lib.run_dump import decorate, emit_jsonl, files_read, flags, render_index  
 
 def _bundle(**run_over):
     """A representative bundle: one grounding pre-step (submit_selection) + a main loop that reads a
-    brain file, runs a db query, hits a failing step, and replies. ISO-string timestamps (the /full
+    brain file, runs a db query, hits a failing step, and replies. ISO-string timestamps (the /trace
     API shape)."""
     run = {
         "run_id": "abcd1234-5678-90ab-cdef-1234567890ab",
@@ -92,7 +92,7 @@ class Decorate(unittest.TestCase):
         self.assertEqual(labels["3"], "reply")
 
     def test_bash_command_from_top_level_when_args_empty(self):
-        # The /full API shape: command at top level, args absent for bash.
+        # The /trace API shape: command at top level, args absent for bash.
         events = [{"seq": 1, "tool": "bash", "command": "ls -la", "args": {}, "exit_code": 0,
                    "status": "ok", "reasoning": ""}]
         decorate(events)

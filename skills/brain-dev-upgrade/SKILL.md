@@ -18,8 +18,10 @@ laptop.
   `https://api.github.com/repos/rootcause-org/rootcause-brain-skills/git/matching-refs/tags/v`
 - `install.sh` pins the shared kit clone to a released tag; it does not leave the kit floating on
   `main`.
-- `rc upgrade --check` reports whether a newer CLI exists; `rc upgrade` self-updates non-Homebrew
+- `rc self update --check` reports whether a newer CLI exists; `rc self update` updates non-Homebrew
   installs and tells Homebrew users to run `brew update && brew upgrade rc`.
+- A client old enough to lack `rc self update` must run its legacy `rc upgrade` once (or upgrade through
+  Homebrew) to reach the current command surface.
 
 ## Human commands
 
@@ -27,11 +29,11 @@ Check/update `rc`:
 
 ```bash
 rc --version
-rc upgrade --check
-rc upgrade
+rc self update --check
+rc self update
 ```
 
-If `rc upgrade` reports a Homebrew-managed install:
+If `rc self update` reports a Homebrew-managed install:
 
 ```bash
 brew update && brew upgrade rc
@@ -75,11 +77,13 @@ git -C "${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}" describe --tags --exact-
    ```bash
    command -v rc
    rc --version
-   rc upgrade --check
+   rc self update --check
    ```
    If `rc` is missing, install it with `brew install rootcause-org/tap/rc` on macOS/Linuxbrew.
-2. If the user asks to upgrade, run `rc upgrade` yourself. If it reports a Homebrew-managed install,
-   run `brew update && brew upgrade rc` yourself, then verify with `rc --version`.
+   If `rc self update` is unknown, bootstrap once with the old client's `rc upgrade` (or Homebrew),
+   then continue with the current commands.
+2. If the user asks to upgrade, run `rc self update` yourself. If it reports a Homebrew-managed
+   install, run `brew update && brew upgrade rc` yourself, then verify with `rc --version`.
 3. Check the latest released kit tag:
    ```bash
    bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh) --latest-version

@@ -26,7 +26,7 @@ actions/
 ## What goes where (do not misfile)
 
 - **Persona settings**, not brain files: tone, formality, signature, "sound more like us".
-- **Triage** (`rc triage ...`), not brain prose: which inbound mail deserves a draft; deterministic
+- **Triage** (`rc project triage ...`), not brain prose: which inbound mail deserves a draft; deterministic
   skip/force rules by sender/subject.
 - **Brain files**: product facts, terminology, routing, playbooks, action-selection rules.
 

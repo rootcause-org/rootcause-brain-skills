@@ -11,14 +11,14 @@ cd ~/code/rootcause-org/rootcause-brain-<project>
 Need `.env` for local live checks?
 
 ```bash
-rc login
-rc whoami
-rc env pull
+rc auth login
+rc auth status
+rc project env pull
 ```
 
-`rc env pull` writes a `0600` gitignored `.env` using your OAuth token. It does not print secret
+`rc project env pull` writes a `0600` gitignored `.env` using your OAuth token. It does not print secret
 values. Need a new key for a script and your login has secrets-write access? Use
-`printf %s "$SECRET_VALUE" | rc env set key=FOO_API_TOKEN` and document only the key name in the brain;
+`printf %s "$SECRET_VALUE" | rc project env set key=FOO_API_TOKEN` and document only the key name in the brain;
 see [secrets.md](secrets.md).
 
 ## 2. Install The Kit
@@ -59,7 +59,7 @@ rc ask "Hi, my account is sophie@example.com. Do I still have open invoices?"
 rc ask "Which table holds invoice state?" --scenario raw
 git push origin dev/<branch>
 rc ask "<customer-style question>" --brain-ref dev/<branch>
-rc run <run_id> --debug
+rc run debug <run_id>
 ```
 
 Use `rc-debug` for trace analysis and `brain-publish` after committed local edits.

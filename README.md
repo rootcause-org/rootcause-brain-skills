@@ -40,7 +40,7 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 | `rc-health` | Stale mirrors plus dead-lettered runs. |
 | `rc-fleet` | Recent fleet digest plus recurring failure patterns. |
 | `brain-dev-upgrade` | Update local kit and `rc` CLI. |
-| `brain-publish` | Post-edit `rc brain status/sync`, promote/support-request step using public surfaces only. |
+| `brain-publish` | Post-edit `rc dev brain status/sync`, promote/support-request step using public surfaces only. |
 
 Older duplicate entrypoints are not shipped; use the canonical skills above.
 
@@ -51,13 +51,14 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 
 | Surface | Side effect |
 |---|---|
-| `brain_run.py`, `brain_test.py`, `rc run`, `rc fleet`, `rc health`, `rc thread` | Read-only. |
-| `rc mailbox harvest` | Creates a production export job (provider sweep → stored corpus). |
-| `rc export download` | Marks the export consumed (eviction grace) and lands raw mail on local disk. |
-| `rc mailbox imap-env` | Writes IMAP/SMTP credential material to a local 0600 env file. |
+| `brain_run.py`, `brain_test.py`, `rc run list/show/events/trace/debug/brain-diff/thread`, `rc fleet`, `rc status` | Read-only. |
+| `rc project mailbox harvest` | Creates a production export job (provider sweep → stored corpus). |
+| `rc project corpus download` | Marks the export consumed (eviction grace) and lands raw mail on local disk. |
+| `rc project mailbox imap-env` | Writes IMAP/SMTP credential material to a local 0600 env file. |
 | `local_imap_harvest.py` | Connects to IMAP from the laptop and writes a raw local sent-history corpus. |
 | `rc ask` against `main` | Creates a real production run; may create draft/journal/test artifacts and bill usage. |
 | `rc ask --brain-ref dev/<branch>` | Creates a test run; no callback or durable journal push; proposals are test artifacts. |
+| `rc run feedback` / `rc run retry` | Writes learning feedback / creates a replacement production run. |
 | Action proposal | LLM proposes only; no mutation. |
 | Action confirmation / public dev-trigger when exposed | Real mutation path. |
 | `brain_action.py --commit` | Local real write to whatever `.env.action` targets. |
@@ -68,11 +69,11 @@ Details: [docs/side-effects.md](docs/side-effects.md).
   it does not reproduce read-only mounts, container isolation, OS behavior, or production egress.
 - `docker` mode uses the published workspace image and read-only mounts. It still does not prove the
   production egress allowlist.
-- `rc db` / `rc bash` are the preferred production debugging path for exact SQL, scripts, logs, and
+- `rc dev console database` / `rc dev console bash` are the preferred production debugging path for exact SQL, scripts, logs, and
   tool parity; they are much faster than wrapping the check in an LLM run.
 - `rc ask --brain-ref dev/<branch>` is the full production-loop confidence check without moving live
   refs.
-- `rc brain sync` refreshes the deployed brain cache from `origin/main` and invalidates warm `rc bash`
+- `rc dev brain sync` refreshes the deployed brain cache from `origin/main` and invalidates warm console
   workspaces.
 
 ## Docs
@@ -80,9 +81,9 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 | Path | What |
 |---|---|
 | [docs/brain-model.md](docs/brain-model.md) | Audience, brain-vs-external context, prompt boundary, layout, mounts, refs. |
-| [docs/run-trace-model.md](docs/run-trace-model.md) | How to read `rc run --debug` index/JSONL. |
+| [docs/run-trace-model.md](docs/run-trace-model.md) | How to read `rc run debug` index/JSONL. |
 | [docs/mirrors.md](docs/mirrors.md) | Source mirrors and freshness/debug rules. |
-| [docs/knowledge-base.md](docs/knowledge-base.md) | Traverse `/kb` and committed `knowledge/`, including frontmatter search from `rc bash`. |
+| [docs/knowledge-base.md](docs/knowledge-base.md) | Traverse `/kb` and committed `knowledge/`, including frontmatter search from `rc dev console bash`. |
 | [docs/support-boundary.md](docs/support-boundary.md) | Brain-change vs RootCause-support decision tree. |
 | [docs/actions.md](docs/actions.md) | Action plane and local hosted-Python action tests. |
 | [docs/rc-cli.md](docs/rc-cli.md) | Public `rc` CLI reference for this kit. |
@@ -90,11 +91,11 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 ## Single Version Line
 
 The plugin versions, `rootcause-runtime` pin, workspace image tag, and production runtime pin move
-together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.72`**.
+together; see [RELEASING.md](RELEASING.md). Current line: **`v0.1.73`**.
 
 - Runtime pin:
-  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.72#subdirectory=runtime`
-- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.72`
+  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.1.73#subdirectory=runtime`
+- Workspace image: `ghcr.io/rootcause-org/workspace:v0.1.73`
 
 Check coherence:
 

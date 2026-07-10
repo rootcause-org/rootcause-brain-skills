@@ -83,7 +83,7 @@ autonomy: human   # default (omit = human)
 means "always auto":
 
 - `projects.action_autonomy_max` — an operator-set ceiling (`human` by default). It can only lower, never
-  raise. Read it with `rc --project <p> action config get -o json` (field `action_autonomy_max`); an
+  raise. Read it with `rc --project <p> project action-settings get -o json` (field `action_autonomy_max`); an
   operator raises it in the console Action settings. Until the operator raises it, every action stays
   `human` no matter what the manifest says.
 - `risk: high` in the manifest → always `human` (risk is now **load-bearing**, not just informational).
@@ -160,16 +160,16 @@ Before depending on a connector or write plane, check the project from the same 
 run the action:
 
 ```bash
-rc --project <project> connection ls -o json
-rc --project <project> capabilities -o json
-rc --project <project> action list -o json
-rc --project <project> action config get -o json
+rc --project <project> project connection ls -o json
+rc --project <project> dev console capabilities -o json
+rc --project <project> dev console action list -o json
+rc --project <project> project action-settings get -o json
 ```
 
 `connection ls` shows connected OAuth/API grants. `capabilities` shows console planes such as
 `planes.action`. `action list` shows the hosted/cataloged actions visible to this login. `action config
 get` shows whether action execution is enabled and wired. For read-plane confidence, smoke-test the
-read connector through `rc bash run 'python -m lib.api get ...'` or the provider's `lib.connectors.*`
+read connector through `rc dev console bash run 'python -m lib.api get ...'` or the provider's `lib.connectors.*`
 module.
 
 ## Hosted Python Harness
@@ -291,7 +291,7 @@ uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --preflight-only
 { printf 'lambda do |params|\n'; cat actions/<id>/script.rb; printf '\nend\n'; } | ruby -c -
 
 # real signed path, after pushing/syncing a safe target
-rc action run <id> --params '<json>' --sync
+rc dev console action run <id> --params '<json>'
 ```
 
 For `runtime: ruby`, local body execution is not a substitute for the Embassy path: Rails constants,
@@ -321,14 +321,15 @@ Review checklist for Embassy Ruby bodies:
 
 Do not author an action blind:
 
-1. Find relevant real runs with `rc runs`, `rc fleet`, or `rc patterns`.
-2. Inspect what the agent actually did with `rc run <id> --events` or `rc-debug`.
+1. Find relevant real runs with `rc run list`, `rc fleet runs`, or `rc fleet patterns`.
+2. Inspect what the agent actually did with `rc run events <id>` or `rc-debug`.
 3. Shape `description`, params, and preflight from evidence.
 4. Verify with local checks.
 5. Push a dev branch and run `rc ask --brain-ref dev/<branch>` to see whether the agent proposes the
    action with sane params.
 6. Use `brain-publish` for live publish/promote/support handoff.
-7. For an explicit production action, use `prod-console` / `rc action preflight` / `rc action run`
+7. For an explicit production action, use `prod-console` / `rc dev console action preflight` /
+   `rc dev console action run`
    after params are grounded.
 
 Do not document private RootCause commands here. Use public `rc` surfaces; if a publish/support step is

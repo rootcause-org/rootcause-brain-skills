@@ -1,6 +1,6 @@
 # Run Trace Model
 
-`rc run <id> --debug` writes a markdown index plus JSONL event log for one production run. Read the
+`rc run debug <id>` writes a markdown index plus JSONL event log for one production run. Read the
 markdown index first; use JSONL only for targeted drill-down.
 
 | Trace concept | What it means | Where to look |
@@ -14,11 +14,11 @@ markdown index first; use JSONL only for targeted drill-down.
 | Tenant projection | Deterministic compiled `/brain` view from shared brain plus tenant profile values. | "Projection inputs" and `brain_resolved`. |
 | Data scoping | Per-run DB credentials/views limit what grounding scripts can see. | Commands using `lib.db`; DB errors. |
 | PII masking | Declared DB columns may be tokenized before the model and detokenized later for delivery. | "Data shielded from the model" when the public bundle exposes it; otherwise escalate if needed. |
-| Mirrors/KB | External source/KB snapshots mounted read-only and refreshed independently. | Files read under `/mirrors`/`/kb`, egress, `rc health`. |
+| Mirrors/KB | External source/KB snapshots mounted read-only and refreshed independently. | Files read under `/mirrors`/`/kb`, egress, `rc fleet health`. |
 | Egress | Outbound HTTP goes through production allowlist. | Egress section, blocked-egress flags, command output. |
 | Actions/preflight | Run proposes actions only; schema/preflight can block proposals in-loop. | Outcome actions, action/preflight timeline labels. |
 | Terminal outcome | Reply/raw answer, decline, error, journal/action/PR proposals. | Outcome, flags, metadata. |
-| Post-loop | Journal commit, action rows, source PRs, blocked-egress notes, callback delivery. | `rc run --brain-diff`, `rc thread`, `rc health`. |
+| Post-loop | Journal commit, action rows, source PRs, blocked-egress notes, callback delivery. | `rc run brain-diff <id>`, `rc run thread <id>`, `rc fleet health`. |
 
 ## Reading Order
 

@@ -30,7 +30,7 @@ Read when relevant:
 1. Confirm scope and local state. Do this before reading evidence so project/tenant mistakes fail
    early:
    ```bash
-   rc whoami
+   rc auth status
    git status --short --branch
    git pull --ff-only
    ```
@@ -42,12 +42,12 @@ Read when relevant:
 
 2. Pull broad evidence first:
    ```bash
-   rc dream evidence --limit 50 -o json
-   rc fleet --kind email --days 14
-   rc patterns --days 30
+   rc dev learning evidence --limit 50 -o json
+   rc fleet runs --kind email --days 14
+   rc fleet patterns --days 30
    ```
    Weight evidence in this order: explicit feedback, sent-vs-proposed deltas, repeated run patterns,
-   then journal/debug traces. Use `rc dream evidence` instead of private DB queries; it already ranks
+   then journal/debug traces. Use `rc dev learning evidence` instead of private DB queries; it already ranks
    feedback by sharpest criticism and sent deltas by strongest human rewrite.
 
    Stop here if the corpus is empty or too weak. Report "no durable lesson" with the commands run
@@ -55,9 +55,9 @@ Read when relevant:
 
 3. Drill progressively, only for evidence that can justify an edit:
    ```bash
-   rc run <run-id> --debug
-   rc run <run-id> --brain-diff -o json
-   rc thread <thread-or-session-id>
+   rc run debug <run-id>
+   rc run brain-diff <run-id> -o json
+   rc run thread <thread-or-session-id>
    ```
    Read the debug markdown index first. Open JSONL only for exact commands, stdout/stderr, reasoning,
    reply payloads, or journal lines. Prefer one high-signal run over five low-signal dumps.
@@ -66,10 +66,10 @@ Read when relevant:
 
    | Need | First command | Escalate only if needed |
    |---|---|---|
-   | Bad score/comment or sent edit context | `rc dream evidence -o json` | `rc run <id> --debug` |
-   | Fleet-level recurring failure | `rc fleet`, `rc patterns` | `rc run <id> --debug` for one representative |
-   | Conversation wording / sender context | `rc thread <id>` | `rc run <id> --full -o json` |
-   | Whether a previous brain edit helped | `rc run <id> --brain-diff -o json` | compare with current brain files |
+   | Bad score/comment or sent edit context | `rc dev learning evidence -o json` | `rc run debug <id>` |
+   | Fleet-level recurring failure | `rc fleet runs`, `rc fleet patterns` | `rc run debug <id>` for one representative |
+   | Conversation wording / sender context | `rc run thread <id>` | `rc run trace <id> -o json` |
+   | Whether a previous brain edit helped | `rc run brain-diff <id> -o json` | compare with current brain files |
 
 4. Decide the durable home:
 
@@ -77,9 +77,9 @@ Read when relevant:
    |---|---|
    | Product fact, routing, terminology, source-of-truth pointer, repeatable investigation/playbook | Brain files. |
    | Missing reusable script, action instructions, action selection rules | Brain files or `actions/<id>/`. |
-   | Voice, language, signature, formality, wording preference, “sound more like us” | Persona settings via `rc config hierarchy`. |
-   | Which inbound mail should become a draft, broad draft/no-draft guidance | Triage policy via `rc triage policy`. |
-   | Deterministic always-skip or always-process rule based on sender/subject/header | Triage hard rule via `rc triage rules`. |
+   | Voice, language, signature, formality, wording preference, “sound more like us” | Persona settings via `rc project settings behavior`. |
+   | Which inbound mail should become a draft, broad draft/no-draft guidance | Triage policy via `rc project triage policy`. |
+   | Deterministic always-skip or always-process rule based on sender/subject/header | Triage hard rule via `rc project triage rules`. |
    | Missing public surface, channel promotion, tenant publish, action wiring, cache divergence | `brain-publish` support request. |
 
    Avoid raw email quotes, one-off customer facts, copied private data, and generic RootCause behavior
@@ -87,27 +87,27 @@ Read when relevant:
 
 5. Inspect current settings before changing them:
    ```bash
-   rc config hierarchy get -o json
-   rc triage policy get -o json
-   rc triage rules ls -o json
+   rc project settings behavior get -o json
+   rc project triage policy get -o json
+   rc project triage rules ls -o json
    ```
 
    Then apply settings changes only when the lesson is not a brain file:
    ```bash
-   rc config hierarchy set persona.tone="..." persona.guidance="..."
-   rc tenant settings get --tenant <slug> -o json
-   rc tenant settings set --tenant <slug> persona.guidance="..."
-   rc mailbox settings get <mailbox-id> -o json
-   rc mailbox settings set <mailbox-id> persona.guidance="..."
+   rc project settings behavior set persona.tone="..." persona.guidance="..."
+   rc project tenant settings get <slug> -o json
+   rc project tenant settings set <slug> persona.guidance="..."
+   rc project mailbox settings get <mailbox-id> -o json
+   rc project mailbox settings set <mailbox-id> persona.guidance="..."
 
-   rc triage policy set "Draft customer support questions; ignore vendor newsletters and automated alerts."
-   rc triage rules add effect=skip match_kind=subject_contains pattern="newsletter" reason="marketing mail"
-   rc triage rules add effect=force_process match_kind=sender_address pattern="vip@example.com" reason="VIP support mailbox"
+   rc project triage policy set "Draft customer support questions; ignore vendor newsletters and automated alerts."
+   rc project triage rules add effect=skip match_kind=subject_contains pattern="newsletter" reason="marketing mail"
+   rc project triage rules add effect=force_process match_kind=sender_address pattern="vip@example.com" reason="VIP support mailbox"
    ```
    Keep persona and triage concise. If guidance starts becoming product knowledge or a runbook, put it
    in the brain instead. Use `effect=skip` for deterministic no-draft mail and `effect=force_process`
    for deterministic draft-worthy mail. If a temporary rule is created for verification, delete it with
-   `rc triage rules rm <id>` before finishing.
+   `rc project triage rules rm <id>` before finishing.
 
 6. Apply brain changes narrowly. Search first; edit the smallest existing home:
    ```bash
@@ -123,7 +123,7 @@ Read when relevant:
    git diff --check
    git push origin dev/<branch>
    rc ask "<customer-style case that previously failed>" --brain-ref dev/<branch>
-   rc run <new-run-id> --debug
+   rc run debug <new-run-id>
    ```
    For settings-only changes, use a fresh `rc ask` against the live scope and inspect the run. For
    triage rules, prefer a prompt or harmless disabled create/delete check that proves the API contract
@@ -143,6 +143,6 @@ Read when relevant:
 - Do not promote a single anecdote unless it is high-impact explicit human feedback.
 - Do not hide write policy in persona; use triage for draft/no-draft decisions and actions for
   confirmed mutations.
-- Do not use `rc db` against RootCause internals for this workflow. Project data-plane `rc db` reads are
-  fine only when verifying a brain script or fact.
+- Do not use `rc dev console database` against RootCause internals for this workflow. Project
+  data-plane reads are fine only when verifying a brain script or fact.
 - Do not use private rootcause `db.py`, raw production SQL, host scripts, or support-only credentials.

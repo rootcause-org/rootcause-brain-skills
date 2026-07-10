@@ -2,14 +2,14 @@
 # requires-python = ">=3.11"
 # ///
 """Dump ONE brain run to two local files — a concise markdown index + a jq-queryable JSONL — over the
-PUBLIC API. It needs only `rc login` plus the `rc` CLI on PATH — never SSM, a registry DB shell, or a
+PUBLIC API. It needs only `rc auth login` plus the `rc` CLI on PATH — never SSM, a registry DB shell, or a
 private RootCause checkout.
 
     uv run brain_dump.py <run_id>                 # writes .rootcause/dump/<run8>-<proj>.{md,jsonl}
     uv run brain_dump.py <run_id> --out-dir /tmp
 
-`fetch_via_api()` shells `rc run <id> --full -o json` → the run-dump **bundle** (`{run, events}`) →
-the SHARED `run_dump` renderer in `rootcause-runtime` → both files. Get a <run_id> from default
+`fetch_via_api()` shells `rc run trace <id> -o json --stream` → the run-dump **bundle**
+(`{run, events}`) → the SHARED `run_dump` renderer in `rootcause-runtime` → both files. Get a <run_id> from default
 email-simulation `rc ask "<q>"`, or from `rc ask "<q>" --scenario raw` for a direct investigation.
 Add `--brain-ref dev/x` to either scenario to test a pushed dev branch without moving `main`.
 
@@ -50,28 +50,28 @@ def _load_renderer():
 
 
 def fetch_via_api(run_id: str) -> dict:
-    """The run-dump trace bundle (`{run, events}`) = `rc run <id> --full -o json`. `rc` carries the auth
-    from `rc login` and the current brain checkout; we only parse its output. Raises on a CLI/parse
-    failure.
+    """The run-dump trace bundle (`{run, events}`) = `rc run trace <id> -o json --stream`. `rc` carries
+    the auth from `rc auth login` and the current brain checkout; we only parse its output. Raises on a
+    CLI/parse failure.
 
-    `rc run --full -o json` emits the bundle as **NDJSON** for progressive disclosure — one
+    `rc run trace <id> -o json --stream` emits the bundle as **NDJSON** — one
     `{"type":"run",…}` header line, then one `{"type":"event",…}` line per tool call (the same shape
     `emit_jsonl` writes). We reassemble that back into the `{run, events}` dict the renderer consumes.
     A single JSON object is also accepted, so the function survives either CLI emit style."""
     proc = subprocess.run(
-        ["rc", "run", run_id, "--full", "-o", "json"], capture_output=True, text=True
+        ["rc", "run", "trace", run_id, "-o", "json", "--stream"], capture_output=True, text=True
     )
     if proc.returncode != 0:
         detail = proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}"
-        raise RuntimeError(f"`rc run {run_id} --full` failed: {detail}")
+        raise RuntimeError(f"`rc run trace {run_id} -o json --stream` failed: {detail}")
 
     lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
     if not lines:
-        raise RuntimeError("`rc run --full` returned no output — is the API version recent enough?")
+        raise RuntimeError("`rc run trace` returned no output — is the API version recent enough?")
     try:
         objs = [json.loads(ln) for ln in lines]
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"`rc run --full` did not return JSON ({exc}); got: {proc.stdout[:200]!r}") from exc
+        raise RuntimeError(f"`rc run trace` did not return JSON ({exc}); got: {proc.stdout[:200]!r}") from exc
 
     # Single bundle object (forward-compat) vs the NDJSON header+events stream.
     if len(objs) == 1 and "run" in objs[0] and "events" in objs[0]:
@@ -81,7 +81,7 @@ def fetch_via_api(run_id: str) -> dict:
     run = next((strip(o) for o in objs if o.get("type") == "run"), None)
     events = [strip(o) for o in objs if o.get("type") == "event"]
     if run is None:
-        raise RuntimeError("`rc run --full` output has no run-header line ({type:run}) — "
+        raise RuntimeError("`rc run trace` output has no run-header line ({type:run}) — "
                            "is the `rc` / API version recent enough? (needs the trace bundle endpoint)")
     return {"run": run, "events": events}
 

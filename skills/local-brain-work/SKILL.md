@@ -106,7 +106,7 @@ uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --preflight-only
 
 Do not treat local execution as faithful for the Ruby body. The write path depends on the customer's
 Rails app, callbacks, tenant context, jobs, and Embassy signing. Final confidence for the body comes from
-`rc action run <id> --params '<json>' --sync` against a safe/staging/idempotent target after the brain ref
+`rc dev console action run <id> --params '<json>'` against a safe/staging/idempotent target after the brain ref
 is synced.
 
 ## Tenant Projection
@@ -132,7 +132,7 @@ checks. For that prod loop, use `rc`:
 rc ask "<customer-style question>"
 rc ask "<direct investigation>" --scenario raw
 rc ask "<question>" --brain-ref dev/<branch>
-rc run <run_id> --debug
+rc run debug <run_id>
 uv run "$SKILL/scripts/brain_dump.py" <run_id>
 ```
 
@@ -144,18 +144,19 @@ drill into JSONL with `jq`. For analysis-first debugging, use `rc-debug`.
 If `.env` is missing for live local checks, use:
 
 ```bash
-rc env pull
+rc project env pull
 ```
 
-`rc env pull` writes the production grounding `.env` using the logged-in OAuth token. It prints no
+`rc project env pull` writes the production grounding `.env` using the logged-in OAuth token. It prints no
 secret values. If a private DB is not reachable from the laptop, treat that as an infra boundary and
-verify with `rc db` or `rc bash` instead of forcing local live tests. Local `lib.db` connection attempts
-fail after 15 seconds with that guidance because production DSNs are often IP/region allowlisted for
-RootCause infra.
+verify with `rc dev console database` or `rc dev console bash` instead of forcing local live tests.
+Local `lib.db` connection attempts fail after 15 seconds with that guidance because production DSNs
+are often IP/region allowlisted for RootCause infra.
 
 If a brain edit introduces a new read-only credential, follow `docs/secrets.md`: document the env var
-name only, set it with `printf %s "$SECRET_VALUE" | rc env set key=NAME`, then `rc env pull` before live
-local checks. Use `--plane action` only for hosted action credentials, never for normal grounding.
+name only, set it with `printf %s "$SECRET_VALUE" | rc project env set key=NAME`, then `rc project env
+pull` before live local checks. Use `--plane action` only for hosted action credentials, never for
+normal grounding.
 
 ## Finish
 

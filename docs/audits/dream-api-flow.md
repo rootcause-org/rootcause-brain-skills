@@ -2,28 +2,32 @@
 
 Date: 2026-07-05.
 
-Scope: `rc dream evidence`, the run/status/observability ladder, account-level surfaces, and triage-skip
+Command names below use the current nine-root CLI. The original ambient-scope failure was fixed by
+brain-marker project resolution plus local selector validation; explicit `--project` remains useful for
+an all-projects token outside a bound brain checkout.
+
+Scope: `rc dev learning evidence`, the run/status/observability ladder, account-level surfaces, and triage-skip
 restart flow. Reviewed `rootcause-brain-skills`, `rootcause-cli`, and the modern `rootcause` backend;
 sampled production with explicit `--project` for `kampadmin`, `dentai`, and `player1labs`.
 
 ## Recommendation
 
-Keep `GET /api/v1/dream/evidence` / `rc dream evidence`, but narrow its contract: it should be the
+Keep `GET /api/v1/dream/evidence` / `rc dev learning evidence`, but narrow its contract: it should be the
 dream-cycle inbox, not the general account/status view.
 
 Best flow:
 
 ```text
-1. rc status / rc fleet
+1. rc status / rc fleet runs
    Decide whether the account is healthy and which run classes matter.
 
-2. rc dream evidence --limit N
+2. rc dev learning evidence --limit N
    Pull ranked learning candidates: explicit feedback, sent-edit deltas, and triage corrections.
 
-3. rc run <id> / rc thread <id> / rc run <id> --debug
+3. rc run show <id> / rc run thread <id> / rc run debug <id>
    Drill one candidate only when it can justify a brain/settings/triage change.
 
-4. rc config hierarchy get + rc triage policy/rules + rc mailbox ls + rc brain status
+4. rc project settings behavior get + rc project triage policy/rules + rc project mailbox ls + rc dev brain status
    Decide durable home and deployment risk before editing.
 ```
 
@@ -34,16 +38,16 @@ weaken status privacy or make dream evidence too shallow.
 Do improve the progressive-disclosure ladder around it:
 
 - Add a safe `learning_signal` summary to `GET /api/v1/runs` rows: `feedback`, `sent_delta`,
-  `triage_correction`, maybe counts/booleans only. This lets `rc status`/`rc fleet` point to dream
+  `triage_correction`, maybe counts/booleans only. This lets `rc status`/`rc fleet runs` point to dream
   candidates without carrying bodies.
-- Add `rc dream evidence --summary` or make table mode useful. Today the command always prints JSON.
+- Add `rc dev learning evidence --summary` or make table mode useful. Today the command always prints JSON.
   A compact table should show plane, run id, tenant, score/similarity, changed chars, topic, and body
   lengths.
 - Split body detail from index: default dream evidence should omit `proposed_body`/`sent_body`; add
   `--include-bodies` or a detail endpoint such as `GET /api/v1/dream/evidence/{id}`. Current raw bodies
   are useful for consolidation but too heavy for first-pass agent routing.
-- Add `--project` hardening to `rc dream evidence`: in practice ambient scope produced wrong/no project
-  results for all-project tokens. Agents should be told to use explicit `--project` until fixed.
+- Keep explicit `--project` in operator examples outside a brain checkout. Inside a brain checkout,
+  `.rootcause.toml` now supplies the project and the CLI validates it before requesting evidence.
 
 ## Live Endpoint Results
 
@@ -51,7 +55,7 @@ All samples used explicit `rc --project <project> ...`.
 
 | Project | Dream evidence | Status / fleet | Account surfaces |
 |---|---:|---|---|
-| `kampadmin` | `0` feedback, `20/20` deltas. Deltas are Embassy-sourced, high divergence, but top rows have no `related_run_id`. | `232` fleet rows: mostly `analysis`; `124` failed, `5` error, `38` fallbacks, `130` no-journal. `patterns` saw `24` `grounding_aborted` rows and blocked `admin.kampadmin.be`. | `54` active tenants, no watched mailboxes via `rc mailbox ls`, brain current. |
+| `kampadmin` | `0` feedback, `20/20` deltas. Deltas are Embassy-sourced, high divergence, but top rows have no `related_run_id`. | `232` fleet rows: mostly `analysis`; `124` failed, `5` error, `38` fallbacks, `130` no-journal. `patterns` saw `24` `grounding_aborted` rows and blocked `admin.kampadmin.be`. | `54` active tenants, no watched mailboxes via `rc project mailbox ls`, brain current. |
 | `dentai` | `1` feedback, `20/20` deltas. Dense Google sent-edit corpus; some deltas have no related run. | `230` fleet rows: `20` errors, `17` failed, `21` fallbacks. Recent status unhealthy with `dead_lettered` + internal errors. | `11` tenants, `5` watched mailboxes, all feedback `off`; one force-process triage rule. Brain cache stale: origin/main ahead by 1. |
 | `player1labs` | `4` feedback, `4` deltas. Feedback is the clearest: low scores with long comments and actionable topics. | `89` fleet rows: `49` failed, `5` dead-lettered, mostly email. Recent failed rows often have zero turns/bash, suggesting pre-loop or synthetic failures. | `1` watched mailbox, feedback `all`; brain current; `2` actions. |
 
@@ -61,7 +65,7 @@ Observed rough merits:
 - For DentAI, deltas are abundant but body-heavy; first-pass agents need a summary/digest more than raw
   text.
 - For Kampadmin, Embassy deltas without `related_run_id` are hard to drill. Session/thread join is not
-  enough for `rc run <id> --debug`.
+  enough for `rc run debug <id>`.
 - `patterns` and `fleet` expose systemic run health better than dream evidence: grounding aborts,
   fallbacks, no-journal, blocked egress, and dead-lettering do not belong inside the dream endpoint.
 
@@ -83,7 +87,7 @@ The backend design is coherent:
 
 - `GET /api/v1/runs` is the status-page JSON twin: safe projection, shared `runindex.Enrich`, no raw
   bodies.
-- `GET /api/v1/runs/events`, `/runs/egress`, `/health` are raw feeds for fat CLI aggregation.
+- `GET /api/v1/run-events`, `/egress-log`, `/health` are raw feeds for fat CLI aggregation.
 - `GET /api/v1/dream/evidence` is not a raw feed; it is a ranked bundle over two learning planes:
   negative/commented feedback and proposed-vs-sent deltas.
 
@@ -92,10 +96,10 @@ That specialization has merit, because dream evidence cuts across tables (`run_f
 
 ## Gaps
 
-1. Ambient project scope is risky.
-   `rc dream evidence` returned `NO_PROJECT_SCOPE` for `kampadmin` in its brain checkout and a
-   wrong-project result for `player1labs` before using explicit `--project`. Other commands scoped as
-   expected. Fix the CLI/server path or document `--project` as mandatory for all-project tokens.
+1. Ambient project scope was risky in the audited version.
+   `rc dev learning evidence` returned `NO_PROJECT_SCOPE` for `kampadmin` in its brain checkout and a
+   wrong-project result for `player1labs` before using explicit `--project`. The current CLI resolves
+   `.rootcause.toml`, validates project selectors, and rejects unsupported/mismatched scope locally.
 
 2. Dream evidence is too body-forward for index use.
    It returns raw `proposed_body` and `sent_body` by default. That is useful for final consolidation, but
@@ -126,12 +130,13 @@ That specialization has merit, because dream evidence cuts across tables (`run_f
 
 ### Small, high-value
 
-- `rc dream evidence --project <slug>` examples everywhere; fix ambient scope bug.
-- Add table rendering for `rc dream evidence`.
-- Add `--plane feedback|deltas|triage` and `--tenant`.
+- Use `rc dev learning evidence --project <slug>` in all-projects operator examples outside a bound brain.
+- Add table rendering for `rc dev learning evidence`.
+- Add `--plane feedback|deltas|triage`; tenant scope is already available through the global
+  `--tenant <slug>` selector.
 - Add `--include-bodies`; omit raw bodies by default.
 - Add `related_run_missing: true` and `drill_hint` when a delta has session/thread but no run id.
-- Add `rc dream evidence --since 30d`; current endpoint has only `limit`.
+- Add `rc dev learning evidence --since 30d`; current endpoint has only `limit`.
 
 ### Triage skip signal
 
@@ -163,9 +168,9 @@ opening private content.
 CLI:
 
 ```bash
-rc dream evidence --plane triage --limit 50 -o json
-rc runs --kind email --outcome failed      # if outcome filter is added
-rc run <triage-run-id> --retry --comment "why this should process"
+rc dev learning evidence --plane triage --limit 50 -o json
+rc run list --kind email --outcome failed      # if outcome filter is added
+rc run retry <triage-run-id> --comment "why this should process" # if comment is added
 ```
 
 API:
@@ -189,9 +194,9 @@ Keep status safe, but add pointers:
 
 Optionally add filters:
 
-- `rc runs --outcome failed|declined|answered`
-- `rc runs --learning feedback|sent_delta|triage`
-- `rc fleet --learning` to print only rows with learning candidates.
+- `rc run list --outcome failed|declined|answered`
+- `rc run list --learning feedback|sent_delta|triage`
+- `rc fleet runs --learning` to print only rows with learning candidates.
 
 This makes the status page/index the navigation root while keeping the dream endpoint as the evidence
 detail.

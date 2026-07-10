@@ -33,8 +33,8 @@ record.
 Prod uses it today:
 
 - rootcause loads `<brainRoot>/<project>/brain/tenant.schema.json` at request time.
-- `rc tenant profile schema` returns it.
-- `rc tenant profile set --tenant <slug> ...` validates the merged profile record against it.
+- `rc project tenant profile schema` returns it.
+- `rc project tenant profile set <slug> ...` validates the merged profile record against it.
 - The operator Configuration form renders from it.
 - A project with no schema has no tenant-settings surface.
 
@@ -47,8 +47,8 @@ When editing a templated project brain for a tenant, get three things in view:
 
 ```bash
 sed -n '1,180p' projection.yaml
-rc tenant profile schema -o json
-rc tenant profile get --tenant <slug> -o json
+rc project tenant profile schema -o json
+rc project tenant profile get <slug> -o json
 ```
 
 The useful mental model is:
@@ -88,6 +88,6 @@ Bad behavior:
 - Committing tenant-specific values.
 - Teaching the model to choose variants itself.
 
-For production confidence, use `rc ask --brain-ref dev/x ...` with an `rc login` bound to the target
+For production confidence, use `rc ask --brain-ref dev/x ...` with an `rc auth login` bound to the target
 tenant and inspect the dump; that shows the actual loop and the exact settings snapshot the run rendered
 from.

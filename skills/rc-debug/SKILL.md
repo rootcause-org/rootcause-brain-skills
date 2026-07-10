@@ -23,8 +23,8 @@ Also read [docs/actions.md](../../docs/actions.md) when the trace includes actio
 Default to evidence-first. A single run is signal, not permission to oversteer the brain.
 
 1. Resolve the input.
-   - Run UUID: continue with `rc run <uuid> --debug`.
-   - Thread/session id: run `rc thread <id>`. If it prints a run UUID, continue with that run. If
+   - Run UUID: continue with `rc run debug <uuid>`.
+   - Thread/session id: run `rc run thread <id>`. If it prints a run UUID, continue with that run. If
      there is no run, explain the public channel/support boundary.
    - Question/prompt: use `brain-ask` unless the user explicitly asked to trigger and inspect a fresh
      run in one flow.
@@ -32,21 +32,21 @@ Default to evidence-first. A single run is signal, not permission to oversteer t
 
 2. Decompose the run:
    ```bash
-   rc run <uuid> --debug
+   rc run debug <uuid>
    ```
-   Output lands under `rc-debug/<run8>-<project>.{md,jsonl}`. On 401/scope errors, run `rc whoami`
-   and suggest `rc login`; on missing public data, produce a support request.
+   Output lands under `.rootcause/debug/<run8>-<project>.{md,jsonl}`. On 401/scope errors, run `rc auth
+   status` and suggest `rc auth login`; on missing public data, produce a support request.
 
 3. Read the markdown index first. Report status, scenario, question, test-run marker, tenant/ref,
    outcome, flags, and the likely area to inspect.
 
 4. Drill into JSONL only for a specific step/question:
    ```bash
-   jq -r 'select(.disp=="23").command' rc-debug/<file>.jsonl
-   jq -r 'select(.disp=="23").stdout'  rc-debug/<file>.jsonl
-   jq -r 'select(.exit_code != null and .exit_code != 0).disp' rc-debug/<file>.jsonl
-   jq -r 'select(.command // "" | contains("invoice")).disp' rc-debug/<file>.jsonl
-   jq -r 'select(.reasoning) | .disp + " " + .reasoning' rc-debug/<file>.jsonl
+   jq -r 'select(.disp=="23").command' .rootcause/debug/<file>.jsonl
+   jq -r 'select(.disp=="23").stdout'  .rootcause/debug/<file>.jsonl
+   jq -r 'select(.exit_code != null and .exit_code != 0).disp' .rootcause/debug/<file>.jsonl
+   jq -r 'select(.command // "" | contains("invoice")).disp' .rootcause/debug/<file>.jsonl
+   jq -r 'select(.reasoning) | .disp + " " + .reasoning' .rootcause/debug/<file>.jsonl
    ```
 
 5. If evidence points to a brain bug, inspect likely brain files read by the run plus focused `rg`

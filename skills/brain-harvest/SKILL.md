@@ -41,17 +41,17 @@ personal/mixed). Edit the matching skeleton in step 4 instead of inventing struc
    project/tenant mistakes fail early, and so synthesis knows what grounding, persona, and triage
    already exist before proposing new homes — never infer "no grounding" from a local repo search alone:
    ```bash
-   rc whoami
-   rc mailbox ls
+   rc auth status
+   rc project mailbox ls
    git status --short --branch
    git pull --ff-only
 
-   rc config hierarchy get -o json
-   rc triage policy get -o json
-   rc triage rules ls -o json
-   rc db list -o json          # grounding databases already wired
-   rc capabilities             # cataloged brain scripts / tools already available
-   rc health                   # source mirrors already mounted (and their freshness)
+   rc project settings behavior get -o json
+   rc project triage policy get -o json
+   rc project triage rules ls -o json
+   rc dev console database list -o json  # grounding databases already wired
+   rc dev console capabilities           # cataloged brain scripts / tools already available
+   rc fleet health                       # source mirrors already mounted (and their freshness)
    ```
    Preserve local work. In a tenant checkout, route tenant-specific distillations to the tenant brain or
    tenant settings unless they clearly apply to the shared project.
@@ -65,23 +65,24 @@ personal/mixed). Edit the matching skeleton in step 4 instead of inventing struc
    ```
    Before any deep/local IMAP run, prove both public surfaces exist:
    ```bash
-   rc mailbox imap-env --help
+   rc project mailbox imap-env --help
    test -f "$SKILL/scripts/local_imap_harvest.py"
    ```
    If either is missing, do **not** reveal credentials, scrape private stores, or invent env-file handling.
-   Stop with an implementation/ops gap (missing `rc mailbox imap-env`, missing local exporter, or both) or
+   Stop with an implementation/ops gap (missing `rc project mailbox imap-env`, missing local exporter,
+   or both) or
    run only the capped hosted harvest if that is explicitly useful as a smoke test.
 
    Hosted provider path:
    ```bash
-   rc export ls -o json                 # has this mailbox been harvested already?
-   rc mailbox harvest <mailbox-id> --max-threads 1000
-   rc export get <export-id>             # poll until terminal; --wait is fine for small jobs
-   rc export download <export-id> --split .rootcause/exports/<export-id>/
+   rc project corpus ls -o json                    # has this mailbox been harvested already?
+   rc project mailbox harvest <mailbox-id> --max-threads 1000
+   rc project corpus get <export-id>               # poll until terminal
+   rc project corpus download <export-id> --split .rootcause/exports/<export-id>/
    ```
-   `rc mailbox harvest` triggers a **production** provider sweep of the mailbox's sent history into a
-   cleaned Markdown corpus; `rc export download` marks the export consumed (starting server-side
-   eviction) and lands raw mail on local disk. **Before writing anything else, verify the split dir is
+   `rc project mailbox harvest` triggers a **production** provider sweep of the mailbox's sent history
+   into a cleaned Markdown corpus; `rc project corpus download` marks the export consumed (starting
+   server-side eviction) and lands raw mail on local disk. **Before writing anything else, verify the split dir is
    gitignored** — the default `.rootcause/exports/<id>/` sits under the wholesale-gitignored
    `.rootcause/`, but confirm it:
    ```bash
@@ -92,7 +93,7 @@ personal/mixed). Edit the matching skeleton in step 4 instead of inventing struc
 
    Deep/local IMAP path, only after the two existence checks pass:
    ```bash
-   rc mailbox imap-env <mailbox-id> --out .rootcause/imap/<mailbox-id>.env
+   rc project mailbox imap-env <mailbox-id> --out .rootcause/imap/<mailbox-id>.env
    git check-ignore .rootcause/imap/<mailbox-id>.env
    uv run "$SKILL/scripts/local_imap_harvest.py" \
      --env .rootcause/imap/<mailbox-id>.env \
@@ -123,9 +124,9 @@ personal/mixed). Edit the matching skeleton in step 4 instead of inventing struc
    |---|---|
    | Product fact, routing, terminology, source-of-truth pointer, repeatable investigation/playbook | Brain files. |
    | Missing reusable script, action instructions, action selection rules | Brain files or `actions/<id>/`. |
-   | Voice, language, signature, formality, wording preference, "sound more like us" | Persona settings via `rc config hierarchy`. |
-   | Which inbound mail should become a draft, broad draft/no-draft guidance | Triage policy via `rc triage policy`. |
-   | Deterministic always-skip or always-process rule based on sender/subject/header | Triage hard rule via `rc triage rules`. |
+   | Voice, language, signature, formality, wording preference, "sound more like us" | Persona settings via `rc project settings behavior`. |
+   | Which inbound mail should become a draft, broad draft/no-draft guidance | Triage policy via `rc project triage policy`. |
+   | Deterministic always-skip or always-process rule based on sender/subject/header | Triage hard rule via `rc project triage rules`. |
    | Missing public surface, channel promotion, tenant publish, action wiring, cache divergence | `brain-publish` support request. |
 
    Onboarding-shaped outputs land where the mechanical seeder already points: `notes/onboarding-inbox.md`-style
@@ -143,23 +144,23 @@ personal/mixed). Edit the matching skeleton in step 4 instead of inventing struc
    ```bash
    # Voice the sent history reveals → persona (project, or a narrower scope). Keys: persona.tone,
    # persona.signature, persona.language, persona.formality, persona.guidance (free-text catch-all).
-   rc config hierarchy set persona.tone="warm, concise, first-person plural" \
-                           persona.signature="— The Support Team" \
-                           persona.formality="informal (jij)" persona.guidance="..."
-   rc tenant settings set --tenant <slug> persona.guidance="..."     # tenant-specific voice
-   rc mailbox settings set <mailbox-id> persona.guidance="..."       # one mailbox only
+   rc project settings behavior set persona.tone="warm, concise, first-person plural" \
+                                    persona.signature="— The Support Team" \
+                                    persona.formality="informal (jij)" persona.guidance="..."
+   rc project tenant settings set <slug> persona.guidance="..."      # tenant-specific voice
+   rc project mailbox settings set <mailbox-id> persona.guidance="..." # one mailbox only
 
    # Broad draft / no-draft judgement the corpus shows → triage policy (natural language)
-   rc triage policy set "Draft customer support + billing questions; skip vendor newsletters and automated alerts."
+   rc project triage policy set "Draft customer support + billing questions; skip vendor newsletters and automated alerts."
 
    # Deterministic per-sender / per-subject rules the corpus proves → triage HARD rules
-   rc triage rules add effect=force_process match_kind=sender_address pattern="vip@bigclient.com" reason="always answered, high-value account"
-   rc triage rules add effect=force_process match_kind=sender_domain pattern="partner.com"        reason="partner mailbox — always draft"
-   rc triage rules add effect=skip          match_kind=subject_contains pattern="unsubscribe"      reason="marketing noise, never drafted"
+   rc project triage rules add effect=force_process match_kind=sender_address pattern="vip@bigclient.com" reason="always answered, high-value account"
+   rc project triage rules add effect=force_process match_kind=sender_domain pattern="partner.com" reason="partner mailbox — always draft"
+   rc project triage rules add effect=skip match_kind=subject_contains pattern="unsubscribe" reason="marketing noise, never drafted"
    ```
    Use `effect=force_process` for the **always-whitelist** senders the history shows you always reply to,
    and `effect=skip` for mail you never answer. A temporary rule created just to verify the contract must
-   be removed with `rc triage rules rm <id>` before finishing. Rule of thumb: a *reusable how-we-answer*
+   be removed with `rc project triage rules rm <id>` before finishing. Rule of thumb: a *reusable how-we-answer*
    pattern is persona/triage; a *what-is-true* fact (product, pricing, terminology, a runbook) is a brain
    file. If persona guidance starts turning into product knowledge, move it to the brain instead.
 
@@ -187,7 +188,7 @@ personal/mixed). Edit the matching skeleton in step 4 instead of inventing struc
    ```bash
    git push origin dev/<branch>
    rc ask "<a representative historical case from the corpus>" --brain-ref dev/<branch>
-   rc run <new-run-id> --debug
+   rc run debug <new-run-id>
    ```
    Read the debug markdown index first; open JSONL only for exact commands, reasoning, or reply payload.
    A good result answers the historical case the way the human once did, grounded in the new brain files.

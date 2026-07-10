@@ -3,7 +3,7 @@
 # ///
 """Local IMAP sent-history exporter for brain-harvest.
 
-Reads IMAP credentials from a local env file written by `rc mailbox imap-env`, connects to the mailbox,
+Reads IMAP credentials from a local env file written by `rc project mailbox imap-env`, connects to the mailbox,
 exports a capped sent-folder corpus, and writes:
 
   <out>/INDEX.md
@@ -441,7 +441,7 @@ def selftest() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Export a capped local IMAP sent-history corpus.")
-    parser.add_argument("--env", required=False, help="env file from `rc mailbox imap-env`")
+    parser.add_argument("--env", required=False, help="env file from `rc project mailbox imap-env`")
     parser.add_argument("--out", required=False, help="output dir, usually .rootcause/exports/<run-id>/")
     parser.add_argument("--folder", help="sent folder name override")
     parser.add_argument("--max-messages", type=int, default=200, help="max sent messages to fetch (default 200)")

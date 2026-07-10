@@ -1,6 +1,6 @@
 """Implementation of the shared run-dump renderer. See the package docstring for the bundle contract.
 
-The renderer is data-source agnostic: public `rc run --full` hands it a normalized **bundle dict**,
+The renderer is data-source agnostic: public `rc run trace <id>` hands it a normalized **bundle dict**,
 and this module owns only formatting/decoration.
 """
 
@@ -26,7 +26,7 @@ PROJECTION_BRANCH_KEYS = (
 
 def _egr_blocked(e: dict) -> bool:
     """True if an egress entry represents a blocked call, across both shapes: the operator path's raw
-    `egress_log` rows (`decision == "block"`) and the public-API `/full` bundle's per-host aggregate
+    `egress_log` rows (`decision == "block"`) and the public-API `/trace` bundle's per-host aggregate
     (`blocked == true`)."""
     return e.get("decision") == "block" or e.get("blocked") is True
 
@@ -278,7 +278,7 @@ def decorate(events: list[dict]) -> list[dict]:
         e["grounding"] = grounding
         args = e.get("args") or {}
         if e["tool"] == "bash":
-            # Bundle carries the bash input either as the top-level `command` (the /full API shape) or
+            # Bundle carries the bash input either as the top-level `command` (the /trace API shape) or
             # inside `args` (the operator DB shape) — accept both.
             e["command"] = args.get("command") or e.get("command") or ""
             e["label"] = _label(e["command"])

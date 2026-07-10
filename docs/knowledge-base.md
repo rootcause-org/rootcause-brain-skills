@@ -1,7 +1,7 @@
 # Knowledge Base Traversal
 
 Use this when a brain has an external knowledge source mounted at `/kb`, or when a brain commits a
-`knowledge/` directory. It is for read-only discovery from `rc bash`; durable routing belongs in the
+`knowledge/` directory. It is for read-only discovery from `rc dev console bash`; durable routing belongs in the
 brain's own skills/playbooks after you learn which articles matter.
 
 ## Mounts And Inventory
@@ -17,9 +17,9 @@ Hosted runs may have three relevant read-only trees:
 Probe before assuming a shape:
 
 ```bash
-rc bash run 'find /kb -maxdepth 3 -type d -print | sed -n "1,120p"'
-rc bash run 'find /kb -type f | sed -n "1,80p"'
-rc bash run 'test -d /brain/knowledge && find /brain/knowledge -type f | sed -n "1,80p" || true'
+rc dev console bash run 'find /kb -maxdepth 3 -type d -print | sed -n "1,120p"'
+rc dev console bash run 'find /kb -type f | sed -n "1,80p"'
+rc dev console bash run 'test -d /brain/knowledge && find /brain/knowledge -type f | sed -n "1,80p" || true'
 ```
 
 ## Body Search
@@ -27,8 +27,8 @@ rc bash run 'test -d /brain/knowledge && find /brain/knowledge -type f | sed -n 
 Use `rg` for broad discovery, then `sed` or `python` for one article:
 
 ```bash
-rc bash run 'rg -n -i "refund|invoice|payment|receipt" /kb /brain/knowledge -g "*.md" 2>/dev/null | sed -n "1,60p"'
-rc bash run 'sed -n "1,180p" /kb/provider/collection/article.md'
+rc dev console bash run 'rg -n -i "refund|invoice|payment|receipt" /kb /brain/knowledge -g "*.md" 2>/dev/null | sed -n "1,60p"'
+rc dev console bash run 'sed -n "1,180p" /kb/provider/collection/article.md'
 ```
 
 Search customer words first, then product vocabulary from the brain's terminology/source docs. Keep
@@ -39,7 +39,7 @@ results capped; KB snapshots can be large.
 Many KB exports write YAML frontmatter above the article body. Inventory the real keys before filtering:
 
 ```bash
-rc bash run 'python - <<'"'"'PY'"'"'
+rc dev console bash run 'python - <<'"'"'PY'"'"'
 from collections import Counter
 from pathlib import Path
 
@@ -64,7 +64,7 @@ PY'
 Build a title index:
 
 ```bash
-rc bash run 'python - <<'"'"'PY'"'"'
+rc dev console bash run 'python - <<'"'"'PY'"'"'
 from pathlib import Path
 
 for root in (Path("/kb"), Path("/brain/knowledge")):
@@ -92,7 +92,7 @@ PY'
 Filter by common attributes such as `collection`, `status`, `keywords`, `summary`, `url`, or by path:
 
 ```bash
-rc bash run 'python - <<'"'"'PY'"'"'
+rc dev console bash run 'python - <<'"'"'PY'"'"'
 from pathlib import Path
 
 terms = ("billing", "payment", "refund")
@@ -117,12 +117,12 @@ PY'
 ## Choosing Evidence
 
 Use KB articles for stable customer-facing guidance: setup steps, policy explanations, documented
-limits, and public links. Use brain scripts and `rc db` for tenant-specific live state. Use source
+limits, and public links. Use brain scripts and `rc dev console database` for tenant-specific live state. Use source
 mirrors for implementation truth. When an article answers the question, cite its frontmatter `url` if
 present; when it conflicts with live data or source, report both and prefer live/source evidence.
 
 ## Quoting Notes
 
-`rc bash run` takes one command string. For complex Python snippets, use a quoted heredoc as shown. If
+`rc dev console bash run` takes one command string. For complex Python snippets, use a quoted heredoc as shown. If
 the local shell says `unmatched "` or similar, the command did not reach RootCause; reduce quoting or
 turn repeated logic into a committed brain script.

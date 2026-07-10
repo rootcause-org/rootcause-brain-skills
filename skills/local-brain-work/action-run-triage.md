@@ -6,7 +6,7 @@ Goal: tell whether the run only drafted text, proposed an action, or an action a
 ## First rule
 
 By default a run only **proposes** `reply.actions`; execution happens later when a reviewer clicks the
-confirm link (or `rc action run` fires it). The exception is an **autonomy: auto / policy** action, which a
+confirm link (or `rc dev console action run` fires it). The exception is an **autonomy: auto / policy** action, which a
 run can execute **mid-loop** via the `action` tool — a real mutation *during* the run, with no reviewer
 confirm. Check the run's autonomy path before assuming "proposed ≠ executed": an `action` tool event plus an
 `action_run` whose `approved_by` is `autonomy:auto` or `policy:<digest>` means the write already happened.
@@ -14,8 +14,8 @@ confirm. Check the run's autonomy path before assuming "proposed ≠ executed": 
 ## Quick checks
 
 ```bash
-rc run <run_id> --events
-rc run <run_id> --brain-diff
+rc run events <run_id>
+rc run brain-diff <run_id>
 ```
 
 Read the events around `preflight`, `policy`, `action`, `reply`, and any proposed actions.
@@ -29,7 +29,7 @@ Read the events around `preflight`, `policy`, `action`, `reply`, and any propose
 | `action` tool event but the tool result says "not executed / propose via reply.actions" | The policy gate **denied** (or the action was human-level) → it escalated to a normal proposal. No mutation yet. | "Auto-run denied/escalated; pending reviewer confirm." |
 | Action status `succeeded` / result note after confirm | Post-loop execution happened. | "Action executed; result says ..." |
 | Action status `failed` / error result | Execution was attempted and failed (post-confirm OR mid-loop). | "Action execution failed; hold/adapt draft." |
-| `rc action run` output | Dev-trigger executed the action for real, usually runless. | "Dev-trigger executed; not just a run proposal." |
+| `rc dev console action run` output | Dev-trigger executed the action for real, usually runless. | "Dev-trigger executed; not just a run proposal." |
 
 ## Optimistic drafts
 
@@ -51,8 +51,8 @@ escalate, never claim success.
   plane, with action credentials or the customer's app credentials.
 - For hosted Python actions, `brain_action.py <id> --params ... --preflight-only` reproduces Layer 1 +
   preflight locally. Without `--preflight-only`, it also runs the body in local dry-run mode by default.
-- For Embassy/gem actions, there is no local write-body dry run; use `rc action preflight` or
-  `rc action run` against a safe target when real execution is intended.
+- For Embassy/gem actions, there is no local write-body dry run; use `rc dev console action preflight`
+  or `rc dev console action run` against a safe target when real execution is intended.
 
 ## Common diagnosis
 

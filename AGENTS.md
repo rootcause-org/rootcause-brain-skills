@@ -21,8 +21,8 @@ One audience only: project developers and their agents.
 They have:
 
 - a brain checkout;
-- `rc login`;
-- maybe Docker and local `.env` via `rc env pull`.
+- `rc auth login`;
+- maybe Docker and local `.env` via `rc project env pull`.
 
 They do **not** have:
 
@@ -46,7 +46,7 @@ Read these before changing product-facing docs/skills:
 
 - [docs/brain-model.md](docs/brain-model.md) — audience, brain-vs-external context, prompt boundary,
   layout, refs, mounts, tenant/project model.
-- [docs/run-trace-model.md](docs/run-trace-model.md) — how to read `rc run --debug`.
+- [docs/run-trace-model.md](docs/run-trace-model.md) — how to read `rc run debug`.
 - [docs/side-effects.md](docs/side-effects.md) — read-only vs explicit side effects.
 - [docs/support-boundary.md](docs/support-boundary.md) — brain fix vs support escalation.
 - [docs/mirrors.md](docs/mirrors.md) — source mirror freshness and local/prod gaps.
@@ -67,7 +67,8 @@ Only these are first-class:
 - `rc-debug` — one run/thread/session trace; inspect/propose/stop before edits.
 - `rc-health` — stale mirrors and dead-lettered runs.
 - `rc-fleet` — recent fleet and recurring failure patterns.
-- `prod-console` — direct guarded production primitives through `rc capabilities`, `rc db`, `rc bash`, and `rc action`.
+- `prod-console` — direct guarded production primitives through `rc dev console capabilities`,
+  `rc dev console database`, `rc dev console bash`, and `rc dev console action`.
 - `brain-dev-upgrade` — update kit and `rc`.
 - `brain-publish` — post-edit publish/support-request step.
 

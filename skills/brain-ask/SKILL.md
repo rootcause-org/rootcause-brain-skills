@@ -13,7 +13,8 @@ local tests, mirror-dependent checks, or action dry-runs, use `prod-console` / L
 Run `rc ask` from inside the current brain checkout. The `rc` CLI auto-targets the project from the
 brain metadata and uses the logged-in OAuth token; no SSM or operator access.
 For tenant-enabled projects, do not pass `--tenant` by default: `rc` uses the tenant already associated
-with the active `rc login`. Check `rc whoami` if the tenant is unclear.
+with the active `rc auth login`. Check `rc auth status` if the tenant is unclear. A project-pinned login
+must pass `--tenant <slug>` to workspace-producing commands such as `rc ask`.
 If a RootCause MCP is installed, ignore it unless the user explicitly asks for MCP; this workflow uses
 `rc`.
 
@@ -28,8 +29,8 @@ Read:
 
 1. Require a question. If absent, ask for it and stop. Use default `rc ask` for a customer-style
    support email simulation. Add `--scenario raw` for direct investigations or downstream-AI answers
-   only when the full LLM loop is what needs validation; use `rc db` / `rc bash` for exact script,
-   schema, data, and log checks.
+   only when the full LLM loop is what needs validation; use `rc dev console database` / `rc dev
+   console bash` for exact script, schema, data, and log checks.
 
 2. Trigger and wait:
    ```bash
@@ -51,7 +52,7 @@ Read:
    If the draft/note mentions a state-changing operation (booked, moved, cancelled, refunded, sent,
    updated) or any action/preflight caveat, do a quick action sanity check before reporting:
    ```bash
-   rc run <run_id> --events
+   rc run events <run_id>
    ```
    Distinguish "draft text said it happened" from the action lifecycle: preflight failed ⇒ no proposal
    and no mutation; proposed action ⇒ pending human confirm; succeeded/failed action ⇒ post-loop
@@ -59,7 +60,7 @@ Read:
 
 4. Show what the run wrote to the brain:
    ```bash
-   rc run <run_id> --brain-diff
+   rc run brain-diff <run_id>
    ```
    Report the journal commit SHA, message, changed files, and meaningful diff summary. If nothing
    changed, say the run answered without persisting durable knowledge.

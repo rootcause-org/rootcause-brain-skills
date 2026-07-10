@@ -518,13 +518,14 @@ def query(
         if os.environ.get("RC_LOCAL_BRAIN_RUN"):
             hint += (
                 " This was a local brain_run.py live check; project DSNs are often IP/region "
-                "allowlisted for RootCause production. Use `rc db ...` for direct SQL or "
-                "`rc bash run 'python /brain/skills/.../scripts/<script>.py ...'` to run the "
+                "allowlisted for RootCause production. Use `rc dev console database ...` for direct SQL or "
+                "`rc dev console bash run 'python /brain/skills/.../scripts/<script>.py ...'` to run the "
                 "same brain script on RootCause infra."
             )
         else:
             hint += (
-                " If this happened from a laptop/local live check, prefer `rc db ...` or `rc bash run ...` "
+                " If this happened from a laptop/local live check, prefer `rc dev console database ...` "
+                "or `rc dev console bash run ...` "
                 "so the read executes on RootCause production infra."
             )
         raise RuntimeError(f"{hint}\n\nOriginal error: {type(e).__name__}: {e}") from e

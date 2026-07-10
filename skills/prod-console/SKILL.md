@@ -1,6 +1,6 @@
 ---
 name: prod-console
-description: "Direct guarded production access from a brain checkout through `rc capabilities`, `rc db`, `rc bash`, and `rc action`. Use when a developer or their coding agent already knows the exact production primitive to run: SQL/schema lookup, cataloged brain script discovery, log command planning, or preflight-first action execution. No rootcause-side LLM; the caller reasons locally and rootcause supplies scoped, audited hands."
+description: "Direct guarded production access from a brain checkout through `rc dev console`. Use when a developer or their coding agent already knows the exact production primitive to run: SQL/schema lookup, cataloged brain script discovery, log command planning, or preflight-first action execution. No rootcause-side LLM; the caller reasons locally and rootcause supplies scoped, audited hands."
 ---
 
 # prod-console - direct production primitives
@@ -11,11 +11,13 @@ should investigate, use `brain-ask` instead.
 
 The console is public `rc` only. Do not use private RootCause repos, host shells, SSM, registry SQL, or
 customer credentials. Scope comes from `.rootcause.toml`, the active OAuth login, and optional
-`--project` / `--tenant`.
+`--project`; tenant-capable database/bash reads also accept `--tenant`. Action settings and action
+execution are project-owned and reject `--tenant` rather than silently ignoring it.
 
-For debugging, tool parity, and "does this script/query work?" checks, prefer `rc db` and `rc bash`.
-They are the fast production primitives. `rc ask` wraps those primitives in an LLM run and should be
-reserved for full-loop behavior validation, ambiguous investigations, or customer-style simulations.
+For debugging, tool parity, and "does this script/query work?" checks, prefer `rc dev console database`
+and `rc dev console bash`. They are the fast production primitives. `rc ask` wraps those primitives in
+an LLM run and should be reserved for full-loop behavior validation, ambiguous investigations, or
+customer-style simulations.
 
 ## Required Context
 
@@ -28,42 +30,42 @@ Read:
 
 1. Discover first:
    ```bash
-   rc capabilities
-   rc connection ls
+   rc dev console capabilities
+   rc project connection ls
    ```
    Treat it as the manifest: database short names/descriptions, cataloged scripts, available actions,
    connected OAuth/API grants, and which console planes are live. Use `-o json` when comparing exact
    permission tiers or automation output.
    If a pushed brain script is missing or `/brain` looks stale, run:
    ```bash
-   rc brain status
-   rc brain sync
-   rc bash list
+   rc dev brain status
+   rc dev brain sync
+   rc dev console bash list
    ```
 
 2. For database work, fetch only what you need:
    ```bash
-   rc db list
-   rc db schema <db>
-   rc db schema <db> --table <table>
-   rc db query <db> "SELECT ..."
+   rc dev console database list
+   rc dev console database schema <db>
+   rc dev console database schema <db> --table <table>
+   rc dev console database query <db> "SELECT ..."
    ```
    Queries run host-side through RootCause's database proxy and project scoping. Prefer narrow SELECTs
    and explicit columns. Large or repeated analysis belongs in local `jq`/scripts over JSON output:
    ```bash
-   rc db query <db> "SELECT ..." -o json | jq '.rows[]'
+   rc dev console database query <db> "SELECT ..." -o json | jq '.rows[]'
    ```
    If a query fails on a column name, stop and inspect schema:
    ```bash
-   rc db schema <db> --table <table> -o json |
+   rc dev console database schema <db> --table <table> -o json |
      jq -r '.. | objects | select(has("name") and has("type")) | [.name,.type] | @tsv'
    ```
 
 3. For mounted workspace files, inspect before assuming paths:
    ```bash
-   rc bash run 'find /brain -maxdepth 2 -type f | sed -n "1,80p"'
-   rc bash run 'find /kb -maxdepth 3 -type d -print | sed -n "1,120p"'
-   rc bash run 'rg -n -i "invoice|payment|refund" /kb /brain/knowledge -g "*.md" 2>/dev/null | sed -n "1,60p"'
+   rc dev console bash run 'find /brain -maxdepth 2 -type f | sed -n "1,80p"'
+   rc dev console bash run 'find /kb -maxdepth 3 -type d -print | sed -n "1,120p"'
+   rc dev console bash run 'rg -n -i "invoice|payment|refund" /kb /brain/knowledge -g "*.md" 2>/dev/null | sed -n "1,60p"'
    ```
    Use `/kb` for synced knowledge-base articles when configured; use `/brain/knowledge` when the brain
    commits its own knowledge articles. For title and frontmatter filters, read
@@ -71,27 +73,27 @@ Read:
 
 4. For scripts/logs, inspect the catalog:
    ```bash
-   rc bash list
+   rc dev console bash list
    ```
-   `rc bash run` is the workspace-exec plane and may be unavailable on older/v1 servers. When available,
-   use cataloged scripts before raw bash. `rc brain sync` invalidates warm bash workspaces, so the next
-   run remounts the refreshed `/brain`. Logs are reached through that exec plane, usually with `python -m
-   lib.cloudwatch ...`, not a separate log verb.
+   `rc dev console bash run` is the workspace-exec plane. Use cataloged scripts before raw bash. `rc
+   dev brain sync` invalidates warm bash workspaces, so the next run remounts the refreshed `/brain`.
+   Logs are reached through that exec plane, usually with `python -m lib.cloudwatch ...`, not a
+   separate log verb.
 
 5. For actions, preflight before running:
    ```bash
-   rc action list
-   rc action config get
-   rc action show <id>
-   rc action preflight <id> --params '{"key":"value"}'
-   rc action run <id> --params '{"key":"value"}'
+   rc dev console action list
+   rc project action-settings get
+   rc dev console action show <id>
+   rc dev console action preflight <id> --params '{"key":"value"}'
+   rc dev console action run <id> --params '{"key":"value"}'
    ```
    `run` is a real state-changing operation. Use it only when the user asked for execution or the task
    clearly requires it and params were grounded. Report the action run id, status, and result summary.
 
 ## Brain-script catalog convention
 
-To make scripts discoverable through `rc bash list` / `rc capabilities`, put small comment metadata near
+To make scripts discoverable through `rc dev console bash list` / `rc dev console capabilities`, put small comment metadata near
 the top of each `skills/*/scripts/*.py` or `.sh` file:
 
 ```python
