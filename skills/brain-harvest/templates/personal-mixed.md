@@ -19,21 +19,26 @@ cases/
 
 ## Triage skill (skeleton)
 
-State the draft/skip/escalate decision in `skills/triage/SKILL.md`, but push **deterministic** rules
-into `rc project triage rules` and **broad guidance** into `rc project triage policy` — the brain skill explains the
-*why*, the triage surface enforces the *what*.
+State the draft/skip/escalate rationale in `skills/triage/SKILL.md`, but keep **deterministic** rules
+and **broad guidance** in RootCause triage settings — the brain skill explains the *why*, the triage
+surface enforces the *what*. Configure settings from the local authenticated control plane; do not put
+control-plane commands in runtime instructions.
 
 ## Escalation + privacy (skeleton)
 
 - Sensitive topics that must never auto-draft (health, legal, finances, minors): `<list>`.
-- Always-escalate-to-human senders/subjects: push to `rc project triage rules add effect=...`.
+- Always-escalate-to-human senders/subjects: encode as deterministic triage settings.
 - Redaction rule: distilled patterns only — see the skill's privacy gate. `brain_lint.py` enforces it.
 
 ## What goes where (do not misfile)
 
 - **Persona settings**: voice, warmth, signature, language.
-- **Triage** (`rc project triage ...`): draft/skip/escalate decisions, deterministic sender/subject rules.
+- **Triage settings**: draft/skip/escalate decisions, deterministic sender/subject rules.
 - **Brain files**: case runbooks, terminology, escalation criteria, distilled patterns.
+
+State the runtime boundary near the top of `AGENTS.md`: production has `bash` plus its scenario
+terminal tool, no `rc` binary, and read-only `/brain`; ground through `/brain` scripts and injected
+`lib.*` capabilities.
 
 Privacy is acute here: personal mail carries credentials, addresses, health data. No raw thread bodies
 reach a brain file, ever. If legacy onboarding committed raw mail, the history-rewrite decision is the

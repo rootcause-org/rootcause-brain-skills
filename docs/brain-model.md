@@ -49,6 +49,20 @@ If a fact changes with the customer's app state or source code, prefer a groundi
 lookup over copying it into prose. If a fact is a stable support policy, product concept, customer
 promise, or decision tree, put it in the brain with tests where practical.
 
+## Execution Context Boundary
+
+Do not mix the local control plane with the production model's workspace:
+
+| Context | Available interface | Brain access | Instruction home |
+|---|---|---|---|
+| Local brain-development agent | Public `rc` CLI after OAuth, local engine scripts, local shell | Writable checkout | This kit's locally installed skills and docs |
+| Production main LLM loop | `bash` plus the scenario terminal tool (`reply` for email); `/brain` scripts and injected `lib.db`, `lib.cloudwatch`, `lib.http`, `lib.fs`, `lib.connectors`, `lib.api`, `lib.mcp` as configured | `/brain` read-only | Committed project business context, routing, playbooks, and grounding scripts |
+
+There is no `rc` binary in the production loop. Never put `rc ...` command guidance in committed
+project-brain content: it cannot execute there and competes with the actual grounding path. A brain
+may name required evidence, a `/brain` script, a mirror/KB path, or an injected `lib.*` capability;
+local CLI orchestration stays in this kit.
+
 ## Author For Navigation
 
 Brains work best when the first useful file routes by the customer's words, then points to concrete

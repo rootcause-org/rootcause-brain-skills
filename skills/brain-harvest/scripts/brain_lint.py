@@ -1,9 +1,9 @@
 # /// script
 # requires-python = ">=3.11"
 # ///
-"""Deterministic privacy + brain-contract linter for `brain-harvest`. Scans brain Markdown for the
-things that must NEVER survive a harvest into a committed brain file — leaked secrets, raw thread text,
-payment links/addresses — and flags soft brain-contract smells (response-mechanics / persona wording).
+"""Deterministic privacy + brain-contract linter for `brain-harvest`. Scans brain Markdown for leaked
+secrets, raw thread text, payment links/addresses, and soft contract smells; all supported brain text
+files are scanned for local-only rc CLI commands.
 
 Stdlib only: run it with `uv run --no-project python brain_lint.py` or plain `python3 brain_lint.py`.
 It is a pre-commit gate, not a formatter — it never edits files.
@@ -14,8 +14,8 @@ It is a pre-commit gate, not a formatter — it never edits files.
     python3 brain_lint.py --strict        # soft (contract) findings also fail the run
     python3 brain_lint.py --selftest      # run built-in regex self-checks (no repo needed)
 
-Exit status: 1 if any HARD finding (secret / raw-thread / payment) is present, or if `--strict` and any
-SOFT finding is present; else 0. Findings print grep-style: `path:line: <category>: <snippet>`.
+Exit status: 1 if any HARD finding is present, or if `--strict` and any SOFT finding is present; else
+0. Findings print grep-style: `path:line: <category>: <snippet>`.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 # ── categories ────────────────────────────────────────────────────────────────────────────────────
-# HARD = raw customer data or a secret that must never land in a brain file; blocks the commit.
+# HARD = data, secrets, or unavailable runtime instructions that must never land in a brain; blocks.
 # SOFT = brain-contract smell (response mechanics / persona / channel wording) that belongs in persona
 #        settings, not brain files; a warning unless --strict. See docs/brain-model.md prompt boundary.
 HARD = "HARD"
@@ -100,21 +100,55 @@ CONTRACT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
         r"always sign|email signature)\b")),
 ]
 
+# The public rc CLI is available to the local brain-development agent, never to the production main
+# loop. Match known command roots rather than the bare `rc` token so RC_* env vars, `rc:branch`
+# projection markers, `/tmp/rc-*` paths, and prose such as "rc CLI" remain valid.
+RC_CLI_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    ("rc-cli-command", re.compile(
+        r"\brc[ \t]+(?:access|action|admin|ask|auth|bash|brain|branding|capabilities|completion|"
+        r"commands|config|connection|database|db|dev|dream|env|explain|export|fleet|github|health|help|"
+        r"id|integration|integrations|kb|login|logout|mailbox|mcp|member|openapi|patterns|project|"
+        r"projects|prompt|provider|repo|routes|run|runs|schema|self|skills|spam|status|tenant|thread|"
+        r"token|triage|upgrade|version|whoami)\b"
+    )),
+    ("rc-cli-command", re.compile(
+        r"\brc[ \t]+(?:-[hov]\b|--(?:help|no-preview|out-dir|output|profile|project|raw-output|tenant|version)\b)"
+    )),
+]
+
+SCAN_SUFFIXES = {".md", ".py", ".rb", ".sh", ".toml", ".yaml", ".yml", ".json"}
+
+
+def _kit_checkout_root() -> Path | None:
+    """Return the kit cwd only when lint was launched from the kit checkout itself."""
+    if (
+        Path("docs/rc-cli.md").is_file()
+        and Path("runtime/lib").is_dir()
+        and Path("skills/local-brain-work/SKILL.md").is_file()
+    ):
+        return Path.cwd().resolve()
+    return None
+
+
+def _is_kit_target(path: Path, kit_root: Path | None) -> bool:
+    """Exempt intentional kit docs, never an external target passed while cwd is the kit."""
+    return kit_root is not None and path.resolve().is_relative_to(kit_root)
+
 
 def _iter_targets(paths: list[str]) -> list[Path]:
-    """Expand file/dir args into Markdown files. Dirs recurse; explicit non-md files are honored."""
+    """Expand dirs into supported brain text files; explicit files are always honored."""
     out: list[Path] = []
     for raw in paths:
         p = Path(raw)
         if p.is_dir():
-            out.extend(sorted(p.rglob("*.md")))
+            out.extend(sorted(child for child in p.rglob("*") if child.suffix.lower() in SCAN_SUFFIXES))
         elif p.exists():
             out.append(p)
     return out
 
 
-def _staged_markdown() -> list[Path]:
-    """The pre-commit target set: staged (`git diff --cached`) `*.md` paths that still exist on disk."""
+def _staged_targets() -> list[Path]:
+    """The pre-commit target set: supported staged text paths that still exist on disk."""
     proc = subprocess.run(
         ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
         capture_output=True, text=True,
@@ -122,17 +156,23 @@ def _staged_markdown() -> list[Path]:
     if proc.returncode != 0:
         print(f"error: git diff --cached failed: {proc.stderr.strip()}", file=sys.stderr)
         return []
-    return [Path(ln) for ln in proc.stdout.splitlines() if ln.endswith(".md") and Path(ln).exists()]
+    return [
+        Path(ln) for ln in proc.stdout.splitlines()
+        if Path(ln).suffix.lower() in SCAN_SUFFIXES and Path(ln).exists()
+    ]
 
 
-def _all_markdown() -> list[Path]:
-    """`--all` target set: every `*.md` under the tree, skipping the gitignored `.rootcause/` export
+def _all_targets() -> list[Path]:
+    """`--all` target set: supported brain text under the tree, skipping `.rootcause/` export
     dumps and VCS/build noise so we never lint the raw corpus we are trying to keep OUT of the brain."""
     skip = {".git", ".rootcause", "__pycache__", ".ruff_cache", ".pytest_cache", "node_modules"}
-    return [p for p in sorted(Path(".").rglob("*.md")) if not (skip & set(p.parts))]
+    return [
+        p for p in sorted(Path(".").rglob("*"))
+        if p.is_file() and p.suffix.lower() in SCAN_SUFFIXES and not (skip & set(p.parts))
+    ]
 
 
-def _scan_line(line: str) -> list[tuple[str, str, str]]:
+def _scan_line(line: str, *, allow_rc_cli: bool = False) -> list[tuple[str, str, str]]:
     """Return (severity, category, snippet) for every pattern hit on one line."""
     hits: list[tuple[str, str, str]] = []
     for groups, severity in (
@@ -148,10 +188,16 @@ def _scan_line(line: str) -> list[tuple[str, str, str]]:
                 if len(snippet) > 60:
                     snippet = snippet[:57] + "..."
                 hits.append((severity, name, snippet))
+    if not allow_rc_cli:
+        for name, pat in RC_CLI_PATTERNS:
+            if match := pat.search(line):
+                hits.append((HARD, name, match.group(0)))
     return hits
 
 
-def lint_file(path: Path) -> list[tuple[int, str, str, str]]:
+def lint_file(
+    path: Path, *, allow_rc_cli: bool = False, rc_only: bool = False,
+) -> list[tuple[int, str, str, str]]:
     """Scan one file. Returns (lineno, severity, category, snippet) findings."""
     findings: list[tuple[int, str, str, str]] = []
     try:
@@ -160,7 +206,12 @@ def lint_file(path: Path) -> list[tuple[int, str, str, str]]:
         print(f"error: cannot read {path}: {exc}", file=sys.stderr)
         return findings
     for n, line in enumerate(text.splitlines(), start=1):
-        for severity, category, snippet in _scan_line(line):
+        hits = [] if rc_only else _scan_line(line, allow_rc_cli=True)
+        if not allow_rc_cli:
+            for name, pat in RC_CLI_PATTERNS:
+                if match := pat.search(line):
+                    hits.append((HARD, name, match.group(0)))
+        for severity, category, snippet in hits:
             findings.append((n, severity, category, snippet))
     return findings
 
@@ -180,6 +231,13 @@ def _selftest() -> int:
         "Please draft a reply to the customer": SOFT,
         "sign off warmly with our name": SOFT,
         "The customer at 123 Main Street reported a duplicate charge.": SOFT,
+        "Use `rc run debug <id>` to inspect the run.": HARD,
+        "Run `rc env pull` before the live check.": HARD,
+        "Inspect it with `rc action list`.": HARD,
+        "Query through `rc db schema prod`.": HARD,
+        "Use `rc bash run 'true'` for the smoke test.": HARD,
+        "Use `rc --project pro-backup capabilities`.": HARD,
+        "Inspect the connector with `rc integration list`.": HARD,
     }
     must_pass = [
         "Customers on the Pro plan can export up to 10k rows.",
@@ -192,6 +250,10 @@ def _selftest() -> int:
         "The invoice total reflects proration for mid-cycle upgrades.",
         "Refer to commit 3f2a1b9c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f90 for the fix.",  # git SHA, not a secret
         "The sha256 digest is e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.",
+        "Use the rc CLI only from the local development checkout.",
+        "Set RC_PROJECT_ID before running the script.",
+        "Keep the <!-- rc:branch --> marker in this template.",
+        "Write scratch output under /tmp/rc-debug/.",
     ]
     ok = True
     for text, want in must_flag.items():
@@ -204,14 +266,21 @@ def _selftest() -> int:
         if hits:
             print(f"selftest FAIL: clean prose flagged {text!r}: {hits}", file=sys.stderr)
             ok = False
+    kit_root = Path("/tmp/brain-skills-kit").resolve()
+    if not _is_kit_target(kit_root / "docs/rc-cli.md", kit_root):
+        print("selftest FAIL: kit target was not exempt", file=sys.stderr)
+        ok = False
+    if _is_kit_target(Path("/tmp/project-brain/AGENTS.md"), kit_root):
+        print("selftest FAIL: external brain target inherited kit exemption", file=sys.stderr)
+        ok = False
     print("selftest ok" if ok else "selftest FAILED")
     return 0 if ok else 1
 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="brain_lint.py", description=__doc__.split("\n")[0])
-    p.add_argument("paths", nargs="*", help="files/dirs to scan (default: staged *.md).")
-    p.add_argument("--all", action="store_true", help="scan every *.md under the tree.")
+    p.add_argument("paths", nargs="*", help="files/dirs to scan (default: staged brain text).")
+    p.add_argument("--all", action="store_true", help="scan supported brain text under the tree.")
     p.add_argument("--strict", action="store_true", help="soft (contract) findings also fail.")
     p.add_argument("--selftest", action="store_true", help="run built-in regex self-checks and exit.")
     args = p.parse_args(sys.argv[1:] if argv is None else argv)
@@ -222,17 +291,22 @@ def main(argv: list[str] | None = None) -> int:
     if args.paths:
         targets = _iter_targets(args.paths)
     elif args.all:
-        targets = _all_markdown()
+        targets = _all_targets()
     else:
-        targets = _staged_markdown()
+        targets = _staged_targets()
 
     if not targets:
-        print("no markdown to scan (staged set empty — use --all or pass paths).")
+        print("no brain text to scan (staged set empty — use --all or pass paths).")
         return 0
 
     hard = soft = 0
+    kit_root = _kit_checkout_root()
     for path in targets:
-        for lineno, severity, category, snippet in lint_file(path):
+        allow_rc_cli = _is_kit_target(path, kit_root)
+        rc_only = path.suffix.lower() != ".md"
+        for lineno, severity, category, snippet in lint_file(
+            path, allow_rc_cli=allow_rc_cli, rc_only=rc_only,
+        ):
             print(f"{path}:{lineno}: {severity} {category}: {snippet}")
             if severity == HARD:
                 hard += 1
@@ -242,7 +316,7 @@ def main(argv: list[str] | None = None) -> int:
     scanned = len(targets)
     if hard:
         print(f"\nFAIL: {hard} hard finding(s), {soft} soft, across {scanned} file(s). "
-              "Distil patterns — do not commit raw mail or secrets.", file=sys.stderr)
+              "Remove raw data/secrets and local-only rc CLI guidance.", file=sys.stderr)
         return 1
     if soft and args.strict:
         print(f"\nFAIL (--strict): {soft} soft contract finding(s) across {scanned} file(s). "

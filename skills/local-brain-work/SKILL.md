@@ -126,7 +126,8 @@ same as making a shared-brain change live. Use `brain-publish` after committing.
 Local runners do not reproduce the full LLM loop, warm start, grounding pre-step, tenant scoping,
 production egress, callback delivery, or post-loop journal/action handling. Brain Ask is last-mile
 production-loop validation, usually after a pushed `dev/*` ref; it is not a replacement for local brain
-checks. For that prod loop, use `rc`:
+checks. The commands below are run by the **local development agent** to invoke or inspect that loop;
+the production model itself has no `rc` binary. Never copy them into committed brain instructions.
 
 ```bash
 rc ask "<customer-style question>"

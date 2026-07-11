@@ -164,17 +164,18 @@ personal/mixed). Edit the matching skeleton in step 4 instead of inventing struc
    pattern is persona/triage; a *what-is-true* fact (product, pricing, terminology, a runbook) is a brain
    file. If persona guidance starts turning into product knowledge, move it to the brain instead.
 
-5. **Privacy gate (HARD) — before every commit.** Distilled patterns only. Never let raw thread text,
-   credentials, patient data, addresses, or payment links reach a brain file. Two mechanical checks back
-   the judgment call:
+5. **Brain contract gate (HARD) — before every commit.** Distilled patterns only. Never let raw thread
+   text, credentials, patient data, addresses, payment links, or local-only `rc ...` command guidance
+   reach a brain file. Two mechanical checks back the judgment call:
    ```bash
    git add <brain files you wrote>
-   uv run --no-project python "$SKILL/scripts/brain_lint.py"          # scans staged *.md; exits non-zero on any secret/raw-thread/payment-link finding
+   uv run --no-project python "$SKILL/scripts/brain_lint.py"          # scans staged brain text; non-Markdown files receive the CLI-command check
    uv run --no-project python "$SKILL/scripts/brain_lint.py" --all --strict   # sweep the whole tree; address/persona warnings fatal too
    ```
-   - (a) `brain_lint.py` must pass before every commit. Secrets, raw-thread shape, and payment
-     links/IBANs hard-block (exit 1); the coarse address and persona-wording heuristics are warnings you
-     must still review (fatal under `--strict`).
+   - (a) `brain_lint.py` must pass before every commit. Secrets, raw-thread shape, payment links/IBANs,
+     and known `rc` command roots hard-block (exit 1); the coarse address and persona-wording
+     heuristics are warnings you must still review (fatal under `--strict`). The kit checkout is exempt
+     because its authenticated local-development skills intentionally document the CLI.
    - (b) **History-rewrite decision must be explicit.** If a legacy onboarding path ever committed raw
      mail (e.g. a `past-replies.md`), deleting the file leaves it in git history. Do **not** silently
      `git rm` and move on — escalate to the operator with the exact path and commit, because scrubbing

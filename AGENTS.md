@@ -33,6 +33,22 @@ They do **not** have:
 If a workflow is not exposed through public `rc`/API, produce a RootCause support request. Do not leak
 private mechanics into shipped docs or skills.
 
+## Two Execution Contexts
+
+Keep these planes explicit in every skill, template, and brain edit:
+
+- **Local brain development:** a developer or coding agent runs outside production from a brain
+  checkout. After OAuth login, it may use the public `rc` CLI for runs, settings, diagnostics, and
+  guarded production primitives. The CLI skills in this kit serve only this context and install
+  locally through gitignored symlinks; they never mount into `/brain`.
+- **Production main loop:** the model has `bash` plus its scenario terminal tool (`reply` for email),
+  not an `rc` binary. The committed brain is mounted read-only at `/brain`. Ground through `/brain`
+  scripts and the injected `lib.db`, `lib.cloudwatch`, `lib.http`, `lib.fs`, `lib.connectors`,
+  `lib.api`, and `lib.mcp` capabilities available for that project/run.
+
+Never put `rc ...` command guidance in committed project-brain content. Describe the project-specific
+evidence or decision; keep laptop-side control-plane steps in this kit's local skills/docs.
+
 Do not repeat RootCause's generic production prompt in brain docs. `emailPreamble` and capability-gated
 sections in `rootcause/internal/agent/prompt.go` already own the generic support-engineer role,
 draft/note split, read-only workspace, actions/preflight, PII, DB scoping, mirrors, and grounding

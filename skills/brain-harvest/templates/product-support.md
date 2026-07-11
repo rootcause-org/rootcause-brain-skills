@@ -19,6 +19,9 @@ actions/
 
 ## AGENTS.md routing index (skeleton)
 
+State the runtime boundary near the top: production has `bash` plus its scenario terminal tool, no
+`rc` binary, and read-only `/brain`; ground through `/brain` scripts and injected `lib.*` capabilities.
+
 | Customer symptom language | Check | Evidence to open | Action / no-action rule |
 |---|---|---|---|
 | `<phrase from corpus>` | `<script or query>` | `<playbook / mirror path / KB>` | `<propose action X only when guard passes; else explain>` |
@@ -26,8 +29,9 @@ actions/
 ## What goes where (do not misfile)
 
 - **Persona settings**, not brain files: tone, formality, signature, "sound more like us".
-- **Triage** (`rc project triage ...`), not brain prose: which inbound mail deserves a draft; deterministic
-  skip/force rules by sender/subject.
+- **Triage settings**, not brain prose: which inbound mail deserves a draft; deterministic skip/force
+  rules by sender/subject. Configure them from the local authenticated control plane, never as runtime
+  command guidance.
 - **Brain files**: product facts, terminology, routing, playbooks, action-selection rules.
 
 Privacy: distilled patterns only. No raw thread bodies, credentials, addresses, or payment links.
