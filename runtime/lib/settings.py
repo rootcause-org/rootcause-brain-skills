@@ -75,6 +75,24 @@ def _reachable_levels(capabilities: dict[str, Any]) -> list[str]:
     return ["project", "tenant", "mailbox"]
 
 
+def _targets(capabilities: dict[str, Any]) -> tuple[list[dict[str, str]], dict[str, str] | None]:
+    """Return trusted candidate targets, with the session scope first/default."""
+    project = capabilities.get("project") or {}
+    tenant = capabilities.get("tenant") or {}
+    mailbox_id = os.environ.get("RC_MAILBOX_ID", "").strip()
+    scope = os.environ.get("RC_SCOPE_LEVEL", "").strip().lower()
+    targets: list[dict[str, str]] = []
+    if project.get("id"):
+        targets.append({"level": "project", "id": str(project["id"]), "name": str(project.get("name", "project"))})
+    if tenant.get("id"):
+        targets.append({"level": "tenant", "id": str(tenant["id"]), "name": str(tenant.get("name") or tenant.get("slug") or "tenant")})
+    if mailbox_id:
+        targets.append({"level": "mailbox", "id": mailbox_id, "name": mailbox_id})
+    default_level = scope or ("tenant" if tenant.get("id") else "project")
+    default = next((target for target in targets if target["level"] == default_level), None)
+    return targets, default
+
+
 def _field_rows(schema: dict[str, Any]) -> list[dict[str, Any]]:
     rows: dict[str, dict[str, Any]] = {}
     for resource_name, resource in (schema.get("resources") or {}).items():
@@ -147,9 +165,12 @@ def find(intent: str, fetcher: Fetcher = _fetch) -> dict[str, Any]:
             **({"note": field["special_case"]} if field.get("special_case") else {}),
         })
     ranked.sort(key=lambda row: (-row["score"], row["key"]))
+    targets, default_target = _targets(capabilities)
     return {
         "intent": query,
         "session_scope": os.environ.get("RC_SCOPE_LEVEL", "").strip().lower() or ("tenant" if capabilities.get("tenant") else "project"),
+        "default_target": default_target,
+        "targets": targets,
         "candidates": ranked[:8],
     }
 

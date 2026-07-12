@@ -42,7 +42,8 @@ def stub(capabilities, responses=None):
 
 def test_find_ranks_voice_and_fences_tenant_pin():
     caps = {
-        "project": {"name": "demo"}, "tenant": {"slug": "acme"},
+        "project": {"id": "00000000-0000-0000-0000-000000000001", "name": "demo"},
+        "tenant": {"id": "00000000-0000-0000-0000-000000000002", "slug": "acme"},
         "writable_keys": ["persona.tone", "autonomy_mode", "channel.labeling_enabled"],
     }
     with mock.patch.dict("os.environ", {}, clear=True):
@@ -51,6 +52,18 @@ def test_find_ranks_voice_and_fences_tenant_pin():
     assert top["key"] == "persona.tone"
     assert top["reachable_levels"] == ["tenant", "mailbox"]
     assert top["writable"] is True
+    assert result["default_target"] == {
+        "level": "tenant", "id": "00000000-0000-0000-0000-000000000002", "name": "acme",
+    }
+
+
+def test_find_mailbox_scope_returns_trusted_default_target():
+    caps = {"project": {"id": "00000000-0000-0000-0000-000000000001", "name": "demo"}, "writable_keys": ["persona.tone"]}
+    env = {"RC_SCOPE_LEVEL": "mailbox", "RC_MAILBOX_ID": "00000000-0000-0000-0000-000000000003"}
+    with mock.patch.dict("os.environ", env, clear=True):
+        result = settings.find("warm voice", stub(caps))
+    assert result["default_target"]["level"] == "mailbox"
+    assert result["default_target"]["id"].endswith("0003")
 
 
 def test_find_synthesizes_tenant_autonomy_discovery():
