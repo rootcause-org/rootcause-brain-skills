@@ -12,11 +12,18 @@ from lib import settings  # noqa: E402
 
 
 SCHEMA = {
-    "resources": {"settings": {"fields": [
+    "resources": {
+        "settings": {"fields": [
         {"key": "persona.tone", "help": "Reply voice", "type": "string", "settable_at": ["project", "tenant", "mailbox"]},
         {"key": "autonomy_mode", "help": "Draft or send automatically", "type": "enum", "enum": ["draft", "send"]},
-    ]}},
-    "hierarchy_settings": {"channel": {"settable_at": ["project", "tenant", "mailbox"], "fields": ["labeling_enabled"]}},
+        ]},
+        "branding": {"fields": [{"key": "name", "help": "Brand name", "type": "string"}]},
+    },
+    "hierarchy_settings": {"channel": {
+        "settable_at": ["project", "tenant", "mailbox"],
+        "fields": ["labeling_enabled"],
+        "field_schemas": [{"key": "channel.labeling_enabled", "help": "Apply labels", "type": "bool", "settable_at": ["project", "tenant", "mailbox"]}],
+    }},
 }
 
 
@@ -54,6 +61,23 @@ def test_find_synthesizes_tenant_autonomy_discovery():
     assert autonomy["settable_at"] == ["project", "tenant"]
     assert autonomy["reachable_levels"] == ["tenant"]
     assert "outside the hierarchy bag" in autonomy["note"]
+
+
+def test_find_keeps_hierarchy_types_and_qualifies_other_bags():
+    caps = {"project": {"name": "demo"}, "writable_keys": ["channel.labeling_enabled", "branding.name"]}
+    with mock.patch.dict("os.environ", {}, clear=True):
+        labels = settings.find("apply labels", stub(caps))["candidates"][0]
+        brand = settings.find("brand name", stub(caps))["candidates"][0]
+    assert (labels["key"], labels["type"], labels["help"]) == ("channel.labeling_enabled", "bool", "Apply labels")
+    assert brand["key"] == "branding.name"
+
+
+def test_resolve_flat_bag_uses_qualified_key_and_bag_endpoint():
+    caps = {"project": {"name": "demo"}, "writable_keys": ["branding.name"]}
+    responses = {"branding": {"name": {"value": "Acme", "effective": "Acme", "source": "override"}}}
+    with mock.patch.dict("os.environ", {}, clear=True):
+        result = settings.resolve("branding.name", stub(caps, responses))
+    assert result["levels"][0]["effective"]["effective"] == "Acme"
 
 
 def test_resolve_fetches_reachable_levels_and_keeps_provenance():

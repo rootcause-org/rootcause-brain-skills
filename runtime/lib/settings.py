@@ -79,18 +79,30 @@ def _field_rows(schema: dict[str, Any]) -> list[dict[str, Any]]:
     rows: dict[str, dict[str, Any]] = {}
     for resource_name, resource in (schema.get("resources") or {}).items():
         for field in resource.get("fields") or []:
-            key = str(field.get("key", ""))
-            if not key:
+            api_key = str(field.get("key", ""))
+            if not api_key:
                 continue
             row = dict(field)
             row["resource"] = resource_name
+            row["api_key"] = api_key
+            key = api_key if resource_name == "settings" else f"{resource_name}.{api_key}"
+            row["key"] = key
             row["settable_at"] = list(field.get("settable_at") or ["project"])
             rows[key] = row
     for group, description in (schema.get("hierarchy_settings") or {}).items():
         levels = list(description.get("settable_at") or [])
+        for field in description.get("field_schemas") or []:
+            key = str(field.get("key", ""))
+            if not key:
+                continue
+            row = dict(field)
+            row["resource"] = "hierarchy_settings"
+            row["api_key"] = key
+            row["settable_at"] = list(field.get("settable_at") or levels)
+            rows[key] = row
         for leaf in description.get("fields") or []:
             key = f"{group}.{leaf}"
-            rows.setdefault(key, {"key": key, "help": "", "type": "unknown", "resource": "hierarchy_settings"})
+            rows.setdefault(key, {"key": key, "api_key": key, "help": "", "type": "unknown", "resource": "hierarchy_settings"})
             rows[key]["settable_at"] = levels
     # tenants.autonomy_mode is a dedicated inheritable column, not hierarchy JSONB yet.
     if "autonomy_mode" in rows:
@@ -183,6 +195,18 @@ def resolve(key: str, fetcher: Fetcher = _fetch) -> dict[str, Any]:
     fields = {field["key"]: field for field in _field_rows(schema)}
     if key not in fields:
         raise SettingsError(f"unknown setting key: {key}")
+    field = fields[key]
+    resource = field.get("resource", "")
+    if resource not in {"settings", "hierarchy_settings"}:
+        body = fetcher(resource)
+        api_key = str(field.get("api_key", key))
+        item = (body or {}).get(api_key) if isinstance(body, dict) else None
+        return {
+            "key": key,
+            "writable": key in set(capabilities.get("writable_keys") or []),
+            "settable_at": ["project"],
+            "levels": [{"level": "project", "effective": item, "override": item}],
+        }
     reachable = set(_reachable_levels(capabilities))
     allowed = set(fields[key].get("settable_at") or ["project"])
     levels = []
