@@ -72,3 +72,10 @@ help_md: |
 
   Common paths: `files`, `files/{fileId}`, `drives`, `drives/{driveId}`, `about`.
   The `q` parameter accepts Drive search syntax, e.g. `mimeType='application/vnd.google-apps.folder'`.
+onboarding_md: |
+  Ask which folders, documents, or spreadsheets future support work should consult, and for which
+  incoming situations. Explore Drive to identify the canonical files and retain their stable file and
+  folder IDs, not only display names. For each spreadsheet, capture the spreadsheet ID, exact tab name,
+  header columns, lookup/dedup keys, and date/amount conventions; for documents, capture the file ID and
+  relevant section or heading. If the desired workflow changes Drive or appends a sheet row, classify it
+  as a write requiring a live action; the read connector cannot do it.

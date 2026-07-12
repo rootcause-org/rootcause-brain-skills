@@ -87,3 +87,9 @@ help_md: |
   Tip: HubSpot only returns a curated default set of properties per object. Pass
   `--query properties=prop1,prop2` to request additional fields. See available properties at
   GET /crm/v3/properties/{objectType}.
+onboarding_md: |
+  Ask which CRM objects and support workflows matter: contact/company identification, tickets, deals,
+  or ownership. Explore the live portal and retain exact internal property names, pipeline and stage IDs,
+  association paths, lookup keys, and the fields needed to disambiguate records. Include custom-property
+  discovery when standard fields are insufficient. Creating notes, updating stages/properties, or
+  assigning owners is a write requiring a live action; do not imply the read connector performs it.

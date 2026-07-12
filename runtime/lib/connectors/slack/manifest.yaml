@@ -75,3 +75,9 @@ help_md: |
       python -m lib.api post slack assistant.search.context \
         --json '{"query":"project gizmo","content_types":["messages","files"],"limit":20}' \
         --pick results.*.channel_name,results.*.text,results.*.permalink
+onboarding_md: |
+  Ask which channels hold support-relevant decisions and what future emails should cause a Slack
+  lookup. Explore channel access and retain stable channel IDs, canonical channel names, useful search
+  terms, time-window expectations, and whether user-ID resolution matters. Clarify private-channel
+  membership when expected results are absent. Posting, reacting, or changing Slack is a write requiring
+  a live action; this connector only reads.

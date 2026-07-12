@@ -91,3 +91,9 @@ help_md: |
       python -m lib.api post notion data_sources/<data_source_id>/query \
         --json '{"page_size":25,"filter":{"property":"Status","status":{"equals":"Open"}}}' \
         --pick results.*.id,results.*.url
+onboarding_md: |
+  Ask which pages and databases are canonical for support, and what question or incoming event should
+  trigger each lookup. Search the live workspace and retain stable page/data-source IDs, exact property
+  names and types, status/select values, lookup keys, and useful relations. Confirm the integration can
+  see every named page; missing search results often mean the page was not shared. Treat creating or
+  updating pages/rows as a write that requires a live action, never as a capability of this connector.

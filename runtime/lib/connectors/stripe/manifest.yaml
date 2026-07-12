@@ -59,3 +59,10 @@ help_md: |
       python -m lib.api post stripe /invoices/create_preview \
         --form customer=cus_123 --form subscription=sub_123 \
         --pick id,amount_due,currency,lines.data.*.description,lines.data.*.amount
+onboarding_md: |
+  Ask which billing-support cases matter (failed payments, invoice questions, subscription state,
+  refunds) and whether the connected account is test or live mode. Explore representative object shapes
+  without retaining customer rows; capture the lookup sequence, stable account/product/price IDs when
+  genuinely reusable, relevant statuses, and how email/customer IDs map to subscriptions, invoices, and
+  charges. Any refund, cancellation, retry, or subscription change is a write and must reference a live
+  action or remain an explicit manual step.
