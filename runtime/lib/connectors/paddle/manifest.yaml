@@ -62,3 +62,11 @@ help_md: |
       python -m lib.api post paddle /pricing-preview \
         --json '{"items":[{"price_id":"pri_123","quantity":1}],"address":{"country_code":"US","postal_code":"94105"}}' \
         --pick data.details.line_items.*.price.id,data.details.totals.total,data.currency_code
+onboarding_md: |
+  Ask which billing-support cases customers write about (failed renewals, subscription state,
+  transaction questions, refunds) and whether the Paddle account is sandbox or live. Explore
+  representative customer, subscription, and transaction shapes without retaining rows; capture how
+  a sender email maps to a customer (search) and its subscriptions, the ctm_/sub_/txn_/pri_ ID
+  conventions, stable price/product IDs when reusable, and the status enums that matter. A refund,
+  cancellation, pause, or plan change is a write and must reference a live action or remain an
+  explicit manual step.

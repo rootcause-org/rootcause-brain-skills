@@ -53,3 +53,11 @@ help_md: |
         --query per_page=100 --query sort=last_seen \
         --paginate \
         --pick error_class,message,status,severity,last_seen,events_url,id
+onboarding_md: |
+  Ask which incoming support reports should send you searching Bugsnag and which project the
+  errors belong to. Explore live errors and capture stable project and organization IDs, release
+  stage (environment) names, the status and severity enums you rely on, and the lookup keys that
+  map a reporter's email or user ID to their error — that user context only appears when the app
+  attaches it, so confirm which identity fields your instrumentation actually sets. Marking errors
+  fixed, ignoring or snoozing, assigning, or commenting are writes requiring a live action or an
+  explicit manual step; this connector only reads.

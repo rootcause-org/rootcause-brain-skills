@@ -94,3 +94,11 @@ help_md: |
       python -m lib.api get mailchimp https://us6.api.mailchimp.com/3.0/automations \
         --query count=50 \
         --pick automations.*.id,automations.*.settings.title,automations.*.status,automations.*.start_time
+onboarding_md: |
+  Ask which subscriber and campaign-support cases matter (is this contact subscribed, which audience
+  they are in, what campaigns they received, why they unsubscribed or bounced) and which audience is
+  canonical when several exist. Explore representative audiences, subscribers, and recent campaigns
+  live without retaining subscriber rows; capture the lookup sequence, stable audience/list and
+  campaign IDs, exact member-status values (subscribed/unsubscribed/cleaned/pending), and that a
+  subscriber is found by the MD5 hash of the lowercased email. Subscribing, editing tags or
+  merge-fields, or resending a campaign is a write that must reference a live action or manual step.

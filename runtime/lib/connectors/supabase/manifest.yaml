@@ -67,3 +67,11 @@ help_md: |
       # Org members:
       python -m lib.api get supabase /v1/organizations/my-org-slug/members \
         --pick username,role_name,primary_email
+onboarding_md: |
+  Ask which Supabase complaints should trigger a check, such as a project being down, sign-ins
+  failing, or a backup question. Explore the organizations and projects and capture stable project
+  refs, exact organization slugs, and which project maps to which customer or environment, plus the
+  health and auth-config fields worth checking. Remember this reads project and org metadata (health,
+  auth settings, functions, backups), not the application's own data rows. Pausing a project,
+  changing auth settings, or deploying a function is a write requiring a live action; this connector
+  only reads.

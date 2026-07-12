@@ -53,3 +53,11 @@ help_md: |
     python -m lib.api get helpscout /v2/mailboxes
     python -m lib.api get helpscout /v2/conversations/987654
     python -m lib.api get helpscout /v2/conversations --query status=open --query mailbox=12345
+onboarding_md: |
+  Ask which prior-history lookups matter (a customer's past conversations and their resolutions,
+  thread history, mailbox context) and which mailboxes hold the support-relevant conversations.
+  Explore representative conversations live without retaining customer rows; capture the lookup
+  sequence from a customer email to their conversations, stable mailbox ids and their names, exact
+  status values (active, pending, closed), and how tags or custom fields mark resolutions. Help
+  Scout may also be where replies land, but this connector only reads history; replying, adding a
+  note, or closing a conversation is a write requiring a live action or a manual step.

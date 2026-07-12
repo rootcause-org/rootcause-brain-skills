@@ -59,3 +59,11 @@ help_md: |
   - Next page:    query { next_items_page(cursor:"CURSOR") { cursor items { id name } } }
   - User info:    query { me { id name email } }
   - Updates:      query { items(ids:[ID]) { updates { id body created_at creator { name } } } }
+onboarding_md: |
+  Ask which monday boards track the customer requests and issues you answer support email about.
+  Explore the live boards and capture stable board and group IDs, exact column titles with their
+  status-label values, and how a sender maps to an item (an email column, a linked contact, a name
+  convention). The token only sees boards its user is subscribed to or in shared workspaces; missing
+  items usually mean the board was not shared. Creating items, moving them between groups, changing a
+  status column, posting updates, or changing assignees are writes requiring a live action or a manual
+  step; this connector only reads.

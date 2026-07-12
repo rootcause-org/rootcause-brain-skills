@@ -60,3 +60,11 @@ help_md: |
 
   Common paths: /conversations, /conversations/{id}/messages, /contacts, /inboxes,
   /teammates, /tags, /conversations/search
+onboarding_md: |
+  Ask which prior-history lookups matter (a contact's past conversations and their resolutions,
+  message history, team assignment) and which inboxes hold the support-relevant threads. Explore
+  representative conversations live without retaining customer rows; capture the lookup sequence
+  from a contact email to their conversations, stable inbox ids and canonical inbox names, exact
+  status values, useful search terms (is:open, inbox:), and how tags mark resolutions. Front may
+  also be where replies land, but this connector only reads history; replying, commenting, tagging,
+  or archiving a conversation is a write requiring a live action or a manual step.

@@ -66,3 +66,11 @@ help_md: |
 
   `--since` lookback: 1h / 1d / 2d / 1w / 30d (server-side timeframe filter). `--pick` narrows each
   result to dotted field paths. Sample `session_data` (CSRF/session secrets) is never returned.
+onboarding_md: |
+  Ask which customer bug reports should send you into AppSignal and whether they usually include an
+  8-character error reference code. Explore the orgs and apps the token can see and capture stable
+  org slugs, app IDs, environment names, the reference-code convention, and the request params or
+  env fields (user ID or email) that map a reporter to their exception — the token only sees the
+  orgs and apps it was granted, so confirm the app your errors live in is visible. Closing or muting
+  incidents, commenting, or changing alert rules are writes requiring a live action or an explicit
+  manual step; this connector only reads.

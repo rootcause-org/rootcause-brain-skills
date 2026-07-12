@@ -43,3 +43,11 @@ help_md: |
         --pick "data.*.name,data.*.status,data.*.region"
       python -m lib.api get resend /contacts \
         --pick "data.*.email,data.*.first_name,data.*.unsubscribed"
+onboarding_md: |
+  Ask which delivery-support cases matter (did this email deliver, what was its last status, which
+  domain sent it, is a contact unsubscribed) and which sending domain is canonical when several are
+  configured. Explore representative sent emails, domains, and contacts live without retaining
+  recipient rows; capture the lookup sequence, exact sending domain(s), the email last_event status
+  names, and that the message id maps to a single delivery trail while the recipient or contact email
+  maps to contact and subscription state. Resending a message or unsubscribing a contact is a write
+  that must reference a live action or remain an explicit manual step.

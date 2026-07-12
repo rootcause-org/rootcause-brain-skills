@@ -43,3 +43,11 @@ help_md: |
   Transcript payloads are large. Save full conversation JSON to `/tmp/otter-CONVERSATION_ID.json`,
   use `jq`/`rg` for participant emails, timestamps, and quoted phrases, then quote only the minimal
   relevant snippets in the answer.
+onboarding_md: |
+  Ask which recorded conversations your support answers rely on — commitments, pricing, onboarding
+  decisions — and what in an incoming email should trigger an Otter lookup. Search conversations by
+  owner, calendar-guest, or shared email; capture the lookup key mapping a sender to the right
+  conversation, stable conversation and channel IDs, and the summary/action-item fields worth
+  extracting — never retain full transcripts. Pass include_shared to see conversations shared into
+  the workspace, or expected results may be missing. Sharing conversations, editing notes, or
+  deleting them are writes needing a live action or explicit manual step; this connector only reads.

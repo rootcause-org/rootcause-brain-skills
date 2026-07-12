@@ -57,3 +57,11 @@ help_md: |
   Transaction freshness depends on Ponto/bank synchronization; use `attributes.synchronizedAt` on
   accounts when explaining whether the data is current. For deeper joins, write a short `/tmp` script
   that lists accounts, then loops over `/accounts/{id}/transactions` with date filters.
+onboarding_md: |
+  Ask which bank-transaction questions customers write in about — a payment they can't find, an
+  unexpected charge, or reconciling an incoming transfer. Explore linked accounts and their settled
+  and pending transactions without keeping customer rows; capture how a sender email, IBAN,
+  counterparty name, or remittance reference maps to the right account and transaction, plus the
+  account fields that identify it. Transaction freshness depends on bank sync, so note
+  synchronizedAt when saying whether the data is current. Initiating a payment or transfer is a
+  write requiring a live action or an explicit manual step; this connector only reads.

@@ -86,3 +86,11 @@ help_md: |
       # List leads
       python -m lib.api get pipedrive leads --paginate \
         --pick id,title,owner_id,person_id,organization_id,value,add_time,is_archived
+onboarding_md: |
+  Ask which CRM-support questions matter (identifying the sender as a person or organization, current
+  deal stage and value, recent activity, open leads) and how an inbound email should map to a
+  Pipedrive person. Explore representative deals and persons live without retaining customer rows;
+  capture the lookup sequence from an email to the person and its deals, stable stage_id and pipeline
+  ids, exact status values (open, won, lost), and any custom fields you rely on to disambiguate.
+  Updating stages, logging activities, or creating notes is a write that must reference a live action
+  or remain an explicit manual step; this connector only reads.

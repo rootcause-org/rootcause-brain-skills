@@ -63,3 +63,11 @@ help_md: |
       python -m lib.api get podio /org/  [--paginate] [--pick org_id,name,url_label]
       python -m lib.api get podio /space/{space_id}/  [--pick space_id,name,url,status]
       python -m lib.api get podio /item/{item_id}/  [--pick item_id,title,fields]
+onboarding_md: |
+  Ask which Podio workspaces and apps hold the customer records and requests you handle over support
+  email. Explore the live apps and capture stable org/space/app IDs, exact app field labels, the
+  option values of category (status) fields, and how a sender maps to an item (an email field, a
+  linked contact, a title convention). The token only sees organizations the connected user belongs
+  to; missing apps or items usually mean they were not shared. Creating or updating items, completing
+  tasks, commenting, or changing a category field are writes requiring a live action or a manual step;
+  this connector only reads.

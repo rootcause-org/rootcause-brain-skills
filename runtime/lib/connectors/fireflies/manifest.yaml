@@ -44,3 +44,11 @@ help_md: |
   results per request, so keep --limit small and search by participant/organizer/date first. The
   connector returns compact Markdown by default; import lib.connectors.fireflies from a /tmp script when
   a support investigation needs a custom read-only join.
+onboarding_md: |
+  Ask which recorded calls your support replies depend on — commitments, pricing, onboarding
+  decisions — and what in an incoming email should trigger a Fireflies lookup. Search by participant
+  or organizer email, title, or keyword; capture the lookup key mapping a sender to the right
+  transcript, plus title conventions and the summary/action-item fields worth extracting — never
+  keep full transcripts in the runbook. Transcript list queries cap at 50 results, so filter by
+  participant, organizer, or date first. Deleting transcripts, changing privacy or sharing, or
+  creating AskFred threads are writes needing a live action or manual step; this reads only.

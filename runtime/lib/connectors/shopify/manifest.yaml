@@ -63,3 +63,11 @@ help_md: |
 
   Scopes required: read_orders, read_customers, read_products (read_inventory optional).
   For orders older than 60 days, the app also needs read_all_orders (requires Shopify approval).
+onboarding_md: |
+  Ask which order questions customers email about (where is my order, did it ship, tracking,
+  refund or return status). Explore representative order and customer shapes without retaining
+  rows; capture how a sender email maps to a customer and its orders, the order-name format
+  (e.g. #1001), the order gid, and the fulfillment and financial status enums that matter. Orders
+  older than 60 days need the read_all_orders scope (Shopify approval), so note if older lookups
+  fail. Refunding, cancelling, editing, or fulfilling an order is a write and must reference a live
+  action or remain an explicit manual step.

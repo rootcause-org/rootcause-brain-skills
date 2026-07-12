@@ -73,3 +73,11 @@ help_md: |
   ## GoCardless-Version header
   All requests require `GoCardless-Version: 2015-07-06` — declared in default_headers and sent
   automatically by this connector.
+onboarding_md: |
+  Ask which direct-debit support cases matter (failed or pending payments, mandate status, active
+  subscriptions, refund state) and whether the connected account is sandbox or live. Explore
+  representative object shapes without retaining customer rows; capture the lookup sequence, stable
+  customer/mandate/subscription IDs when reusable, the payment and mandate status enums plus failure
+  reasons, and how a customer email or id maps to payments, mandates, and subscriptions. Any refund,
+  retry, mandate cancellation, or subscription change is a write that must reference a live action or
+  remain an explicit manual step; this connector only reads.

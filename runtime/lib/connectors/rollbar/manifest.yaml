@@ -81,3 +81,11 @@ help_md: |
       python -m lib.api post rollbar metrics/occurrences \
         --json '{"start_time":1717200000,"end_time":1717286400,"limit":100}' \
         --pick result.*.timestamp,result.*.item_counter
+onboarding_md: |
+  Ask which support cases should trigger a Rollbar lookup and which project or environment the
+  errors live in. Explore live items, occurrences, and deploys, and capture stable item counters,
+  environment names, level enums, code version conventions, and the person fields (ID, email, or
+  username on an occurrence) that map a reporter to their error — that person data only appears when
+  the app configures person tracking, so confirm which identity fields your instrumentation sets.
+  Resolving, muting, changing an item's status or level, assigning, or commenting are writes
+  requiring a live action or an explicit manual step; this connector only reads.

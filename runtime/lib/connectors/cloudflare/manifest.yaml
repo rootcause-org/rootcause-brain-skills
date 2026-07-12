@@ -69,3 +69,10 @@ help_md: |
 
   The {account_id} and {zone_id} values can be read from the API token detail page or by calling
   `GET /zones` (which returns `account.id` on each zone object).
+onboarding_md: |
+  Ask which incoming complaints point to Cloudflare, such as a site showing blocked, an SSL error,
+  or a domain not resolving. Explore the account's zones and capture stable zone IDs, exact domain
+  names, which zones actually matter for support, and the DNS record names and types worth checking,
+  plus the lookup key that maps a customer's domain to its zone. The token only sees zones inside its
+  scope, so a missing zone usually means it was not granted. Changing DNS records, toggling security
+  rules, or purging cache is a write requiring a live action; this connector only reads.

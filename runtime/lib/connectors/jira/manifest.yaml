@@ -131,3 +131,11 @@ help_md: |
   For OAuth 2.0 connections the base URL changes to the Atlassian API proxy:
   `https://api.atlassian.com/ex/jira/{cloudId}/rest/api/3` where {cloudId} is obtained from
   `GET https://api.atlassian.com/oauth/token/accessible-resources`.
+onboarding_md: |
+  Ask which reported bugs or feature requests should be checked in Jira, and which projects hold
+  your customer-facing work. Explore issues via JQL and capture stable project keys, the exact
+  workflow state names (customised per project), the issue types marking bug vs feature, and the
+  fix-version conventions showing when a fix shipped. Note how to match an email to a ticket (issue
+  key like PROJ-123 in the subject, reporter email, text search); missing results usually mean the
+  token's account cannot browse that project. Transitioning, closing, commenting on, or editing
+  issues are writes requiring a live action or manual step; this connector only reads.

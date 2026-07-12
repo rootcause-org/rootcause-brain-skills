@@ -77,3 +77,11 @@ help_md: |
   Useful outbound-search filters: `recipient`, `tag`, `status` (queued/sent/processed), `fromdate`,
   `todate`, `subject`. Bounce filters: `type`, `inactive`, `emailFilter`, `tag`, `messageID`,
   `fromdate`, `todate`.
+onboarding_md: |
+  Ask which delivery-support cases matter (did our email reach this customer, why it bounced, is the
+  address now suppressed) and which Postmark server the token covers. Explore representative outbound
+  messages, bounces, and delivery stats live without retaining recipient rows; capture the lookup
+  sequence, exact status and bounce-type names (Delivered/HardBounce/SpamComplaint), the Inactive and
+  CanActivate flags, and that the recipient address (or MessageID) maps an inbound email to its trail.
+  The token is server-scoped — confirm the connected server carries the mail customers ask about.
+  Reactivating a suppressed address or resending is a write requiring a live action or manual step.

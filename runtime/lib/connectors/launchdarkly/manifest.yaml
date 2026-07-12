@@ -72,3 +72,10 @@ help_md: |
       python -m lib.api post launchdarkly projects/default/environments/production/contexts/search \
         --json '{"filter":"*.email equals \"user@example.com\"","sort":"-ts","limit":20}' \
         --pick items.*.kind,items.*.key,items.*.name,items.*.email
+onboarding_md: |
+  Ask which "I can't see feature X" or "why is this on or off for me" reports should trigger a flag
+  check. Explore the projects and environments and capture stable project and environment keys,
+  exact flag keys and their naming convention, and the lookup key (the context or user key, often an
+  email) that identifies the affected user for a targeting check. Always confirm which environment
+  applies, since a flag on in production can be off in staging for the same user. Toggling a flag or
+  editing its targeting is a write requiring a live action; this connector only reads.

@@ -78,3 +78,11 @@ help_md: |
   multi-page activity search, fetch the first page and pass `--query page_token=<next_page_token>`
   from the response for subsequent pages. Suppression endpoints are offset-paginated and work
   seamlessly with --paginate.
+onboarding_md: |
+  Ask which delivery-support cases matter (why an email bounced, whether an address is blocked or
+  marked spam, what the send volume looks like) and which SendGrid subuser is connected. Explore the
+  suppression lists, message activity, and stats live without retaining recipient rows; capture the
+  lookup sequence, exact suppression categories (bounces/blocks/invalid_emails/spam_reports) and
+  reason/status field names, and that the recipient email maps an inbound message to its suppression
+  and activity records. Clarify the subuser or account scope when more than one exists. Removing a
+  suppression entry or resending is a write requiring a live action or manual step.

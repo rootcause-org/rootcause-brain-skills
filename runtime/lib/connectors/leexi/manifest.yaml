@@ -45,3 +45,11 @@ help_md: |
   `rg -i "person@example.com|Customer Name" /tmp/leexi-*.json` against temp files. Keep full
   `transcript`/`simple_transcript` JSON on disk under `/tmp`; include only relevant timestamped
   excerpts in the final draft.
+onboarding_md: |
+  Ask which recorded calls your support answers rely on — commitments, pricing, onboarding
+  decisions — and what in an incoming email should trigger a Leexi lookup. Search calls by owner or
+  customer email and date; capture the lookup key mapping a sender to the right call, stable call
+  UUIDs, title conventions, and the summary/action-item fields worth extracting — never retain full
+  transcripts in the runbook. The API key only sees calls within its granted scope; out-of-scope
+  calls will not list and direct lookups return 404. Editing notes, sharing recordings, or deleting
+  calls are writes needing a live action or explicit manual step; this connector only reads.

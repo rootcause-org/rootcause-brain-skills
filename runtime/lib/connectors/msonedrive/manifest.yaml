@@ -79,3 +79,11 @@ help_md: |
       python -m lib.api post msonedrive search/query \
         --json '{"requests":[{"entityTypes":["driveItem"],"query":{"queryString":"contract"},"from":0,"size":50,"fields":["name","webUrl"]}]}' \
         --pick value.*.hitsContainers.*.hits.*.resource.name,value.*.hitsContainers.*.hits.*.resource.webUrl
+onboarding_md: |
+  Ask which internal documents support should consult (price lists, manuals, policies) and which
+  incoming questions should trigger a lookup. Explore the drive tree, recent files, and search
+  without copying file contents; capture stable drive, item, and site IDs plus folder paths (not
+  just display names) and which situation each document serves. Personal OneDrive needs Files.Read,
+  while SharePoint or business libraries need Sites.Read.All, so a missing document often means an
+  ungranted site. Uploading, moving, editing, or sharing files is a write requiring a live action or
+  an explicit manual step; this connector only reads.

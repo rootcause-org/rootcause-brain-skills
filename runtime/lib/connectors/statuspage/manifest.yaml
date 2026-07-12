@@ -66,3 +66,11 @@ help_md: |
 
   Common paths under `/pages/{page_id}/`:
     incidents, incidents/{id}, incidents/{id}/incident_updates, components, subscribers
+onboarding_md: |
+  Ask which customer complaints should prompt a Statuspage check — to see if a component is degraded
+  or was in a published outage. Explore incidents, components, and incident updates; capture the
+  page_id slug, stable component IDs and exact names, which component maps to a customer-facing
+  symptom, and incident status, impact, and created_at/resolved_at for the outage window. Note every
+  read is scoped to the page_id slug, so capture it up front. Posting or updating incidents,
+  changing component status, or scheduling maintenance are writes needing a live action; this
+  connector only reads.

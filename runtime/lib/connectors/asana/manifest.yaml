@@ -64,3 +64,10 @@ help_md: |
 
   `gid` values (project_gid, workspace_gid, task_gid) are the Asana numeric ID strings visible
   in the Asana web UI URL. The agent supplies them from brain context or from a prior lookup.
+onboarding_md: |
+  Ask which Asana projects hold the customer-facing work you get support email about, like feature
+  requests or bug reports. Explore the workspace and capture stable workspace/project gids, exact
+  custom-field names with their status/enum values, and how a sender maps to a task (a client field,
+  an email in the notes, a naming convention). The token only sees projects it was added to; missing
+  tasks usually mean the project was not shared. Creating, moving, completing, commenting, or
+  reassigning tasks are writes requiring a live action or a manual step; this connector only reads.

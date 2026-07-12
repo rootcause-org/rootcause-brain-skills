@@ -48,3 +48,11 @@ help_md: |
   content or transcripts. Gong may require splitting date ranges and manually passing returned cursor
   values. Save large transcript/extensive responses under `/tmp/gong-*.json`, use `jq`/`rg` to locate
   participant emails and quoted phrases, then include only relevant excerpts in model context.
+onboarding_md: |
+  Ask which sales or onboarding calls your support answers rely on — deals promised, pricing quoted,
+  commitments made — and what should trigger a Gong lookup. Search calls by participant email and
+  date window; capture the lookup key mapping a sender to the right call, plus stable call and user
+  IDs, title conventions, and the summary/action-item fields worth extracting — never retain full
+  transcripts. Gong may need date ranges split and cursors passed manually, so narrow by participant
+  and window before pulling extensive content. Editing notes, sharing recordings, or deleting calls
+  are writes needing a live action or explicit manual step; this connector only reads.

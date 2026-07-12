@@ -78,3 +78,11 @@ help_md: |
   /Organisations, /Currencies
   **OAuth connect flow:** requires granular read scopes for invoices/credit notes, payments,
   bank transactions, contacts, and organisation settings, plus `offline_access` for refresh tokens.
+onboarding_md: |
+  Ask which invoice or payment questions customers write in about — an outstanding or missing
+  invoice, a payment not applied, or a credit note. Explore contacts, invoices, and payments without
+  keeping customer rows; capture how a sender email or name maps to a Xero contact and then to that
+  contact's invoices, credit notes, and payments, plus the status values that mean outstanding or
+  paid. Clarify which organisation (Xero-tenant-id) applies when the connection sees more than one.
+  Sending or voiding an invoice, recording a payment, or creating a contact is a write requiring a
+  live action or an explicit manual step; this connector only reads.

@@ -7,3 +7,11 @@ egress_hosts:
   []
 help_md: |
   Reads AWS CloudWatch Logs Insights for support diagnosis. Seed an IAM access key with read-only Logs permissions and the target region; the host derives the regional Logs egress host from that region.
+onboarding_md: |
+  Ask which support situations should send you into the logs — a customer reporting errors, a
+  failed request, or slowness at a specific time. Explore the log groups and capture their exact
+  names, the region, and working Logs Insights filter patterns, plus the lookup key that isolates
+  one customer's lines (account ID, request ID, hostname, or email) and the expected time window.
+  Note logs age out at the group's retention, so an old outage may no longer be queryable. Creating
+  metric filters or alarms, or deleting log streams, are writes needing a live action; this
+  connector only reads.

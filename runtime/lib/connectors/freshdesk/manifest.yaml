@@ -47,3 +47,11 @@ help_md: |
 
   Pagination uses RFC 8288 Link headers (`rel="next"`); pass `--paginate` to auto-follow. Freshdesk
   warns against deep pagination (page > 500) — use time filters (`updated_since`) to narrow first.
+onboarding_md: |
+  Ask which prior-history lookups matter (a sender's past tickets, their resolutions, related
+  conversations) and which Freshdesk subdomain to query when several are connected. Explore
+  representative tickets without retaining customer rows; capture the lookup sequence from a
+  requester email to their contact id and tickets, exact status and priority values with their
+  numeric codes, the conversations path where resolutions live, and group or product scoping.
+  Freshdesk may also be where replies land, but this connector only reads history; replying, closing
+  a ticket, or changing status is a write requiring a live action or a manual step.

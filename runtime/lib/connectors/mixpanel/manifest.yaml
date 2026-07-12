@@ -78,3 +78,11 @@ help_md: |
         --query project_id=123456 \
         --query from_date=2024-01-01 --query to_date=2024-01-31 \
         --query retention_type=birth --query born_event="Signed Up"
+onboarding_md: |
+  Ask which support questions come down to whether a user actually did something, such as finishing
+  signup, making a purchase, or reaching a key step. Explore representative profiles and events and
+  capture the project ID, the exact event and property names that matter, relevant funnel IDs, and
+  the lookup key that maps a sender's email to their distinct_id via the $email profile property.
+  Mind the region host (US, EU, or India) and the sixty-queries-per-hour cap, and never keep copied
+  profile rows. Editing a profile, cohort, or annotation is a write requiring a live action; this
+  connector only reads.

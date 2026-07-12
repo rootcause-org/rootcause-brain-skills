@@ -68,3 +68,11 @@ help_md: |
 
       # Fetch a single record
       python -m lib.api get airtable appXXXXXXXXXXXXXX/tblYYYYYYYYYYYYYY/recZZZZZZZZZZZZZZ
+onboarding_md: |
+  Ask which bases and tables are canonical for support (customer records, order or subscription
+  status, ticket state, inventory) and what incoming email should trigger each lookup. Explore the
+  live bases and retain their stable base IDs (appXXX) and table IDs (tblXXX), exact field names and
+  types, single-select and status enum values, and the lookup keys that map a sender address, order
+  number, or record ID to a row — never retaining customer rows themselves. Adding or updating a
+  record, or changing a status field, is a write that must reference a live action or stay an explicit
+  manual step; this connector only reads.

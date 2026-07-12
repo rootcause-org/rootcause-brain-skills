@@ -44,3 +44,11 @@ help_md: |
 
   Note: the generic lib.api CLI omits the key/token params — use the connector CLI or inject them
   manually via --query key=... --query token=... when bypassing the connector.
+onboarding_md: |
+  Ask which Trello boards track the customer requests and bugs you answer support email about. Explore
+  the live boards and capture stable board and list IDs, the list/column names and what each signals,
+  label names, and how a sender maps to a card (a title convention, a member, an email in the
+  description). The token only sees boards the connected member was added to; missing cards usually
+  mean the board is private or was not shared. Creating cards, moving them between lists, archiving,
+  commenting, or changing members and due dates are writes requiring a live action or a manual step;
+  this connector only reads.

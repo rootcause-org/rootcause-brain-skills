@@ -72,3 +72,11 @@ help_md: |
       python -m lib.api post msoutlookcalendar me/calendar/getSchedule \
         --json '{"schedules":["a@contoso.com"],"startTime":{"dateTime":"2026-07-02T09:00:00","timeZone":"UTC"},"endTime":{"dateTime":"2026-07-02T17:00:00","timeZone":"UTC"},"availabilityViewInterval":60}' \
         --pick value.*.scheduleId,value.*.availabilityView
+onboarding_md: |
+  Ask which meeting questions matter (when is it, who's the organizer or attendee, was it booked)
+  and which calendars future lookups should check. Explore the calendars list and recent events
+  without copying attendee rows; capture stable calendar IDs and names, event subjects, status, and
+  the timezone. The lookup key is the organizer/attendee emailAddress.address mapping a sender to an
+  event. The default Calendars.ReadBasic scope returns only names and free/busy, so event subjects
+  and attendees need Calendars.Read. Creating, moving, or cancelling meetings is a write requiring a
+  live action or an explicit manual step; this connector only reads.

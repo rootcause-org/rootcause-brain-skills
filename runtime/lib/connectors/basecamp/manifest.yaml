@@ -63,3 +63,10 @@ help_md: |
   Example — get open to-dos on a list:
       python -m lib.api get basecamp 195539477/todolists/123456789/todos.json \
         --paginate --pick id,title,completed,due_on,assignees.*.name,comments_count
+onboarding_md: |
+  Ask which Basecamp projects and to-do lists track the customer work you answer support email about.
+  Explore the live projects and capture the stable account_id, project and to-do-list IDs, the status
+  conventions on to-dos, and how a sender maps to a to-do or its assignee (a name, an email in the
+  description, a naming pattern). The token only sees projects the connected person is on; missing
+  items mean they were not added there. Creating or completing to-dos, commenting, or changing
+  assignees and due dates are writes requiring a live action or a manual step; this connector reads.

@@ -86,3 +86,11 @@ help_md: |
       # Aggregate analytics metrics
       python -m lib.api post mailgun https://api.mailgun.net/v1/analytics/metrics \
         --json '{"duration":"7d","metrics":["accepted_count","delivered_count","failed_count"]}'
+onboarding_md: |
+  Ask which delivery-support cases matter (a customer never received an email or reset link, a
+  bouncing address, a complaint, an unsubscribe) and which sending domain and region (US vs EU) is
+  connected. Explore representative events and the bounce, complaint, and unsubscribe lists live
+  without retaining recipient rows; capture the lookup sequence, exact sending domain(s), event and
+  reason field names (delivered/failed with delivery-status), and that the recipient address is the
+  key mapping an inbound email to its delivery history and suppression entries. Removing an address
+  from a suppression list or resending is a write that must reference a live action or manual step.

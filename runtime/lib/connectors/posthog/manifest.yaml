@@ -69,3 +69,11 @@ help_md: |
   - api/projects/{project_id}/persons/{id}/         -- single person detail
   - api/organizations/                              -- list orgs (discover org IDs)
   - api/organizations/{org_id}/projects/            -- list projects to find numeric project_id
+onboarding_md: |
+  Ask which support questions PostHog should answer — whether a user did something, which flags
+  they're on, or what they did before an error. Explore live persons, events, and feature flags and
+  capture the numeric project ID, the event and insight names that answer those questions, feature
+  flag keys, and above all how persons are keyed — distinct_id versus a properties.email — the
+  lookup key mapping a sender's email to the right person; email search misses anyone whose email
+  property was never set. Toggling feature flags, editing cohorts, or creating annotations or
+  insights are writes requiring a live action or an explicit manual step; this connector only reads.

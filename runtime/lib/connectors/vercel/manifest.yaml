@@ -65,3 +65,10 @@ help_md: |
 
   Pass `--query teamId=<team_id>` on every call when the token belongs to a team installation
   (omit for personal accounts). The `teamId` can also be the team `slug`.
+onboarding_md: |
+  Ask which site or deploy complaints should trigger a Vercel check, such as a failed deploy, the
+  wrong branch live, or a domain that stopped working. Explore the projects and capture stable
+  project IDs, exact project names, the team ID or slug, and the production branch, plus the lookup
+  key that maps a customer's domain or project name to its project. Team-scoped tokens only see their
+  own team, so a missing project often means the wrong team scope. Redeploying, promoting, rolling
+  back, or reassigning a domain is a write requiring a live action; this connector only reads.

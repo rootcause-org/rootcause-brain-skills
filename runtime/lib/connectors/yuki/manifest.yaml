@@ -59,3 +59,11 @@ help_md: |
     refuses upload/process operations.
   - Future project-specific rules such as folder IDs, payment method IDs, cost categories, and supplier
     naming conventions belong in `/brain/integrations/yuki/AGENTS.md`.
+onboarding_md: |
+  Ask which supplier-invoice or document questions customers write in about — whether an invoice is
+  still open, a payment status, or a missing document. Explore domains, administrations, and
+  outstanding purchases without keeping customer rows; capture how a supplier name plus invoice
+  reference maps to an open creditor item, plus the domain and administration IDs that scope every
+  read. Clarify which administration when the connection sees more than one, and note that some
+  Administrations responses omit the administration UUID. Uploading or processing an invoice document
+  is a write requiring a live action or an explicit manual step; this connector only reads.

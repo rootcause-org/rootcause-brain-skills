@@ -67,3 +67,11 @@ help_md: |
         --query dispute_state=REQUIRED_ACTION
 
   All responses are read-only GETs; we never mutate PayPal state.
+onboarding_md: |
+  Ask which PayPal questions customers write in about — an order or charge they don't recognise, a
+  dispute, a subscription, or a refund. Explore representative orders, disputes, and subscriptions
+  without keeping customer rows; capture how a sender email, order id, or transaction id maps to the
+  right record, plus the status values that mean completed, refunded, or disputed. Transaction search
+  needs an explicit start and end date within a 31-day window, so record that constraint. Refunding,
+  resolving a dispute, or cancelling a subscription is a write requiring a live action or an explicit
+  manual step; this connector only reads.

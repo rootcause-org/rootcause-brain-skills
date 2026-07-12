@@ -61,3 +61,11 @@ help_md: |
   Rate limits: 5 000 requests/hour (PAT or OAuth). The remaining count is in
   X-RateLimit-Requests-Remaining; complexity budget in X-RateLimit-Complexity-Remaining.
   The connector honours 429 + Retry-After automatically via lib.api's retry layer.
+onboarding_md: |
+  Ask which reported bugs or feature requests should be checked in Linear, and which teams own
+  your customer-facing work. Explore issues, teams, and projects; capture stable team keys (like
+  ENG), the exact workflow state names (customised per team), labels marking bug vs feature, and
+  project or release names showing when a fix shipped. Note how to match an email to an issue
+  (identifier like ENG-123 in the subject, reporter email, text search); missing results usually
+  mean the item is in a workspace the token cannot see. Creating, closing, commenting on, or
+  changing an issue's state or labels are writes requiring a live action or manual step; reads only.

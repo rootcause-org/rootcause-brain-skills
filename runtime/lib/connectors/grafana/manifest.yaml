@@ -73,3 +73,11 @@ help_md: |
     python -m lib.api get grafana https://myorg.grafana.net/api/search \
       --query type=dash-db --query limit=500 \
       --pick uid,title,url,folderTitle,tags
+onboarding_md: |
+  Ask which dashboards and alerts to open when a customer reports the service down or slow, and
+  what should trigger each lookup. Explore dashboards, alert rules, datasources, and annotations;
+  capture stable dashboard and alert-rule UIDs, datasource names and types, which dashboard maps to
+  a customer-facing symptom, and the label or variable that scopes to one customer over a time
+  window. Note Grafana Cloud is per-stack, so record the exact stack URL (myorg.grafana.net) or
+  reads hit the wrong org. Silencing alerts, creating annotations, or editing dashboards are writes
+  needing a live action; this connector only reads.

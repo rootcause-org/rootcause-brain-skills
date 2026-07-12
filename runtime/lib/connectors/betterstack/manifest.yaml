@@ -51,3 +51,10 @@ help_md: |
 
   **Response envelope:** all list endpoints return ``{ "data": [...], "pagination": { "next": url|null, ... } }``.
   Each item follows JSON:API shape: ``{ "id": "…", "type": "…", "attributes": { … } }``.
+onboarding_md: |
+  Ask which customer complaints should trigger a Better Stack check — the site being down, slow,
+  or a suspected past outage. Explore monitors and incidents; capture stable monitor IDs,
+  pronounceable names, watched URLs, how a customer-facing service maps to a monitor, and incident
+  started_at/resolved_at for pinning an outage window by time. Note the API token is scoped to one
+  team, so monitors outside it never appear. Acknowledging or resolving incidents, posting status
+  updates, or pausing monitors are writes needing a live action; this connector only reads.

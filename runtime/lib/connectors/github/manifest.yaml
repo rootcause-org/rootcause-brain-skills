@@ -39,3 +39,11 @@ help_md: |
 
   Common paths: repos/{owner}/{repo}/issues, /pulls, /releases, /commits; search/issues?q=…
   (search has its own response envelope under `items` and is rate-limited separately).
+onboarding_md: |
+  Ask which reported bugs or feature requests should be checked against GitHub, and which repos
+  hold your customer-facing work. Explore issues, pull requests, and releases; capture stable
+  owner/repo names, the labels and states marking bug vs feature vs shipped fix, release/tag
+  conventions showing when a fix landed, and how to match an email to an issue (issue number in
+  the subject, customer name in a label, text search). Missing results usually mean the token
+  cannot see that private repo or org. Opening, closing, commenting on, or relabeling issues are
+  writes requiring a live action or manual step; this connector only reads.

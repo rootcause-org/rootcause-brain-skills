@@ -77,3 +77,11 @@ help_md: |
       python -m lib.api post confluence \
         https://acme.atlassian.net/wiki/api/v2/content/convert-ids-to-types \
         --json '{"contentIds":["123456","789012"]}'
+onboarding_md: |
+  Ask which support questions should trigger a Confluence lookup, and which spaces hold your
+  canonical product documentation and runbooks. Explore spaces and pages via CQL search; capture
+  stable space keys and page IDs, the titles of the canonical pages, and any labels or naming
+  conventions that mark a page authoritative versus draft. Note how to find the right page (keyword
+  or CQL text search, space scoping); missing search results usually mean the token or OAuth scope
+  cannot see that space or page. Editing pages, adding comments, or changing labels are writes
+  requiring a live action or manual step; this connector only reads.

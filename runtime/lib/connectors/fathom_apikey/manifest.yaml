@@ -41,3 +41,11 @@ help_md: |
   Prefer participant email filters or date windows before requesting transcripts. Store broad raw
   results in `/tmp/fathom-*.json`, inspect with `jq`/`rg`, and keep only short relevant transcript
   excerpts in the model context.
+onboarding_md: |
+  Ask which past calls your support answers rely on — pricing agreed, onboarding decisions,
+  commitments made — and which incoming emails should trigger a Fathom lookup. Explore meetings by
+  participant email and invitee domain; capture the lookup key mapping a sender to the right
+  recording, plus stable team IDs, title conventions, and the summary/action-item fields worth
+  extracting — never retain full transcripts. The API key only sees meetings its owner recorded or
+  shared with them, so confirm expected calls list. Sharing recordings, editing notes, or deleting
+  meetings are writes needing a live action or explicit manual step; this reads only.

@@ -84,3 +84,11 @@ help_md: |
 
       python -m lib.api post dropbox users/get_current_account --json '{}' \
         --pick account_id,email,name.display_name
+onboarding_md: |
+  Ask which internal documents support should consult (price lists, manuals, policies) and which
+  incoming situations should trigger a lookup. Explore the folder tree and search without copying
+  file contents; capture stable paths and IDs (path_lower / id, not just display names), the
+  shared-link URLs that matter, and which situation each document serves. The token only reads
+  metadata within granted or shared scopes, so a missing file usually means it wasn't shared.
+  Uploading, moving, restoring, or changing sharing is a write requiring a live action or an
+  explicit manual step; this connector only reads.

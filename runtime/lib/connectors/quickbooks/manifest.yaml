@@ -81,3 +81,11 @@ help_md: |
   - Use `LIKE '%term%'` for partial matches
   - Pagination: append `STARTPOSITION 1 MAXRESULTS 100` to the SQL (1-based offset)
   - Available entities: Customer, Invoice, Payment, Bill, Vendor, Item, Account, CompanyInfo
+onboarding_md: |
+  Ask which invoice or payment questions customers write in about — an unpaid or missing invoice, a
+  payment not showing, or a credit note. Explore representative customers, invoices, and payments
+  without keeping customer rows; capture how a sender email or name maps to a QuickBooks customer id
+  and then to that customer's invoices and payments, plus invoice-number format and the status fields
+  that mean paid or overdue. Clarify which company (realmId) to use when the connection sees more than
+  one. Sending or voiding an invoice, recording a payment, or creating a customer is a write requiring
+  a live action or an explicit manual step; this connector only reads.

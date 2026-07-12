@@ -52,3 +52,11 @@ help_md: |
 
   Store large expanded meeting reports under `/tmp/readai-*.json`; use `jq`/`rg` for participant
   emails and phrases before bringing concise transcript excerpts back into context.
+onboarding_md: |
+  Ask which recorded meetings your support answers rely on — commitments, pricing, onboarding
+  decisions — and what in an incoming email should trigger a Read AI lookup. Search meetings by
+  participant email and date; capture the lookup key mapping a sender to the right meeting, stable
+  meeting ULIDs, title conventions, and the summary/action-item fields worth extracting — never
+  retain full transcripts in the runbook. Paging is manual — pass cursor as the last meeting ID — so
+  narrow by participant or date before expanding transcripts. Sharing reports, editing notes, or
+  deleting meetings are writes needing a live action or explicit manual step; this reads only.

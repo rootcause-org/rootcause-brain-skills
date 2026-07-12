@@ -64,3 +64,11 @@ help_md: |
       python -m lib.api post recurly /purchases/preview \
         --json '{"currency":"USD","account":{"code":"acct_123"},"subscriptions":[{"plan_code":"basic"}]}' \
         --pick charge_invoice.total,charge_invoice.currency
+onboarding_md: |
+  Ask which subscription-support cases customers write about (failed renewals or dunning,
+  subscription state, invoice or refund questions). Explore representative account, subscription,
+  invoice, and transaction shapes without retaining rows; capture how a sender email maps to an
+  account code and its subscriptions, stable plan codes when reusable, the state enums that matter
+  (active/canceled/expired/paused, invoice paid/past_due), and whether the site is US or EU. A
+  refund, cancellation, pause, or plan change is a write and must reference a live action or remain
+  an explicit manual step.

@@ -76,3 +76,11 @@ help_md: |
   For self-hosted GitLab, pass an absolute URL:
       python -m lib.api get gitlab https://gitlab.example.com/api/v4/projects/123/issues \
         --query per_page=100 --paginate
+onboarding_md: |
+  Ask which reported bugs or feature requests should be checked against GitLab, and which projects
+  hold your customer-facing work. Explore issues, merge requests, and pipelines; capture stable
+  project paths or numeric IDs, the labels and states marking bug vs feature vs shipped fix,
+  release/tag conventions showing when a fix landed, and how to match an email to an issue (issue
+  iid in the subject, customer name in a label, text search). Missing results usually mean the
+  token's read_api scope cannot see that project. Creating, closing, commenting on, or relabeling
+  issues are writes requiring a live action or manual step; this connector only reads.

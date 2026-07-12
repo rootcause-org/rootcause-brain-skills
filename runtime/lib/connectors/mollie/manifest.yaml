@@ -77,3 +77,11 @@ help_md: |
   - Execution: hosted actions can declare `connections: [mollie.write]` and call
     `from lib.action import mollie; mollie.create_payment_link(...)`. Never POST payment links from the
     standard run loop.
+onboarding_md: |
+  Ask which payment-support cases matter (payment status, refunds, payment-link requests, settlement
+  or reconciliation questions) and, for organization tokens, which profile and whether test or live
+  mode applies. Explore representative payment and refund shapes without retaining customer rows;
+  capture the lookup sequence, the ID prefixes and profile IDs when reusable, the payment/refund
+  status values, and how a payment id, customer, or description maps to payments, refunds, and
+  settlements. Creating a refund or a payment link is a write that must run as a hosted action or stay
+  an explicit manual step; this connector only reads.

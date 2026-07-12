@@ -88,3 +88,11 @@ help_md: |
       python -m lib.api post pagerduty analytics/raw/incidents \
         --json '{"filters":{"created_at_start":"2026-06-01T00:00:00Z","created_at_end":"2026-06-02T00:00:00Z"},"limit":100,"offset":0}' \
         --pick incidents.*.id,incidents.*.created_at,incidents.*.seconds_to_resolve
+onboarding_md: |
+  Ask which customer complaints should make you check PagerDuty — to confirm whether there was an
+  incident or outage at that time. Explore incidents, services, and on-call schedules; capture
+  stable service IDs and names, which service maps to a customer-facing symptom, incident statuses
+  and created/resolved timestamps for pinning a past outage window, and who was on-call then. Note
+  the token or OAuth scope limits which teams and services are visible, so a missing incident may be
+  out of scope, not absent. Acknowledging, resolving, or re-triggering incidents, or adding notes,
+  are writes needing a live action; this connector only reads.

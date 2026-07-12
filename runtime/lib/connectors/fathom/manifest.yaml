@@ -51,3 +51,11 @@ help_md: |
   Transcript and summary payloads can be large. For analysis, write full JSON to a temp file under
   `/tmp`, use `jq`/`rg` to search participant emails or quoted phrases, and paste back only the
   relevant excerpts.
+onboarding_md: |
+  Ask which past calls your support answers rely on — pricing agreed, onboarding decisions,
+  commitments made — and which incoming emails should trigger a Fathom lookup. Explore meetings by
+  participant email and invitee domain; capture the lookup key mapping a sender to the right
+  recording, plus stable team IDs, title conventions, and the summary/action-item fields worth
+  extracting — never retain full transcripts in the runbook. Heavy transcript and summary reads are
+  rate-limited, so filter by participant or date before fetching. Sharing recordings, editing notes,
+  or deleting meetings are writes needing a live action or explicit manual step; this reads only.

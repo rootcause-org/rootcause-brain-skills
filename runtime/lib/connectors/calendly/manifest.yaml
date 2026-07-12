@@ -103,3 +103,11 @@ help_md: |
     /scheduled_events/{uuid}/invitees             — invitees for a specific event
     /organization_memberships                     — org members (pass ?organization=)
     /organization_memberships/{uuid}              — single org membership
+onboarding_md: |
+  Ask which appointment questions matter (did the booking go through, when is it, can we reschedule)
+  and how a sender's email maps to an invitee. Explore live event types and recent scheduled events
+  without copying invitee rows; capture reusable user/organisation URIs, event-type names and slugs,
+  status values, and the timezone convention. The lookup key is the invitee email on an event's
+  invitees list, and the reschedule/cancel links in that data are safe to read. Rescheduling,
+  cancelling, or creating events is a write requiring a live action or an explicit manual step; this
+  connector only reads.

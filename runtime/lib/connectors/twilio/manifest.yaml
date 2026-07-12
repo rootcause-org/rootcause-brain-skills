@@ -45,3 +45,11 @@ help_md: |
     /2010-04-01/Accounts/{AccountSid}/Messages.json       — SMS/MMS list + filter by To/From/Status
     /2010-04-01/Accounts/{AccountSid}/Calls.json          — call log
     /2010-04-01/Accounts/{AccountSid}/IncomingPhoneNumbers.json — provisioned numbers
+onboarding_md: |
+  Ask which messaging-support cases matter (did an SMS or verification code reach this number, what
+  was its delivery status, was a call completed) and which sending numbers carry the traffic. Explore
+  representative messages, calls, and provisioned numbers live without retaining recipient rows;
+  capture the lookup sequence, the account's own sending numbers, exact status and error-code names
+  (delivered/undelivered/failed with ErrorCode), and that the destination phone number (To) maps an
+  inbound request to its message and call history. Sending an SMS or placing a call is a write
+  requiring a live action or an explicit manual step.

@@ -82,3 +82,11 @@ help_md: |
         --form subscription_items[item_price_id][0]=basic-USD \
         --form subscription_items[quantity][0]=1 \
         --pick estimate.invoice_estimate.total,estimate.invoice_estimate.currency_code
+onboarding_md: |
+  Ask which subscription-support cases customers write about (failed renewals, invoice questions,
+  subscription state, refunds) and whether the Chargebee site is test or live. Explore
+  representative customer, subscription, invoice, and transaction shapes without retaining rows;
+  capture how a sender email maps to a customer and its subscriptions, stable plan/item-price IDs
+  when reusable, and the status enums that matter (subscription active/non_renewing/cancelled,
+  invoice paid/payment_due). A refund, cancellation, plan change, or credit is a write and must
+  reference a live action or remain an explicit manual step.

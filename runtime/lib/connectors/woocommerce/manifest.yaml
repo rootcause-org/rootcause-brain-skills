@@ -54,3 +54,11 @@ help_md: |
   Credential stored as "consumer_key:consumer_secret@https://shop.example.com" and kept host-side
   behind the API broker; the store URL binds the broker route to that one host before auth is attached.
   Generate keys with "Read" scope only — never write access.
+onboarding_md: |
+  Ask which order questions customers email about (order status, did it ship or tracking, refund
+  status, where is my download or license). Explore representative order and customer shapes
+  without retaining rows; capture how a sender email maps to a customer and its orders, the
+  order-number format, and the status enums that matter (processing, completed, on-hold, cancelled,
+  refunded). Confirm the store URL and that the REST key is Read-only; tracking often lives in a
+  shipping plugin, not the core order, so results may be absent. Refunding, cancelling, or editing
+  an order is a write and must reference a live action or remain an explicit manual step.

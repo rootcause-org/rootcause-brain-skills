@@ -88,3 +88,11 @@ help_md: |
   - Date literals: `TODAY`, `LAST_N_DAYS:30`, `THIS_MONTH`
   - Text filter: `WHERE Subject LIKE '%timeout%'`
   - NULL check: `WHERE ContactId != null`
+onboarding_md: |
+  Ask which support workflows matter (identifying the sender as a Contact or Lead, their Account,
+  open Case history and status) and whether the connected org is production or a sandbox. Explore
+  representative Cases and Contacts live without retaining customer rows; capture the SOQL lookup
+  sequence from an email to the Contact and its Cases, stable Account and record ids only when
+  reusable, exact Status and Priority picklist values, and any custom fields (including their API
+  names) you rely on. Creating or updating Cases, changing status, or assigning owners is a write that
+  must reference a live action or remain an explicit manual step; this connector only reads.

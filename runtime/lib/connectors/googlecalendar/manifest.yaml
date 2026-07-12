@@ -87,3 +87,11 @@ help_md: |
       python -m lib.api post googlecalendar freeBusy \
         --json '{"timeMin":"2026-07-02T09:00:00Z","timeMax":"2026-07-02T17:00:00Z","items":[{"id":"primary"}]}' \
         --pick calendars
+onboarding_md: |
+  Ask which calendar questions matter (when is an event, who's attending, did it get scheduled) and
+  which calendars hold support-relevant bookings. Explore the visible calendarList and recent events
+  without copying attendee rows; capture stable calendar IDs, event summaries, status values, and
+  the timezone. The lookup key maps an incoming sender to the attendee email on an event. The token
+  only sees calendars the account owns or was shared, so a missing
+  event often means an ungranted calendar. Creating, moving, or cancelling events is a write
+  requiring a live action or an explicit manual step; this connector only reads.

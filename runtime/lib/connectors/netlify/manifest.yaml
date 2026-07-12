@@ -55,3 +55,10 @@ help_md: |
     sites/{site_id}/forms            — list forms for a site
     forms/{form_id}/submissions      — form submissions (paginated)
     sites/{site_id}/submissions      — all verified submissions across forms on a site
+onboarding_md: |
+  Ask which site or deploy complaints should trigger a Netlify check, such as a site that is broken,
+  stale, or failing to build. Explore the sites and capture stable site IDs, exact site names, the
+  production branch, and the deploy states worth flagging, plus the lookup key that maps a customer's
+  domain or site name to its site and any form IDs if submissions matter. A missing site usually
+  means the token's account does not own it. Triggering a redeploy, rolling back, or locking a deploy
+  is a write requiring a live action; this connector only reads.

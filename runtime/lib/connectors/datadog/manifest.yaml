@@ -84,3 +84,10 @@ help_md: |
   **Region note:** EU, AP1, AP2 users must use their region's base URL
   (e.g. https://api.datadoghq.eu). Supply the full path as an absolute URL to lib.api or
   export DATADOG_BASE_URL to the connector (it checks this env var at startup).
+onboarding_md: |
+  Ask which customer-facing symptoms should trigger a Datadog check — an error spike, latency, or a
+  suspected outage at a given time. Explore monitors, incidents, and events; capture stable monitor
+  IDs and names, the service or tag that maps to each customer-facing symptom, incident states, and
+  the tag or host that isolates one customer within a time window. Note the region base URL (US vs
+  EU/AP) must match the org or reads come back empty. Acknowledging or resolving incidents, muting
+  monitors, or posting events are writes needing a live action; this connector only reads.

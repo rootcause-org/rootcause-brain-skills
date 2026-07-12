@@ -91,3 +91,11 @@ help_md: |
   - `GET /segments/{id}/membership`               — members of a segment (cursor-paged)
   - `GET /campaigns`                              — list broadcasts/campaigns
   - `GET /campaigns/{id}/metrics`                 — delivery metrics for a campaign
+onboarding_md: |
+  Ask which subscriber and messaging-support cases matter (is this person in our audience, which
+  segments they are in, which broadcasts reached them, why they stopped receiving mail) and which
+  workspace is connected. Explore representative people, segments, and message history live without
+  retaining customer rows; capture the lookup sequence, stable segment and campaign IDs, exact
+  attribute and message-status names (delivered/opened/failed), and that an email or cio_id maps a
+  person to their segments and activities. Unsubscribing, editing attributes, or triggering a
+  broadcast is a write that must reference a live action or remain an explicit manual step.

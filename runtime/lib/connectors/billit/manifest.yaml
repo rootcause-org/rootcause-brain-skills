@@ -74,3 +74,11 @@ help_md: |
     client app.
   - API keys are documented by Billit as non-commercial/private-integration only. Use the separate
     `billit_apikey` connector only when OAuth cannot be provisioned for that project.
+onboarding_md: |
+  Ask which invoice or Peppol questions customers write in about — a missing sales or purchase
+  invoice, a credit note, or a payment or delivery status. Explore representative invoices and the
+  Peppol inbox without keeping customer rows; capture how a sender email or invoice number maps to
+  the right order, plus the stable company PartyID, order direction, and the status fields that mean
+  paid or outstanding. Reads need the PartyID header to select the connected company, so record it
+  in the runbook. Sending, voiding, crediting, or paying an invoice is a write requiring a live
+  action or an explicit manual step; this connector only reads.

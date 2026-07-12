@@ -65,3 +65,11 @@ help_md: |
 
   Pagination uses Zendesk cursor-based pagination (meta.after_cursor / meta.has_more);
   pass --max-pages to cap results. The `read` OAuth scope grants all GET endpoints.
+onboarding_md: |
+  Ask which prior-history lookups matter (a requester's past tickets, their resolutions, ticket
+  comments) and which Zendesk subdomain or brand to query when several are connected. Explore
+  representative tickets without retaining customer rows; capture the lookup sequence from a
+  requester email to their user id and tickets, exact status values (new, open, pending, solved,
+  closed), the comments path where resolutions live, and any group or custom-field scoping that
+  matters. Zendesk may also be where replies land, but this connector only reads history; replying,
+  changing status, or closing a ticket is a write requiring a live action or a manual step.

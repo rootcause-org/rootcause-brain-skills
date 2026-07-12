@@ -73,3 +73,11 @@ help_md: |
       python -m lib.api post box metadata_queries/execute_read \
         --json '{"from":"enterprise_123.template","ancestor_folder_id":"0","query":"amount >= :v","query_params":{"v":100},"limit":100}' \
         --pick entries.*.id,entries.*.type,entries.*.name
+onboarding_md: |
+  Ask which internal documents support should consult (price lists, manuals, policies) and which
+  incoming questions should trigger looking them up. Explore the folder tree and search without
+  copying file contents; capture stable folder and file IDs and paths (not just display names),
+  metadata template keys/fields where used, and which situation each document serves. The token
+  only sees content owned by or shared with the connected account, so a missing file usually means
+  it wasn't granted. Uploading, moving, sharing, or deleting files is a write requiring a live
+  action or an explicit manual step; this connector only reads.

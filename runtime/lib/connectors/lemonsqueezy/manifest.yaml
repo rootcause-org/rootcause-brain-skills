@@ -46,3 +46,11 @@ help_md: |
 
   Common paths: /customers, /orders, /order-items, /subscriptions, /subscription-items,
   /license-keys, /products, /variants, /stores.
+onboarding_md: |
+  Ask which order and subscription questions customers email about (order status, where is my
+  license key or download, why a renewal failed, refund status). Explore representative order,
+  subscription, and license-key shapes without retaining rows; capture how a sender email maps to a
+  customer, orders, and subscriptions, the order identifier format, license-key statuses, and
+  product/variant names when reusable. Reissuing or revoking a license, refunding an order, or
+  cancelling a subscription is a write and must reference a live action or remain an explicit
+  manual step.

@@ -60,3 +60,11 @@ help_md: |
 
     # List recent alert incidents (active + recently closed)
     python -m lib.connectors.newrelic incidents ACCOUNT_ID --pick "title,priority,state,createdAt"
+onboarding_md: |
+  Ask which customer-facing problems should trigger a New Relic check — errors, slow response
+  times, or a suspected outage at a given time. Explore APM entities, alert violations, and NRQL
+  time-series; capture stable entity names and GUIDs, the account ID, which entity maps to each
+  customer-facing symptom, and the NRQL attribute plus time window that isolates one customer (host,
+  account, or request ID). Note the account lives in either the US or EU region, so use the matching
+  endpoint or reads return nothing. Acknowledging or closing incidents, or muting alert conditions,
+  are writes needing a live action; this connector only reads.

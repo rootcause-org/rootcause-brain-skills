@@ -24,3 +24,11 @@ oauth:
   default_scopes: [event:read, org:read, project:read]
 help_md: |
   Reads Sentry issues/events for support diagnosis. Use a token or OAuth app with read-only scopes.
+onboarding_md: |
+  Ask which customer bug reports should trigger a Sentry lookup and which app or project the
+  errors live in. Explore live issues and capture stable project slugs, environment names,
+  release/version conventions, and the lookup keys that map a reporter's email or user ID to the
+  right event — Sentry only shows a user's email or ID when the app's SDK attaches it, so confirm
+  which identity fields your instrumentation actually sets. Resolving, assigning, ignoring, or
+  commenting on issues and changing alert rules are writes requiring a live action or an explicit
+  manual step; this connector only reads.

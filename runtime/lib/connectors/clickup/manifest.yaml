@@ -68,3 +68,11 @@ help_md: |
       # List spaces in a workspace
       python -m lib.api get clickup team/{team_id}/space --query archived=false \
         --pick spaces.*.id,spaces.*.name,spaces.*.features.due_dates.enabled
+onboarding_md: |
+  Ask which ClickUp spaces and lists hold the customer requests and bugs you field over support email.
+  Explore the workspace and capture stable team/space/list IDs, exact custom-field names, the status
+  enums each list uses (status.status values), and how a sender maps to a task (a custom field, an
+  email, a naming convention). The token only sees workspaces and spaces granted during connect;
+  missing tasks usually mean the space was not shared. Creating, moving, or closing tasks, commenting,
+  or changing assignees and due dates are writes requiring a live action or a manual step; this
+  connector only reads.

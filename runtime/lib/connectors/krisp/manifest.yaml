@@ -30,3 +30,11 @@ help_md: |
 
   MCP results can be verbose. Save full JSON tool output to `/tmp/krisp-*.json`, inspect with
   `jq`/`rg`, and carry back only the relevant summary/action item/transcript lines.
+onboarding_md: |
+  Ask which recorded calls your support answers rely on — commitments, pricing, onboarding
+  decisions — and what in an incoming email should trigger a Krisp lookup. Use search_meetings by
+  participant email or name, account, date, or phrase; capture the lookup key mapping a sender to
+  the right meeting, stable 32-char document IDs, and action-item statuses, calling get_document for
+  quotes you need — never retain full transcripts. Krisp is MCP-based, so ground procedures in the
+  tools it exposes (search_meetings, get_document, list_action_items), not REST paths. Sharing
+  recordings, editing notes, or deleting meetings are writes needing a live action; this reads only.

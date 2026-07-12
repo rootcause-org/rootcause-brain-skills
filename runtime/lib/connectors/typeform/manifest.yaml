@@ -71,3 +71,10 @@ help_md: |
   Note: the `--paginate` flag drives page-number pagination over /forms. For /responses with >1000
   entries use repeated manual `after=<last_token>` calls; a single page_size=1000 is usually
   sufficient for support lookups.
+onboarding_md: |
+  Ask which support questions are answered by finding what someone submitted in a Typeform, such as
+  a signup, request, or feedback form. Explore the relevant forms and capture stable form IDs, exact
+  form titles, field refs paired with their question titles, and the lookup key (usually the
+  respondent's email, often a hidden field) that finds a submission. EU-region accounts use the EU
+  host, and the token only sees forms in its own workspaces. Deleting a response or editing a form's
+  questions is a write requiring a live action; this connector only reads.

@@ -89,3 +89,11 @@ help_md: |
 
   Use `--query _fields=id,display_name,status_label,html_url,contacts` to limit response size on
   lead list calls (Close supports field selection via `_fields`).
+onboarding_md: |
+  Ask which CRM-support questions matter (identifying the sender, their opportunity stage and value,
+  prior emails and calls) and how an inbound email maps to a Close lead. Explore representative
+  leads live without retaining customer rows; capture the lookup sequence from an email to the
+  contact and its lead_id, stable lead and opportunity ids when genuinely reusable, exact
+  status_label values, and custom fields you rely on to disambiguate. Creating leads, logging
+  activities, or changing opportunity status is a write requiring a live action or an explicit
+  manual step; this connector only reads.
