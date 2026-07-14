@@ -32,7 +32,7 @@ from lib import api  # noqa: E402
 from lib.connectors import shopify as shopify_conn  # noqa: E402
 
 SHOP = "teststore"
-GRAPHQL_URL = f"https://{SHOP}.myshopify.com/admin/api/2025-01/graphql.json"
+GRAPHQL_URL = f"https://{SHOP}.myshopify.com/admin/api/2026-07/graphql.json"
 
 # ---------------------------------------------------------------------------
 # Fixture payloads (Shopify documented example shapes, trimmed to support fields)
@@ -254,7 +254,7 @@ class ShopifyOrders(unittest.TestCase):
             responses_lib.add(
                 responses_lib.POST,
                 "http://rc-broker.internal/shopify/__url/"
-                "https%3A%2F%2Fteststore.myshopify.com%2Fadmin%2Fapi%2F2025-01%2Fgraphql.json",
+                "https%3A%2F%2Fteststore.myshopify.com%2Fadmin%2Fapi%2F2026-07%2Fgraphql.json",
                 json=_PAGE_2_BODY,
                 status=200,
             )

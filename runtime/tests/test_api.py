@@ -180,10 +180,10 @@ class BrokeredRouting(unittest.TestCase):
             api._broker_url("stripe", "http://api.stripe.com/v1/customers")
 
     def test_brokered_relative_path_uses_runtime_base_url(self):
-        got = api._broker_url("shopify", "graphql.json", base_url="https://acme.myshopify.com/admin/api/2025-01")
+        got = api._broker_url("shopify", "graphql.json", base_url="https://acme.myshopify.com/admin/api/2026-07")
         self.assertEqual(
             got,
-            "http://rc-broker.internal/shopify/__url/https%3A%2F%2Facme.myshopify.com%2Fadmin%2Fapi%2F2025-01%2Fgraphql.json",
+            "http://rc-broker.internal/shopify/__url/https%3A%2F%2Facme.myshopify.com%2Fadmin%2Fapi%2F2026-07%2Fgraphql.json",
         )
 
 

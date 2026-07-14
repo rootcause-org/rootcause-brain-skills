@@ -28,7 +28,7 @@ from typing import Any
 from lib import api
 
 # Shopify stable Admin GraphQL version — update annually when Shopify releases a new stable version.
-_API_VERSION = "2025-01"
+_API_VERSION = "2026-07"
 
 
 # ---------------------------------------------------------------------------

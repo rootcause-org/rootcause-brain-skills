@@ -15,7 +15,7 @@ egress_hosts:
 # base_url has no fixed value: Shopify is per-shop (https://<shop>.myshopify.com/…). The connector
 # builds it from the --shop arg. The generic `python -m lib.api get shopify …` CLI is NOT usable for
 # GraphQL, so base_url is intentionally left as a placeholder that signals "use the connector CLI".
-base_url: "https://{shop}.myshopify.com/admin/api/2025-01/graphql.json"
+base_url: "https://{shop}.myshopify.com/admin/api/2026-07/graphql.json"
 auth:
   # X-Shopify-Access-Token header — lib.api's api_key_header strategy places the raw credential
   # (no "Bearer" prefix) in the named header.
