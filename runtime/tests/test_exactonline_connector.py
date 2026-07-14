@@ -1,4 +1,4 @@
-"""Fixture coverage for the scripted Belgian Exact Online connector."""
+"""Fixture coverage for the scripted Dutch-hosted Exact Online connector."""
 
 import io
 import json
@@ -16,14 +16,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lib import api  # noqa: E402
 from lib.connectors import exactonline  # noqa: E402
 
-API_BASE = "https://start.exactonline.be/api/v1"
+API_BASE = "https://start.exactonline.nl/api/v1"
 DIVISION = 123456
 ACCOUNT_ID = "11111111-1111-1111-1111-111111111111"
 
 _ACCOUNT_1 = {
     "ID": ACCOUNT_ID,
     "Code": "              1001",
-    "Name": "O'Reilly Belgium",
+    "Name": "O'Reilly Netherlands",
     "Email": "billing@oreilly.example",
     "VATNumber": "BE0123456789",
     "Status": "C",
@@ -95,7 +95,7 @@ class TestExactOnlineReads(_ExactOnlineBase):
         responses_lib.add(
             responses_lib.GET,
             f"{API_BASE}/{DIVISION}/system/Divisions",
-            json=_page([{"Code": DIVISION, "Description": "Example Belgium", "Current": True}]),
+            json=_page([{"Code": DIVISION, "Description": "Example Netherlands", "Current": True}]),
             status=200,
         )
 
@@ -119,7 +119,7 @@ class TestExactOnlineReads(_ExactOnlineBase):
 
         result = exactonline.accounts("O'Reilly", field="name", division=DIVISION)
 
-        self.assertEqual(result["items"][0]["Name"], "O'Reilly Belgium")
+        self.assertEqual(result["items"][0]["Name"], "O'Reilly Netherlands")
         query = _query(0)
         self.assertEqual(query["$filter"], ["substringof('O''Reilly',Name)"])
         self.assertEqual(

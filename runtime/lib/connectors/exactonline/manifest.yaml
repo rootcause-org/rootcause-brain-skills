@@ -7,8 +7,8 @@ connector_module: lib.connectors.exactonline
 env_var: RC_CONN_EXACTONLINE
 credential_exposure: broker
 egress_hosts:
-  - start.exactonline.be
-base_url: https://start.exactonline.be/api/v1
+  - start.exactonline.nl
+base_url: https://start.exactonline.nl/api/v1
 auth:
   strategy: bearer
 pagination:
@@ -21,12 +21,12 @@ default_headers:
 rate_limit:
   remaining_header: ""
 oauth:
-  auth_url: https://start.exactonline.be/api/oauth2/auth
-  token_url: https://start.exactonline.be/api/oauth2/token
+  auth_url: https://start.exactonline.nl/api/oauth2/auth
+  token_url: https://start.exactonline.nl/api/oauth2/token
   default_scopes: []
   pkce: false
 help_md: |
-  Reads Belgian Exact Online administrations, customer accounts, sales invoices, receivables,
+  Reads Dutch-hosted Exact Online administrations, customer accounts, sales invoices, receivables,
   payments, and accounting entries for support diagnosis. OAuth only; read-only grounding issues
   GETs through the API broker. Exact authorizes the app against the signed-in user's existing
   administration rights rather than OAuth scope strings.

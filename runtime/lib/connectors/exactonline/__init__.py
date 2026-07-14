@@ -1,4 +1,4 @@
-"""Exact Online read-only accounting connector for Belgian support workflows.
+"""Exact Online read-only accounting connector for Dutch-hosted support workflows.
 
 Exact exposes OData v2 REST endpoints. ``lib.api`` owns OAuth bearer placement, retries, error
 normalization, and ``d.__next`` pagination; this module adds safe OData filters, current-division
