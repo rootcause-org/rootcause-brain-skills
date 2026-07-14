@@ -1,0 +1,58 @@
+key: exactonline
+name: Exact Online
+kinds: [oauth]
+# The script adds OData-safe filters and the account -> invoices/receivables support join; lib.api
+# still owns Exact's d.__next pagination, OAuth bearer attachment, retries, and error normalization.
+connector_module: lib.connectors.exactonline
+env_var: RC_CONN_EXACTONLINE
+credential_exposure: broker
+egress_hosts:
+  - start.exactonline.be
+base_url: https://start.exactonline.be/api/v1
+auth:
+  strategy: bearer
+pagination:
+  style: body_url
+  next_url_field: d.__next
+  items_field: d.results
+  page_size: 60
+default_headers:
+  Accept: application/json
+rate_limit:
+  remaining_header: ""
+oauth:
+  auth_url: https://start.exactonline.be/api/oauth2/auth
+  token_url: https://start.exactonline.be/api/oauth2/token
+  default_scopes: []
+  pkce: false
+help_md: |
+  Reads Belgian Exact Online administrations, customer accounts, sales invoices, receivables,
+  payments, and accounting entries for support diagnosis. OAuth only; read-only grounding issues
+  GETs through the API broker. Exact authorizes the app against the signed-in user's existing
+  administration rights rather than OAuth scope strings.
+
+  Prefer the connector CLI: it discovers the current division when `--division` is omitted, escapes
+  OData literals, follows `d.__next`, and emits only support-relevant fields.
+
+      python -m lib.connectors.exactonline me
+      python -m lib.connectors.exactonline divisions
+      python -m lib.connectors.exactonline accounts "alice@example.com" --field email
+      python -m lib.connectors.exactonline account-summary "alice@example.com"
+
+  Restrict invoice or receivable reads by the account UUID returned from `accounts`:
+
+      python -m lib.connectors.exactonline sales-invoices --account-id <account-uuid>
+      python -m lib.connectors.exactonline receivables --account-id <account-uuid>
+
+  Use `--division <code>` to override the current administration and `--max-items` to cap lists.
+  For uncommon endpoints, raw `python -m lib.api get exactonline ...` remains available; quote
+  `$filter`, `$select`, and `$orderby` query arguments in the shell. Common extra paths are
+  `<division>/cashflow/Payments` and `<division>/financialtransaction/TransactionLines`. Creating or
+  changing accounting data requires a live action or an explicit manual step.
+onboarding_md: |
+  Ask which customer accounting questions should Exact Online answer, such as unpaid invoices,
+  payment matching, credit notes, or account details. Discover the accessible divisions first and
+  retain the intended division code, then capture customer lookup keys, relevant invoice and
+  receivable status values, currencies, and safe OData filters without retaining customer rows.
+  Creating invoices, matching payments, issuing credit notes, or changing accounts requires a live
+  action or an explicit manual step; this connector only reads.
