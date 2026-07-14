@@ -1,0 +1,84 @@
+key: bubble
+name: Bubble
+kinds: [token]
+credential_exposure: broker
+# Script connector: the force-code trigger is TOKEN-CHEAP SWAGGER DISCOVERY, not the data reads.
+# Every Bubble app exposes a different, customer-defined data model, discoverable only from an
+# auto-generated /meta/swagger.json that is routinely several MB. `python -m lib.connectors.bubble
+# endpoints|types` parses that in Python and prints a compact inventory instead of flooding context.
+# The ordinary object reads (obj/<type>) need no code — the offset pagination below drives them via
+# `python -m lib.api get bubble ...`.
+connector_module: lib.connectors.bubble
+env_var: RC_CONN_BUBBLE
+# Bubble is per-app: egress varies by the customer's app domain (a *.bubbleapps.io subdomain or a
+# custom domain). A wildcard covers any HTTPS app; the broker route narrows to the single host parsed
+# from the credential before any request leaves (same rationale as woocommerce).
+egress_hosts:
+  - "*.bubbleapps.io"   # default Bubble-hosted app subdomains
+  - "*"                  # custom app domains are arbitrary — the credential's host binds the route
+# --- Generic lib.api caller fields ---
+# base_url is TEMPLATED per app. The credential is stored as "<admin-token>@https://<app-domain>"
+# (e.g. "abc123@https://myapp.bubbleapps.io"); the host splits it, binds the broker route to that one
+# host, and rewrites this placeholder to the concrete "https://<app-domain>/api/1.1" base. The agent
+# drives relative paths (obj/<type>, meta/swagger.json) — the broker joins them onto the bound base.
+base_url: "https://{app_domain}/api/1.1"
+auth:
+  strategy: bearer      # Settings › API admin token, sent as `Authorization: Bearer <token>`
+pagination:
+  # Bubble's Data API is offset-cursor: `cursor` is an integer item offset advanced BY the page's
+  # `count`, plus a `limit` (max 100). lib.api's `offset` style advances the offset by len(items) and
+  # stops on a short/empty page — identical to advancing `cursor += count`; the response `remaining`
+  # gate is redundant with the short-page stop (one extra empty fetch only when the last page is
+  # exactly `limit` long). Items sit under the `response.results` envelope.
+  style: offset
+  offset_param: cursor
+  limit_param: limit
+  page_size: 100
+  items_field: response.results
+rate_limit:
+  remaining_header: ""  # Bubble documents no remaining-count header; it 429s under load
+help_md: |
+  Fetch the endpoint inventory FIRST — every Bubble app has a different, customer-defined data model,
+  so discovery comes before any read:
+
+      python -m lib.connectors.bubble endpoints          # compact METHOD path list, grouped by type
+      python -m lib.connectors.bubble endpoints obj      # only the Data API object types
+      python -m lib.connectors.bubble types              # exposed data types + field names/types
+      python -m lib.connectors.bubble types --full user  # one type's complete schema
+
+  These parse the app's auto-generated /meta/swagger.json (often several MB) in Python and print only a
+  few hundred tokens — never GET that file raw into context.
+
+  Then read objects with the generic caller (read-only grounding; GETs only):
+
+      python -m lib.api get bubble obj/<type> --paginate --pick _id,name,created_date
+
+  Search with Bubble `constraints` — a JSON array of {key, constraint_type, value}; constraint types
+  include equals, "not equal", "text contains", "greater than", "less than", in, "not in", is_empty,
+  is_not_empty, "geographic_search":
+
+      python -m lib.api get bubble obj/user \
+        --query 'constraints=[{"key":"email","constraint_type":"equals","value":"a@example.com"}]' \
+        --pick _id,email,name
+
+  Sort with sort_field + descending=true. Pagination is offset-cursor (`cursor`+`limit`, max 100 per
+  page); pass `--paginate` to collect all pages. The response envelope is
+  {"response":{"results":[...],"cursor":N,"count":N,"remaining":N}}.
+
+  CAVEAT — the admin token is powerful. Bubble cannot issue a read-only key: the admin API token
+  BYPASSES the app's privacy rules and is unscoped read/write/delete. rootcause keeps it host-side
+  behind the API broker and only ever issues GETs (writes are refused), so grounding stays read-only,
+  but treat the credential as sensitive. State-changing Workflow API calls (`/api/1.1/wf/<name>`, POST)
+  are out of scope here and belong on the human-confirmed action plane.
+
+  The base is templated per app: the credential carries the app domain, so drive RELATIVE paths
+  (obj/<type>, meta/swagger.json). The Data API must be enabled per data type in the app's
+  Settings › API; a type that 404s is simply not exposed yet.
+onboarding_md: |
+  Ask which things in the app customers email about (accounts, orders, bookings, subscriptions) and
+  how a sender email maps to a record. Run `python -m lib.connectors.bubble endpoints` and `types`
+  first to capture the exposed data types, their exact field names (Bubble keeps a `_id` and
+  `created_date` on every thing), and which fields identify a customer. Note the constraint spellings
+  and status enums that matter, and confirm each needed data type has its Data API enabled in
+  Settings › API. Editing or creating a thing, or triggering a workflow, is a write and must reference
+  a live action or remain an explicit manual step.
