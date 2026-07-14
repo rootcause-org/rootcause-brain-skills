@@ -13,12 +13,12 @@
 # project-agnostic discovery path and makes Brain Dev appear in unrelated repos.
 #
 #   bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh) [BRAIN_DIR]
-#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.81 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
+#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.1.82 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
 #   ./install.sh --latest-version
 set -euo pipefail
 
 KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}"
-TAG="${RC_BRAIN_KIT_TAG:-v0.1.81}"
+TAG="${RC_BRAIN_KIT_TAG:-v0.1.82}"
 REPO="https://github.com/rootcause-org/rootcause-brain-skills"
 LATEST_TAG_ENDPOINT="https://api.github.com/repos/rootcause-org/rootcause-brain-skills/git/matching-refs/tags/v"
 KIT_OVERRIDE="${RC_BRAIN_KIT+x}"
