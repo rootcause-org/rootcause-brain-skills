@@ -122,11 +122,20 @@ class BubbleManifest(unittest.TestCase):
         self.assertEqual(m.pagination.items_field, "response.results")
         self.assertEqual(m.pagination.page_size, 100)
 
-    def test_help_md_starts_with_fetch(self):
-        """help_md must lead with discovery — the first word is the Fetch instruction (contract)."""
+    def test_help_md_dual_audience_contract(self):
+        """help_md is dual-audience: the operator web page derives its panels from the first plain
+        paragraphs, so help_md must LEAD with a customer-readable read summary (first word "Reads",
+        no credential/pagination jargon that the page filters), carry the admin-token setup + paste
+        format early, and STILL keep the agent discovery commands further down."""
         raw = bubble._MANIFEST_PATH.read_text()
-        # The YAML `help_md: |` block's first content line starts with "Fetch".
-        self.assertRegex(raw, r"help_md:\s*\|\s*\n\s*Fetch ")
+        # Leads with the customer read summary, not the agent Fetch instruction.
+        self.assertRegex(raw, r"help_md:\s*\|\s*\n\s*Reads ")
+        # Decision-ready key setup for the operator: click path + paste format incl. version-test.
+        self.assertIn("Settings › API", raw)
+        self.assertIn("<token>@https://<your-app>.bubbleapps.io", raw)
+        self.assertIn("/version-test", raw)
+        # Agent discovery still present.
+        self.assertIn("python -m lib.connectors.bubble endpoints", raw)
 
 
 class BubbleDiscovery(unittest.TestCase):

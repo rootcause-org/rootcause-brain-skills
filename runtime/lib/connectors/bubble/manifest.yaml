@@ -38,16 +38,34 @@ pagination:
 rate_limit:
   remaining_header: ""  # Bubble documents no remaining-count header; it 429s under load
 help_md: |
-  Fetch the endpoint inventory FIRST — every Bubble app has a different, customer-defined data model,
-  so discovery comes before any read:
+  Reads your Bubble app's database — whatever data types the app exposes (customers, orders, bookings,
+  todos, and so on) — so the assistant can ground its support answers in your live app data.
+
+  Generate an admin API token in your Bubble editor under Settings › API › "Admin API Tokens" ›
+  "Generate a new API token", then copy the value shown as its Private key. A paid Bubble plan is
+  required — on the free plan every API call is refused with an "upgrade your subscription" message —
+  and each data type you want read must have its Data API enabled on that same Settings › API page.
+  Paste the token together with your app address as `<token>@https://<your-app>.bubbleapps.io` (or your
+  own custom domain). If the app is not yet deployed to live, point at its test version instead:
+  `<token>@https://<your-app>.bubbleapps.io/version-test`.
+
+  Good to know: the admin token is powerful — Bubble cannot issue a read-only key, so the token can in
+  principle read, write, and delete, and it bypasses the app's privacy rules. rootcause keeps it
+  host-side behind the API broker and only ever issues reads (writes are refused), so grounding stays
+  read-only. Two things to check if a lookup comes back empty: an app that has not been deployed to
+  live serves its data only under the `/version-test` address above until you click Deploy, and field
+  names appear as their display labels (often with spaces, like "Created Date") when the default
+  "Use field display names for key names" setting is on.
+
+  For the assistant (technical): every Bubble app exposes a different, customer-defined data model, so
+  run discovery first — `python -m lib.connectors.bubble endpoints` and `types` parse the app's
+  auto-generated /meta/swagger.json (often several megabytes) in Python and print only a compact
+  inventory, so never read that raw file into context:
 
       python -m lib.connectors.bubble endpoints          # compact METHOD path list, grouped by type
       python -m lib.connectors.bubble endpoints obj      # only the Data API object types
       python -m lib.connectors.bubble types              # exposed data types + field names/types
       python -m lib.connectors.bubble types --full user  # one type's complete schema
-
-  These parse the app's auto-generated /meta/swagger.json (often several MB) in Python and print only a
-  few hundred tokens — never GET that file raw into context.
 
   Then read objects with the generic caller (read-only grounding; GETs only):
 
@@ -69,26 +87,8 @@ help_md: |
 
   Sort with sort_field + descending=true. Pagination is offset-cursor (`cursor`+`limit`, max 100 per
   page); pass `--paginate` to collect all pages. The response envelope is
-  {"response":{"results":[...],"cursor":N,"count":N,"remaining":N}}.
-
-  CAVEAT — the admin token is powerful. Bubble cannot issue a read-only key: the admin API token
-  BYPASSES the app's privacy rules and is unscoped read/write/delete. rootcause keeps it host-side
-  behind the API broker and only ever issues GETs (writes are refused), so grounding stays read-only,
-  but treat the credential as sensitive. State-changing Workflow API calls (`/api/1.1/wf/<name>`, POST)
-  are out of scope here and belong on the human-confirmed action plane.
-
-  The base is templated per app: the credential carries the app domain, so drive RELATIVE paths
-  (obj/<type>, meta/swagger.json). Two live gotchas:
-    - Un-DEPLOYED apps serve the API ONLY under the dev prefix `/version-test` (e.g.
-      `https://app.bubbleapps.io/version-test/api/1.1/...`); the live path 404s until the customer
-      clicks Deploy. The credential may carry that path — `token@https://app.bubbleapps.io/version-test`
-      — and it is preserved onto the base.
-    - Field keys are DISPLAY NAMES (spaces) when Settings › API "Use field display… for key names" is
-      on (the default) — quote them in `constraints`/`--pick`.
-  The Data API must be enabled per data type in Settings › API; a type that 404s is simply not
-  exposed yet. On the FREE plan every call (data AND swagger) returns
-  {"error_class":"Unauthorized","translation":"…Please upgrade your Bubble subscription…"} — that is
-  plan gating, not a bad token; a paid plan is required.
+  {"response":{"results":[...],"cursor":N,"count":N,"remaining":N}}. State-changing Workflow API calls
+  (`/api/1.1/wf/<name>`, POST) are out of scope here and belong on the human-confirmed action plane.
 onboarding_md: |
   Ask which things in the app customers email about (accounts, orders, bookings, subscriptions) and
   how a sender email maps to a record. Run `python -m lib.connectors.bubble endpoints` and `types`
