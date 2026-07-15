@@ -21,10 +21,12 @@ git -C "$CHECKOUT" push -q -u origin main
 # the main push until it has fetched and verified origin/main.
 git -C "$CHECKOUT" config push.followTags true
 cp "$ROOT/refresh-brains.sh" "$CHECKOUT/refresh-brains.sh"
-mkdir -p "$CHECKOUT/skills/brain-git-sync/scripts"
+mkdir -p "$CHECKOUT/skills/brain-git-sync/scripts" "$CHECKOUT/scripts"
 cp "$ROOT/skills/brain-git-sync/scripts/brain_git_sync.py" \
   "$CHECKOUT/skills/brain-git-sync/scripts/brain_git_sync.py"
-git -C "$CHECKOUT" add refresh-brains.sh skills/brain-git-sync/scripts/brain_git_sync.py
+cp "$ROOT/scripts/runtime_digest.py" "$CHECKOUT/scripts/runtime_digest.py"
+git -C "$CHECKOUT" add refresh-brains.sh skills/brain-git-sync/scripts/brain_git_sync.py \
+  scripts/runtime_digest.py
 if ! git -C "$CHECKOUT" diff --cached --quiet; then
   git -C "$CHECKOUT" commit -q -m "test: install release sync primitive"
 fi
@@ -144,7 +146,11 @@ exec "$REAL_GIT" "$@"
 WRAPPER
 chmod +x "$RACE_BIN/git"
 
-race_tag="v0.1.87"
+# The race release cuts CUR+1; derive it from the checkout instead of hardcoding a version that in-test
+# releases against the shared remote may already have consumed.
+race_cur="$(grep -E '^VERSION = ' "$RACE_CHECKOUT/skills/local-brain-work/scripts/brain_env.py" | sed -E 's/.*"([0-9.]+)".*/\1/')"
+IFS=. read -r _rma _rmi _rpa <<<"$race_cur"
+race_tag="v$_rma.$_rmi.$((_rpa + 1))"
 if PATH="$RACE_BIN:$PATH" REAL_GIT="$REAL_GIT" RACE_COUNT="$RACE_COUNT" RACE_PEER="$RACE_PEER" \
     RC_BRAINS_ROOT="$TMP/brains" "$RACE_CHECKOUT/refresh-brains.sh" --release patch --no-image \
     "$TMP/not-a-brain" >"$TMP/tag-race.out" 2>&1; then
@@ -157,5 +163,66 @@ if git --git-dir="$RACE_REMOTE" rev-parse "refs/tags/$race_tag" >/dev/null 2>&1;
   echo "error: atomic release race published $race_tag" >&2
   exit 1
 fi
+
+# ── runtime-vs-retag classification ──────────────────────────────────────────
+# The image step rebuilds only when runtime/ CONTENT changed. A docs/skill release still sed-bumps the
+# version literals in runtime/pyproject.toml, so the classifier canonicalizes those out and reads the
+# committed repo-root RUNTIME_DIGEST across real tags — a dirty working tree would prove nothing.
+CL_REMOTE="$TMP/classify-origin.git"
+CL="$TMP/classify-kit"
+git init -q --bare "$CL_REMOTE"
+git clone -q "$ROOT" "$CL"
+git -C "$CL" remote set-url origin "$CL_REMOTE"
+git -C "$CL" config user.name "Classify Test"
+git -C "$CL" config user.email "classify-test@example.com"
+git -C "$CL" config tag.gpgSign false
+git -C "$CL" config push.followTags false
+cp "$ROOT/refresh-brains.sh" "$CL/refresh-brains.sh"
+mkdir -p "$CL/scripts" "$CL/skills/brain-git-sync/scripts"
+cp "$ROOT/scripts/runtime_digest.py" "$CL/scripts/runtime_digest.py"
+cp "$ROOT/skills/brain-git-sync/scripts/brain_git_sync.py" \
+  "$CL/skills/brain-git-sync/scripts/brain_git_sync.py"
+git -C "$CL" add refresh-brains.sh scripts/runtime_digest.py \
+  skills/brain-git-sync/scripts/brain_git_sync.py
+git -C "$CL" diff --cached --quiet || git -C "$CL" commit -q -m "test: install classifier under test"
+git -C "$CL" push -q -u origin main
+
+cl_release() {  # release a patch (extra flags in $@); fail loudly on error
+  if ! RC_BRAINS_ROOT="$TMP/brains" "$CL/refresh-brains.sh" --release patch --no-image \
+      "$TMP/not-a-brain" "$@" >"$TMP/classify.out" 2>&1; then
+    cat "$TMP/classify.out" >&2
+    exit 1
+  fi
+}
+cl_classify() {  # echo the runtime_changed value of the newest release
+  RC_BRAINS_ROOT="$TMP/brains" "$CL/refresh-brains.sh" --classify | sed -n 's/^runtime_changed=//p'
+}
+
+# Bootstrap: the newest pre-migration tag has no RUNTIME_DIGEST → first release reads as changed.
+cl_release
+test "$(cl_classify)" = 1
+
+# Docs-only release: version literals in pyproject bump, but canonicalized away → identical digest → 0.
+echo "doc note" >>"$CL/README.md"
+git -C "$CL" commit -q -am "docs: note"
+cl_release
+test "$(cl_classify)" = 0
+
+# runtime/lib edit → content digest changes → 1.
+printf '\n# classify probe\n' >>"$CL/runtime/lib/db.py"
+git -C "$CL" commit -q -am "runtime: lib probe"
+cl_release
+test "$(cl_classify)" = 1
+
+# pyproject dependency edit + --relock → 1 (real dep add; --relock regenerates the lock).
+python3 - "$CL/runtime/pyproject.toml" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read().replace('    "pyyaml==6.0.3",\n', '    "pyyaml==6.0.3",\n    "certifi",\n')
+open(p, "w").write(s)
+PY
+git -C "$CL" commit -q -am "runtime: add certifi dep"
+cl_release --relock
+test "$(cl_classify)" = 1
 
 echo "refresh-brains release tests passed"

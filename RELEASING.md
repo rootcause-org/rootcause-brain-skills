@@ -17,7 +17,11 @@
 > `origin/main` before the release creates any tag. `--no-push` leaves the release commit local,
 > creates no tag, and keeps remote refs unchanged. The image bakes `runtime/` only, so a skill/doc
 > release **re-tags** the prior image instead of rebuilding — `--relock` forces a real rebuild for dep
-> changes. Prod (`rootcause`) stays a separate, deploy-gated step the script only reminds you of.
+> changes. "Did runtime change" is decided by a **normalized content digest** (version literals
+> canonicalized out) recorded in the committed repo-root `RUNTIME_DIGEST`; the same file lets the host
+> `promote.py` tell a byte-identical pin from a real drift. `./refresh-brains.sh --classify` prints the
+> newest release's `runtime_changed=0|1` without side effects. Prod (`rootcause`) stays a separate,
+> deploy-gated step the script only reminds you of.
 >
 > The rest of this file is the manual reference for what that script automates.
 
@@ -36,10 +40,13 @@ commit, then push/verify main before publishing the tag:
 | **Prod (separate repo)** | `rootcause/runtime/Dockerfile` | the `rootcause-runtime @ git+…@vX.Y.Z` pin + workspace image tag |
 | **Prod lock copy (separate repo)** | `rootcause/runtime/requirements.lock` | `cp runtime/requirements.lock ../rootcause/runtime/requirements.lock` (lockstep copy) |
 
-Then, when performing the steps manually, preserve the same merge/main-first/tag-second invariant:
+Then, when performing the steps manually, preserve the same merge/main-first/tag-second invariant.
+Record the runtime digest into the release commit first — the host pin gate reads it at the tag, so a
+manual release that skips it looks like a pre-migration tag and fails closed:
 
 ```bash
 test "$(git branch --show-current)" = main
+uv run --no-project python scripts/runtime_digest.py --worktree > RUNTIME_DIGEST  # then git add -A + commit
 uv run --no-project python skills/brain-git-sync/scripts/brain_git_sync.py \
   --repo "$PWD" --max-push-attempts 4 \
   --verify-command 'SKIP_IMAGE=1 SKIP_PROD=1 ./check-release-coherence.sh'

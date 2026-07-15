@@ -16,6 +16,7 @@
 #   ./refresh-brains.sh --release patch --relock  # ALSO regen requirements.lock + REBUILD the image
 #                                               #   (use whenever runtime/ dependencies changed)
 #   ./refresh-brains.sh --release patch --dry-run # print the whole plan, mutate NOTHING
+#   ./refresh-brains.sh --classify              # print runtime_changed=0|1 + digest, no side effects
 #
 # Flags:
 #   --release <patch|minor|major|X.Y.Z>  cut a release before refreshing
@@ -23,6 +24,7 @@
 #   --no-image    skip the ghcr image step entirely (uv mode still works; docker mode needs it later)
 #   --no-push     commit locally but do NOT sync/tag/push/image (brains can't fetch it yet)
 #   --dry-run     show every step without running it
+#   --classify    print whether the two newest tags differ in runtime content, then exit
 #   [BRAIN_DIR...]  explicit brains to refresh (default: auto-discover siblings)
 #
 # Prod (rootcause) is a separate public/support-gated step; this script verifies coherence when possible.
@@ -36,7 +38,7 @@ BRAINS_ROOT="${RC_BRAINS_ROOT:-$(dirname "$ROOT")}"   # where the sibling rootca
 IMAGE="ghcr.io/rootcause-org/workspace"
 
 # ── args ────────────────────────────────────────────────────────────────────
-RELEASE="" RELOCK=0 NO_IMAGE=0 NO_PUSH=0 DRY=0; BRAINS=()
+RELEASE="" RELOCK=0 NO_IMAGE=0 NO_PUSH=0 DRY=0 CLASSIFY=0; BRAINS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --release) RELEASE="${2:?--release needs patch|minor|major|X.Y.Z}"; shift 2;;
@@ -44,7 +46,8 @@ while [ $# -gt 0 ]; do
     --no-image) NO_IMAGE=1; shift;;
     --no-push)  NO_PUSH=1; shift;;
     --dry-run)  DRY=1; shift;;
-    -h|--help)  sed -n '2,33p' "$0"; exit 0;;
+    --classify) CLASSIFY=1; shift;;
+    -h|--help)  sed -n '2,34p' "$0"; exit 0;;
     -*) echo "unknown flag: $1" >&2; exit 1;;
     *)  BRAINS+=("$1"); shift;;
   esac
@@ -52,6 +55,25 @@ done
 
 run() { echo "  + $*"; [ "$DRY" = 1 ] || "$@"; }   # echo every mutating step; skip it on --dry-run
 say() { echo; echo "▸ $*"; }
+
+# The single content-based digest of runtime/ at a working tree or ref (version literals canonicalized).
+runtime_digest() { uv run --no-project python "$ROOT/scripts/runtime_digest.py" "$@" --root "$ROOT"; }
+
+# Side-effect-free classification of the most recent release: do the two newest tags carry different
+# committed RUNTIME_DIGEST values? A single tag (or a tag missing the file) reads as changed.
+if [ "$CLASSIFY" = 1 ]; then
+  latest="$(git -C "$ROOT" tag -l 'v*' | sort -V | tail -1)"
+  prev="$(git -C "$ROOT" tag -l 'v*' | sort -V | tail -2 | head -1)"
+  latest_d="$(git -C "$ROOT" show "$latest:RUNTIME_DIGEST" 2>/dev/null || true)"
+  prev_d="$(git -C "$ROOT" show "$prev:RUNTIME_DIGEST" 2>/dev/null || true)"
+  if [ -z "$latest" ] || [ "$latest" = "$prev" ] || [ -z "$latest_d" ] || [ "$latest_d" != "$prev_d" ]; then
+    echo "runtime_changed=1"
+  else
+    echo "runtime_changed=0"
+  fi
+  echo "digest=$latest_d"
+  exit 0
+fi
 
 verify_origin_main() {
   local head_sha origin_main_sha
@@ -123,6 +145,15 @@ if [ -n "$RELEASE" ]; then
         -o "$ROOT/runtime/requirements.lock"
   fi
 
+  # 1b2. Record runtime/'s content digest (version literals canonicalized) into the repo-root
+  #      RUNTIME_DIGEST so the release commit itself carries the rebuild-vs-retag fact both sides read.
+  #      After --relock so a regenerated lock counts; the file lives outside runtime/ so it never
+  #      perturbs its own input.
+  say "Record runtime digest"
+  DIGEST="$(runtime_digest --worktree)"
+  echo "  + RUNTIME_DIGEST=$DIGEST"
+  [ "$DRY" = 1 ] || printf '%s\n' "$DIGEST" > "$ROOT/RUNTIME_DIGEST"
+
   # 1c. local coherence before commit/tag. Image existence is checked after push/build; prod pin drift
   #     is a separate follow-up unless the sibling rootcause checkout is already updated.
   say "Check local release coherence"
@@ -140,6 +171,17 @@ if [ -n "$RELEASE" ]; then
     git -C "$ROOT" commit -q -m "release: v$NEW" \
       -m "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
   fi
+
+  # Classify rebuild-vs-retag ONCE (reused by the image + prod-reminder steps). --relock forces a
+  # rebuild; else compare the recorded digest to the prior release's. DIGEST equals HEAD's committed
+  # RUNTIME_DIGEST here, so this is the committed-state diff even in --dry-run (no commit). Bootstrap:
+  # v$CUR predates RUNTIME_DIGEST → PREV empty → changed once, then steady state.
+  RUNTIME_CHANGED=0
+  PREV_DIGEST="$(git -C "$ROOT" show "v$CUR:RUNTIME_DIGEST" 2>/dev/null || true)"
+  if [ "$RELOCK" = 1 ] || [ "$DIGEST" != "$PREV_DIGEST" ]; then
+    RUNTIME_CHANGED=1
+  fi
+
   if [ "$NO_PUSH" = 1 ]; then
     echo "  (--no-push: release commit remains local; no tag created; origin/main is unchanged)"
   else
@@ -168,10 +210,6 @@ if [ -n "$RELEASE" ]; then
     echo "  ⚠ docker unavailable — image NOT built. Before any docker-mode run:" >&2
     echo "      docker build -f docker/Dockerfile -t $IMAGE:v$NEW $ROOT && docker push $IMAGE:v$NEW" >&2
   else
-    RUNTIME_CHANGED=0
-    if [ "$RELOCK" = 1 ] || ! git -C "$ROOT" diff --quiet "v$CUR" HEAD -- runtime/ 2>/dev/null; then
-      RUNTIME_CHANGED=1
-    fi
     if [ "$RUNTIME_CHANGED" = 1 ]; then
       say "Build + push image $IMAGE:v$NEW (runtime changed)"
       run docker build -f "$ROOT/docker/Dockerfile" -t "$IMAGE:v$NEW" "$ROOT"
@@ -224,10 +262,6 @@ done
 
 # ── 3. prod (rootcause) — separate, public/support-gated; we only remind ───────
 if [ -n "$RELEASE" ]; then
-  RUNTIME_CHANGED=0
-  if [ "$RELOCK" = 1 ] || ! git -C "$ROOT" diff --quiet "v$CUR" HEAD -- runtime/ 2>/dev/null; then
-    RUNTIME_CHANGED=1
-  fi
   if [ "$RUNTIME_CHANGED" = 1 ]; then
     say "Prod follow-up (runtime changed; public/support publish step required):"
   cat <<EOF
