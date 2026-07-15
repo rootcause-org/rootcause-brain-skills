@@ -913,6 +913,17 @@ class HostEmbeddedCredential(unittest.TestCase):
         self.assertEqual(c.manifest.base_url, "https://{app_domain}/api/1.1")
         self.assertEqual(c.credential, "just_a_token")
 
+    def test_degenerate_base_without_host_is_rejected(self):
+        # "tok@https://" must NOT split into base "https:" (whose "host" would be the scheme word,
+        # sending the secret to a wrong host). Mirrors the Go host-side hostname requirement.
+        self.assertEqual(api._split_host_embedded_credential("tok@https://"), ("", ""))
+        self.assertEqual(api._split_host_embedded_credential("@https://host.test"), ("", ""))
+
+    def test_fill_treats_host_path_as_literal_text(self):
+        # A backslash in the credential URL must not be interpreted as a regex escape in re.sub.
+        out = api._fill_base_placeholder("https://{d}/api", "https://h\\x")
+        self.assertEqual(out, "https://h\\x/api")
+
 
 if __name__ == "__main__":
     unittest.main()

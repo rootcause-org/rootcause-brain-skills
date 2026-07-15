@@ -839,7 +839,9 @@ def _split_host_embedded_credential(credential: str) -> tuple[str, str]:
             continue
         secret = credential[:i].strip()
         base = credential[i + 1:].strip().rstrip("/")
-        if secret and base:
+        # Require a real host (mirrors the Go host-side split): a degenerate "tok@https://" must not
+        # yield a base whose "host" is the scheme word — the secret would be sent to a wrong host.
+        if secret and base and urlsplit(base).hostname:
             return secret, base
     return "", ""
 
@@ -848,7 +850,9 @@ def _fill_base_placeholder(base_url: str, credential_base: str) -> str:
     """Substitute the single ``{placeholder}`` in a templated base_url with the credential URL's
     host+path (scheme stripped), preserving the base_url's own API suffix (e.g. ``/api/1.1``)."""
     host_path = re.sub(r"^https?://", "", credential_base)
-    return re.sub(r"\{[^}]+\}", host_path, base_url, count=1)
+    # Lambda replacement: host_path is literal text, never a regex template (a stray backslash in the
+    # credential URL must not raise "bad escape").
+    return re.sub(r"\{[^}]+\}", lambda _m: host_path, base_url, count=1)
 
 
 # ---------------------------------------------------------------------------
