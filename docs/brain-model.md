@@ -153,7 +153,12 @@ test artifacts stay on the laptop.
   in run trace as `brain_resolved`.
 - `rc ask --brain-ref dev/<branch>` tests a pushed dev ref on production infrastructure without moving
   `main` or promoting a channel.
+- `rc dev brain sync` refreshes the managed project-brain `main` cache. `rc dev brain promote
+  --channel stable|edge --sha <exact-full-40-character-sha>` moves a shared project channel after sync; only a
+  project-level maintainer may do this.
 - Tenant brains typically use their `main` HEAD; shared project brain promotion is separate.
+- A `main` status of `current` does not prove a channel is current. Verify the intended channel's
+  resolved SHA in `rc dev brain status -o json` or in a normal run's `brain_resolved` trace.
 
 ## Local Engine Boundary
 

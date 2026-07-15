@@ -16,7 +16,9 @@ surface or in managed infrastructure.
 | Action plane 404, disabled, or not wired | RootCause support plus the customer app owner for app-side receivers. |
 | Pushed brain commit not mounted | Run `rc dev brain status`; then `rc dev brain sync` if behind/stale. |
 | `rc dev brain sync` reports manual reconcile | RootCause support request with `rc dev brain status -o json`. |
-| Channel promote / tenant publish / action wiring not exposed through public `rc` | RootCause support request; product gap to close. |
+| Shared project channel points at an old SHA | With a project-maintainer login, sync and run `rc dev brain promote --channel stable\|edge --sha <exact-full-40-character-sha>`, then verify channel status. |
+| Promotion denied for a tenant-scoped login | Expected: one tenant cannot move the shared channel for all tenants. Use an authorized project-maintainer login or request that access. |
+| Tenant brain publish / action wiring not exposed through public `rc` | RootCause support request; product gap to close. Tenant brains use `main` and have no channels. |
 
 ## Support Request Template
 
@@ -32,5 +34,6 @@ Run ids / trace URLs:
 Why this is not a brain-only change:
 ```
 
-Keep support requests in product terms: "sync origin", "promote shared project brain to stable", or
-"wire/diagnose action execution", not private host commands.
+Keep support requests in product terms: "sync origin", "grant project-maintainer promotion access",
+or "wire/diagnose action execution", not private host commands. Operator promotion is break-glass and
+outside this external-maintainer kit.

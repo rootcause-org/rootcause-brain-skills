@@ -13,6 +13,7 @@ Diagnosis is read-only by default. Test-run creation and action execution are ex
 | `rc ask --brain-ref dev/<branch>` | Creates a test run against a pushed dev ref. It does not post a callback or durable journal push; proposed actions/PRs are test artifacts. |
 | `rc run feedback <id>` | Records score/comment feedback for consolidation. |
 | `rc run retry <id>` | Creates a replacement production run, optionally at a different model tier. |
+| `rc dev brain promote --channel <channel> --sha <sha>` | Moves a shared project brain channel for all its runs/tenants. Project-maintainer only; exact-SHA, serialized, idempotent, and audited. |
 | Action proposal | LLM proposes only. No customer mutation. |
 | Action confirmation or `rc dev console action run` | Real mutation path. Human/product-gated, outside the LLM loop. |
 | `brain_action.py --commit` | Local real write to whatever `./.env.action` points at. Use only against local/staging or intentionally safe targets. |

@@ -67,5 +67,6 @@ Use `rc-debug` for trace analysis and `brain-publish` after committed local edit
 ## Definition Of Done
 
 For a brain change: local checks pass or known laptop infra gaps are named, production confidence is
-captured with `rc ask --brain-ref` when needed, and `brain-publish` has either used a public publish
-surface or produced a RootCause support request.
+captured with `rc ask --brain-ref` when needed, and `brain-publish` has either completed the public
+flow or produced a RootCause support request. For a channel-backed shared brain, do not call the
+publish successful until status or a normal run without `--brain-ref` proves the exact intended SHA.

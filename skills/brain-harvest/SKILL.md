@@ -127,7 +127,8 @@ personal/mixed). Edit the matching skeleton in step 4 instead of inventing struc
    | Voice, language, signature, formality, wording preference, "sound more like us" | Persona settings via `rc project settings behavior`. |
    | Which inbound mail should become a draft, broad draft/no-draft guidance | Triage policy via `rc project triage policy`. |
    | Deterministic always-skip or always-process rule based on sender/subject/header | Triage hard rule via `rc project triage rules`. |
-   | Missing public surface, channel promotion, tenant publish, action wiring, cache divergence | `brain-publish` support request. |
+   | Shared project channel promotion | `brain-publish` exact-SHA public `rc` flow. |
+   | Missing public surface, tenant publish, action wiring, cache divergence | `brain-publish` support request. |
 
    Onboarding-shaped outputs land where the mechanical seeder already points: `notes/onboarding-inbox.md`-style
    survey facts, `notes/mailbox-patterns.md`-style distilled patterns, and case/terminology files. Start

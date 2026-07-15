@@ -45,7 +45,7 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 | `rc-health` | Stale mirrors plus dead-lettered runs. |
 | `rc-fleet` | Recent fleet digest plus recurring failure patterns. |
 | `brain-dev-upgrade` | Update local kit and `rc` CLI. |
-| `brain-publish` | Post-edit `rc dev brain status/sync`, promote/support-request step using public surfaces only. |
+| `brain-publish` | Exact-SHA project-brain sync/promotion/verification using public `rc`, plus support handoff for remaining gaps. |
 
 Older duplicate entrypoints are not shipped; use the canonical skills above.
 
@@ -64,6 +64,7 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 | `rc ask` against `main` | Creates a real production run; may create draft/journal/test artifacts and bill usage. |
 | `rc ask --brain-ref dev/<branch>` | Creates a test run; no callback or durable journal push; proposals are test artifacts. |
 | `rc run feedback` / `rc run retry` | Writes learning feedback / creates a replacement production run. |
+| `rc dev brain promote --channel <channel> --sha <sha>` | Moves a shared project brain channel for all its runs/tenants; project-maintainer only and audited. |
 | Action proposal | LLM proposes only; no mutation. |
 | Action confirmation / public dev-trigger when exposed | Real mutation path. |
 | `brain_action.py --commit` | Local real write to whatever `.env.action` targets. |
@@ -80,6 +81,8 @@ Details: [docs/side-effects.md](docs/side-effects.md).
   refs.
 - `rc dev brain sync` refreshes the deployed brain cache from `origin/main` and invalidates warm console
   workspaces.
+- `rc dev brain promote --channel stable|edge --sha <exact-full-40-character-sha>` moves a shared project channel;
+  verify the resolved channel SHA in status or a normal run before claiming success.
 
 ## Docs
 

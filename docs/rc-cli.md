@@ -43,6 +43,7 @@ rc project triage rules add effect=skip match_kind=subject_contains pattern="new
 rc project triage rules add effect=force_process match_kind=sender_domain pattern="example.com"
 rc dev brain status
 rc dev brain sync
+rc dev brain promote --channel stable --sha <exact-full-40-character-sha>
 rc project env keys
 rc project env pull
 rc project env diff
@@ -199,18 +200,32 @@ and is audited. The file is gitignored and contains real secrets.
 For the full choose-the-store flow, tenant behavior, and action write-plane rules, read
 [docs/secrets.md](secrets.md).
 
-## Brain Cache
+## Brain Cache And Channels
 
 ```bash
 rc dev brain status
 rc dev brain sync
+rc dev brain promote --channel stable --sha <exact-full-40-character-sha> -o json
+rc dev brain status -o json
 rc dev console bash list
 ```
 
 Use after pushing a brain commit. `status` fetches `origin/main` and reports mounted SHA, origin SHA,
-staleness, and sync time. `sync` fast-forwards the deployed cache when safe and expires warm console
-workspaces; the next `rc dev console bash run` remounts the refreshed `/brain`. If sync reports manual reconcile,
-use `brain-publish` with the status output.
+staleness, sync time, and resolved `stable`/`edge` channel SHAs with origin comparison/provenance.
+`sync` fast-forwards the managed `main` cache when safe and expires warm console workspaces; the next
+`rc dev console bash run` remounts the refreshed `/brain`.
+
+For a shared project brain, `promote` moves only the named channel to the exact reachable SHA. It
+requires a project-level maintainer login; tenant-scoped tokens are denied because the channel is
+shared by every tenant. Tenant brains use `main` and have no promotion route. The JSON result includes
+`project`, `channel`, `old_sha`, `new_sha`, `changed`, and `idempotent`. Reject or stop on unknown SHAs, unsafe
+channels, wrong-project authorization, or push failure.
+
+Never infer channel freshness from `main` being current. Confirm the intended channel resolves the
+exact SHA at `.status.channels[] | select(.channel == "stable") | .resolved_sha` (substitute `edge` as
+needed), or create a safe normal `rc ask` without `--brain-ref` and confirm its `brain_resolved` trace.
+Each channel entry also reports `origin_sha`, `main_sha`, `matches_origin`, `matches_main`, `state`, and
+`provenance`. If sync reports manual reconcile, use `brain-publish` with the status output.
 
 ## DB And Bash Examples
 
