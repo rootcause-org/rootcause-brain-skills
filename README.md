@@ -45,6 +45,7 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 | `rc-health` | Stale mirrors plus dead-lettered runs. |
 | `rc-fleet` | Recent fleet digest plus recurring failure patterns. |
 | `brain-dev-upgrade` | Update local kit and `rc` CLI. |
+| [`brain-git-sync`](skills/brain-git-sync/SKILL.md) | Safely inventory, merge, and push local plus cross-computer work to `origin/main`. |
 | `brain-publish` | Exact-SHA project-brain sync/promotion/verification using public `rc`, plus support handoff for remaining gaps. |
 
 Older duplicate entrypoints are not shipped; use the canonical skills above.

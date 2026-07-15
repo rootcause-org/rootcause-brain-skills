@@ -1,0 +1,4 @@
+interface:
+  display_name: "Brain Dev: Git sync"
+  short_description: "Safely reconcile and publish brain Git work"
+  default_prompt: "Use $brain-git-sync to safely reconcile and publish this brain repository's Git work."

@@ -3,8 +3,9 @@
 #
 # Why this exists: all local brains symlink ONE shared clone (~/.rootcause-brain-skills) at a pinned
 # TAG (see install.sh). The skill ships strictly tag-pinned — every skill/doc change is a release — so
-# "refresh all brains" means: bump the single version line (RELEASING.md), commit on main, push and
-# verify origin/main, then push the tag, ensure its workspace image exists, and refresh each brain.
+# "refresh all brains" means: bump the single version line (RELEASING.md), commit on main, reconcile
+# and verify origin/main through brain-git-sync, then create/push the tag, ensure its workspace image
+# exists, and refresh each brain.
 #
 # Usage:
 #   ./refresh-brains.sh                         # refresh-only: re-point shared clone to the newest
@@ -20,7 +21,7 @@
 #   --release <patch|minor|major|X.Y.Z>  cut a release before refreshing
 #   --relock      regen runtime/requirements.lock and force a full image rebuild (deps changed)
 #   --no-image    skip the ghcr image step entirely (uv mode still works; docker mode needs it later)
-#   --no-push     commit + tag locally but do NOT push main/tag/image (brains can't fetch it yet)
+#   --no-push     commit locally but do NOT sync/tag/push/image (brains can't fetch it yet)
 #   --dry-run     show every step without running it
 #   [BRAIN_DIR...]  explicit brains to refresh (default: auto-discover siblings)
 #
@@ -63,8 +64,6 @@ verify_origin_main() {
   echo "  verified origin/main == HEAD ($head_sha)"
 }
 
-CUR="$(grep -E '^VERSION = ' "$ROOT/skills/local-brain-work/scripts/brain_env.py" | sed -E 's/.*"([0-9.]+)".*/\1/')"
-
 # ── 1. release (optional) ───────────────────────────────────────────────────
 if [ -n "$RELEASE" ]; then
   BRANCH="$(git -C "$ROOT" symbolic-ref --quiet --short HEAD || true)"
@@ -72,6 +71,18 @@ if [ -n "$RELEASE" ]; then
     echo "error: releases must be cut from main (current: ${BRANCH:-detached HEAD})" >&2
     exit 1
   fi
+
+  if [ -n "$(git -C "$ROOT" status --porcelain=v1 --untracked-files=all)" ]; then
+    echo "error: release requires a clean main; commit intended work first and leave unrelated WIP out" >&2
+    exit 1
+  fi
+
+  # A stale computer must observe an already-cut release before choosing the next version.
+  say "Reconcile main before choosing the release version"
+  run uv run --no-project python "$ROOT/skills/brain-git-sync/scripts/brain_git_sync.py" \
+    --repo "$ROOT" --max-push-attempts 4 \
+    --verify-command 'SKIP_IMAGE=1 SKIP_PROD=1 ./check-release-coherence.sh'
+  CUR="$(grep -E '^VERSION = ' "$ROOT/skills/local-brain-work/scripts/brain_env.py" | sed -E 's/.*"([0-9.]+)".*/\1/')"
 
   case "$RELEASE" in
     patch|minor|major)
@@ -87,6 +98,8 @@ if [ -n "$RELEASE" ]; then
   esac
   say "Release v$CUR → v$NEW"
   git -C "$ROOT" rev-parse "v$NEW" >/dev/null 2>&1 && { echo "error: tag v$NEW already exists" >&2; exit 1; }
+  git -C "$ROOT" ls-remote --exit-code --tags origin "refs/tags/v$NEW" >/dev/null 2>&1 && {
+    echo "error: remote tag v$NEW already exists; refetch before choosing a version" >&2; exit 1; }
 
   # 1a. bump every literal RELEASING.md lists (all $CUR hits in these files are OUR version).
   say "Bump version literals"
@@ -119,25 +132,32 @@ if [ -n "$RELEASE" ]; then
     run env SKIP_IMAGE=1 SKIP_PROD=1 "$ROOT/check-release-coherence.sh"
   fi
 
-  # 1d. One release commit (includes pending skill/doc edits). The tag is created locally, but it is
-  #     never published until the exact commit is pushed to and verified at origin/main.
+  # 1d. One release commit (includes pending skill/doc edits). Do not create even a local release tag
+  #     until brain-git-sync has reconciled and verified this commit at origin/main.
   say "Commit release on main"
   run git -C "$ROOT" add -A
   if [ "$DRY" = 1 ]; then git -C "$ROOT" status --short; else
     git -C "$ROOT" commit -q -m "release: v$NEW" \
       -m "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
   fi
-  run git -C "$ROOT" tag -a -m "v$NEW" "v$NEW"   # annotated: repo config forces signed/annotated tags
   if [ "$NO_PUSH" = 1 ]; then
-    echo "  (--no-push: release commit/tag remain local; origin/main and remote tag are unchanged)"
+    echo "  (--no-push: release commit remains local; no tag created; origin/main is unchanged)"
   else
-    say "Publish main, verify it, then publish tag"
-    # Do not let a user/global push.followTags=true smuggle the annotated release tag into this
-    # first push. The tag must remain remote-invisible until main has been fetched and verified.
-    run git -C "$ROOT" -c push.followTags=false push origin HEAD:main
-    run git -C "$ROOT" fetch origin refs/heads/main:refs/remotes/origin/main
+    say "Reconcile and publish release commit through brain-git-sync"
+    run uv run --no-project python "$ROOT/skills/brain-git-sync/scripts/brain_git_sync.py" \
+      --repo "$ROOT" --max-push-attempts 4 \
+      --verify-command 'SKIP_IMAGE=1 SKIP_PROD=1 ./check-release-coherence.sh'
     run verify_origin_main
-    run git -C "$ROOT" -c push.followTags=false push origin "refs/tags/v$NEW"
+
+    say "Create and publish tag only after verified origin/main"
+    if git -C "$ROOT" ls-remote --exit-code --tags origin "refs/tags/v$NEW" >/dev/null 2>&1; then
+      echo "error: remote tag v$NEW appeared during release; refusing to replace it" >&2
+      exit 1
+    fi
+    run git -C "$ROOT" tag -a -m "v$NEW" "v$NEW"   # annotated: repo config may force signed tags
+    # Include main in the atomic request so a normal concurrent advance rejects tag publication.
+    run git -C "$ROOT" -c push.followTags=false push --atomic origin \
+      HEAD:refs/heads/main "refs/tags/v$NEW"
   fi
 
   # 1e. workspace image for the tag. Rebuild only when runtime/ changed; else re-tag the prior image
@@ -173,7 +193,7 @@ fi
 # ── 2. fan out to every local brain (install.sh is the per-brain primitive) ──
 if [ -n "$RELEASE" ] && [ "$NO_PUSH" = 1 ] && [ "$DRY" != 1 ]; then
   say "Skip fan-out because --no-push leaves $TARGET unfetchable by the shared clone"
-  echo; echo "done — release commit/tag created locally at $TARGET; push it before refreshing brains"
+  echo; echo "done — release commit created locally for $TARGET; follow RELEASING.md's manual sync/verify/tag steps"
   exit 0
 fi
 

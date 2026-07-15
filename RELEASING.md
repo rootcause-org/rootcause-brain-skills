@@ -12,9 +12,10 @@
 > ```
 >
 > The skill ships **strictly tag-pinned** (every skill change is a release), so brains only pick up a
-> change once it's a pushed tag. Remote publication is deliberately **main first, tag second**: a tag
-> is never pushed unless `origin/main` resolves to the exact release commit. `--no-push` keeps both
-> main and the tag remote unchanged. The image bakes `runtime/` only (never the skill), so a skill/doc
+> change once it's a pushed tag. Remote publication is deliberately **reconciled main first, tag
+> second**: `brain_git_sync.py` merges cross-computer work, retests, pushes, and verifies
+> `origin/main` before the release creates any tag. `--no-push` leaves the release commit local,
+> creates no tag, and keeps remote refs unchanged. The image bakes `runtime/` only, so a skill/doc
 > release **re-tags** the prior image instead of rebuilding — `--relock` forces a real rebuild for dep
 > changes. Prod (`rootcause`) stays a separate, deploy-gated step the script only reminds you of.
 >
@@ -35,15 +36,17 @@ commit, then push/verify main before publishing the tag:
 | **Prod (separate repo)** | `rootcause/runtime/Dockerfile` | the `rootcause-runtime @ git+…@vX.Y.Z` pin + workspace image tag |
 | **Prod lock copy (separate repo)** | `rootcause/runtime/requirements.lock` | `cp runtime/requirements.lock ../rootcause/runtime/requirements.lock` (lockstep copy) |
 
-Then, when performing the steps manually, preserve the same main-first/tag-second invariant:
+Then, when performing the steps manually, preserve the same merge/main-first/tag-second invariant:
 
 ```bash
 test "$(git branch --show-current)" = main
-git tag -a -m vX.Y.Z vX.Y.Z
-git -c push.followTags=false push origin HEAD:main
-git fetch origin refs/heads/main:refs/remotes/origin/main
+uv run --no-project python skills/brain-git-sync/scripts/brain_git_sync.py \
+  --repo "$PWD" --max-push-attempts 4 \
+  --verify-command 'SKIP_IMAGE=1 SKIP_PROD=1 ./check-release-coherence.sh'
 test "$(git rev-parse origin/main)" = "$(git rev-parse HEAD)"
-git -c push.followTags=false push origin refs/tags/vX.Y.Z  # only now make the tag resolvable
+git tag -a -m vX.Y.Z vX.Y.Z  # only after verified origin/main
+git -c push.followTags=false push --atomic origin \
+  HEAD:refs/heads/main refs/tags/vX.Y.Z  # main must still contain the tagged commit
 docker build -f docker/Dockerfile -t ghcr.io/rootcause-org/workspace:vX.Y.Z . && docker push ghcr.io/rootcause-org/workspace:vX.Y.Z
 ```
 

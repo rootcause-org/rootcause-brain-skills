@@ -2,13 +2,13 @@
   "name": "rootcause-brain-skills",
   "owner": { "name": "rootcause" },
   "metadata": {
-    "description": "Rootcause Brain Dev skills: Local Brain Work, rc ask validation, production-run debugging, health/fleet review, and publish support workflows, distributed alongside the pinned rootcause-runtime package."
+    "description": "Rootcause Brain Dev skills: local checks, safe cross-computer Git sync, rc ask validation, production-run debugging, health/fleet review, and exact-SHA publish workflows, distributed alongside the pinned rootcause-runtime package."
   },
   "plugins": [
     {
       "name": "brain-dev",
       "source": ".",
-      "description": "Install the rootcause brain skills: Local Brain Work, rc ask validation, production-run debugging, health/fleet review, and publish support workflows.",
+      "description": "Install the rootcause brain skills: local checks, safe cross-computer Git sync, rc ask validation, production-run debugging, health/fleet review, and exact-SHA publish workflows.",
       "version": "0.1.85"
     }
   ]

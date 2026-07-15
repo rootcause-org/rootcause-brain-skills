@@ -30,7 +30,8 @@ mounts.
 | "Is anything broken?" stale mirrors or dead letters | `rc-health` |
 | "What keeps failing?" recent fleet/pattern review | `rc-fleet` |
 | Update local skills kit or `rc` CLI | `brain-dev-upgrade` |
-| Make local brain edits live, sync, promote, publish, or prepare support handoff | `brain-publish` |
+| Reconcile local work and `origin/main`, including cross-computer divergence | `brain-git-sync` |
+| Make reconciled brain edits live, server-sync, promote, publish, or prepare support handoff | `brain-publish` |
 
 ## Locate The Engine
 
@@ -162,5 +163,5 @@ normal grounding.
 
 ## Finish
 
-After local edits: verify with the smallest useful local checks, commit in the brain repo, optionally
-run `brain-ask` against a pushed `dev/*` ref, then use `brain-publish`.
+After local edits: verify with the smallest useful checks, use `brain-git-sync` to commit/reconcile/push
+`main`, optionally run `brain-ask` against a pushed `dev/*` ref, then use `brain-publish`.

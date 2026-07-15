@@ -62,11 +62,13 @@ rc ask "<customer-style question>" --brain-ref dev/<branch>
 rc run debug <run_id>
 ```
 
-Use `rc-debug` for trace analysis and `brain-publish` after committed local edits.
+Use `rc-debug` for trace analysis, `brain-git-sync` to reconcile and push local/cross-computer work,
+and `brain-publish` to sync/promote the verified `origin/main` SHA.
 
 ## Definition Of Done
 
-For a brain change: local checks pass or known laptop infra gaps are named, production confidence is
-captured with `rc ask --brain-ref` when needed, and `brain-publish` has either completed the public
+For a brain change: local checks pass or known laptop infra gaps are named, `brain-git-sync` proves
+local `main` and freshly fetched `origin/main` are the same ancestry-verified SHA, production confidence
+is captured with `rc ask --brain-ref` when needed, and `brain-publish` has either completed the public
 flow or produced a RootCause support request. For a channel-backed shared brain, do not call the
 publish successful until status or a normal run without `--brain-ref` proves the exact intended SHA.

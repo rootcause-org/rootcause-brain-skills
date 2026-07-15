@@ -86,6 +86,7 @@ Only these are first-class:
 - `prod-console` — direct guarded production primitives through `rc dev console capabilities`,
   `rc dev console database`, `rc dev console bash`, and `rc dev console action`.
 - `brain-dev-upgrade` — update kit and `rc`.
+- `brain-git-sync` — safely reconcile local brain work with cross-computer `origin/main` and push.
 - `brain-publish` — post-edit publish/support-request step.
 
 Do not reintroduce aliases such as `brain-debug`, `observability`, `rc-inspect`, or `rc-thread`.
