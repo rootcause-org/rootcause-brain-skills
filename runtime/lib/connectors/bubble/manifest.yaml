@@ -55,11 +55,17 @@ help_md: |
 
   Search with Bubble `constraints` — a JSON array of {key, constraint_type, value}; constraint types
   include equals, "not equal", "text contains", "greater than", "less than", in, "not in", is_empty,
-  is_not_empty, "geographic_search":
+  is_not_empty, "geographic_search". The `key` is the field's exact key — with display keys on (the
+  default) these are DISPLAY NAMES, often WITH SPACES (`"Created Date"`, `"Modified Date"`), so quote
+  them; `_id` is always present:
 
-      python -m lib.api get bubble obj/user \
+      python -m lib.api get bubble obj/user --paginate \
         --query 'constraints=[{"key":"email","constraint_type":"equals","value":"a@example.com"}]' \
-        --pick _id,email,name
+        --pick _id,name,"Created Date"
+
+  Pass `--paginate` whenever you use `--pick`: a plain `get` returns the raw
+  {"response":{"results":[…]}} envelope, so `--pick` (which selects from the top level) would find
+  nothing — `--paginate` unwraps `response.results` and applies `--pick` per item.
 
   Sort with sort_field + descending=true. Pagination is offset-cursor (`cursor`+`limit`, max 100 per
   page); pass `--paginate` to collect all pages. The response envelope is
@@ -72,13 +78,25 @@ help_md: |
   are out of scope here and belong on the human-confirmed action plane.
 
   The base is templated per app: the credential carries the app domain, so drive RELATIVE paths
-  (obj/<type>, meta/swagger.json). The Data API must be enabled per data type in the app's
-  Settings › API; a type that 404s is simply not exposed yet.
+  (obj/<type>, meta/swagger.json). Two live gotchas:
+    - Un-DEPLOYED apps serve the API ONLY under the dev prefix `/version-test` (e.g.
+      `https://app.bubbleapps.io/version-test/api/1.1/...`); the live path 404s until the customer
+      clicks Deploy. The credential may carry that path — `token@https://app.bubbleapps.io/version-test`
+      — and it is preserved onto the base.
+    - Field keys are DISPLAY NAMES (spaces) when Settings › API "Use field display… for key names" is
+      on (the default) — quote them in `constraints`/`--pick`.
+  The Data API must be enabled per data type in Settings › API; a type that 404s is simply not
+  exposed yet. On the FREE plan every call (data AND swagger) returns
+  {"error_class":"Unauthorized","translation":"…Please upgrade your Bubble subscription…"} — that is
+  plan gating, not a bad token; a paid plan is required.
 onboarding_md: |
   Ask which things in the app customers email about (accounts, orders, bookings, subscriptions) and
   how a sender email maps to a record. Run `python -m lib.connectors.bubble endpoints` and `types`
-  first to capture the exposed data types, their exact field names (Bubble keeps a `_id` and
-  `created_date` on every thing), and which fields identify a customer. Note the constraint spellings
-  and status enums that matter, and confirm each needed data type has its Data API enabled in
-  Settings › API. Editing or creating a thing, or triggering a workflow, is a write and must reference
-  a live action or remain an explicit manual step.
+  first to capture the exposed data types and their exact field KEYS — with display keys on (the
+  default) these are display names WITH SPACES (`"Created Date"`, `"Created By"`); `_id` is always
+  present. Note the constraint spellings and status enums that matter, and confirm each needed data
+  type has its Data API enabled in Settings › API. Confirm the app is DEPLOYED: an un-deployed app
+  serves only under `/version-test`, so the credential must carry that path
+  (`token@https://app.bubbleapps.io/version-test`). A paid Bubble plan is required — the free plan
+  returns an "upgrade" Unauthorized for every call. Editing or creating a thing, or triggering a
+  workflow, is a write and must reference a live action or remain an explicit manual step.

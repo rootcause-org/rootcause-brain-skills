@@ -68,13 +68,18 @@ def _truncate(text: Any, limit: int) -> str:
 
 
 def _group_of(path: str, op: dict[str, Any]) -> str:
-    """Bucket an endpoint by its first tag, else its ``/obj/<type>`` type, else first path segment."""
-    tags = op.get("tags")
-    if isinstance(tags, list) and tags:
-        return str(tags[0])
+    """Bucket an endpoint by its ``/obj/<type>`` type, else its first tag, else first path segment.
+
+    The Data-API type wins over the tag because Bubble tags EVERY object operation ``Data`` — grouping
+    on the tag collapses the whole inventory into one ``## Data`` bucket, so the per-type ``/obj/<type>``
+    segment reads far better. Non-object paths (``/wf/<name>``, ``/meta/…``) fall back to the tag.
+    """
     segs = [s for s in path.split("/") if s]
     if len(segs) >= 2 and segs[0] == "obj":
         return segs[1]
+    tags = op.get("tags")
+    if isinstance(tags, list) and tags:
+        return str(tags[0])
     return segs[0] if segs else "(root)"
 
 

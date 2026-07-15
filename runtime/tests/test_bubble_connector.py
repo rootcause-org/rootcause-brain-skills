@@ -2,10 +2,12 @@
 
 Two things are proven here:
 
-1. **Token-cheap swagger discovery** — a miniature but realistically shaped Bubble swagger 2.0 (``/obj/<type>``
-   Data API paths, ``/wf/<name>`` workflow paths, ``definitions`` with Bubble-style ``_id`` /
-   ``created_date`` fields and a long enum) drives ``lib.connectors.bubble``. The inventory stays compact
-   even when the swagger is bloated with a multi-KB description and a huge enum (the several-MB reality).
+1. **Token-cheap swagger discovery** — a miniature fixture shaped like a REAL Bubble swagger 2.0
+   (``/obj/<type>`` collection + ``/{UniqueID}`` item paths, every operation tagged ``["Data"]``,
+   ``definitions`` carrying a ``<type>Body`` companion and DISPLAY-NAME fields with spaces such as
+   ``"Created Date"``) drives ``lib.connectors.bubble``. The inventory stays compact even when the
+   swagger is bloated with a multi-KB description and a huge enum (the several-MB reality), and — the
+   key task-4 property — groups PER TYPE even though the real tags collapse to one ``Data`` bucket.
 2. **Manifest correctness + offset pagination** — the YAML row loads with bearer/broker/offset fields, and
    the ``response.results`` offset envelope stitches across pages through the generic ``lib.api`` paginator.
 
@@ -30,46 +32,78 @@ _FAKE_TOKEN = "bubble_fake_admin_token_0000"
 # Broker URL the brokered client targets for the swagger fetch (host joins the app base host-side).
 _BROKER_SWAGGER_URL = "http://rc-broker.internal/bubble/meta/swagger.json"
 
-# A long enum to prove truncation; a long endpoint summary to prove summary truncation; a multi-KB
-# description to prove the inventory stays compact regardless of swagger bloat.
+# A long enum to prove truncation; a long endpoint description to prove summary truncation; a multi-KB
+# description to prove the inventory stays compact regardless of swagger bloat. (Real Bubble ops carry
+# no `summary`; the inventory falls back to `description`, which apps with option sets do populate.)
 _STATUS_ENUM = ["new", "pending", "active", "suspended", "cancelled", "archived", "deleted"]
-_LONG_SUMMARY = "List every user object in the application including profile, billing and audit fields " * 3
+_LONG_DESC = "'status' field of the current Todo — one of the option-set values the app defines " * 3
 _BLOAT = "x" * 20000
 
+# Shaped from a real, sanitized Bubble app swagger: app name replaced with a fake ("acme-support"),
+# every operation tagged ["Data"], `<type>Body` companion definitions, display-name field keys with
+# spaces (`Created Date`, `Modified Date`, `Created By`) plus the always-present `_id`.
 MINI_SWAGGER = {
     "swagger": "2.0",
-    "info": {"title": "myapp", "version": "1.0", "description": _BLOAT},
+    "info": {"title": "acme-support", "version": "1.0.0"},
+    "host": "acme-support.bubbleapps.io",
+    "basePath": "/version-test/api/1.1",
     "paths": {
-        "/obj/user": {
-            "get": {"tags": ["user"], "summary": _LONG_SUMMARY},
-            "post": {"tags": ["user"], "summary": "Create a user"},
+        "/obj/todo": {
+            "get": {"tags": ["Data"], "description": _LONG_DESC},
+            "post": {"tags": ["Data"], "description": "Create a new Todo"},
         },
-        "/obj/order": {
-            "get": {"tags": ["order"], "summary": "List orders"},
+        "/obj/todo/{UniqueID}": {
+            "get": {"tags": ["Data"]},
+            "patch": {"tags": ["Data"]},
+            "put": {"tags": ["Data"]},
+            "delete": {"tags": ["Data"]},
+        },
+        "/obj/user": {
+            "get": {"tags": ["Data"]},
+            "post": {"tags": ["Data"]},
+        },
+        "/obj/user/{UniqueID}": {
+            "get": {"tags": ["Data"]},
         },
         "/wf/reset-password": {
-            "post": {"tags": ["workflow"], "summary": "Trigger the reset-password workflow"},
+            "post": {"tags": ["Workflow"], "summary": "Trigger the reset-password workflow"},
         },
     },
     "definitions": {
+        "todo": {
+            "type": "object",
+            "properties": {
+                "_id": {"type": "string"},
+                "Created Date": {"type": "string", "format": "date-time"},
+                "Modified Date": {"type": "string", "format": "date-time"},
+                "Created By": {"type": "string"},
+                "task_name": {"type": "string"},
+                "status": {"type": "string", "enum": _STATUS_ENUM},
+                "owner_user": {"type": "string"},
+                "Slug": {"type": "string", "description": _BLOAT},
+            },
+        },
+        "todoBody": {
+            "type": "object",
+            "properties": {
+                "task_name": {"type": "string"},
+                "status": {"type": "string"},
+                "owner_user": {"type": "string"},
+            },
+        },
         "user": {
             "type": "object",
             "properties": {
                 "_id": {"type": "string"},
-                "created_date": {"type": "string"},
-                "email": {"type": "string"},
+                "Created Date": {"type": "string", "format": "date-time"},
+                "Modified Date": {"type": "string", "format": "date-time"},
                 "name": {"type": "string"},
-                "status": {"type": "string", "enum": _STATUS_ENUM},
-                "order_ids": {"type": "array", "items": {"type": "string"}},
+                "authentication": {"type": "object"},
             },
         },
-        "order": {
+        "userBody": {
             "type": "object",
-            "properties": {
-                "_id": {"type": "string"},
-                "amount": {"type": "number"},
-                "description": {"type": "string", "description": _BLOAT},
-            },
+            "properties": {"name": {"type": "string"}},
         },
     },
 }
@@ -99,54 +133,71 @@ class BubbleDiscovery(unittest.TestCase):
     def test_endpoint_extraction_grouped_and_compact(self):
         rows = bubble.collect_endpoints(MINI_SWAGGER)
         pairs = [(r["method"], r["path"]) for r in rows]
+        self.assertIn(("GET", "/obj/todo"), pairs)
+        self.assertIn(("POST", "/obj/todo"), pairs)
         self.assertIn(("GET", "/obj/user"), pairs)
-        self.assertIn(("POST", "/obj/user"), pairs)
-        self.assertIn(("GET", "/obj/order"), pairs)
         self.assertIn(("POST", "/wf/reset-password"), pairs)
-        # Grouped by tag/type, alphabetical.
+        # Grouped by type/tag, alphabetical.
         groups = [r["group"] for r in rows]
         self.assertEqual(groups, sorted(groups, key=str.lower))
 
         text = bubble.format_endpoints(rows)
-        self.assertIn("## user", text)
+        self.assertIn("## todo", text)
         self.assertIn("GET", text)
         # Compact despite a 20 KB swagger description: inventory stays a few hundred tokens.
         self.assertLess(len(text), 1500)
 
+    def test_data_tagged_ops_group_per_type_not_one_data_bucket(self):
+        """Task-4 contract: real Bubble tags EVERY object op ``Data``; grouping must still read
+        per-type off the ``/obj/<type>`` segment, never collapse into a single ``## Data`` heading."""
+        rows = bubble.collect_endpoints(MINI_SWAGGER, "obj")
+        groups = {r["group"] for r in rows}
+        self.assertEqual(groups, {"todo", "user"})
+        self.assertNotIn("Data", groups)
+        text = bubble.format_endpoints(rows)
+        self.assertIn("## todo", text)
+        self.assertIn("## user", text)
+        self.assertNotIn("## Data", text)
+
     def test_summary_truncation(self):
         rows = bubble.collect_endpoints(MINI_SWAGGER)
-        user_get = next(r for r in rows if r["path"] == "/obj/user" and r["method"] == "GET")
-        self.assertLessEqual(len(user_get["summary"]), 80)
-        self.assertTrue(user_get["summary"].endswith("…"))
+        # Real ops have no `summary`; the inventory falls back to the op `description`.
+        todo_get = next(r for r in rows if r["path"] == "/obj/todo" and r["method"] == "GET")
+        self.assertLessEqual(len(todo_get["summary"]), 80)
+        self.assertTrue(todo_get["summary"].endswith("…"))
 
     def test_path_filter_excludes_workflow(self):
         rows = bubble.collect_endpoints(MINI_SWAGGER, "obj")
         paths = {r["path"] for r in rows}
-        self.assertEqual(paths, {"/obj/user", "/obj/order"})
+        self.assertEqual(paths, {"/obj/todo", "/obj/todo/{UniqueID}", "/obj/user", "/obj/user/{UniqueID}"})
         self.assertNotIn("/wf/reset-password", paths)
 
     def test_types_listing_and_enum_truncation(self):
         rows = bubble.collect_types(MINI_SWAGGER)
         by_name = {r["name"]: r for r in rows}
-        self.assertEqual(set(by_name), {"user", "order"})
-        fields = {f["name"]: f["type"] for f in by_name["user"]["fields"]}
-        self.assertEqual(fields["email"], "string")
-        self.assertEqual(fields["order_ids"], "array<string>")
+        # Real swagger exposes the object type AND its `<type>Body` write companion.
+        self.assertEqual(set(by_name), {"todo", "todoBody", "user", "userBody"})
+        fields = {f["name"]: f["type"] for f in by_name["todo"]["fields"]}
+        # Display-name field keys carry spaces; `_id` is always present.
+        self.assertEqual(fields["Created Date"], "string")
+        self.assertEqual(fields["_id"], "string")
+        self.assertIn("task_name", fields)
         # Long enum truncated to a few shown + "+N more".
         self.assertTrue(fields["status"].startswith("enum["))
         self.assertIn("+3 more", fields["status"])
 
         text = bubble.format_types(rows)
-        self.assertIn("user:", text)
-        # The 20 KB bloat description lives under order.description but never floods the listing.
+        self.assertIn("todo:", text)
+        self.assertIn("Created Date (string)", text)
+        # The 20 KB bloat description lives under todo.Slug but never floods the listing.
         self.assertLess(len(text), 1200)
 
     def test_full_type_prints_complete_schema(self):
-        out = bubble.format_full_type(MINI_SWAGGER, "user")
-        self.assertIn("# user", out)
-        self.assertIn("created_date", out)
+        out = bubble.format_full_type(MINI_SWAGGER, "todo")
+        self.assertIn("# todo", out)
+        self.assertIn("Created Date", out)
         # Case-insensitive match and unknown-type guidance.
-        self.assertIn("# order", bubble.format_full_type(MINI_SWAGGER, "ORDER"))
+        self.assertIn("# user", bubble.format_full_type(MINI_SWAGGER, "USER"))
         self.assertIn("Unknown type", bubble.format_full_type(MINI_SWAGGER, "nope"))
 
     @responses.activate

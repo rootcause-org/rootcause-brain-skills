@@ -803,7 +803,52 @@ def client(manifest: Manifest, *, token_key: str | None = None, **kw) -> Client:
     cred = ""
     if not manifest.brokered and manifest.auth.strategy not in ("none", ""):
         cred = oauth.token(token_key or manifest.key)
+        manifest, cred = _resolve_host_embedded_credential(manifest, cred)
     return Client(manifest=manifest, credential=cred, **kw)
+
+
+def _resolve_host_embedded_credential(manifest: Manifest, credential: str) -> tuple[Manifest, str]:
+    """Split a per-app connector's ``<secret>@https://<host>[/<path>]`` credential locally.
+
+    Per-app connectors (bubble, woocommerce) template their ``base_url`` with a ``{placeholder}`` and
+    carry the concrete app URL inside the env credential, because the host is customer-specific. In
+    production the BROKER resolves this and the in-container env var holds no raw credential, so this
+    never runs there (brokered clients skip credential resolution upstream). Locally there is no
+    broker, so we do the same split the host does: fill the placeholder with the credential's
+    host+path (path preserved — e.g. a Bubble dev app's ``/version-test``) and keep only the secret
+    for auth. Connectors whose base_url has no placeholder are untouched.
+    """
+    if "{" not in manifest.base_url or "}" not in manifest.base_url:
+        return manifest, credential
+    secret, base = _split_host_embedded_credential(credential)
+    if not base:
+        return manifest, credential
+    return replace(manifest, base_url=_fill_base_placeholder(manifest.base_url, base)), secret
+
+
+def _split_host_embedded_credential(credential: str) -> tuple[str, str]:
+    """Return ``(secret, base_url)`` from ``<secret>@https://<host>[/<path>]``; ``("", "")`` if absent.
+
+    Split on the LAST ``@https://`` / ``@http://`` so a secret that itself contains ``@`` survives.
+    The secret half may be ``user:pass`` (woocommerce basic) or a bare token (bubble bearer); this
+    function doesn't interpret it. The base keeps any path and loses only a trailing slash.
+    """
+    for marker in ("@https://", "@http://"):
+        i = credential.rfind(marker)
+        if i < 0:
+            continue
+        secret = credential[:i].strip()
+        base = credential[i + 1:].strip().rstrip("/")
+        if secret and base:
+            return secret, base
+    return "", ""
+
+
+def _fill_base_placeholder(base_url: str, credential_base: str) -> str:
+    """Substitute the single ``{placeholder}`` in a templated base_url with the credential URL's
+    host+path (scheme stripped), preserving the base_url's own API suffix (e.g. ``/api/1.1``)."""
+    host_path = re.sub(r"^https?://", "", credential_base)
+    return re.sub(r"\{[^}]+\}", host_path, base_url, count=1)
 
 
 # ---------------------------------------------------------------------------

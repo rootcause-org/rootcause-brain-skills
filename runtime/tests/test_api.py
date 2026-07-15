@@ -871,5 +871,48 @@ class ClientCredentialResolution(unittest.TestCase):
         self.assertEqual(c.credential, "")
 
 
+class HostEmbeddedCredential(unittest.TestCase):
+    """Per-app connectors carry ``<secret>@https://<host>[/<path>]`` in the env credential; locally
+    (no broker) ``api.client`` fills the templated base_url and keeps only the secret for auth."""
+
+    def test_bearer_fills_placeholder_and_preserves_path(self):
+        m = _manifest(key="bubble", base_url="https://{app_domain}/api/1.1", auth=api.Auth(strategy="bearer"))
+        cred = "70f7tok@https://acme-support.bubbleapps.io/version-test"
+        with mock.patch.object(api.oauth, "token", return_value=cred):
+            c = api.client(m)
+        # Path (`/version-test`) preserved between host and the base_url's own `/api/1.1` suffix.
+        self.assertEqual(c.manifest.base_url, "https://acme-support.bubbleapps.io/version-test/api/1.1")
+        self.assertEqual(c.credential, "70f7tok")  # only the secret half reaches auth
+
+    def test_basic_secret_with_userpass_and_subdir(self):
+        m = _manifest(key="woocommerce", base_url="https://{store_url}/wp-json/wc/v3", auth=api.Auth(strategy="basic"))
+        cred = "ckey:csecret@https://shop.example.com/shop"
+        with mock.patch.object(api.oauth, "token", return_value=cred):
+            c = api.client(m)
+        self.assertEqual(c.manifest.base_url, "https://shop.example.com/shop/wp-json/wc/v3")
+        self.assertEqual(c.credential, "ckey:csecret")
+
+    def test_no_placeholder_base_url_untouched(self):
+        m = _manifest(key="demo", base_url="https://api.demo.test/v1", auth=api.Auth(strategy="bearer"))
+        with mock.patch.object(api.oauth, "token", return_value="tok@https://evil.test"):
+            c = api.client(m)
+        # A non-templated base_url must NOT be rewritten even if the credential looks host-embedded.
+        self.assertEqual(c.manifest.base_url, "https://api.demo.test/v1")
+        self.assertEqual(c.credential, "tok@https://evil.test")
+
+    def test_split_on_last_marker_so_secret_at_may_contain_at(self):
+        secret, base = api._split_host_embedded_credential("a@https://b@https://host.test/p")
+        self.assertEqual(secret, "a@https://b")
+        self.assertEqual(base, "https://host.test/p")
+
+    def test_bare_credential_leaves_templated_base(self):
+        m = _manifest(key="bubble", base_url="https://{app_domain}/api/1.1", auth=api.Auth(strategy="bearer"))
+        with mock.patch.object(api.oauth, "token", return_value="just_a_token"):
+            c = api.client(m)
+        # No host embedded: nothing to fill, credential passes through unchanged.
+        self.assertEqual(c.manifest.base_url, "https://{app_domain}/api/1.1")
+        self.assertEqual(c.credential, "just_a_token")
+
+
 if __name__ == "__main__":
     unittest.main()
