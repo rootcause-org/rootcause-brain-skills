@@ -194,9 +194,13 @@ action.ok(
 )
 ```
 
-`action.params()` reads `$RC_ACTION_PARAMS` and installs crash capture. `p["name"]` is required;
-`p.get("name")` is optional. `p.file("attachment")` returns a `FileParam` with `path`, `filename`,
-`mime_type`, `size_bytes`, `attachment_id`, `sha256` when provided, plus `open()` and `read_bytes()`.
+`action.params()` reads `$RC_ACTION_PARAMS` and installs crash capture. Match access to the manifest:
+use `p["name"]` only for a required param; it raises `ActionError` when missing. For an optional param,
+use `p.get("name")` (missing returns `None`) or `p.get("name", default)`. The executor legitimately
+omits optional params, so do not index them with `p["name"]`.
+
+`p.file("attachment")` returns a required `FileParam` with `path`, `filename`, `mime_type`,
+`size_bytes`, `attachment_id`, `sha256` when provided, plus `open()` and `read_bytes()`.
 
 `action.ok(summary, data)` writes the success Result to `$RC_ACTION_RESULT`, prints it, and exits.
 `action.fail(summary, data)` is a handled negative: the executor worked, but the reviewer should not

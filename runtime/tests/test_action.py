@@ -47,10 +47,16 @@ class ActionHarness(unittest.TestCase):
             self.assertEqual(f.sha256, "abc123")
             self.assertEqual(f.read_bytes(), b"pdf")
 
-    def test_params_from_argv_and_missing_required_param(self):
+    def test_params_from_argv_and_optional_param(self):
         with mock.patch.dict(os.environ, {}, clear=True):
             p = action.params(["--params", '{"ok": true}'])
         self.assertTrue(p["ok"])
+        self.assertIsNone(p.get("missing"))
+        fallback = object()
+        self.assertIs(p.get("missing", fallback), fallback)
+
+    def test_missing_required_param_raises_action_error(self):
+        p = action.Params({})
         with self.assertRaises(action.ActionError) as cm:
             p["missing"]
         self.assertIn("missing", str(cm.exception))

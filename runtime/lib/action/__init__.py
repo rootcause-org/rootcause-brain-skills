@@ -67,6 +67,9 @@ class Params(Mapping[str, Any]):
     def __len__(self) -> int:
         return len(self._values)
 
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._values.get(key, default)
+
     def file(self, key: str) -> FileParam:
         raw = self[key]
         if not isinstance(raw, Mapping):

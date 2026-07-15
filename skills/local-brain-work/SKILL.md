@@ -92,7 +92,8 @@ uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --commit
 
 `--commit` writes for real to whatever `.env.action` targets. Use safe local/staging targets unless the
 user intentionally asked for a real write. Read [docs/actions.md](../../docs/actions.md) and
-[action-run-triage.md](action-run-triage.md) for production action evidence.
+[action-run-triage.md](action-run-triage.md) for the hosted harness (including required versus optional
+param access) and production action evidence.
 
 ## Embassy Ruby Actions
 
