@@ -18,8 +18,13 @@ laptop.
   `https://api.github.com/repos/rootcause-org/rootcause-brain-skills/git/matching-refs/tags/v`
 - `install.sh` pins the shared kit clone to a released tag; it does not leave the kit floating on
   `main`.
-- `rc self update --check` reports whether a newer CLI exists; `rc self update` updates non-Homebrew
-  installs and tells Homebrew users to run `brew update && brew upgrade rc`.
+- macOS has one canonical `rc`: `brew install rootcause-org/tap/rc`. Do not use `go install` as an
+  end-user upgrade path there.
+- `rc self doctor` reports the executing binary, PATH selection, install kind, duplicates, and
+  remediation. `rc self update --check` is read-only.
+- On macOS, `rc self update --migrate` explicitly and idempotently upgrades/installs Homebrew and
+  removes only verified legacy Go-installed copies. Linux/WSL/Windows standalone installs update in
+  place with `rc self update`.
 - A client old enough to lack `rc self update` must run its legacy `rc upgrade` once (or upgrade through
   Homebrew) to reach the current command surface.
 
@@ -28,15 +33,18 @@ laptop.
 Check/update `rc`:
 
 ```bash
+which -a rc
 rc --version
+rc self doctor
 rc self update --check
-rc self update
+rc self update --migrate  # macOS migration/canonicalization
+rc self doctor
 ```
 
-If `rc self update` reports a Homebrew-managed install:
+For a healthy existing macOS Homebrew install, plain update is sufficient:
 
 ```bash
-brew update && brew upgrade rc
+rc self update
 ```
 
 If `rc` is missing:
@@ -75,15 +83,22 @@ git -C "${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}" describe --tags --exact-
 
 1. Check the `rc` CLI first because the rc-* skills depend on it:
    ```bash
-   command -v rc
+   which -a rc
    rc --version
+   rc self doctor
    rc self update --check
    ```
-   If `rc` is missing, install it with `brew install rootcause-org/tap/rc` on macOS/Linuxbrew.
-   If `rc self update` is unknown, bootstrap once with the old client's `rc upgrade` (or Homebrew),
-   then continue with the current commands.
-2. If the user asks to upgrade, run `rc self update` yourself. If it reports a Homebrew-managed
-   install, run `brew update && brew upgrade rc` yourself, then verify with `rc --version`.
+   If `rc` is missing on macOS, install it with `brew install rootcause-org/tap/rc`.
+2. If the user asks to upgrade on macOS, run `rc self update --migrate`, then `hash -r`. On other
+   platforms run `rc self update`. For a pre-doctor client, avoid updating a shadowed binary:
+   ```bash
+   brew update
+   brew install rootcause-org/tap/rc || brew upgrade --cask rc
+   "$(brew --prefix)/bin/rc" self update --migrate
+   hash -r
+   ```
+   If `self update --migrate` is unknown even on the freshly installed cask, the required CLI release
+   has not reached Homebrew yet; stop rather than deleting any binary manually.
 3. Check the latest released kit tag:
    ```bash
    bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh) --latest-version
@@ -99,4 +114,6 @@ git -C "${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}" describe --tags --exact-
 7. If the user uses plugin installs instead of local symlinks, tell them the explicit updater:
    - Claude Code: `/plugin marketplace update`
    - Codex: `codex plugin marketplace upgrade`
-8. Mention that already-running agent sessions may need a new session to reload changed skill text.
+8. Verify `which -a rc`, `rc --version`, `rc self update --check`, and `rc self doctor`. Require one
+   healthy PATH candidate and matching executing/Homebrew/latest versions.
+9. Mention that already-running agent sessions may need a new session to reload changed skill text.
