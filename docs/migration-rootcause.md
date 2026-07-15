@@ -6,7 +6,9 @@ repointing prod before the tag exists breaks prod image builds.
 
 ## Order of operations
 
-1. **Tag this repo** `v0.1.83` and push.
+1. **Publish this repo** at `v0.1.83` with `./refresh-brains.sh --release patch` (or an explicit
+   version). The release must be cut on `main`; the publisher pushes and verifies `origin/main` at
+   the release commit before it pushes the tag. Never publish the tag first.
    - Bump the whole single version line together first — see [../RELEASING.md](../RELEASING.md)
      (`skills/local-brain-work/scripts/brain_env.py` `VERSION`/`DEFAULT_IMAGE`, `runtime/pyproject.toml`, both
      plugin manifests + marketplaces, the image tag).

@@ -3,8 +3,8 @@
 #
 # Why this exists: all local brains symlink ONE shared clone (~/.rootcause-brain-skills) at a pinned
 # TAG (see install.sh). The skill ships strictly tag-pinned — every skill/doc change is a release — so
-# "refresh all brains" means: bump the single version line (RELEASING.md), tag+push, ensure the
-# workspace image for that tag exists, then re-point the shared clone and re-symlink each brain.
+# "refresh all brains" means: bump the single version line (RELEASING.md), commit on main, push and
+# verify origin/main, then push the tag, ensure its workspace image exists, and refresh each brain.
 #
 # Usage:
 #   ./refresh-brains.sh                         # refresh-only: re-point shared clone to the newest
@@ -20,7 +20,7 @@
 #   --release <patch|minor|major|X.Y.Z>  cut a release before refreshing
 #   --relock      regen runtime/requirements.lock and force a full image rebuild (deps changed)
 #   --no-image    skip the ghcr image step entirely (uv mode still works; docker mode needs it later)
-#   --no-push     commit + tag locally but do NOT push to origin (brains can't fetch it yet)
+#   --no-push     commit + tag locally but do NOT push main/tag/image (brains can't fetch it yet)
 #   --dry-run     show every step without running it
 #   [BRAIN_DIR...]  explicit brains to refresh (default: auto-discover siblings)
 #
@@ -52,10 +52,27 @@ done
 run() { echo "  + $*"; [ "$DRY" = 1 ] || "$@"; }   # echo every mutating step; skip it on --dry-run
 say() { echo; echo "▸ $*"; }
 
+verify_origin_main() {
+  local head_sha origin_main_sha
+  head_sha="$(git -C "$ROOT" rev-parse HEAD)"
+  origin_main_sha="$(git -C "$ROOT" rev-parse refs/remotes/origin/main)"
+  if [ "$origin_main_sha" != "$head_sha" ]; then
+    echo "error: origin/main is $origin_main_sha, expected release HEAD $head_sha; refusing to push tag" >&2
+    exit 1
+  fi
+  echo "  verified origin/main == HEAD ($head_sha)"
+}
+
 CUR="$(grep -E '^VERSION = ' "$ROOT/skills/local-brain-work/scripts/brain_env.py" | sed -E 's/.*"([0-9.]+)".*/\1/')"
 
 # ── 1. release (optional) ───────────────────────────────────────────────────
 if [ -n "$RELEASE" ]; then
+  BRANCH="$(git -C "$ROOT" symbolic-ref --quiet --short HEAD || true)"
+  if [ "$BRANCH" != "main" ]; then
+    echo "error: releases must be cut from main (current: ${BRANCH:-detached HEAD})" >&2
+    exit 1
+  fi
+
   case "$RELEASE" in
     patch|minor|major)
       IFS=. read -r MA MI PA <<<"$CUR"
@@ -102,15 +119,26 @@ if [ -n "$RELEASE" ]; then
     run env SKIP_IMAGE=1 SKIP_PROD=1 "$ROOT/check-release-coherence.sh"
   fi
 
-  # 1d. one release commit (includes your pending skill/doc edits), then tag.
-  say "Commit + tag"
+  # 1d. One release commit (includes pending skill/doc edits). The tag is created locally, but it is
+  #     never published until the exact commit is pushed to and verified at origin/main.
+  say "Commit release on main"
   run git -C "$ROOT" add -A
   if [ "$DRY" = 1 ]; then git -C "$ROOT" status --short; else
     git -C "$ROOT" commit -q -m "release: v$NEW" \
       -m "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
   fi
   run git -C "$ROOT" tag -a -m "v$NEW" "v$NEW"   # annotated: repo config forces signed/annotated tags
-  [ "$NO_PUSH" = 1 ] || { run git -C "$ROOT" push origin HEAD; run git -C "$ROOT" push origin "v$NEW"; }
+  if [ "$NO_PUSH" = 1 ]; then
+    echo "  (--no-push: release commit/tag remain local; origin/main and remote tag are unchanged)"
+  else
+    say "Publish main, verify it, then publish tag"
+    # Do not let a user/global push.followTags=true smuggle the annotated release tag into this
+    # first push. The tag must remain remote-invisible until main has been fetched and verified.
+    run git -C "$ROOT" -c push.followTags=false push origin HEAD:main
+    run git -C "$ROOT" fetch origin refs/heads/main:refs/remotes/origin/main
+    run verify_origin_main
+    run git -C "$ROOT" -c push.followTags=false push origin "refs/tags/v$NEW"
+  fi
 
   # 1e. workspace image for the tag. Rebuild only when runtime/ changed; else re-tag the prior image
   #     (byte-identical — the image bakes runtime/ only, never the skill).

@@ -1,17 +1,20 @@
 # Releasing — the single version line
 
 > **The standard flow is one command** — [`./refresh-brains.sh`](refresh-brains.sh). It does the
-> whole table below, then re-points the shared clone and re-symlinks every local brain:
+> whole table below, requires `main`, pushes and verifies the release commit at `origin/main`, then
+> pushes the version tag and re-points every local brain:
 >
 > ```bash
-> ./refresh-brains.sh --release patch            # skill/doc change → bump, tag+push, re-tag image, refresh all brains
+> ./refresh-brains.sh --release patch            # skill/doc change → bump, main-first publish, tag/image, refresh
 > ./refresh-brains.sh --release minor --relock   # deps changed → also regen the lock + REBUILD the image
 > ./refresh-brains.sh --release patch --dry-run  # print the whole plan, mutate nothing
 > ./refresh-brains.sh                            # no release: just re-point every brain at the newest tag
 > ```
 >
 > The skill ships **strictly tag-pinned** (every skill change is a release), so brains only pick up a
-> change once it's a pushed tag. The image bakes `runtime/` only (never the skill), so a skill/doc
+> change once it's a pushed tag. Remote publication is deliberately **main first, tag second**: a tag
+> is never pushed unless `origin/main` resolves to the exact release commit. `--no-push` keeps both
+> main and the tag remote unchanged. The image bakes `runtime/` only (never the skill), so a skill/doc
 > release **re-tags** the prior image instead of rebuilding — `--relock` forces a real rebuild for dep
 > changes. Prod (`rootcause`) stays a separate, deploy-gated step the script only reminds you of.
 >
@@ -19,7 +22,7 @@
 
 Local and prod must install **identical** `lib` bytes, or "green locally" stops meaning "green in
 prod". One tag enforces that. To cut a release, bump **all of these together** to the new `vX.Y.Z`,
-commit, then tag + push:
+commit, then push/verify main before publishing the tag:
 
 | What | Where | Field |
 |---|---|---|
@@ -32,10 +35,15 @@ commit, then tag + push:
 | **Prod (separate repo)** | `rootcause/runtime/Dockerfile` | the `rootcause-runtime @ git+…@vX.Y.Z` pin + workspace image tag |
 | **Prod lock copy (separate repo)** | `rootcause/runtime/requirements.lock` | `cp runtime/requirements.lock ../rootcause/runtime/requirements.lock` (lockstep copy) |
 
-Then:
+Then, when performing the steps manually, preserve the same main-first/tag-second invariant:
 
 ```bash
-git tag vX.Y.Z && git push origin vX.Y.Z          # makes the git-pinned runtime spec resolvable
+test "$(git branch --show-current)" = main
+git tag -a -m vX.Y.Z vX.Y.Z
+git -c push.followTags=false push origin HEAD:main
+git fetch origin refs/heads/main:refs/remotes/origin/main
+test "$(git rev-parse origin/main)" = "$(git rev-parse HEAD)"
+git -c push.followTags=false push origin refs/tags/vX.Y.Z  # only now make the tag resolvable
 docker build -f docker/Dockerfile -t ghcr.io/rootcause-org/workspace:vX.Y.Z . && docker push ghcr.io/rootcause-org/workspace:vX.Y.Z
 ```
 

@@ -115,7 +115,7 @@ executes writes, and `brain_action.py --commit` writes to whatever `.env.action`
 **Did you touch `runtime/lib/**`, `runtime/pyproject.toml`, or `runtime/requirements.lock`? Then you
 owe a release — a bare merge/push does NOT reach prod.** The box installs the *pinned tag*, not `main`,
 so unreleased lib bytes never ship. Close it out with `./refresh-brains.sh --release <patch|minor>`
-(bumps + tags + pushes the whole line below; `--relock` if deps changed), then in the **rootcause** repo
+(bumps, publishes main, then tags/pushes the whole line below; `--relock` if deps changed), then in the **rootcause** repo
 `scripts/bump-workspace-pin.py vX.Y.Z` → commit → promote. Full steps: [RELEASING.md](RELEASING.md).
 rootcause's `promote.py` preflight now **FAILs** while lib commits sit past the pin (even unpushed local
 ones), so a forgotten release blocks the next deploy — but don't rely on the gate; release as you go.
@@ -137,7 +137,8 @@ Run `./check-release-coherence.sh` before trusting a release. Runtime dependency
 After focused checks pass, release and push by default.
 
 Use `./refresh-brains.sh --release patch` for docs/skill changes too; local brains fetch tags, not
-floating `main`.
+floating `main`. Releases must run on `main`; the publisher pushes `HEAD:main`, verifies
+`origin/main == HEAD`, and only then pushes the version tag. `--no-push` changes neither remote ref.
 
 Hold instead only for concrete blockers: failing checks, unrelated dirty files that would be swept in,
 missing image/runtime access, secrets/irreversible effects, or explicit user instruction.
