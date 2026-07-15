@@ -233,17 +233,19 @@ Discover before querying:
 
 ```bash
 rc auth status -o json
-rc dev console database list -o json
+rc dev console database list -o json   # each db carries a `writable` column: true when a <X>_WRITE_DSN is sealed
 rc dev console database schema <db> --table <table> -o json
 rc dev console database schema <db> --table <table> -o json |
   jq -r '.. | objects | select(has("name") and has("type")) | [.name,.type] | @tsv'
 ```
 
-Then run narrow read-only SQL:
+Then run narrow SQL. Queries are read-only by default; `--write` uses the action write plane where a
+`<X>_WRITE_DSN` is sealed (scope `console:db:write`) and COMMITs, returning `rows_affected`:
 
 ```bash
 rc dev console database query <db> "select count(*) as row_count from <table>" -o json | jq '.rows[0]'
 rc dev console database query <db> "select id::text, created_at from <table> order by created_at desc limit 5" -o json
+rc dev console database query <db> "update <table> set <col>=<val> where id=<id> returning id" --write -o json | jq '.rows_affected'
 ```
 
 If a query fails with an unknown column, go back to `rc dev console database schema`; do not keep guessing names. For
