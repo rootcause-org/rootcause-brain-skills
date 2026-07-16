@@ -79,6 +79,8 @@ Only these are first-class:
 - `brain-harvest` — local synthesis from a mailbox's harvested sent-history corpus using public `rc`:
   trigger export, download, per-topic subagent distillation, privacy/contract lint, brain/persona/triage
   homes.
+- `brain-website-scout` — local broad public-site mapping and Firecrawl capture, then per-topic
+  synthesis into a progressive-disclosure brain; raw pages stay gitignored.
 - `brain-ask` — last-mile prod/test run validation with `rc ask`.
 - `rc-debug` — one run/thread/session trace; inspect/propose/stop before edits.
 - `rc-health` — stale mirrors and dead-lettered runs.

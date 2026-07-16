@@ -1,0 +1,4 @@
+interface:
+  display_name: "Brain Website Scout"
+  short_description: "Build a brain from a thorough public-site scout"
+  default_prompt: "Use $brain-website-scout to map, capture, and distil this public website into a progressive-disclosure project brain."
