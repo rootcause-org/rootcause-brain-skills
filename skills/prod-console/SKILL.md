@@ -1,6 +1,6 @@
 ---
 name: prod-console
-description: "Direct guarded production access from a brain checkout through `rc dev console`. Use when a developer or their coding agent already knows the exact production primitive to run: SQL/schema lookup, cataloged brain script discovery, log command planning, or preflight-first action execution. No rootcause-side LLM; the caller reasons locally and rootcause supplies scoped, audited hands."
+description: "Direct guarded production access from a brain checkout through `rc dev console`. Use when a developer or their coding agent already knows the exact production primitive to run: SQL/schema lookup, dry-run-first rare SQL write, cataloged brain script discovery, log command planning, or preflight-first action execution. No rootcause-side LLM; the caller reasons locally and rootcause supplies scoped, audited hands."
 ---
 
 # prod-console - direct production primitives
@@ -60,6 +60,16 @@ Read:
    rc dev console database schema <db> --table <table> -o json |
      jq -r '.. | objects | select(has("name") and has("type")) | [.name,.type] | @tsv'
    ```
+   When a rare fix genuinely requires SQL, treat the write plane as project-level, mutation-grade access.
+   Rehearse first, returning the key and every changed column:
+   ```bash
+   rc dev console database query <db> \
+     "UPDATE <table> SET <column> = <value> WHERE <verified predicate> RETURNING id, <column>" \
+     --write --dry-run
+   ```
+   Stop on any unexpected affected-row count. To commit, rerun the identical statement without
+   `--dry-run` and confirm the count still matches; the two runs are separate executions. Use
+   `RETURNING *` for deletes so the removed row can be archived.
 
 3. For mounted workspace files, inspect before assuming paths:
    ```bash
@@ -109,4 +119,5 @@ stays the source of truth for behavior.
 ## Close-out
 
 Report exactly what was run, the scoped project/tenant if relevant, the material result, and any next
-command worth running. For any mutation, include whether it was preflight-only or executed.
+command worth running. For any mutation, distinguish a rolled-back dry-run from a committed write;
+for actions, distinguish preflight-only from executed.
