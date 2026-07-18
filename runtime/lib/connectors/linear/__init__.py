@@ -29,7 +29,7 @@ from typing import Any
 
 import requests
 
-from lib import api, oauth
+from lib import _http_audit, api, oauth
 
 GRAPHQL_URL = "https://api.linear.app/graphql"
 DEFAULT_PAGE_SIZE = 50
@@ -71,13 +71,19 @@ def _gql(query: str, variables: dict | None = None, *, bearer: str | None = None
 
     rng = random.Random()
     attempt = 0
+    reason = "initial"
     while True:
         try:
-            resp = requests.post(
+            resp = _http_audit.request(
+                "POST",
                 GRAPHQL_URL,
                 headers=headers,
-                json=payload,
+                json_body=payload,
                 timeout=(_CONNECT_TIMEOUT, _READ_TIMEOUT),
+                attempt=attempt + 1,
+                reason=reason,
+                endpoint_template="/graphql",
+                known_secrets=(token,),
             )
         except requests.RequestException as exc:
             raise api.ApiError(0, str(exc), url=GRAPHQL_URL) from exc
@@ -90,6 +96,7 @@ def _gql(query: str, variables: dict | None = None, *, bearer: str | None = None
                 delay = api.DEFAULT_BACKOFF_CAP
             if attempt < _MAX_RETRIES:
                 time.sleep(min(delay, api.MAX_RETRY_AFTER))
+                reason = "retry_status_429"
                 attempt += 1
                 continue
             raise api.ApiError(429, resp.text, url=GRAPHQL_URL, retryable=True)
@@ -97,6 +104,7 @@ def _gql(query: str, variables: dict | None = None, *, bearer: str | None = None
         if resp.status_code in {500, 502, 503, 504} and attempt < _MAX_RETRIES:
             sleep = _jitter(attempt, rng)
             time.sleep(sleep)
+            reason = f"retry_status_{resp.status_code}"
             attempt += 1
             continue
 

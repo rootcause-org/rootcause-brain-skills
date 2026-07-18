@@ -14,9 +14,9 @@ import re
 import sys
 from difflib import SequenceMatcher
 from typing import Any, Callable
-from urllib.error import HTTPError, URLError
 from urllib.parse import quote
-from urllib.request import Request, urlopen
+
+from lib import _http_audit
 
 _SYNONYMS = {
     "tone": "persona tone voice warm friendly concise casual wording",
@@ -51,14 +51,22 @@ def _fetch(path: str) -> Any:
     token = os.environ.get("RC_API_TOKEN", "").strip()
     if not token:
         raise SettingsError("RC_API_TOKEN is unavailable; lib.settings is dashboard-only")
-    req = Request(_api_base() + "/" + path.lstrip("/"), headers={"Authorization": f"Bearer {token}"})
+    url = _api_base() + "/" + path.lstrip("/")
     try:
-        with urlopen(req, timeout=20) as response:  # noqa: S310 - fixed trusted dashboard API base
-            return json.load(response)
-    except HTTPError as exc:
-        detail = exc.read(800).decode("utf-8", "replace").strip()
-        raise SettingsError(f"settings API HTTP {exc.code}: {detail}") from exc
-    except (URLError, TimeoutError, ValueError) as exc:
+        response = _http_audit.request(
+            "GET",
+            url,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=20,
+            endpoint_template=path,
+            known_secrets=(token,),
+        )
+        if not (200 <= response.status_code < 300):
+            raise SettingsError(f"settings API HTTP {response.status_code}: {response.text[:800].strip()}")
+        return response.json()
+    except SettingsError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — normalize transport/JSON failures for the CLI
         raise SettingsError(f"settings API request failed: {exc}") from exc
 
 

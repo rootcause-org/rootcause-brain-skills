@@ -39,7 +39,7 @@ from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Iterator
 from urllib.parse import quote, urljoin, urlsplit
 
-from lib import oauth
+from lib import _http_audit, oauth
 
 # Both halves of the requests timeout tuple (connect, read) — never None, so a hung server can't
 # wedge a run. Read is generous because we optimise for thoroughness, not latency.
@@ -342,6 +342,7 @@ class Client:
         files: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
         idempotency_header: str = "Idempotency-Key",
+        endpoint_template: str | None = None,
     ) -> Any:
         """Make one HTTP call (following retries/rate-limits) and return parsed JSON.
 
@@ -358,6 +359,7 @@ class Client:
             files=files,
             idempotency_key=idempotency_key,
             idempotency_header=idempotency_header,
+            endpoint_template=endpoint_template,
         )
         return _parse_json(resp)
 
@@ -445,12 +447,12 @@ class Client:
         files=None,
         idempotency_key: str | None = None,
         idempotency_header: str = "Idempotency-Key",
+        endpoint_template: str | None = None,
     ):
-        import requests
-
         verb = method.upper()
         read_tier = self._assert_method_allowed(verb, path)
         url = self._request_url(path)
+        audit_url = self._audit_url(path, request_url=url)
         req_headers = dict(self.manifest.default_headers)
         req_headers.update(headers or {})
         if idempotency_key:
@@ -460,16 +462,22 @@ class Client:
         retry_allowed = bool(idempotency_key) or ((verb in _IDEMPOTENT_METHODS or read_tier) and not files)
 
         attempt = 0
+        reason = "initial"
         while True:
-            resp = requests.request(
+            resp = _http_audit.request(
                 verb,
                 url,
                 params=req_query,
                 headers=req_headers,
-                json=json_body,
+                json_body=json_body,
                 data=data,
                 files=files,
                 timeout=(self.connect_timeout, self.read_timeout),
+                attempt=attempt + 1,
+                reason=reason,
+                endpoint_template=endpoint_template,
+                audit_url=audit_url,
+                known_secrets=(self.credential,),
             )
             if 200 <= resp.status_code < 300:
                 return resp
@@ -483,6 +491,7 @@ class Client:
                 )
             delay = self._retry_delay(resp, attempt)
             _sleep(delay, self._sleeper)
+            reason = f"retry_status_{resp.status_code}"
             attempt += 1
 
     def _assert_method_allowed(self, verb: str, path: str) -> bool:
@@ -727,8 +736,6 @@ class Client:
         An absolute URL is used verbatim; a relative path (e.g. recurly ``/sites/.../accounts?cursor=…``,
         twilio ``/2010-04-01/…``) is ``_join``ed onto ``base_url`` so the host/scheme survive the follow.
         """
-        import requests
-
         upstream_url = _join(self.manifest.base_url, url)
         # SECURITY: the next-page URL comes from the upstream RESPONSE (body field or Link header). We are
         # about to re-attach the connector's live credential to it, so a hostile/compromised upstream that
@@ -746,10 +753,18 @@ class Client:
         verb = method.upper()
         retry_read = verb in _IDEMPOTENT_METHODS
         attempt = 0
+        reason = "initial"
         while True:
-            resp = requests.request(
-                verb, request_url, params=params, headers=req_headers,
+            resp = _http_audit.request(
+                verb,
+                request_url,
+                params=params,
+                headers=req_headers,
                 timeout=(self.connect_timeout, self.read_timeout),
+                attempt=attempt + 1,
+                reason=reason,
+                audit_url=upstream_url,
+                known_secrets=(self.credential,),
             )
             if 200 <= resp.status_code < 300:
                 return resp
@@ -758,12 +773,21 @@ class Client:
                 raise ApiError(resp.status_code, _body_text(resp), url=request_url,
                                retryable=resp.status_code in _RETRYABLE_STATUS)
             _sleep(self._retry_delay(resp, attempt), self._sleeper)
+            reason = f"retry_status_{resp.status_code}"
             attempt += 1
 
     def _request_url(self, path: str) -> str:
         if self.manifest.brokered:
             return _broker_url(self.manifest.key, path, base_url=self.manifest.base_url)
         return _join(self.manifest.base_url, path)
+
+    def _audit_url(self, path: str, *, request_url: str) -> str:
+        """Return the provider URL, not the internal broker URL, when it is knowable in-container."""
+        upstream = _join(self.manifest.base_url, path)
+        parsed = urlsplit(upstream)
+        if parsed.hostname and "{" not in upstream and "}" not in upstream:
+            return upstream
+        return request_url
 
     def _extract_items(self, body: Any) -> list:
         p = self.manifest.pagination

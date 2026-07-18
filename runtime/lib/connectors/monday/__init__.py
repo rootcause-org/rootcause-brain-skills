@@ -26,9 +26,7 @@ import argparse
 import json
 from typing import Any
 
-import requests as _requests
-
-from lib import api, oauth
+from lib import _http_audit, api, oauth
 
 _BASE_URL = "https://api.monday.com/v2"
 _ENV_KEY = "monday"
@@ -71,11 +69,14 @@ def _gql(query: str, variables: dict | None = None) -> dict:
     if variables:
         body["variables"] = variables
 
-    resp = _requests.post(
+    resp = _http_audit.request(
+        "POST",
         _BASE_URL,
-        json=body,
+        json_body=body,
         headers=headers,
         timeout=(api.DEFAULT_CONNECT_TIMEOUT, api.DEFAULT_READ_TIMEOUT),
+        endpoint_template="/v2",
+        known_secrets=(token,),
     )
     if not (200 <= resp.status_code < 300):
         raise api.ApiError(resp.status_code, resp.text, url=_BASE_URL,

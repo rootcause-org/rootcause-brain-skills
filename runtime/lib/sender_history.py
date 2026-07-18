@@ -28,6 +28,8 @@ from __future__ import annotations
 import os
 import sys
 
+from lib import _http_audit
+
 # The per-run broker virtual host — resolved and authed by the container's HTTP(S)_PROXY, exactly as
 # the brokered lib.api connectors reach it. No credential or query string is attached client-side.
 _BROKER_BASE_URL = "http://rc-broker.internal"
@@ -77,10 +79,14 @@ def _broker_get(path: str) -> str:
     ``requests`` honours the container's HTTP(S)_PROXY for the ``rc-broker.internal`` host, so the
     per-run proxy credential authenticates the call without us touching it.
     """
-    import requests
-
     url = f"{_BROKER_BASE_URL}{path}"
-    resp = requests.get(url, timeout=(_CONNECT_TIMEOUT, _READ_TIMEOUT))
+    endpoint_template = path.split("?", 1)[0]
+    resp = _http_audit.request(
+        "GET",
+        url,
+        timeout=(_CONNECT_TIMEOUT, _READ_TIMEOUT),
+        endpoint_template=endpoint_template,
+    )
     if not (200 <= resp.status_code < 300):
         raise BrokerError(resp.status_code, _body_text(resp))
     return resp.text

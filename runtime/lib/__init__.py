@@ -5,6 +5,8 @@ container: `db`, `api`, `stripe`, `cloudwatch`, `fs`, `http`, `html`, `oauth`. H
 also import `action` for the post-confirmation write-plane harness. `api` is the generic read-tier
 REST client (the `lib.db` of third-party HTTP integrations); most integrations need only a manifest
 row + `python -m lib.api get <key> <path>`, with allowlisted `post` for non-mutating search.
+Runtime-owned HTTP attempts share one audited transport; hosted actions use `lib.action.client` or
+the action-context-asserted `lib.http.action_request` for non-catalogued providers.
 Each is configured from the per-project
 secrets injected as env (read-only PG DSN, Stripe restricted key, least-priv AWS creds, GitHub
 read token) and the read-only mounts: the brain at /brain and source mirrors at /mirrors/<repo>,

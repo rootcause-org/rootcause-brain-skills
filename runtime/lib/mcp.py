@@ -32,7 +32,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from lib import api  # reuse the shared timing primitives + posture
+from lib import _http_audit, api  # reuse the shared timing primitives + posture
 
 # Mirror lib.api's timeout posture: both halves always set so a hung MCP server can't wedge a run.
 DEFAULT_CONNECT_TIMEOUT = api.DEFAULT_CONNECT_TIMEOUT
@@ -141,8 +141,6 @@ class Client:
 
         Raises ``McpError`` on a non-2xx (after retries), a malformed envelope, or a JSON-RPC
         ``error`` — never a silent empty."""
-        import requests
-
         self._id += 1
         payload = {"jsonrpc": "2.0", "id": self._id, "method": method}
         if params is not None:
@@ -156,17 +154,23 @@ class Client:
             headers["Authorization"] = f"Bearer {self.bearer}"
 
         attempt = 0
+        reason = "initial"
         while True:
-            resp = requests.post(
+            resp = _http_audit.request(
+                "POST",
                 self.url,
-                json=payload,
+                json_body=payload,
                 headers=headers,
                 timeout=(self.connect_timeout, self.read_timeout),
+                attempt=attempt + 1,
+                reason=reason,
+                known_secrets=(self.bearer,),
             )
             if 200 <= resp.status_code < 300:
                 return self._unwrap(self._read_envelope(resp))
             if resp.status_code in _RETRYABLE_STATUS and attempt < self.max_retries:
                 self._sleep_before_retry(resp, attempt)
+                reason = f"retry_status_{resp.status_code}"
                 attempt += 1
                 continue
             raise McpError(_truncate(_body_text(resp)), status=resp.status_code, url=self.url)

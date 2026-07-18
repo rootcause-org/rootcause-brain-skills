@@ -30,10 +30,11 @@ import random
 import re
 import time
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import requests as _requests
 
-from lib import api, oauth
+from lib import _http_audit, api, oauth
 
 # ---------------------------------------------------------------------------
 # Manifest (registers the connector so the YAML loader sees it and `python -m lib.api get
@@ -152,26 +153,47 @@ def _send(method: str, url: str, *, safe_url: str, **kwargs) -> "_requests.Respo
     message either. Body text (``resp.text``) is the API's response, never the request URL.
     """
     attempt = 0
+    reason = "initial"
+    json_body = kwargs.pop("json", None)
+    request_data = kwargs.pop("data", None)
+    request_files = kwargs.pop("files", None)
+    request_headers = kwargs.pop("headers", None)
+    request_params = kwargs.pop("params", None)
+    if kwargs:
+        raise TypeError(f"unsupported request options: {', '.join(sorted(kwargs))}")
+    url_token = (parse_qs(urlsplit(url).query).get("token") or [""])[0]
     while True:
         try:
-            resp = _requests.request(
+            resp = _http_audit.request(
                 method,
                 url,
+                params=request_params,
+                headers=request_headers,
+                json_body=json_body,
+                data=request_data,
+                files=request_files,
                 timeout=(api.DEFAULT_CONNECT_TIMEOUT, api.DEFAULT_READ_TIMEOUT),
-                **kwargs,
+                attempt=attempt + 1,
+                reason=reason,
+                audit_url=safe_url,
+                endpoint_template=urlsplit(safe_url).path or "/",
+                known_secrets=(url_token,),
             )
         except _requests.exceptions.RequestException as e:
             if attempt < api.DEFAULT_MAX_RETRIES:
                 time.sleep(api._full_jitter(attempt, api.DEFAULT_BACKOFF_BASE, api.DEFAULT_BACKOFF_CAP, _rng))
+                reason = f"retry_transport_{type(e).__name__}"
                 attempt += 1
                 continue
             raise api.ApiError(0, f"network error after retries: {type(e).__name__}", url=safe_url) from None
         if resp.status_code == 429 and attempt < api.DEFAULT_MAX_RETRIES:
             time.sleep(_retry_after(resp, attempt))
+            reason = "retry_status_429"
             attempt += 1
             continue
         if resp.status_code in (500, 502, 503, 504) and attempt < api.DEFAULT_MAX_RETRIES:
             time.sleep(api._full_jitter(attempt, api.DEFAULT_BACKOFF_BASE, api.DEFAULT_BACKOFF_CAP, _rng))
+            reason = f"retry_status_{resp.status_code}"
             attempt += 1
             continue
         if not (200 <= resp.status_code < 300):

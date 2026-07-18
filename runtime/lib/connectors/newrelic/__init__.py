@@ -21,9 +21,7 @@ import argparse
 import json
 from typing import Any
 
-import requests as _requests
-
-from lib import api, oauth
+from lib import _http_audit, api, oauth
 
 # ---------------------------------------------------------------------------
 # Manifest (registers the connector so `python -m lib.api get newrelic …` works for
@@ -70,24 +68,32 @@ def _gql(query: str, variables: dict | None = None, *, eu: bool = False) -> dict
         body["variables"] = variables
 
     attempt = 0
+    reason = "initial"
     rng = __import__("random").Random()
     while True:
-        resp = _requests.post(
+        resp = _http_audit.request(
+            "POST",
             url,
-            json=body,
+            json_body=body,
             headers=headers,
             timeout=(api.DEFAULT_CONNECT_TIMEOUT, api.DEFAULT_READ_TIMEOUT),
+            attempt=attempt + 1,
+            reason=reason,
+            endpoint_template="/graphql",
+            known_secrets=(token,),
         )
         if resp.status_code == 429 and attempt < api.DEFAULT_MAX_RETRIES:
             delay = api.parse_retry_after(resp.headers.get("Retry-After"))
             if delay is None:
                 delay = api._full_jitter(attempt, api.DEFAULT_BACKOFF_BASE, api.DEFAULT_BACKOFF_CAP, rng)
             __import__("time").sleep(min(delay, api.MAX_RETRY_AFTER))
+            reason = "retry_status_429"
             attempt += 1
             continue
         if resp.status_code in (500, 502, 503, 504) and attempt < api.DEFAULT_MAX_RETRIES:
             delay = api._full_jitter(attempt, api.DEFAULT_BACKOFF_BASE, api.DEFAULT_BACKOFF_CAP, rng)
             __import__("time").sleep(delay)
+            reason = f"retry_status_{resp.status_code}"
             attempt += 1
             continue
         if not (200 <= resp.status_code < 300):

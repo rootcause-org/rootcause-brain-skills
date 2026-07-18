@@ -257,6 +257,11 @@ c.post("issues", json={"title": "Customer follow-up"}, idempotency_key="issue-12
 Write requests are not retried blindly. Passing `idempotency_key=` sets the `Idempotency-Key` header
 and opts that request into transient-status retry.
 
+When a self-contained hosted action cannot use a catalogued client, use
+`lib.http.action_request(...)`, never raw `requests`. It asserts action context, emits the same
+per-attempt HTTP audit event, adds a fresh `X-Request-ID`, and performs no implicit retry. Always pass
+an endpoint template for a dynamic path. Full contract and example: [Runtime HTTP audit](http-audit.md).
+
 ## Local Hosted-Python Checks
 
 ```bash

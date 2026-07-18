@@ -847,12 +847,8 @@ class StripeKeyResolution(unittest.TestCase):
                 os.environ[k] = v
 
     def _resolve_key(self):
-        """Run _client() with a stubbed SDK and return the api_key it resolved."""
-        fake_sdk = mock.Mock()
-        with mock.patch.dict(sys.modules, {"stripe": fake_sdk}):
-            sdk = lib_stripe._client()
-        self.assertIs(sdk, fake_sdk)
-        return fake_sdk.api_key
+        """Run the audited REST client and return the credential it resolved."""
+        return lib_stripe._client().credential
 
     def test_missing_key_raises_naming_both_vars(self):
         with self.assertRaises(RuntimeError) as cm:

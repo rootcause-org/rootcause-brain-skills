@@ -26,9 +26,7 @@ import json
 import sys
 from typing import Any
 
-import requests as _requests
-
-from lib import api, oauth
+from lib import _http_audit, api, oauth
 
 API_BASE = "https://api.notion.com/v1"
 _NOTION_VERSION = "2026-03-11"
@@ -73,10 +71,10 @@ def _request(
     """
     cred = oauth.token("notion")
     url = f"{API_BASE}/{path.lstrip('/')}"
-    resp = _requests.request(
+    resp = _http_audit.request(
         method.upper(),
         url,
-        json=body,
+        json_body=body,
         params=query,
         headers={
             "Authorization": f"Bearer {cred}",
@@ -84,6 +82,8 @@ def _request(
             "Content-Type": "application/json",
         },
         timeout=(api.DEFAULT_CONNECT_TIMEOUT, api.DEFAULT_READ_TIMEOUT),
+        endpoint_template=f"/v1/{path.lstrip('/')}",
+        known_secrets=(cred,),
     )
     if not (200 <= resp.status_code < 300):
         try:

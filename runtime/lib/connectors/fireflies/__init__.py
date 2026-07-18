@@ -20,9 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import requests as _requests
-
-from lib import api, oauth
+from lib import _http_audit, api, oauth
 
 API_BASE = "https://api.fireflies.ai/graphql"
 MAX_SEARCH_LIMIT = 50
@@ -147,14 +145,17 @@ query FirefliesTranscript($transcriptId: String!) {
 
 def _request(query: str, variables: dict[str, Any]) -> Any:
     token = oauth.token("fireflies")
-    resp = _requests.post(
+    resp = _http_audit.request(
+        "POST",
         API_BASE,
-        json={"query": query, "variables": variables},
+        json_body={"query": query, "variables": variables},
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         },
         timeout=(api.DEFAULT_CONNECT_TIMEOUT, api.DEFAULT_READ_TIMEOUT),
+        endpoint_template="/graphql",
+        known_secrets=(token,),
     )
     if not (200 <= resp.status_code < 300):
         raise api.ApiError(resp.status_code, resp.text, url=API_BASE)

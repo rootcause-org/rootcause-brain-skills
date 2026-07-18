@@ -27,7 +27,11 @@ CLI (token-efficient one-offs from bash):
 
 import json
 import os
+import threading
 import time
+import uuid
+
+from lib import _http_audit
 
 # Insights runs async: start_query → poll get_query_results. Bound the poll so a slow query
 # can't hang the per-bash timeout; the caller can raise max_wait for heavy aggregations.
@@ -39,12 +43,92 @@ def _client():
     creds = _credentials()
     import boto3
 
-    return boto3.client(
+    client = boto3.client(
         "logs",
         region_name=creds["region"],
         aws_access_key_id=creds["access_key_id"],
         aws_secret_access_key=creds["secret_access_key"],
     )
+    auditor = _BotocoreHTTPAuditor((creds["access_key_id"], creds["secret_access_key"]))
+    client.meta.events.register("before-send.cloudwatch-logs.*", auditor.before_send)
+    client.meta.events.register("needs-retry.cloudwatch-logs.*", auditor.needs_retry)
+    # Botocore's event emitter keeps bound handlers, but retaining the adapter makes ownership clear
+    # and protects against a future weak-handler implementation.
+    client._rootcause_http_auditor = auditor
+    return client
+
+
+class _BotocoreHTTPAuditor:
+    """Bridge botocore's signed/retried transport into the shared per-attempt audit contract."""
+
+    def __init__(self, known_secrets: tuple[str, ...]):
+        self.known_secrets = known_secrets
+        self._state = threading.local()
+
+    def before_send(self, request, event_name: str = "", **_kwargs) -> None:
+        request_id = str(uuid.uuid4())
+        request.headers["X-Request-ID"] = request_id
+        payload, request_body = _botocore_payload(request.body)
+        operation = event_name.rsplit(".", 1)[-1] if event_name else "request"
+        self._state.pending = {
+            "method": request.method,
+            "url": request.url,
+            "payload": payload,
+            "request_body": request_body,
+            "endpoint_template": f"/{operation}",
+            "request_id": request_id,
+            "reason": getattr(self._state, "next_reason", "initial"),
+            "started": time.monotonic(),
+        }
+
+    def needs_retry(
+        self,
+        response=None,
+        caught_exception=None,
+        attempts: int = 1,
+        **_kwargs,
+    ) -> None:
+        pending = getattr(self._state, "pending", None)
+        if pending is None:
+            return
+        http_response = response[0] if response else None
+        status = getattr(http_response, "status_code", None)
+        _http_audit.emit_prepared_attempt(
+            method=pending["method"],
+            url=pending["url"],
+            payload=pending["payload"],
+            request_body=pending["request_body"],
+            status_code=int(status) if status is not None else None,
+            duration_ms=round((time.monotonic() - pending["started"]) * 1000),
+            attempt=attempts,
+            reason="initial" if attempts == 1 else pending["reason"],
+            request_id=pending["request_id"],
+            endpoint_template=pending["endpoint_template"],
+            known_secrets=self.known_secrets,
+        )
+        self._state.pending = None
+        if status is not None:
+            self._state.next_reason = f"retry_status_{status}"
+        elif caught_exception is not None:
+            self._state.next_reason = f"retry_transport_{type(caught_exception).__name__}"
+        else:
+            self._state.next_reason = f"retry_attempt_{attempts}"
+
+
+def _botocore_payload(body) -> tuple[bytes, object]:
+    if body is None:
+        return b"", None
+    if isinstance(body, str):
+        payload = body.encode("utf-8")
+    elif isinstance(body, (bytes, bytearray, memoryview)):
+        payload = bytes(body)
+    else:
+        marker = f"[stream body omitted: {type(body).__name__}]"
+        return marker.encode("utf-8"), marker
+    try:
+        return payload, json.loads(payload)
+    except (TypeError, ValueError):
+        return payload, "[binary body omitted]"
 
 
 def _credentials() -> dict[str, str]:

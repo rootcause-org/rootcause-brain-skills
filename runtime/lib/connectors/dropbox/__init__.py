@@ -29,9 +29,7 @@ from __future__ import annotations
 import argparse
 from typing import Any
 
-import requests as _requests
-
-from lib import api, oauth
+from lib import _http_audit, api, oauth
 
 _API_BASE = "https://api.dropboxapi.com/2"
 
@@ -58,14 +56,17 @@ def _post(path: str, body: dict[str, Any]) -> Any:
     """
     cred = oauth.token("dropbox")
     url = f"{_API_BASE}/{path.lstrip('/')}"
-    resp = _requests.post(
+    resp = _http_audit.request(
+        "POST",
         url,
-        json=body,
+        json_body=body,
         headers={
             "Authorization": f"Bearer {cred}",
             "Content-Type": "application/json",
         },
         timeout=(api.DEFAULT_CONNECT_TIMEOUT, api.DEFAULT_READ_TIMEOUT),
+        endpoint_template=f"/2/{path.lstrip('/')}",
+        known_secrets=(cred,),
     )
     if not (200 <= resp.status_code < 300):
         try:
