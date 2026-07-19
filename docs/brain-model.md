@@ -119,6 +119,29 @@ Do not duplicate generic rails such as "be grounded", "do not invent", "finish w
 `queryPreamble` is a separate machine-facing/raw-data mode; mention it only when a brain rule would
 otherwise wrongly force customer tone, localization, or identifier hiding into raw investigations.
 
+### Feeding the triage gate (`include_in: [triage]`)
+
+Before the main loop runs, a cheap **triage** classifier decides process-vs-skip. Its prompt is built
+from the operator's tunable triage guidance plus a brain-derived knowledge block: the brain's root
+`AGENTS.md` (always) and the full body of every brain `.md` whose frontmatter declares
+`include_in: [triage]`. Use the tag to teach triage the project's **decline / ownership / scope** rules
+— senders or topics that are not for this mailbox, automated alert/notification mail that needs no
+reply, and wrong-addressee patterns.
+
+```markdown
+---
+description: Which automated/off-topic mail this inbox declines without a reply.
+include_in: [triage]
+---
+```
+
+Conventions: keep it **short** (it rides every triage call) and in **customer language** — a skip can be
+quoted back to the mailbox owner as feedback. It is context, not a hard rule: deterministic rules and
+the default bias to process still win, and skips are always reviewable (feedback note + override), so a
+brain can inform triage but never silently black-hole mail. Recommended home is a `triage.md` at the
+brain root, but the frontmatter tag — not the filename — is the contract, and it is a list that
+generalizes to future host-assembled prompts. Don't restate `AGENTS.md`; it is always included.
+
 ## Production Mounts
 
 ```mermaid
