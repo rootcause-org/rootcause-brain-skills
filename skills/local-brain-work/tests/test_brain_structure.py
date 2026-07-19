@@ -48,7 +48,12 @@ def commit_all(root: Path, message: str = "snapshot") -> None:
 
 def lint_stub(parent: Path, exit_code: int = 0) -> Path:
     stub = parent / "lint_stub.py"
-    stub.write_text(f"import sys\nsys.exit({exit_code})\n", encoding="utf-8")
+    stub.write_text(
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        f"Path('lint_calls.jsonl').open('a').write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        f"sys.exit({exit_code})\n",
+        encoding="utf-8")
     return stub
 
 
@@ -127,6 +132,46 @@ class BrainStructureTests(unittest.TestCase):
             # The linked note must not be reported as orphaned.
             self.assertNotIn("notes/intake.md: reachability", output)
 
+    def test_table_router_with_backticked_paths_and_harvest_records_are_reachable(self):
+        # The documented router convention is a symptom -> path table with backticked paths, not
+        # markdown links; committed harvest records are audit artifacts needing no router path.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "brain"
+            init_repo(root)
+            good_brain(root)
+            write(root, "AGENTS.md",
+                  "# Router\n\n| symptom | where |\n|---|---|\n"
+                  "| refunds | `playbooks/refund.md` |\n| terms | `terminology.md` |\n"
+                  "| intake | `notes/intake.md` |\n")
+            write(root, "playbooks/refund.md", "# Refunds\n\nDistilled playbook.\n")
+            write(root, "terminology.md", "# Terms\n\nGlossary.\n")
+            write(root, "notes/harvest-records/2026-07-19.md",
+                  "# Harvest record\n\nCounts and scores only.\n")
+            commit_all(root)
+            code, output = run_main(root, "--lint-script", str(lint_stub(Path(tmp))))
+            self.assertEqual(code, 0, output)
+            self.assertNotIn("reachability", output.split("SUMMARY")[0])
+
+    def test_full_tree_lint_is_strict_only_with_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "brain"
+            init_repo(root)
+            good_brain(root)
+            commit_all(root)
+            stub = str(lint_stub(Path(tmp)))
+            calls_log = root / "lint_calls.jsonl"
+
+            code, output = run_main(root, "--lint-script", stub)
+            self.assertEqual(code, 0, output)
+            calls = [json.loads(ln) for ln in calls_log.read_text().splitlines()]
+            self.assertEqual(calls, [[], ["--all"]], "default full-tree pass must not be strict")
+
+            calls_log.unlink()
+            code, output = run_main(root, "--lint-script", stub, "--strict-lint")
+            self.assertEqual(code, 0, output)
+            calls = [json.loads(ln) for ln in calls_log.read_text().splitlines()]
+            self.assertEqual(calls, [[], ["--all", "--strict"]])
+
     def test_tracked_raw_harvest_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "brain"
@@ -184,7 +229,7 @@ class BrainStructureTests(unittest.TestCase):
             code, output = run_main(root, "--lint-script", failing)
             self.assertEqual(code, 1, output)
             self.assertIn("lint: brain_lint staged mode failed (exit 1)", output)
-            self.assertIn("lint: brain_lint full-tree strict mode failed (exit 1)", output)
+            self.assertIn("lint: brain_lint full-tree mode failed (exit 1)", output)
 
     def test_missing_lint_script_fails_loudly(self):
         with tempfile.TemporaryDirectory() as tmp:

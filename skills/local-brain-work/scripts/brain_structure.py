@@ -10,7 +10,8 @@ content is judged. Checks (each independently reported, skippable with `--skip <
   * links        — every relative Markdown link/route target in tracked *.md resolves to a tracked path.
   * frontmatter  — every tracked `skills/*/SKILL.md` has a valid front-matter block (name + description).
   * reachability — routed case/notes/playbook files are reachable from the project router (AGENTS.md).
-  * lint         — `brain_lint.py` passes staged and `--all --strict` (privacy/contract + control-plane).
+  * lint         — `brain_lint.py` passes staged and full-tree (`--all`; add `--strict-lint` to make
+                   SOFT findings fatal too — the harvest gate runs its own `--all --strict` pass).
   * raw-tracked  — no raw-harvest path is tracked now (`.rootcause/` fragments or split-file shapes).
   * raw-history  — no raw-harvest path appears in git history (deleted-but-still-in-history case).
   * scratch      — (`--expect-clean` only) no `.rootcause/harvest/` scratch root remains on disk.
@@ -42,6 +43,9 @@ ROUTER = "AGENTS.md"
 # Directories whose Markdown leaves a run must be *routed to* — orphaning one hides it from the loop.
 ROUTED_DIRS = {"cases", "notes", "playbooks"}
 ROUTED_FILES = {"terminology.md"}
+# Audit artifacts (e.g. committed harvest records) are records, not run-routed content leaves;
+# they never need a router path.
+AUDIT_DIRS = {"harvest-records"}
 # Infrastructure/entry-surface trees that have their own discovery path, so they never need routing
 # from the project router. `skills/` are their own entry surface; `docs/`, `actions/`, `tests/`,
 # `agents/`, and dot-trees are tooling, not run-routed brain leaves.
@@ -56,6 +60,10 @@ SCRATCH_ROOT = ".rootcause/harvest"
 
 # A Markdown inline link/image target: `[text](target)` or `![alt](target "title")`.
 MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\(\s*([^)]+?)\s*\)")
+# A backticked path reference: the documented router convention is a symptom -> path table whose
+# cells carry plain/backticked relative paths (see docs/brain-model.md routing index), not inline
+# Markdown links — those references are reachability edges too.
+PATH_REF_RE = re.compile(r"`([^`\s]+\.md)`")
 # Non-file targets: any scheme (http:, mailto:, tel:), protocol-relative `//host`, or anchor-only `#x`.
 EXTERNAL_RE = re.compile(r"^(?:[a-z][a-z0-9+.\-]*:|//|#)", re.I)
 
@@ -93,6 +101,7 @@ class Ctx:
     md_files: list[str] = field(default_factory=list)
     lint_script: Path = DEFAULT_LINT_SCRIPT
     history_limit: int = 2000
+    strict_lint: bool = False
 
     def read(self, rel: str) -> str:
         return (self.root / rel).read_text(encoding="utf-8", errors="replace")
@@ -214,13 +223,20 @@ def check_reachability(ctx: Ctx) -> list[Finding]:
     md_set = set(ctx.md_files)
     adjacency: dict[str, set[str]] = {}
     for md in ctx.md_files:
+        text = ctx.read(md)
         neighbours: set[str] = set()
-        for _lineno, target in iter_links(ctx.read(md)):
+        targets = [t for _lineno, t in iter_links(text)]
+        targets += PATH_REF_RE.findall(text)
+        for target in targets:
             if EXTERNAL_RE.match(target):
                 continue
-            rel = resolve_target(ctx.root, md, target)
-            if rel and rel in md_set:
-                neighbours.add(rel)
+            # Router tables write paths either relative to the referencing file or to the checkout
+            # root; accept whichever resolves to a tracked Markdown file.
+            for candidate in (resolve_target(ctx.root, md, target),
+                              resolve_target(ctx.root, ROUTER, target)):
+                if candidate and candidate in md_set:
+                    neighbours.add(candidate)
+                    break
         adjacency[md] = neighbours
     reachable: set[str] = set()
     if ROUTER in md_set:
@@ -240,7 +256,7 @@ def _needs_reach(posix_path: str) -> bool:
     parts = posix_path.split("/")
     if posix_path == ROUTER:
         return False
-    if any(p in EXEMPT_DIRS for p in parts[:-1]):
+    if any(p in EXEMPT_DIRS or p in AUDIT_DIRS for p in parts[:-1]):
         return False
     if parts[-1] in ROUTED_FILES:
         return True
@@ -252,7 +268,12 @@ def check_lint(ctx: Ctx) -> list[Finding]:
         return [Finding("lint",
                         f"privacy/contract lint script not found at {ctx.lint_script}; pass --lint-script")]
     findings: list[Finding] = []
-    for label, extra in (("staged", []), ("full-tree strict", ["--all", "--strict"])):
+    # Full-tree strict is opt-in (--strict-lint): under --strict every SOFT class is fatal, and the
+    # linter deliberately keeps legit-in-a-brain shapes (own routing addresses, coarse heuristics)
+    # SOFT so they warn without blocking. The harvest gate runs `--all --strict` itself (SKILL step 8,
+    # spec §9); the generic publish path blocks on HARD findings only.
+    full_tree = ["--all", "--strict"] if ctx.strict_lint else ["--all"]
+    for label, extra in (("staged", []), ("full-tree", full_tree)):
         proc = subprocess.run([sys.executable, str(ctx.lint_script), *extra],
                               cwd=str(ctx.root), capture_output=True, text=True)
         if proc.returncode != 0:
@@ -339,6 +360,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--expect-clean", action="store_true",
                    help="also require no .rootcause/harvest/ scratch root remains (post-cleanup gate)")
     p.add_argument("--lint-script", help="override path to brain_lint.py (default: sibling in the kit)")
+    p.add_argument("--strict-lint", action="store_true",
+                   help="run the full-tree lint pass with --strict (SOFT findings fatal too); "
+                        "default full-tree pass blocks on HARD findings only")
     p.add_argument("--history-limit", type=int, default=2000,
                    help="max commits scanned for the raw-history check (default: 2000)")
     p.add_argument("--json", action="store_true", help="emit a machine-readable JSON report")
@@ -359,6 +383,7 @@ def main(argv: list[str] | None = None) -> int:
         md_files=[p for p in tracked if p.lower().endswith(".md")],
         lint_script=Path(args.lint_script).resolve() if args.lint_script else DEFAULT_LINT_SCRIPT,
         history_limit=args.history_limit,
+        strict_lint=args.strict_lint,
     )
 
     results = run_checks(ctx, expect_clean=args.expect_clean, skip=set(args.skip))

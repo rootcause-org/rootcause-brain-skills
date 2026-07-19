@@ -425,7 +425,9 @@ uv run --no-project python "$LBW/scripts/brain_structure.py" --expect-clean
 and refuses without `--yes`; `brain_structure.py --expect-clean` confirms no `.rootcause/harvest/`
 scratch root remains. Then:
 
-- commit the reduced brain edits and the committed **harvest record** per
+- finalize the commit on the approved diff (amend or replace the step-10 WIP commit on `dev/<branch>`,
+  then merge/fast-forward it to `main` via the `brain-git-sync` flow) and add the committed
+  **harvest record** per
   [`templates/harvest-record.md`](templates/harvest-record.md) (counts, dates, holdout scores, kit
   version only — no opaque IDs or raw data; suggested home `notes/harvest-records/`);
 - run the full [`brain-publish`](../brain-publish/SKILL.md) flow: `brain-git-sync` precondition, dev-ref

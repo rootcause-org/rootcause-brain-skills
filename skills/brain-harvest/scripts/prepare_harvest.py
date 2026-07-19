@@ -61,7 +61,8 @@ PART_RE = re.compile(r"^\*\*Participants:\*\*\s*(.*)$")
 SPAN_RE = re.compile(r"^\*\*Span:\*\*\s*(.*)$")
 OCC_RE = re.compile(r"^\*\*Occurrences:\*\*\s*(\d+)\s*$")
 ATT_RE = re.compile(r"^_\[attachment:\s*(.*?)\]_\s*$")
-REPLY_PREFIX = re.compile(r"^\s*(re|fw|fwd|aw|wg|antw|antwort|ref|rép|rep|tr|sv|vs|r)\s*[:\-]\s*", re.I)
+# Colon-only: a hyphen separator would false-strip real subjects ("re-order confirmation").
+REPLY_PREFIX = re.compile(r"^\s*(re|fw|fwd|aw|wg|antw|antwort|ref|rép|rep|tr|sv|vs|r)\s*:\s*", re.I)
 WORD_RE = re.compile(r"[a-zà-ÿ']+")
 
 # Generic subject families must never determine a topic cluster alone (spec §1); localized too.
@@ -603,7 +604,12 @@ def load_config(args: argparse.Namespace) -> dict[str, Any]:
         data = json.loads(Path(config_path).read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             raise HarvestError("--config must be a JSON object")
-        cfg.update({k: v for k, v in data.items() if k in DEFAULTS})
+        for key, value in data.items():
+            if key not in DEFAULTS:
+                continue
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise HarvestError(f"--config {key} must be a number, got {value!r}")
+            cfg[key] = value
     if getattr(args, "holdout", None) is not None:
         cfg["holdout_count"] = args.holdout
     if getattr(args, "seed", None) is not None:
