@@ -2,8 +2,10 @@
 # requires-python = ">=3.11"
 # ///
 """Deterministic privacy + brain-contract linter for `brain-harvest`. Scans brain Markdown for leaked
-secrets, raw thread text, payment links/addresses, and soft contract smells; all supported brain text
-files are scanned for local-only rc CLI commands.
+secrets, raw thread text, payment links/addresses, contact details (email/phone), order/invoice/
+tracking/account identifiers, harvest-scratch leakage (opaque IDs, raw filenames, scratch paths),
+counterparty names, and soft contract smells; all supported brain text files are scanned for
+local-only rc CLI commands.
 
 Stdlib only: run it with `uv run --no-project python brain_lint.py` or plain `python3 brain_lint.py`.
 It is a pre-commit gate, not a formatter — it never edits files.
@@ -12,7 +14,14 @@ It is a pre-commit gate, not a formatter — it never edits files.
     python3 brain_lint.py --all           # scan every tracked/untracked *.md under the tree
     python3 brain_lint.py notes/ x.md     # scan explicit files/dirs
     python3 brain_lint.py --strict        # soft (contract) findings also fail the run
+    python3 brain_lint.py --scratch p/     # scratch mode: suppress harvest opaque-ID/filename classes
     python3 brain_lint.py --selftest      # run built-in regex self-checks (no repo needed)
+
+`--scratch` is for linting the harvest scratch root itself (ignored paths passed explicitly): that
+tree is *expected* to contain opaque IDs (`H000001`) and raw `YYYY-MM--slug--n.md` filenames, so those
+two classes are suppressed there while raw-thread/secret/payment/identifier/name classes still apply
+(name findings downgrade from HARD to SOFT in scratch mode, per spec §7). Default mode
+(staged/tracked/--all) enables every class — nothing opaque may reach a tracked brain file.
 
 Exit status: 1 if any HARD finding is present, or if `--strict` and any SOFT finding is present; else
 0. Findings print grep-style: `path:line: <category>: <snippet>`.
@@ -83,18 +92,99 @@ PAYMENT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("iban", re.compile(r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}[ ]?[A-Z0-9]{1,3}\b")),
 ]
 
+# ── HARD: high-precision identifiers ─────────────────────────────────────────────────────────────
+# Order/invoice/tracking/account references in a *high-precision* shape are real customer data, not a
+# distilled rule. Kept HARD only where the shape is near-unmistakable: a carrier tracking format, or an
+# explicit prefix keyword followed (across a mandatory separator) by a long mixed letter+digit token —
+# the signature of a real order/invoice/account code. Coarse "order #12345"-style mentions are far more
+# ambiguous and live in the SOFT group below, per this file's near-zero-false-positive rule for HARD.
+IDENTIFIER_HARD_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    # UPS: literal 1Z + 16 uppercase alnum. Case-sensitive, so it will not eat lowercase prose.
+    ("carrier-tracking-id", re.compile(r"\b1Z[0-9A-Z]{16}\b")),
+    # <prefix><sep(s)><token>, token >=8 chars mixing letters and digits. The mandatory separator kills
+    # English false positives: "accountability2024…" cannot match — no separator follows the keyword.
+    ("order-invoice-id", re.compile(
+        r"(?i)\b(?:order|invoice|inv|ord|po|ref|account|acct)[ #:\-]+"
+        r"(?=[A-Za-z0-9\-]*[A-Za-z])(?=[A-Za-z0-9\-]*\d)[A-Za-z0-9][A-Za-z0-9\-]{7,}\b")),
+]
+
+# ── HARD: harvest scratch leakage ────────────────────────────────────────────────────────────────
+# Opaque harvest thread IDs (H000001), the splitter's `YYYY-MM--slug--n.md` filename shape, and the
+# `.rootcause/harvest`|`.rootcause/exports` scratch/export path fragments must never reach a tracked
+# brain file. All three shapes are highly specific (near-zero FP), so they are HARD in the default
+# (tracked/staged) mode. In `--scratch` mode they are SUPPRESSED: the harvest scratch root is *expected*
+# to be full of these, and flagging them there would only train `--no-verify` bypass on legit content.
+HARVEST_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    ("harvest-opaque-id", re.compile(r"\bH\d{6}\b")),
+    ("harvest-filename", re.compile(r"(?i)\b\d{4}-\d{2}--[a-z0-9][a-z0-9\-]*--\d+\.md\b")),
+    ("harvest-scratch-path", re.compile(r"(?i)\.rootcause/(?:harvest|exports)/")),
+]
+
+# ── SOFT: contact details (email / phone) ────────────────────────────────────────────────────────
+# A brain legitimately references its OWN routing addresses ("route billing to billing@…") and support
+# lines, so a blanket HARD here would fire on correct content and break the near-zero-FP rule for HARD
+# (which trains bypass). These are SOFT: surfaced for review, blocking only under --strict (the harvest
+# gate). The phone shape is deliberately narrow — an intl `+` prefix, a parenthesised area code, or a
+# 3-3-4 dashed group — so it does NOT fire on prices ($1,299.00), dates (2026-07-19), IBAN-adjacent
+# 4-4-2 numerics, or dotted version numbers (3.11.6).
+CONTACT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    ("email-address", re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")),
+    ("phone-number", re.compile(
+        r"(?<![\w+])(?:"
+        r"\+\d{1,3}[ .\-]?(?:\(?\d{1,4}\)?[ .\-]?){2,4}\d{2,4}"
+        r"|\(\d{3}\)[ .\-]?\d{3}[ .\-]?\d{4}"
+        r"|\d{3}[ .\-]\d{3}[ .\-]\d{4}"
+        r")(?!\d)")),
+]
+
+# ── SOFT: coarse identifier mentions ─────────────────────────────────────────────────────────────
+# The ambiguous half of the identifier axis: "order #12345", "invoice number 7788". Requiring an
+# explicit number word (#/no/nr/number/id) keeps it off SKU-ish prose like "Order US12 ABCD 1234".
+IDENTIFIER_SOFT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    ("order-ref-coarse", re.compile(
+        r"(?i)\b(?:order|invoice|ticket|case|ref(?:erence)?|account|acct|po|tracking)\s*"
+        r"(?:#|no\.?|nr\.?|number|id)\s*[:#]?\s*\w{3,}\b")),
+]
+
+# ── counterparty names: HARD in tracked scans, SOFT in --scratch ─────────────────────────────────
+# Severity is mode-split per spec §7 (brain-harvest-long-horizon-v2): names are a HARD failure in the
+# tracked diff, but a soft warning only when scanning scratch proposals — name detection is an NER
+# problem in a regex linter, and a hard gate on scratch (where greetings legitimately appear mid-
+# distillation) would train `--no-verify` bypass. What makes HARD defensible in tracked mode is the
+# deliberately narrow shape: an honorific + capitalised name, or a "Dear <Name>" salutation with
+# generic-word exclusions. Do not broaden these — precision is the HARD licence.
+NAME_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    ("counterparty-name", re.compile(
+        r"\b(?:Mr|Mrs|Ms|Mx|Dr|Prof|Sir|Madam|Mme|Mlle|Herr|Frau|Dhr|Mevr)\.?\s+[A-Z][a-z]+")),
+    ("greeting-name", re.compile(
+        r"\b(?:Dear|Beste|Geachte)\s+"
+        r"(?!Customer\b|Team\b|Support\b|Sir\b|Madam\b|All\b|There\b|Folks\b|Everyone\b|Valued\b)"
+        r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?")),
+]
+
 # ── SOFT: response-mechanics / persona wording + coarse address heuristic ────────────────────────
 # These are warnings, not commit blockers. Persona wording belongs in persona settings, not brain
 # files (see docs/brain-model.md prompt boundary). The address heuristic is deliberately coarse —
 # house number + name word(s) + street suffix — so it surfaces likely addresses for operator review
 # without hard-blocking a legit commit on a false match (which would just train `--no-verify`).
+# response-mechanics / persona-voice match INSTRUCTIONAL wording only ("draft a reply", "sign off
+# with…", "use a warm greeting") — never a bare topic mention. Field-note P2: "greeting cards" and
+# "the sign-off field in the contract PDF" (and the approval sense "sign off on a quote") must pass
+# clean, so `greeting`/`sign-off`/`salutation` only count when an imperative verb or directive frames
+# them.
 CONTRACT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("street-address", re.compile(
         r"(?i)\b\d{1,5}\s+(?:[A-Z][A-Za-z.]+\s+){0,2}[A-Z][A-Za-z.]+\s*"
         r"(?:street|avenue|ave|road|boulevard|blvd|lane|drive|straat|laan)\b")),
     ("response-mechanics", re.compile(
-        r"(?i)\b(?:sign[\s-]?off|greeting|salutation|tone of voice|our tone|"
-        r"(?:draft|write|compose) (?:a )?repl\w*|customer-facing tone)\b")),
+        r"(?i)\b(?:"
+        r"(?:draft|write|compose)\s+(?:a\s+|the\s+)?(?:repl\w+|response|message|email)"
+        r"|sign[\s-]?off\s+(?:with|warmly|using|as\b|by\b)"
+        r"|(?:always|please|do|should|must)\s+sign[\s-]?off"
+        r"|(?:use|open|start|begin|end|close)\s+(?:\w+\s+){0,3}(?:greeting|salutation|sign[\s-]?off)"
+        r"|(?:warm|friendly|formal|polite|casual)\s+(?:greeting|salutation)"
+        r"|tone of voice|customer-facing tone"
+        r")\b")),
     ("persona-voice", re.compile(
         r"(?i)\b(?:sound more like us|brand voice|use a (?:friendly|formal|warm) tone|"
         r"always sign|email signature)\b")),
@@ -172,16 +262,29 @@ def _all_targets() -> list[Path]:
     ]
 
 
-def _scan_line(line: str, *, allow_rc_cli: bool = False) -> list[tuple[str, str, str]]:
-    """Return (severity, category, snippet) for every pattern hit on one line."""
+def _scan_line(
+    line: str, *, allow_rc_cli: bool = False, scratch: bool = False,
+) -> list[tuple[str, str, str]]:
+    """Return (severity, category, snippet) for every pattern hit on one line.
+
+    `scratch` mode suppresses the harvest opaque-ID / raw-filename / scratch-path classes: that
+    content is expected inside the harvest scratch root. Every other class still applies there."""
     hits: list[tuple[str, str, str]] = []
-    for groups, severity in (
+    groups: list[tuple[list[tuple[str, re.Pattern[str]]], str]] = [
         (SECRET_PATTERNS, HARD),
         (RAWTHREAD_PATTERNS, HARD),
         (PAYMENT_PATTERNS, HARD),
+        (IDENTIFIER_HARD_PATTERNS, HARD),
+        (CONTACT_PATTERNS, SOFT),
+        (IDENTIFIER_SOFT_PATTERNS, SOFT),
+        # Names: HARD in the tracked diff, soft warning only in scratch scanning (spec §7).
+        (NAME_PATTERNS, SOFT if scratch else HARD),
         (CONTRACT_PATTERNS, SOFT),
-    ):
-        for name, pat in groups:
+    ]
+    if not scratch:
+        groups.append((HARVEST_PATTERNS, HARD))
+    for groups_, severity in groups:
+        for name, pat in groups_:
             m = pat.search(line)
             if m:
                 snippet = m.group(0).strip()
@@ -196,7 +299,7 @@ def _scan_line(line: str, *, allow_rc_cli: bool = False) -> list[tuple[str, str,
 
 
 def lint_file(
-    path: Path, *, allow_rc_cli: bool = False, rc_only: bool = False,
+    path: Path, *, allow_rc_cli: bool = False, rc_only: bool = False, scratch: bool = False,
 ) -> list[tuple[int, str, str, str]]:
     """Scan one file. Returns (lineno, severity, category, snippet) findings."""
     findings: list[tuple[int, str, str, str]] = []
@@ -206,7 +309,7 @@ def lint_file(
         print(f"error: cannot read {path}: {exc}", file=sys.stderr)
         return findings
     for n, line in enumerate(text.splitlines(), start=1):
-        hits = [] if rc_only else _scan_line(line, allow_rc_cli=True)
+        hits = [] if rc_only else _scan_line(line, allow_rc_cli=True, scratch=scratch)
         if not allow_rc_cli:
             for name, pat in RC_CLI_PATTERNS:
                 if match := pat.search(line):
@@ -230,7 +333,17 @@ def _selftest() -> int:
         "the key is sk-proj-abc123DEF456ghi789JKL012mno345": HARD,    # modern openai project key
         "Please draft a reply to the customer": SOFT,
         "sign off warmly with our name": SOFT,
+        "Always sign off with the agent's first name.": SOFT,          # instructional sign-off (FP fix keeps it)
         "The customer at 123 Main Street reported a duplicate charge.": SOFT,
+        "Call the support line at +1 (555) 123-4567 anytime.": SOFT,   # phone number
+        "See order #10482 in the billing portal.": SOFT,               # coarse order ref
+        "Escalated by Dr. Smith on the account.": HARD,                # honorific + name (tracked mode)
+        "Dear Jane Doe, thanks for reaching out.": HARD,               # greeting + name (tracked mode)
+        "Tracking number 1Z999AA10123456784 shipped Monday.": HARD,    # carrier tracking id
+        "Order ABC12345XYZ was refunded in full.": HARD,               # explicit-prefix mixed order id
+        "See thread H000123 for the disputed charge.": HARD,           # opaque harvest id
+        "Evidence: 2026-07--refund-duplicate-charge--3.md backs this.": HARD,  # harvest filename shape
+        "Raw dump lives in .rootcause/harvest/tmp/ locally.": HARD,    # harvest scratch path
         "Use `rc run debug <id>` to inspect the run.": HARD,
         "Run `rc env pull` before the live check.": HARD,
         "Inspect it with `rc action list`.": HARD,
@@ -248,6 +361,12 @@ def _selftest() -> int:
         "Set password: <your-password> in the local .env before running.",  # placeholder, not a secret
         "Use token=xxx as an example when documenting the API.",      # placeholder, not a secret
         "The invoice total reflects proration for mid-cycle upgrades.",
+        "Customers ask about greeting cards and thank-you notes.",     # topic mention, not response-mechanics
+        "The sign-off field on the invoice form is optional.",         # noun mention, not a directive
+        "Approve the quote before you sign off on the refund.",        # approval sense of "sign off"
+        "The Pro plan renews at $1,299.00 per year.",                  # price, not a phone number
+        "The incident opened on 2026-07-19 around noon.",              # date, not a phone number
+        "Pin the runtime to version 3.11.6 exactly.",                  # version, not a phone number
         "Refer to commit 3f2a1b9c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f90 for the fix.",  # git SHA, not a secret
         "The sha256 digest is e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.",
         "Use the rc CLI only from the local development checkout.",
@@ -266,6 +385,35 @@ def _selftest() -> int:
         if hits:
             print(f"selftest FAIL: clean prose flagged {text!r}: {hits}", file=sys.stderr)
             ok = False
+
+    # An own-domain routing address is a legitimate brain reference: SOFT (reviewable), never HARD.
+    routing = "Route escalations to billing@pro-backup.io for triage."
+    sev = {s for s, _, _ in _scan_line(routing)}
+    if SOFT not in sev or HARD in sev:
+        print(f"selftest FAIL: routing address should be SOFT-only, got {sev}", file=sys.stderr)
+        ok = False
+
+    # Default mode flags harvest opaque IDs and raw filenames (HARD); --scratch suppresses just those.
+    leak = "See thread H000123 in 2026-07--dispute--3.md for context."
+    default_cats = {c for _, c, _ in _scan_line(leak)}
+    scratch_cats = {c for _, c, _ in _scan_line(leak, scratch=True)}
+    if not {"harvest-opaque-id", "harvest-filename"} <= default_cats:
+        print(f"selftest FAIL: default mode missed harvest leak, got {default_cats}", file=sys.stderr)
+        ok = False
+    if {"harvest-opaque-id", "harvest-filename"} & scratch_cats:
+        print(f"selftest FAIL: --scratch should suppress harvest classes, got {scratch_cats}",
+              file=sys.stderr)
+        ok = False
+
+    # Names are HARD in the tracked diff, downgraded to SOFT in scratch scanning (spec §7).
+    name_line = "Dear Jane Doe, thanks for reaching out."
+    name_default = {s for s, c, _ in _scan_line(name_line) if c == "greeting-name"}
+    name_scratch = {s for s, c, _ in _scan_line(name_line, scratch=True) if c == "greeting-name"}
+    if name_default != {HARD} or name_scratch != {SOFT}:
+        print(f"selftest FAIL: name severity split wrong: default={name_default} scratch={name_scratch}",
+              file=sys.stderr)
+        ok = False
+
     kit_root = Path("/tmp/brain-skills-kit").resolve()
     if not _is_kit_target(kit_root / "docs/rc-cli.md", kit_root):
         print("selftest FAIL: kit target was not exempt", file=sys.stderr)
@@ -282,6 +430,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("paths", nargs="*", help="files/dirs to scan (default: staged brain text).")
     p.add_argument("--all", action="store_true", help="scan supported brain text under the tree.")
     p.add_argument("--strict", action="store_true", help="soft (contract) findings also fail.")
+    p.add_argument("--scratch", action="store_true",
+                   help="scratch mode: suppress harvest opaque-ID/filename classes (expected there).")
     p.add_argument("--selftest", action="store_true", help="run built-in regex self-checks and exit.")
     args = p.parse_args(sys.argv[1:] if argv is None else argv)
 
@@ -305,7 +455,7 @@ def main(argv: list[str] | None = None) -> int:
         allow_rc_cli = _is_kit_target(path, kit_root)
         rc_only = path.suffix.lower() != ".md"
         for lineno, severity, category, snippet in lint_file(
-            path, allow_rc_cli=allow_rc_cli, rc_only=rc_only,
+            path, allow_rc_cli=allow_rc_cli, rc_only=rc_only, scratch=args.scratch,
         ):
             print(f"{path}:{lineno}: {severity} {category}: {snippet}")
             if severity == HARD:
