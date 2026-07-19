@@ -120,6 +120,22 @@ _USAGE = (
 )
 
 
+def _broker_unreachable_msg(exc: BaseException) -> str:
+    """The 'where this works' pointer for a broker we could not talk to at all.
+
+    A transport failure (no proxy in this run scope, connection refused, timeout) means we never got
+    an HTTP status — so there's no BrokerError to explain it. Rather than let requests dump a raw
+    traceback the model can't act on, say plainly where the capability lives and what to use here.
+    """
+    return (
+        f"sender_history: could not reach the per-run history broker ({type(exc).__name__}). "
+        "This capability only works INSIDE a live agent run, where the host serves prior threads "
+        "over rc-broker.internal; it is unavailable from a plain shell outside a run. Use the "
+        "same-sender history INDEX already in your context (subjects, dates, digests); "
+        "`get <ref>` runs in the main agent loop."
+    )
+
+
 def _main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args:
@@ -127,23 +143,42 @@ def _main(argv: list[str] | None = None) -> int:
         return 2
     cmd, rest = args[0], args[1:]
 
-    try:
-        if cmd == "list":
-            print(list_index())
-            return 0
-        if cmd == "get":
-            if len(rest) != 1 or not rest[0].strip():
-                print("usage: python -m lib.sender_history get <REF>", file=sys.stderr)
-                return 2
-            ref = rest[0]
+    if cmd == "list":
+        # The try guards ONLY the broker call: requests' RequestException subclasses OSError (as do
+        # builtin ConnectionError/TimeoutError), and no HTTP status means no BrokerError — degrade
+        # LOUDLY with the "where this works" pointer rather than surfacing a bare traceback.
+        try:
+            body = list_index()
+        except BrokerError as e:
+            print(str(e), file=sys.stderr)
+            return 1
+        except OSError as e:
+            print(_broker_unreachable_msg(e), file=sys.stderr)
+            return 1
+        print(body)
+        return 0
+
+    if cmd == "get":
+        if len(rest) != 1 or not rest[0].strip():
+            print("usage: python -m lib.sender_history get <REF>", file=sys.stderr)
+            return 2
+        ref = rest[0]
+        try:
             body = get_thread(ref)
-            path = _save_thread(ref, body)
-            print(path)
-            print(body)
-            return 0
-    except BrokerError as e:
-        print(str(e), file=sys.stderr)
-        return 1
+        except BrokerError as e:
+            print(str(e), file=sys.stderr)
+            return 1
+        except OSError as e:
+            print(_broker_unreachable_msg(e), file=sys.stderr)
+            return 1
+        # The hydration is already spent (host-capped per run): a failed local save must never
+        # discard the body, and must not be mislabeled as a broker failure — print it regardless.
+        try:
+            print(_save_thread(ref, body))
+        except OSError as e:
+            print(f"sender_history: retrieved OK but could not save under {_HISTORY_DIR}: {e}", file=sys.stderr)
+        print(body)
+        return 0
 
     print(f"unknown command {cmd!r}\n{_USAGE}", file=sys.stderr)
     return 2
