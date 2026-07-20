@@ -93,6 +93,31 @@ Useful brain conventions:
 - For action-backed outcomes, route to the action doc's safety guards and verification checks before
   suggesting proposal.
 
+### Routing row vs. the auto tree
+
+The host renders a budgeted (~500-line) glossed file tree of the brain (and each mirror) into every
+run's context, one line per file with its `description:`/docstring gloss. So a routing row is not free
+orientation — it either adds reach the tree can't, or duplicates a line the tree already carries. Add
+one only when it does the former:
+
+- **Redundant — skip it.** The target already renders as its own tree line with a `description:` gloss,
+  and it's shallow and well-named. The gloss carries it; a row that just restates a visible, glossed
+  file burns tokens on every run.
+- **Relevant — write it** when at least one holds:
+  1. **The tree can't show the target** — it lives ≥2 levels inside a dir the budget capped or
+     collapsed (huge uniform families like `platforms/<provider>/…`, flat archives like a 1k-file FAQ
+     dir), so the tree prints only `… (N files, M dirs)` and the file is invisible.
+  2. **Lexical gap** — customers' words don't match the filename/path; the row bridges their vocabulary
+     to the path (retrieval is lexical `rg` over customer words — see the grounding checklist below).
+  3. **Uniform family** — write ONE pattern row with a `<placeholder>` that teaches the whole shape
+     (`platforms/<provider>/{oauth,pull,restore}/`); never enumerate members.
+  4. **Irregular family** — prefer a short mirror-map or `INDEX.md` note over many one-off rows.
+- **Mechanics.** A path named in a routing row becomes a tree **PriorityPath**: protected from
+  collapse, so the row is also the lever that keeps an otherwise-capped dir line visible. Keep rows to
+  one line, symptom-phrased in customer vocabulary, and current when files move.
+- **Don't hand-maintain a Layout tree** in `AGENTS.md` — it duplicates the auto tree and rots. Align
+  with it; add rows only for what the auto tree can't reach.
+
 ## Production Prompt Boundary
 
 The production loop also sends standing instructions from RootCause itself, currently in
