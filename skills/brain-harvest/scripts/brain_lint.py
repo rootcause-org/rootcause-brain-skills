@@ -55,12 +55,16 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("private-key-block", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----")),
     ("bearer-token", re.compile(r"\b[Bb]earer\s+[A-Za-z0-9._\-]{20,}\b")),
     # Inline credentials in a connection URL: postgres://user:pass@host/db, mongodb://…, redis://…
-    ("db-url-credential", re.compile(r"\b[a-z][a-z0-9+.\-]*://[^\s/@:]+:[^\s/@]+@")),
+    # A masked password (`user:***@`, `user:xxx@`, `user:<pass>@`) is documentation, not a credential.
+    ("db-url-credential", re.compile(r"\b[a-z][a-z0-9+.\-]*://[^\s/@:]+:(?!\*+@|x{3,}@|<)[^\s/@]+@")),
     # Value assignment to a secret-ish key. Skip obvious placeholders so example/instructional prose
-    # ("password: <your-password>", "token=xxx", "secret=***") does not hard-block a legit commit.
+    # ("password: <your-password>", "token=xxx", "secret=***") does not hard-block a legit commit,
+    # and skip env-var lookups (`api_key = os.environ[…]`, `token=$TOKEN`, `ENV["…"]`) — those are
+    # the *sanctioned* way to reference a secret, not a leaked value.
     ("password-assign", re.compile(
         r"(?i)\b(?:password|passwd|secret|api[_-]?key|token)\s*[:=]\s*"
-        r"(?!<|x{3,}\b|\*{3,}|\.{3}|your[_-]|placeholder\b|redacted\b|example\b)\S{6,}")),
+        r"(?!<|x{3,}\b|\*{3,}|\.{3}|your[_-]|placeholder\b|redacted\b|example\b"
+        r"|`?(?:os\.environ|process\.env|ENV\[|\$))\S{6,}")),
     # Long high-entropy base64-ish blob (>=40 chars) — likely a raw key/token pasted from a thread.
     # Require a base64 signal char (+ or =) OR a mixed-case+digit shape, so plain-hex git SHAs/digests
     # (all lowercase, no +/=) and slash-separated route/slug paths (cases/billing/refunds/…) do NOT
@@ -72,13 +76,20 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
         r"[A-Za-z0-9+]{40,}={0,2}\b")),
 ]
 
-# ── HARD: raw-thread shape ──────────────────────────────────────────────────────────────────────
+# ── raw-thread shape: HARD plumbing + SOFT blockquote ───────────────────────────────────────────
 # Verbatim email plumbing that means someone pasted a raw thread instead of distilling it.
 RAWTHREAD_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("quoted-reply", re.compile(r"^\s*>")),
     ("on-x-wrote", re.compile(r"(?i)^\s*On .+ wrote:\s*$")),
     ("mail-header", re.compile(r"(?i)^\s*(?:From|To|Cc|Bcc|Sent|Reply-To|Date|Subject)\s*:\s*\S")),
     ("forwarded-block", re.compile(r"(?i)-{3,}\s*(?:Forwarded message|Original Message)\s*-{3,}")),
+]
+# A lone `>` line is legitimate Markdown (callouts, symptom quotes in cases/skills docs) far more
+# often than it is a pasted reply — full-tree scans of mature brains showed hundreds of blockquote
+# callouts and zero raw threads. It stays a signal (SOFT: warns; fatal under --strict, which the
+# harvest gate runs), but per this file's near-zero-FP rule it can no longer be HARD on its own —
+# a real pasted thread still hard-fails via mail headers, "On … wrote:", names, and identifiers.
+RAWTHREAD_SOFT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    ("quoted-reply", re.compile(r"^\s*>")),
 ]
 
 # ── HARD: payment links ─────────────────────────────────────────────────────────────────────────
@@ -158,7 +169,8 @@ NAME_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
         r"\b(?:Mr|Mrs|Ms|Mx|Dr|Prof|Sir|Madam|Mme|Mlle|Herr|Frau|Dhr|Mevr)\.?\s+[A-Z][a-z]+")),
     ("greeting-name", re.compile(
         r"\b(?:Dear|Beste|Geachte)\s+"
-        r"(?!Customer\b|Team\b|Support\b|Sir\b|Madam\b|All\b|There\b|Folks\b|Everyone\b|Valued\b)"
+        r"(?!Customer\b|Team\b|Support\b|Sir\b|Madam\b|All\b|There\b|Folks\b|Everyone\b|Valued\b"
+        r"|Suppliers?\b|Vendors?\b|Partners?\b|Colleagues?\b|Guests?\b|Sirs\b)"
         r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?")),
 ]
 
@@ -273,6 +285,7 @@ def _scan_line(
     groups: list[tuple[list[tuple[str, re.Pattern[str]]], str]] = [
         (SECRET_PATTERNS, HARD),
         (RAWTHREAD_PATTERNS, HARD),
+        (RAWTHREAD_SOFT_PATTERNS, SOFT),
         (PAYMENT_PATTERNS, HARD),
         (IDENTIFIER_HARD_PATTERNS, HARD),
         (CONTACT_PATTERNS, SOFT),
@@ -324,7 +337,7 @@ def _selftest() -> int:
     must_flag = {
         "AKIA1234567890ABCDEF": HARD,
         "token: hunter2secret": HARD,
-        "> quoted line from a thread": HARD,
+        "> quoted line from a thread": SOFT,   # blockquotes are legit Markdown; fatal only under --strict
         "On Tue, Jan 2 2024, Alice wrote:": HARD,
         "From: alice@example.com": HARD,
         "pay here https://stripe.com/pay/abc": HARD,
@@ -360,6 +373,10 @@ def _selftest() -> int:
         "SKU AB12 CDEF 3456 GHIJ in the catalog is discontinued.",    # SKU-ish, not an IBAN
         "Set password: <your-password> in the local .env before running.",  # placeholder, not a secret
         "Use token=xxx as an example when documenting the API.",      # placeholder, not a secret
+        'Read it via `sdk.api_key = os.environ["STRIPE_RESTRICTED_KEY"]` at startup.',  # env lookup
+        "Export token=$GITHUB_TOKEN before running the sync.",        # env-var reference, not a value
+        "Connect with postgresql://provisioner:***@db.host:5432/app locally.",  # masked password
+        "Dear Suppliers, please update your invoicing details.",      # generic role, not a person
         "The invoice total reflects proration for mid-cycle upgrades.",
         "Customers ask about greeting cards and thank-you notes.",     # topic mention, not response-mechanics
         "The sign-off field on the invoice form is optional.",         # noun mention, not a directive
@@ -385,6 +402,13 @@ def _selftest() -> int:
         if hits:
             print(f"selftest FAIL: clean prose flagged {text!r}: {hits}", file=sys.stderr)
             ok = False
+
+    # A lone blockquote is legit Markdown: SOFT (fatal only under --strict, the harvest gate), never HARD.
+    quoted = "> The customer wrote something here."
+    sev = {s for s, _, _ in _scan_line(quoted)}
+    if SOFT not in sev or HARD in sev:
+        print(f"selftest FAIL: blockquote should be SOFT-only, got {sev}", file=sys.stderr)
+        ok = False
 
     # An own-domain routing address is a legitimate brain reference: SOFT (reviewable), never HARD.
     routing = "Route escalations to billing@pro-backup.io for triage."

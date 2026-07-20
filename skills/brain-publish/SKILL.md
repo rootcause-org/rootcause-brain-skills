@@ -43,7 +43,7 @@ Also read [docs/actions.md](../../docs/actions.md) when publishing `actions/<id>
    VERIFY_ARGS=()
    uv run "$LOCAL_SKILL/scripts/brain_test.py"
    VERIFY_ARGS+=(--verify-command "uv run \"$LOCAL_SKILL/scripts/brain_test.py\"")
-   uv run --no-project python "$LOCAL_SKILL/scripts/brain_structure.py"   # structural validation (links, frontmatter, routing, privacy lint)
+   uv run --no-project python "$LOCAL_SKILL/scripts/brain_structure.py"   # structural validation (links, frontmatter, routing; privacy lint scoped to files changed vs origin/main)
    VERIFY_ARGS+=(--verify-command "uv run --no-project python \"$LOCAL_SKILL/scripts/brain_structure.py\"")
    ```
    The example is for a project/tenant brain. For the kit, use its validators and at least

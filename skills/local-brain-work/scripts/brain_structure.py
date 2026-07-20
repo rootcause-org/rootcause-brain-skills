@@ -10,11 +10,26 @@ content is judged. Checks (each independently reported, skippable with `--skip <
   * links        — every relative Markdown link/route target in tracked *.md resolves to a tracked path.
   * frontmatter  — every tracked `skills/*/SKILL.md` has a valid front-matter block (name + description).
   * reachability — routed case/notes/playbook files are reachable from the project router (AGENTS.md).
-  * lint         — `brain_lint.py` passes staged and full-tree (`--all`; add `--strict-lint` to make
-                   SOFT findings fatal too — the harvest gate runs its own `--all --strict` pass).
+  * lint         — `brain_lint.py` passes on staged files and on the tree scope (below).
   * raw-tracked  — no raw-harvest path is tracked now (`.rootcause/` fragments or split-file shapes).
   * raw-history  — no raw-harvest path appears in git history (deleted-but-still-in-history case).
   * scratch      — (`--expect-clean` only) no `.rootcause/harvest/` scratch root remains on disk.
+
+Scope (`--scope new|full`, default `new`): a publish gate must judge the work being published, not
+re-litigate a mature tree's legacy debt on every push — a gate that always fails gets bypassed.
+Under the default `new` scope, pre-existing findings already present on `origin/main` do not fail
+the run; only regressions do. Two mechanisms, both falling back to `full` when `origin/main` is
+absent:
+
+  * links/frontmatter/reachability run twice — once against the materialized `origin/main` tree as a
+    baseline — and only findings absent from the baseline fail (suppressed counts are still
+    reported). Whole-tree semantics are kept so e.g. a router edit that orphans an *untouched* file
+    still fails.
+  * lint's tree pass scans only files carrying local work vs `origin/main` (committed-ahead, staged,
+    unstaged, untracked) instead of `--all`; add `--strict-lint` to make SOFT findings fatal too —
+    the harvest gate runs its own `--all --strict` pass.
+
+`--scope full` restores the strict everything-must-be-clean behavior for cleanup sweeps.
 
     uv run --no-project python brain_structure.py                 # default checks, from a brain root
     uv run --no-project python brain_structure.py --expect-clean  # + post-cleanup scratch-root check
@@ -29,11 +44,14 @@ machine-readable `SUMMARY …` line.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import re
 import subprocess
 import sys
+import tarfile
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -70,6 +88,10 @@ EXTERNAL_RE = re.compile(r"^(?:[a-z][a-z0-9+.\-]*:|//|#)", re.I)
 DEFAULT_LINT_SCRIPT = (Path(__file__).resolve().parent / ".." / ".." /
                        "brain-harvest" / "scripts" / "brain_lint.py").resolve()
 
+# Mirrors brain_lint.py's SCAN_SUFFIXES: the changed-scope pass passes explicit paths, and explicit
+# paths bypass the linter's own suffix filter, so filter here to keep parity with its `--all` set.
+LINT_SUFFIXES = {".md", ".py", ".rb", ".sh", ".toml", ".yaml", ".yml", ".json"}
+
 
 class StructureError(RuntimeError):
     """The checkout cannot be validated at all (not a git repo, git unusable)."""
@@ -102,6 +124,7 @@ class Ctx:
     lint_script: Path = DEFAULT_LINT_SCRIPT
     history_limit: int = 2000
     strict_lint: bool = False
+    scope: str = "new"
 
     def read(self, rel: str) -> str:
         return (self.root / rel).read_text(encoding="utf-8", errors="replace")
@@ -121,6 +144,45 @@ def git_tracked(root: Path) -> list[str]:
     if proc.returncode != 0:
         raise StructureError(f"git ls-files failed: {proc.stderr.strip()}")
     return [p for p in proc.stdout.split("\0") if p]
+
+
+def git_changed_paths(root: Path) -> list[str] | None:
+    """Paths carrying local work relative to origin/main: commits ahead of the merge-base, plus
+    staged, unstaged, and untracked files. Returns None when origin/main (or an unborn HEAD) makes
+    the scope uncomputable — the caller then falls back to a full-tree lint."""
+    probe = subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "--quiet",
+                            "origin/main"], capture_output=True, text=True)
+    if probe.returncode != 0:
+        return None
+    paths: dict[str, None] = {}
+    for args in (["diff", "--name-only", "--diff-filter=ACMR", "origin/main...HEAD"],
+                 ["diff", "--name-only", "--diff-filter=ACMR", "HEAD"],
+                 ["ls-files", "--others", "--exclude-standard"]):
+        proc = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
+        if proc.returncode != 0:
+            return None
+        for ln in proc.stdout.splitlines():
+            if ln.strip():
+                paths.setdefault(ln.strip())
+    return list(paths)
+
+
+def git_baseline_ctx(root: Path, tmp: Path) -> Ctx | None:
+    """Materialize the origin/main tree into `tmp` and return a Ctx over it, or None when
+    origin/main is not resolvable (caller then treats every finding as new)."""
+    tree = subprocess.run(["git", "-C", str(root), "archive", "--format=tar", "origin/main"],
+                          capture_output=True)
+    if tree.returncode != 0:
+        return None
+    listing = subprocess.run(["git", "-C", str(root), "ls-tree", "-r", "-z", "--name-only",
+                              "origin/main"], capture_output=True, text=True)
+    if listing.returncode != 0:
+        return None
+    with tarfile.open(fileobj=io.BytesIO(tree.stdout)) as tf:
+        tf.extractall(tmp, filter="data")
+    tracked = [p for p in listing.stdout.split("\0") if p]
+    return Ctx(root=tmp, tracked=tracked, tracked_set=set(tracked),
+               md_files=[p for p in tracked if p.lower().endswith(".md")])
 
 
 def git_history_paths(root: Path, limit: int) -> list[str]:
@@ -268,12 +330,26 @@ def check_lint(ctx: Ctx) -> list[Finding]:
         return [Finding("lint",
                         f"privacy/contract lint script not found at {ctx.lint_script}; pass --lint-script")]
     findings: list[Finding] = []
-    # Full-tree strict is opt-in (--strict-lint): under --strict every SOFT class is fatal, and the
-    # linter deliberately keeps legit-in-a-brain shapes (own routing addresses, coarse heuristics)
-    # SOFT so they warn without blocking. The harvest gate runs `--all --strict` itself (SKILL step 8,
-    # spec §9); the generic publish path blocks on HARD findings only.
-    full_tree = ["--all", "--strict"] if ctx.strict_lint else ["--all"]
-    for label, extra in (("staged", []), ("full-tree", full_tree)):
+    # Strict is opt-in (--strict-lint): under --strict every SOFT class is fatal, and the linter
+    # deliberately keeps legit-in-a-brain shapes (own routing addresses, blockquotes, coarse
+    # heuristics) SOFT so they warn without blocking. The harvest gate runs `--all --strict` itself
+    # (SKILL step 8, spec §9); the generic publish path blocks on HARD findings only.
+    strict = ["--strict"] if ctx.strict_lint else []
+    passes: list[tuple[str, list[str]]] = [("staged", [])]
+    changed = None if ctx.scope == "full" else git_changed_paths(ctx.root)
+    if ctx.scope == "full" or changed is None:
+        # Whole tree: explicit --lint-scope full, or no origin/main to scope against.
+        passes.append(("full-tree", ["--all", *strict]))
+    else:
+        # Changed scope: lint only files carrying local work vs origin/main, so pre-existing
+        # findings elsewhere in a mature tree cannot block an unrelated publish. Touching a file
+        # re-exposes every finding in it — the tree ratchets cleaner as files get edited.
+        targets = sorted(p for p in changed
+                         if Path(p).suffix.lower() in LINT_SUFFIXES and (ctx.root / p).is_file())
+        if targets:
+            passes.append((f"changed-scope ({len(targets)} file(s) vs origin/main)",
+                           [*strict, *targets]))
+    for label, extra in passes:
         proc = subprocess.run([sys.executable, str(ctx.lint_script), *extra],
                               cwd=str(ctx.root), capture_output=True, text=True)
         if proc.returncode != 0:
@@ -318,36 +394,67 @@ CHECKS: list[tuple[str, Callable[[Ctx], list[Finding]]]] = [
 ]
 EXPECT_CLEAN_CHECK: tuple[str, Callable[[Ctx], list[Finding]]] = ("scratch", check_scratch)
 ALL_CHECK_NAMES = [name for name, _ in CHECKS] + [EXPECT_CLEAN_CHECK[0]]
+# Tree checks whose pre-existing findings are baselined against origin/main under --scope new.
+# Line numbers are excluded from the baseline key so unrelated edits shifting a finding down a file
+# do not resurrect it. lint scopes itself (changed files); raw-* / scratch stay absolute — a privacy
+# leak or scratch root must block even if it already sits on origin/main.
+BASELINED_CHECKS = {"links", "frontmatter", "reachability"}
 
 
-def run_checks(ctx: Ctx, *, expect_clean: bool, skip: set[str]) -> list[dict[str, object]]:
+def finding_key(f: Finding) -> tuple[str, str | None, str]:
+    return (f.check, f.path, f.message)
+
+
+def baseline_keys(root: Path, skip: set[str]) -> set[tuple[str, str | None, str]] | None:
+    """Findings already present on origin/main for the baselined checks; None without origin/main."""
+    with tempfile.TemporaryDirectory(prefix="brain-structure-baseline-") as tmp:
+        bctx = git_baseline_ctx(root, Path(tmp))
+        if bctx is None:
+            return None
+        return {finding_key(f)
+                for name, fn in CHECKS if name in BASELINED_CHECKS and name not in skip
+                for f in fn(bctx)}
+
+
+def run_checks(ctx: Ctx, *, expect_clean: bool, skip: set[str],
+               baseline: set[tuple[str, str | None, str]] | None) -> list[dict[str, object]]:
     active = list(CHECKS)
     if expect_clean:
         active.append(EXPECT_CLEAN_CHECK)
     results: list[dict[str, object]] = []
     for name, fn in active:
         if name in skip:
-            results.append({"name": name, "skipped": True, "ok": True, "findings": []})
+            results.append({"name": name, "skipped": True, "ok": True, "findings": [],
+                            "baselined": 0})
             continue
         found = fn(ctx)
-        results.append({"name": name, "skipped": False, "ok": not found, "findings": found})
+        baselined = 0
+        if baseline is not None and name in BASELINED_CHECKS:
+            fresh = [f for f in found if finding_key(f) not in baseline]
+            baselined = len(found) - len(fresh)
+            found = fresh
+        results.append({"name": name, "skipped": False, "ok": not found, "findings": found,
+                        "baselined": baselined})
     return results
 
 
-def build_report(results: list[dict[str, object]]) -> dict[str, object]:
+def build_report(results: list[dict[str, object]], *, scope: str) -> dict[str, object]:
     ran = [r for r in results if not r["skipped"]]
     failed = [r for r in ran if not r["ok"]]
     findings = [f for r in results for f in r["findings"]]
+    baselined = sum(r["baselined"] for r in results)
     return {
         "ok": not failed,
+        "scope": scope,
         "checks": [
             {"name": r["name"], "skipped": r["skipped"], "ok": r["ok"],
+             "baselined": r["baselined"],
              "findings": [f.as_dict() for f in r["findings"]]}
             for r in results
         ],
         "findings": [f.as_dict() for f in findings],
         "summary": {"checks": len(results), "ran": len(ran), "passed": len(ran) - len(failed),
-                    "failed": len(failed), "findings": len(findings),
+                    "failed": len(failed), "findings": len(findings), "baselined": baselined,
                     "failed_checks": [r["name"] for r in failed]},
     }
 
@@ -361,8 +468,13 @@ def main(argv: list[str] | None = None) -> int:
                    help="also require no .rootcause/harvest/ scratch root remains (post-cleanup gate)")
     p.add_argument("--lint-script", help="override path to brain_lint.py (default: sibling in the kit)")
     p.add_argument("--strict-lint", action="store_true",
-                   help="run the full-tree lint pass with --strict (SOFT findings fatal too); "
-                        "default full-tree pass blocks on HARD findings only")
+                   help="run the tree lint pass with --strict (SOFT findings fatal too); "
+                        "default pass blocks on HARD findings only")
+    p.add_argument("--scope", choices=["new", "full"], default="new",
+                   help="'new' (default): fail only on findings not already present on origin/main "
+                        "(links/frontmatter/reachability baseline against it; lint's tree pass scans "
+                        "only files with local work). 'full': everything must be clean. Falls back "
+                        "to full when origin/main is absent")
     p.add_argument("--history-limit", type=int, default=2000,
                    help="max commits scanned for the raw-history check (default: 2000)")
     p.add_argument("--json", action="store_true", help="emit a machine-readable JSON report")
@@ -384,10 +496,13 @@ def main(argv: list[str] | None = None) -> int:
         lint_script=Path(args.lint_script).resolve() if args.lint_script else DEFAULT_LINT_SCRIPT,
         history_limit=args.history_limit,
         strict_lint=args.strict_lint,
+        scope=args.scope,
     )
 
-    results = run_checks(ctx, expect_clean=args.expect_clean, skip=set(args.skip))
-    report = build_report(results)
+    skip = set(args.skip)
+    baseline = baseline_keys(root, skip) if args.scope == "new" else None
+    results = run_checks(ctx, expect_clean=args.expect_clean, skip=skip, baseline=baseline)
+    report = build_report(results, scope=args.scope)
     summary = report["summary"]
 
     if args.json:
@@ -395,9 +510,14 @@ def main(argv: list[str] | None = None) -> int:
     else:
         for finding in (f for r in results for f in r["findings"]):
             print(finding.render())
+        for r in results:
+            if r["baselined"]:
+                print(f"NOTE {r['name']}: {r['baselined']} pre-existing finding(s) already on "
+                      f"origin/main suppressed (--scope full to see them)")
         failed = summary["failed_checks"]
         print(f"SUMMARY checks={summary['checks']} ran={summary['ran']} passed={summary['passed']} "
               f"failed={summary['failed']} findings={summary['findings']} "
+              f"baselined={summary['baselined']} "
               f"failed_checks={','.join(failed) if failed else '-'}")
 
     return 1 if not report["ok"] else 0
