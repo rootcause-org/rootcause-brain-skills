@@ -142,6 +142,45 @@ brain can inform triage but never silently black-hole mail. Recommended home is 
 brain root, but the frontmatter tag — not the filename — is the contract, and it is a list that
 generalizes to future host-assembled prompts. Don't restate `AGENTS.md`; it is always included.
 
+### Feeding the grounding pre-step (`include_in: [grounding]`)
+
+The same `include_in` list feeds a second host prompt. A file tagged `include_in: [grounding]` has its
+**full body hard-loaded into the grounding pre-step's turn-1 on every thread** — pasted right after
+`/brain/AGENTS.md` so the cheap file-selector starts **oriented** — and, unlike `AGENTS.md`, it stays
+fully **selectable**, so the pre-step still forwards its `path:span` refs to the main agent when
+relevant. Per-file **8KB** / **24KB** total caps clamp it. **Tag sparingly** — a handful of files, each
+earning its tokens; this is a **per-run token tax on every thread**. Reserve it for a project's
+**always-load-bearing overviews** (a system map, the core glossary) and **never** for case runbooks or
+FAQ items — that per-topic content is retrieval's job, fetched on demand. The whole brain (and tenant
+brain) is scanned; a **mirror** file is only picked up at the repo root as `*.md` or under `doc/`,
+`docs/`, `.claude/`, `.agents/`.
+
+### Writing for grounding — author checklist
+
+Before the main loop, a cheap grounding pre-step routes by tree glosses and lexical `rg`, then bakes
+its selection into the model's opening turn. Every upfront line is a router hook bought with tokens;
+an irrelevant one is an active distractor. Checklist:
+
+- `description:` frontmatter on every `skills/*/SKILL.md`, `skills/cases/*.md` runbook, and
+  `actions/*/manifest.yaml` — "when to open this" in customer vocabulary, ≤90 chars; it renders
+  inline on the file's tree line and the offline lint fails missing/overlong ones.
+- Python scripts: first docstring line = one-line purpose; it is the script's tree gloss, so agents
+  inventory scripts without opening them.
+- `include_in: [triage]` — decline/ownership/scope rules triage must know; short, it rides every
+  triage call (subsection above).
+- `include_in: [grounding]` — only always-load-bearing overviews; it taxes every thread, never
+  runbooks or FAQ items (subsection above).
+- Customer language everywhere — filenames, descriptions, `AGENTS.md` routing rows; retrieval is
+  lexical `rg` over the words customers write, so a correct doc missing those words is invisible.
+- Flat archives (e.g. FAQ imports): greppable frontmatter facets on every item plus a generated
+  `INDEX.md` with facet counts and exact `rg` recipes; the tree caps large dirs, so never rely on
+  filename enumeration.
+- `journal/` is host-written and renders as one counts line; never hand-author it.
+- `AGENTS.md` routing rows map symptom phrases to exact file paths; named paths are pinned in the
+  tree, so keep them current when files move.
+- Before committing: `uv run "$SKILL/scripts/brain_test.py"` (offline tier; includes the
+  description lint, no DSN needed).
+
 ## Production Mounts
 
 ```mermaid
