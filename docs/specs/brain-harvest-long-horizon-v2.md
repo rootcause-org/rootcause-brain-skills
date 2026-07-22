@@ -1,9 +1,9 @@
 # Brain harvest v2: fast, complete, privacy-safe long-horizon synthesis
 
-Status: specification only; no implementation in this change. Revised after a three-agent review
-(kit audit, cross-repo feasibility check, adversarial critique). This revision is the source of
-truth; where it conflicts with `docs/brain-harvest-improvements.md`, this file wins, and that file
-remains the detailed field-note record.
+Status: kit-side implementation complete in v0.2.3; the separately listed CLI/server work remains.
+Revised after a three-agent review (kit audit, cross-repo feasibility check, adversarial critique).
+This revision is the source of truth; where it conflicts with `docs/brain-harvest-improvements.md`,
+this file wins, and that file remains the detailed field-note record.
 
 ## Problem
 
@@ -92,8 +92,8 @@ modeled on `website_scout.py`'s structure and testing style:
    must parse raw v1 **and** v2 downloads itself (via `--out` bytes), so the local pipeline never
    blocks on the `rc` splitter; `rc corpus download --split` remains a convenience, not a
    dependency.
-3. Assign an opaque ID (`H000001`) to every thread. Raw filenames remain internal and never appear
-   in agent proposals or tracked files.
+3. Assign a content-derived opaque ID (`H` + 32 lowercase hex) to every thread. IDs remain stable
+   across full/delta overlap; raw filenames remain internal and never appear in proposals/tracked files.
 4. Extract metadata without LLM synthesis: date span, subject family, language, message/reply
    counts, direction, form source, attachment presence, prose-reply-present flag, era band (see
    §5a), and safe risk markers.
@@ -294,8 +294,8 @@ prose guidance for the remaining steps minimal to limit long-session drift.
 9. independent staged-diff review and fixes;
 10. ⚙ generate review brief, sanitized replay case, and held-out evaluation (§10);
 11. one mandatory operator diff approval (with local evidence brief available);
-12. ⚙ delete sensitive scratch, verify cleanup; then Git sync/commit/push, dev-ref replay/debug,
-    publish, exact-SHA verification.
+12. ⚙ promote the approved, byte-identical harvest-record candidate into the tracked diff; delete
+    sensitive scratch and verify cleanup; then Git sync/commit/push, publish, exact-SHA verification.
 
 Failure/resume semantics: state that persists between steps is exactly the ignored scratch root
 (manifest, ledger, cluster drafts, critic output, brief) plus the tracked working diff. Any step may
@@ -342,12 +342,13 @@ whole exercise and is here made systematic.
 - a sanitized subset of the brief (counts and scorecard, no opaque IDs) may be committed as the
   harvest record below.
 
-**Committed harvest record:** a small tracked file per harvest (date, export id, thread count,
-date span, coverage stats, holdout scores, kit version). This provides auditability after scratch
-deletion and a watermark enabling **incremental re-harvest**: a future `--since` run exports and
-processes only threads newer than the last record, turning re-runs from a full harvest into a small
-delta. Incremental mode is a v2 goal for preparation's design (IDs and manifests must be stable
-across runs) even if the `--since` export plumbing ships later.
+**Committed harvest record:** generation renders the exact tracked-safe JSON candidate beside the
+ephemeral brief before the gate. After approval, the record command verifies current ledger/run state
+and copies that candidate byte-for-byte into the tracked diff before scratch deletion. It contains the
+date, export id, thread count, date span, coverage stats, ordinal-only holdout scores, run metrics, and
+kit version. This provides auditability after scratch deletion and a watermark enabling **incremental
+re-harvest**: a future `--since` run exports and processes only threads newer than the last record,
+turning re-runs from a full harvest into a small delta.
 
 ## Deliverables
 

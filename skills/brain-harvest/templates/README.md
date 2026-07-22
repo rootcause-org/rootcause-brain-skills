@@ -30,9 +30,9 @@ Standard prompts and output formats for the v2 pipeline stages. Templates 1–3 
 |---|---|---|
 | [`cluster-agent-prompt.md`](cluster-agent-prompt.md) | 3 — bounded topic drafts | Per-cluster subagent prompt + output contract: single-pass stratified read of the pinned sample plus every deep-read id, deltas vs the existing brain, era tags, §5 skip gate, self-lint. Emits `drafts/<cluster>.md` + `.report.json`. |
 | [`critic-prompt.md`](critic-prompt.md) | 5 — early critic | Judges the **untouched first-draft set** against the brain contract, §5 evidence rules, §5a era flags, §6 scope matrix, cross-cluster contradictions, and privacy. Emits `critic/`. |
-| [`reduction-prompt.md`](reduction-prompt.md) | 6 — reduction | Per-topic reduction against the critic: resolve/surface contradictions, apply era supersessions, tighten into deltas, drop what the critic rejected. |
-| [`review-brief.md`](review-brief.md) | 10 — review brief | Operator brief format for the diff gate: coverage, settings changes, skip evidence, durable rules, contradictions, holdout scorecard, cost. Marks local+ephemeral vs the sanitized committed subset. |
-| [`harvest-record.md`](harvest-record.md) | 12 — committed record | The small tracked per-harvest record (counts/dates/scores only) and the `--since` watermark for incremental re-harvest. |
+| [`reduction-prompt.md`](reduction-prompt.md) | 6 — reduction | Per-topic reduction against the critic plus the strict `reduced.json` input consumed by step 10. |
+| [`review-brief.md`](review-brief.md) | 10 — review brief | Strict evaluation/metrics contracts and generated operator-brief layout. |
+| [`harvest-record.md`](harvest-record.md) | 10/12 — record | Exact tracked-safe JSON candidate generated before approval, then copied byte-identically after approval. |
 
 All numeric knobs in these templates (sample cap 50, risk cap 15%, holdout 8, era bands) are **tunable
 defaults sourced from the prepare config**, never spec constants.

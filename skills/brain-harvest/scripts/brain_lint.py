@@ -18,7 +18,8 @@ It is a pre-commit gate, not a formatter — it never edits files.
     python3 brain_lint.py --selftest      # run built-in regex self-checks (no repo needed)
 
 `--scratch` is for linting the harvest scratch root itself (ignored paths passed explicitly): that
-tree is *expected* to contain opaque IDs (`H000001`) and raw `YYYY-MM--slug--n.md` filenames, so those
+tree is *expected* to contain opaque IDs (`H` + 32 lowercase hex; legacy `H000001`) and raw
+`YYYY-MM--slug--n.md` filenames, so those
 two classes are suppressed there while raw-thread/secret/payment/identifier/name classes still apply
 (name findings downgrade from HARD to SOFT in scratch mode, per spec §7). Default mode
 (staged/tracked/--all) enables every class — nothing opaque may reach a tracked brain file.
@@ -120,13 +121,14 @@ IDENTIFIER_HARD_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 # ── HARD: harvest scratch leakage ────────────────────────────────────────────────────────────────
-# Opaque harvest thread IDs (H000001), the splitter's `YYYY-MM--slug--n.md` filename shape, and the
+# Opaque harvest thread IDs (`H` + 32 lowercase hex; legacy H000001), the splitter's
+# `YYYY-MM--slug--n.md` filename shape, and the
 # `.rootcause/harvest`|`.rootcause/exports` scratch/export path fragments must never reach a tracked
 # brain file. All three shapes are highly specific (near-zero FP), so they are HARD in the default
 # (tracked/staged) mode. In `--scratch` mode they are SUPPRESSED: the harvest scratch root is *expected*
 # to be full of these, and flagging them there would only train `--no-verify` bypass on legit content.
 HARVEST_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("harvest-opaque-id", re.compile(r"\bH\d{6}\b")),
+    ("harvest-opaque-id", re.compile(r"\bH(?:\d{6}|[0-9a-f]{32})\b")),
     ("harvest-filename", re.compile(r"(?i)\b\d{4}-\d{2}--[a-z0-9][a-z0-9\-]*--\d+\.md\b")),
     ("harvest-scratch-path", re.compile(r"(?i)\.rootcause/(?:harvest|exports)/")),
 ]
@@ -354,7 +356,8 @@ def _selftest() -> int:
         "Dear Jane Doe, thanks for reaching out.": HARD,               # greeting + name (tracked mode)
         "Tracking number 1Z999AA10123456784 shipped Monday.": HARD,    # carrier tracking id
         "Order ABC12345XYZ was refunded in full.": HARD,               # explicit-prefix mixed order id
-        "See thread H000123 for the disputed charge.": HARD,           # opaque harvest id
+        "See thread H000123 for the disputed charge.": HARD,           # legacy opaque harvest id
+        "See thread H0123456789abcdef0123456789abcdef for context.": HARD,  # stable opaque id
         "Evidence: 2026-07--refund-duplicate-charge--3.md backs this.": HARD,  # harvest filename shape
         "Raw dump lives in .rootcause/harvest/tmp/ locally.": HARD,    # harvest scratch path
         "Use `rc run debug <id>` to inspect the run.": HARD,
@@ -418,7 +421,7 @@ def _selftest() -> int:
         ok = False
 
     # Default mode flags harvest opaque IDs and raw filenames (HARD); --scratch suppresses just those.
-    leak = "See thread H000123 in 2026-07--dispute--3.md for context."
+    leak = "See thread H0123456789abcdef0123456789abcdef in 2026-07--dispute--3.md for context."
     default_cats = {c for _, c, _ in _scan_line(leak)}
     scratch_cats = {c for _, c, _ in _scan_line(leak, scratch=True)}
     if not {"harvest-opaque-id", "harvest-filename"} <= default_cats:

@@ -8,8 +8,8 @@ record in [`docs/brain-harvest-improvements.md`](brain-harvest-improvements.md) 
 
 ## What the v2 pipeline adds
 
-- **One deterministic preparation command.** `skills/brain-harvest/scripts/prepare_harvest.py`
-  (`preflight` / `prepare` / `verify` / `ledger apply` / `cleanup`) parses the raw corpus (v1 **and** v2)
+- **One deterministic pipeline command.** `skills/brain-harvest/scripts/prepare_harvest.py`
+  (`preflight` / `prepare` / `verify` / `ledger apply|expand` / `review` / `record` / `cleanup`) parses the raw corpus (v1 **and** v2)
   into an opaque-ID manifest, dumb clusters with a mandatory `mixed` bucket, stratified per-cluster
   reading plans, an era-banded metadata layer, a risk-marker distribution report, a reserved holdout,
   and a machine-verified coverage ledger. The field-notes' top recommendation (a `cluster_index.py`) was
@@ -21,10 +21,17 @@ record in [`docs/brain-harvest-improvements.md`](brain-harvest-improvements.md) 
   deep-read of a stratified sample and every risk-flagged thread. The ledger proves each thread is
   `assigned` / `holdout` / `excluded_noise` exactly once, with read state and route-elsewhere
   reassignments folded back via `ledger apply`.
-- **Held-out evaluation + review brief.** Preparation reserves a stratified holdout; after edits the
-  holdout questions are replayed against the pushed dev ref and scored against the historical human
-  answers. A generated local review brief backs the operator gate; a sanitized subset (counts, dates,
-  scores) is committed as a per-harvest record.
+- **Held-out evaluation + review brief.** Preparation reserves a stratified holdout and local replay
+  cases. `review` rejects holdout leakage, incomplete semantic coverage, invalid scores/replay metadata,
+  and unreconciled totals; then it generates the operator brief plus an exact tracked-safe record
+  candidate. Raw holdouts never enter the synthesis thread tree; content fingerprints catch copied
+  replay text. After approval, `record --approved` copies that candidate byte-for-byte before cleanup.
+- **Bound target and evidence provenance.** Preflight verifies `rc auth access`, normalizes read/write
+  proofs, and binds exact project/tenant/mailbox/provider/export metadata into `run.json`; review fails
+  if it changes. Reduction JSON carries scratch-only evidence IDs so skip occurrence counts and durable
+  semantic reads reconcile mechanically without leaking identifiers into the committed record.
+  Tenant scope and checkout root are explicit; applied settings require hashed immediate before/after
+  read snapshots bound to the exact scope and target.
 - **Structural validation for docs-only brains.** `skills/local-brain-work/scripts/brain_structure.py`
   fills the gap where `brain_test.py` exits "no tests" — links/frontmatter/reachability/lint/raw-tracked/
   raw-history, plus `--expect-clean` for the post-cleanup scratch check.

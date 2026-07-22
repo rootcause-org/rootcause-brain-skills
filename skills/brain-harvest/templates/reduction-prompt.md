@@ -39,7 +39,7 @@ counterparties, links, filenames, or opaque IDs in anything destined for tracked
 
 ---
 
-## Output — `{{SCRATCH_ROOT}}/critic/reduced.md`
+## Output — `{{SCRATCH_ROOT}}/critic/reduced.md` + `reduced.json`
 
 Final deltas grouped by home and topic, plus the two carry-forwards the review brief needs:
 
@@ -56,3 +56,45 @@ Final deltas grouped by home and topic, plus the two carry-forwards the review b
 ```
 
 Step 7 applies these deltas to the tracked working tree and the settings surfaces.
+
+Also write `{{SCRATCH_ROOT}}/critic/reduced.json` for the deterministic review generator. Use these
+exact top-level keys and fields; use empty arrays, never omitted keys:
+
+```json
+{
+  "settings_changes": [
+    {"surface":"persona|triage_policy|hard_rule", "scope":"mailbox|tenant|project",
+     "status":"applied|pending", "summary":"distilled change", "scope_authority":true,
+     "verification": {
+       "pre_read_at":"2026-07-22T10:00:00Z", "post_read_at":"2026-07-22T10:01:00Z",
+       "before_file":"settings-verification/persona-before.json",
+       "after_file":"settings-verification/persona-after.json",
+       "before_sha256":"64 lowercase hex", "after_sha256":"64 lowercase hex",
+       "resolved_scope":"mailbox", "resolved_target":"exact preflight target"
+     }}
+  ],
+  "skip_proposals": [
+    {"summary":"distilled proposal", "evidence_class":"presence_without_prose_reply",
+     "evidence_count":3, "evidence_ids":["H<32-hex>"]}
+  ],
+  "durable_rules": [
+    {"summary":"distilled rule", "evidence_strength":4,
+     "evidence_ids":["H<32-hex>","H<32-hex>","H<32-hex>","H<32-hex>"],
+     "era":"recent|mid|old|mixed",
+     "stale_era":false}
+  ],
+  "contradictions": [
+    {"topic":"topic", "status":"resolved|unresolved", "resolution":"result",
+     "supersession":"old -> recent or empty"}
+  ]
+}
+```
+
+Evidence IDs are required scratch-only provenance. For skip proposals, list only non-holdout manifest
+rows with `prose_reply=false`; `evidence_count` must equal their summed `occurrences`. For durable rules,
+`evidence_strength` must equal the number of distinct IDs and every ID must have a semantic read in the
+ledger. The generator rejects unknown or held-out IDs, and none of these references enters tracked output.
+
+For an applied settings change, `verification` is mandatory and binds the immediate before/after
+`get -o json` snapshots to the preflight scope and target; both files stay in scratch and the post-read
+must be within five minutes. Use `"verification": null` for a pending recommendation.

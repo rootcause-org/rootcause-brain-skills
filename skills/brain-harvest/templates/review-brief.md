@@ -1,68 +1,77 @@
-# Operator review brief format (pipeline step 10)
+# Generated review brief (pipeline step 10)
 
-The generated brief the operator reads at the single diff-approval gate (step 11). It is written into
-the scratch root's `brief/` — **local, ignored, and ephemeral**. It exists so the human gate can check
-evidence behind every claimed rule instead of rubber-stamping; it is deleted with the rest of scratch
-**after** approval (step 12).
+Run the deterministic generator after replaying every reserved holdout against the pushed dev ref.
+The command validates the ledger, every final agent report, reduced proposals, scores, representative
+production replay, token usage, cost, and wall clock before writing anything:
 
-Two privacy tiers, and the brief must mark every section as one or the other:
+```bash
+uv run --no-project python "$SKILL/scripts/prepare_harvest.py" review \
+  --scratch "$SCRATCH" \
+  --agent-report "$SCRATCH"/drafts/*.report.json \
+  --reduction "$SCRATCH/critic/reduced.json" \
+  --evaluation "$SCRATCH/brief/evaluation.json" \
+  --metrics "$SCRATCH/brief/metrics.json" \
+  --harvest-date YYYY-MM-DD --kit-version vX.Y.Z
+```
 
-- **Local + ephemeral** — the full brief. May reference opaque IDs and short evidence context, because
-  the operator can open the local corpus by opaque handle. Never committed.
-- **Sanitized committed subset** — the [`harvest-record.md`](harvest-record.md) fields only: counts,
-  dates, and scores. **No opaque IDs, no raw data.** This is the sole part that may be tracked.
+Repeat `--agent-report` when shell expansion is unavailable. Generation fails unless every non-empty
+original cluster has exactly one final report, all planned sampled/deep reads reconcile to the ledger,
+all risk-marked threads were deep-read, no report remains `still_yielding`, every contradiction is
+resolved or surfaced, and no reserved holdout handle or copied replay-content fingerprint appears in
+synthesis artifacts. Applied settings changes additionally require before/after snapshots under
+`$SCRATCH/settings-verification/`; their digests, exact target/scope, and five-minute read/write window
+must match `reduced.json` and bound preflight state.
 
-Numeric values (holdout 8, sample cap 50, risk cap 15%) are **tunable defaults from the prepare
-config**, not constants — the brief reports the values actually used.
+## Evaluation input
 
----
+Write `$SCRATCH/brief/evaluation.json`. Score every reserved holdout exactly once on the fixed integer
+scale 0 (failure) through 4 (strong match). Every holdout needs a distinct replay ID and trace URL; the
+representative production replay must be distinct from all of them. Keep notes local; they are omitted
+from the record.
 
-## Brief layout (`{{SCRATCH_ROOT}}/brief/review-brief.md`)
+```json
+{
+  "holdouts": [
+    {"id":"H0123456789abcdef0123456789abcdef", "replay_id":"local replay handle",
+     "status":"succeeded", "trace_url":"https://trace.example/holdout",
+     "brain_sha":"40 lowercase hex characters",
+     "scores":{"factual_agreement":4,"routing":3,"tone":4}, "notes":"private comparison note"}
+  ],
+  "production_replay": {
+    "run_id":"run handle", "status":"succeeded", "cost_usd":0.12,
+    "trace_url":"https://trace.example/run", "brain_sha":"40 lowercase hex characters",
+    "brain_diff":"distilled description of the resolved brain diff"
+  }
+}
+```
 
-Mark each heading `[local+ephemeral]` or `[committed subset]`.
+## Metrics input
 
-### 1. Coverage summary — per cluster `[local+ephemeral]`
-Table, one row per cluster:
+Write `$SCRATCH/brief/metrics.json`. `total` must equal `input + output`; preparation time cannot exceed
+the full wall clock; production replay cost cannot exceed total cost.
 
-| Cluster | Label | Scanned | Deep-read | Sampled | Noise (excluded) | Rerouted |
-|---|---|---|---|---|---|---|
+```json
+{
+  "token_usage":{"input":1200,"output":300,"total":1500},
+  "cost_usd":0.50,
+  "wall_clock_seconds":90.25,
+  "preparation_seconds":0.25
+}
+```
 
-Totals row must reconcile to the coverage ledger (every thread accounted for exactly once). Counts only
-in the committed subset; opaque IDs allowed here in the local brief.
+## Generated outputs
 
-### 2. Settings changes — every one, with scope `[local+ephemeral]`
-Each change: surface (persona / triage policy / hard rule), **scope applied** (mailbox / tenant /
-project), and — for triage/hard rules derived from a single mailbox — whether it was applied under
-explicit scope authority or held as a **pending recommendation** (§6).
+`review` fully validates and privacy-lints a temporary bundle before replacing each local, ignored file
+with an atomic rename. A failed validation leaves prior files untouched. Publication is not a
+multi-file transaction, so it publishes `bundle-manifest.json` last as a commit marker; `record` rejects
+an interrupted old/new mixture until `review` is rerun:
 
-### 3. Skip proposals — each with its §5 evidence `[local+ephemeral]`
-One row per skip/no-draft proposal, its subject/sender family, and its **occurrence count** of
-presence-without-prose-reply evidence. Surfaced individually and never applied silently — the operator
-approves each. (No skip from absence or frequency alone.)
+- `brief/review-brief.md` — full operator evidence: effective config/corpus digest, reconciled per-cluster
+  coverage, saturation, settings scope, skip evidence, durable rules/eras, contradictions, holdout
+  scorecard, production replay metadata, tokens/cost/wall clock;
+- `brief/record-source.json` — sanitized machine source with ordinal holdouts only;
+- `brief/record-candidate.json` — exact tracked-safe candidate the operator approves.
 
-### 4. Notable durable rules `[local+ephemeral]`
-The high-value facts/rules with **evidence strength** (supporting thread count) and **era flag**
-(`recent` / `mid` / `old`, and any `stale-era`).
-
-### 5. Contradictions and resolutions `[local+ephemeral]`
-Each discovered contradiction, how reduction resolved it (with any era supersession recorded), or that
-it is **surfaced unresolved** for the operator's call.
-
-### 6. Holdout scorecard `[committed subset]`
-Per held-out thread (default 8, tunable), scored by the comparison agent against the historical human
-answer:
-
-| Holdout | Factual agreement | Routing | Tone |
-|---|---|---|---|
-
-Scores only — the committed record carries the scorecard with **no opaque IDs**. The local brief may add
-an opaque-ID column for the operator to open each source.
-
-### 7. Run cost `[committed subset]`
-Token cost and wall clock for the run.
-
----
-
-The operator consults this brief (and, via opaque IDs, the still-present local corpus) at the gate. On
-approval, the sanitized subset (sections 6–7 plus coverage counts) is distilled into the committed
-[`harvest-record.md`](harvest-record.md); everything else is deleted with scratch.
+The full brief may contain opaque handles and private notes. The candidate contains only the spec's
+audit fields and cannot contain thread handles, contacts, links, replay/run handles, trace metadata, or
+raw text. Keep all three until approval.

@@ -45,16 +45,18 @@ matching archetype skeleton in step 7 instead of inventing structure.
 Preparation creates one gitignored root that holds **everything sensitive** for the run:
 
 ```
-.rootcause/harvest/<tag>/     # <tag> = export id or an operator-chosen run tag
+.rootcause/harvest/<tag>/     # <tag> = a local scratch label, never the export id
   corpus/                     # raw downloaded corpus file(s)
-  threads/H000001.md          # one file per thread, named by opaque ID only
+  threads/H<32-hex>.md        # one file per thread, named by opaque ID only
   manifest.jsonl              # per-thread machine facts, first key always "id"
   clusters.json               # cluster reading plans (sample_ids + deep_read_ids)
   ledger.json                 # machine-verified coverage ledger
   holdout.json                # reserved held-out eval threads
+  run.json                    # effective config, export handle, corpus digest/format
+  replay-cases.json           # local redacted holdout question/answer pairs
   drafts/                     # per-cluster <cluster>.md + <cluster>.report.json
-  critic/                     # critic report + reduced deltas
-  brief/                      # review brief + holdout scorecard (local, ephemeral)
+  critic/                     # critic report + reduced deltas (.md + strict .json)
+  brief/                      # evaluation/metrics, generated brief + exact record candidate
 ```
 
 `.rootcause/` is wholesale-gitignored in a brain checkout, but the scripts still re-verify with
@@ -65,7 +67,8 @@ the bundled scripts are easy to invoke:
 ```bash
 SKILL=<absolute path to skills/brain-harvest>
 LBW=<absolute path to skills/local-brain-work>   # brain_structure.py lives here
-TAG=<export-id or run tag>
+TAG=<operator-chosen-local-run-tag>
+EXPORT_ID=<actual-rc-export-id>
 SCRATCH=.rootcause/harvest/$TAG
 ```
 
@@ -85,6 +88,7 @@ synthesis knows what grounding, persona, and triage already exist before proposi
 
 ```bash
 rc auth status
+rc auth access
 rc project mailbox ls
 git status --short --branch
 git pull --ff-only
@@ -148,29 +152,44 @@ use the [manual fallback path](#fallback-the-v1-manual-path-one-release-only) be
 cluster from metadata, fan out) until the exporter emits a v1/v2 blob. The hosted provider path above is
 the one that flows through `prepare`.
 
-Then run the preflight check — local git/gitignore/format checks plus best-effort `rc` environment
-checks (it degrades to WARN when `rc` is absent):
+An unbound diagnostic preflight checks local Git/gitignore/format plus best-effort `rc` environment
+state (and degrades to WARN when `rc` is absent):
 
 ```bash
 uv run --no-project python "$SKILL/scripts/prepare_harvest.py" preflight --scratch "$SCRATCH"
 ```
 
-It sniffs the corpus format under `$SCRATCH/corpus/`, so run it after the download. A `FAIL` (not inside
-a git checkout, stageable scratch root, or an unsupported corpus format) must be fixed before proceeding.
+Preparation requires the machine-reconciled form: pass the explicit context and actual export ID:
+
+```bash
+uv run --no-project python "$SKILL/scripts/prepare_harvest.py" preflight \
+  --scratch "$SCRATCH" --project <project> --mailbox <mailbox-id> \
+  [--tenant <tenant-slug>] --provider <google|microsoft|imap> --export-id "$EXPORT_ID"
+```
+
+It sniffs the acquired format; checks Git state/gitignore plus public auth/access, mailbox/provider,
+persona, triage, grounding, capabilities, mirror-health, corpus-history, export, and doctor surfaces;
+and writes private `$SCRATCH/preflight.json` with the target, scope matrix, and check results. A `FAIL`
+must be fixed before proceeding. Missing `rc` degrades non-target inventory to `WARN` for fixture/local
+work, but an explicit project/mailbox/provider/export target fails closed unless critical reads succeed
+and export metadata proves the exact target. The artifact persists normalized capabilities, verified
+read/write scopes, tenant context, and the checkout root; raw command output is never copied into it.
 
 ### 2. ⚙ Deterministic prepare, verify
 
 ```bash
 uv run --no-project python "$SKILL/scripts/prepare_harvest.py" prepare \
-  --corpus "$SCRATCH/corpus/" --scratch "$SCRATCH"
+  --corpus "$SCRATCH/corpus/" --scratch "$SCRATCH" --export-id "$EXPORT_ID"
 uv run --no-project python "$SKILL/scripts/prepare_harvest.py" verify --scratch "$SCRATCH"
 ```
 
-`prepare` parses the raw corpus into an opaque-ID manifest and writes `threads/`, `manifest.jsonl`,
-`clusters.json`, `ledger.json`, and `holdout.json` atomically (re-running replaces them; it is
-deterministic and idempotent over the same corpus bytes). It:
+`prepare` requires that verified artifact, binds its canonical digest and exact target into `run.json`,
+then parses the raw corpus into an opaque-ID manifest and writes synthesis-only `threads/`, `manifest.jsonl`,
+`clusters.json`, `ledger.json`, `holdout.json`, `replay-cases.json`, and `run.json` atomically
+(re-running replaces them; it is deterministic and idempotent over the same corpus bytes). It:
 
-- assigns each thread an opaque `H000001` ID in stable date order — raw filenames stay internal;
+- assigns each thread a content-derived opaque `H<32-hex>` ID that remains stable across full/delta
+  overlap — raw filenames stay internal and indistinguishable duplicates hard-fail;
 - extracts metadata without LLM synthesis: date span, subject family, language, message/reply counts,
   direction, form source, attachments, the **prose-reply-present** flag (§5 evidence), era band (§5a),
   and safe risk markers;
@@ -181,10 +200,13 @@ deterministic and idempotent over the same corpus bytes). It:
   `excluded_noise`), with per-cluster stratified `sample_ids` (single-pass reading plan) and
   `deep_read_ids` (risk-flagged, always read);
 - reserves a small stratified holdout (default 8, tunable 5–10) of threads with substantive inbound
-  questions and real human answers, excluded from all synthesis reads (§10);
-- reports the **risk-flag distribution**: if flagged share exceeds the cap (default 15%), the ledger
-  marks `over_cap: true` with the per-marker breakdown so you prune marker rules **before** fan-out
-  rather than silently reintroducing read-everything.
+  questions followed by real human answers, excluded from all synthesis reads (§10), and emits
+  contact/identifier-redacted local replay cases; if the requested count is unavailable, preparation
+  hard-fails so you deliberately lower `--holdout` or acquire a larger corpus;
+  raw holdout threads are never written under `threads/`;
+- reports the **forced-deep distribution** across risk markers plus ambiguous generic-subject threads:
+  if their union exceeds the cap (default 15%), the ledger marks `over_cap: true` with the per-marker
+  breakdown so you prune rules **before** fan-out rather than silently reintroducing read-everything.
 
 `verify` (also run automatically inside `prepare`) checks the ledger invariants and exits non-zero on
 any violation. Inspect `ledger.json` → `risk`: if `over_cap` is true, lower/prune risk markers via a
@@ -223,7 +245,13 @@ files present, self-lint clean) or the cluster reruns — there are no per-batch
 small clusters may be merged into one assignment; a large diverse cluster should be split into bounded
 assignments and reduced once, rather than handed wholesale to a single agent. If a subagent honestly
 reports `still_yielding: true` at the cap, issue **one** orchestrator-controlled follow-up assignment on
-that cluster — do not let the agent silently read more.
+that cluster — do not let the agent silently read more. Expand the plan over remaining assigned IDs,
+then replace the report with a final `still_yielding: false` report after the follow-up:
+
+```bash
+uv run --no-project python "$SKILL/scripts/prepare_harvest.py" ledger expand \
+  --scratch "$SCRATCH" --cluster <cluster-id> --count <bounded-count>
+```
 
 Fold each report back into the ledger so coverage and route-elsewhere reassignments are recorded:
 
@@ -232,7 +260,9 @@ uv run --no-project python "$SKILL/scripts/prepare_harvest.py" ledger apply \
   --scratch "$SCRATCH" "$SCRATCH"/drafts/*.report.json
 ```
 
-`ledger apply` re-verifies invariants and persists nothing if the merge would break them.
+`ledger apply` validates the strict report schema, hard-fails on unknown/non-assigned/holdout IDs,
+re-verifies invariants, and persists nothing if the merge would break them. Step 10 proves every
+planned sampled/deep read was completed and every non-empty original cluster has one final report.
 
 ### 4. Induce one candidate taxonomy
 
@@ -260,7 +290,10 @@ into tight final deltas against the one induced taxonomy: drop or fix what the c
 contradictions where evidence reconciles (and **surface** the rest for the review brief), apply era
 supersessions (prefer recent evidence, record what was superseded), collapse per-cluster restatements
 into one delta per fact/rule, and keep the brain/persona/triage home split clean. Output is
-`$SCRATCH/critic/reduced.md`; nothing tracked is written yet.
+`$SCRATCH/critic/reduced.md` plus the strict machine-readable `$SCRATCH/critic/reduced.json` contract
+in the template; nothing tracked is written yet.
+The JSON carries scratch-only `evidence_ids`: skip counts must equal summed manifest occurrences from
+non-holdout `prose_reply=false` rows; durable-rule strength must equal distinct, semantically read IDs.
 
 ### 7. Tracked edits plus narrow settings changes
 
@@ -302,6 +335,13 @@ Because triage policy and hard rules have **no mailbox scope**, a rule learned f
 necessarily widens to tenant/project. Widen only with explicit scope authority; otherwise carry it as a
 pending recommendation in the review brief, not a silent write. If the needed narrow scope is
 unavailable, produce a pending recommendation / support gap rather than writing a broader setting.
+
+For every change marked `applied`, save the immediate pre-write and post-write `get -o json` responses
+under `$SCRATCH/settings-verification/`. Record their scratch-relative filenames, SHA-256 digests,
+timezone-qualified timestamps, resolved scope, and exact target in `reduced.json`; the post-read must
+occur within five minutes. `review` hashes both snapshots and reconciles scope/target to preflight.
+Pending recommendations use `"verification": null`. For tenant triage, use the explicit global
+`--project <project> --tenant <slug>` selectors on both reads and the write.
 
 ```bash
 # Voice the sent history reveals → persona (mailbox scope exists here). Keys: persona.tone,
@@ -374,28 +414,50 @@ the gate.
 
 ### 10. ⚙ Review brief, sanitized replay, and held-out evaluation
 
-Generate the operator brief and prove the output before the gate — the corpus is still present, so this
-is the moment to measure quality:
+Generate the operator brief and prove the output before the gate. Preparation writes redacted local
+question/historical-answer pairs to `$SCRATCH/replay-cases.json`; holdout handles never appear in
+cluster plans, raw holdouts never enter `threads/`, and review rejects both holdout handles and copied
+long-form replay content anywhere under `drafts/` or `critic/`.
 
-- Write the review brief per [`templates/review-brief.md`](templates/review-brief.md) into
-  `$SCRATCH/brief/` — **local, ignored, ephemeral**. It may reference opaque IDs and short evidence
-  context so the operator can check evidence behind every rule. It carries the coverage summary, every
-  settings change with scope, every skip proposal with its §5 occurrence counts, notable durable rules
-  with evidence strength and era flags, contradictions and resolutions, the holdout scorecard, and run
-  cost / wall clock.
-- **Held-out evaluation:** commit the staged edits to a local `dev/<branch>` (a WIP commit is fine —
-  the mandatory gate guards the push to `main`/publish, not dev refs), push it, and replay each
-  reserved holdout question (from `holdout.json`) against that dev ref; then have a comparison agent
-  score each answer against the historical human answer on factual agreement, routing, and tone, and
-  write the scorecard into the brief:
-  ```bash
-  git checkout -b dev/<branch> && git commit -m "wip: harvest draft"
-  git push origin dev/<branch>
-  rc ask "<held-out inbound question>" --brain-ref dev/<branch>
-  rc run debug <run-id>
-  ```
-- **One representative production replay stays required:** pick one new route, replay it on the pushed
-  dev ref, and record the run id, status, cost, trace URL, resolved brain SHA, and brain diff.
+Commit the staged edits to a local `dev/<branch>` (a WIP commit is fine — the mandatory gate guards the
+push to `main`/publish, not dev refs), push it, and replay every reserved question against that dev ref:
+
+```bash
+git checkout -b dev/<branch> && git commit -m "wip: harvest draft"
+git push origin dev/<branch>
+rc ask "<held-out inbound question>" --brain-ref dev/<branch>
+rc run debug <run-id>
+```
+
+Have a comparison agent score each answer against the paired historical answer on the fixed integer
+scale 0–4 for factual agreement, routing, and tone. Each holdout records successful status, an absolute
+trace URL, a unique replay ID, and a resolved SHA; neither IDs nor traces may be reused across cases.
+Pick a distinct representative new route for the required
+full production replay. Record all scores plus its run id, status, cost, trace URL, resolved
+40-character brain SHA, and brain diff in the strict `evaluation.json` contract. All holdouts and the
+representative replay must succeed at that same SHA. Record token usage,
+total cost, wall clock, and preparation time in `metrics.json`. Use
+[`templates/review-brief.md`](templates/review-brief.md) for both schemas, then generate:
+
+```bash
+uv run --no-project python "$SKILL/scripts/prepare_harvest.py" review \
+  --scratch "$SCRATCH" \
+  --agent-report "$SCRATCH"/drafts/*.report.json \
+  --reduction "$SCRATCH/critic/reduced.json" \
+  --evaluation "$SCRATCH/brief/evaluation.json" \
+  --metrics "$SCRATCH/brief/metrics.json" \
+  --harvest-date "$(date +%F)" --kit-version <installed-kit-version>
+```
+
+`review` also requires the unchanged target/preflight binding, including a successful current-value
+read at the exact scope of every applied settings change; rejects `risk.over_cap`; and fails on
+schema/privacy/coverage/saturation/scope/evidence/replay inconsistencies. On success it validates a
+temporary bundle before replacing each local `review-brief.md`, sanitized
+`record-source.json`, and exact `record-candidate.json`, publishing `bundle-manifest.json` last as the
+commit marker. This is not a multi-file transaction: `record` rejects any interrupted old/new mixture
+until `review` is rerun. The candidate contains ordinal holdout scores and aggregate audit fields only;
+it is the byte sequence the operator approves for the tracked harvest record.
+
 - Run the structural validator (skipping lint, already run in step 8):
   ```bash
   uv run --no-project python "$LBW/scripts/brain_structure.py" --skip lint
@@ -406,30 +468,29 @@ is the moment to measure quality:
 ### 11. Mandatory operator diff approval
 
 Pause for the single human diff-approval gate **with the local evidence brief still present**. The
-operator consults `$SCRATCH/brief/review-brief.md` and, via opaque IDs, the local corpus, then approves
-each settings change and skip proposal. This gate is not optional and is never a rubber stamp — which is
-exactly why cleanup happens **after** it, not before (reversed from the v1 skill): deleting the corpus
-pre-review would leave the gate with no evidence to check, and re-fetching after eviction is a
-production operation.
+operator consults `$SCRATCH/brief/review-brief.md`, the exact `record-candidate.json`, and, via opaque
+IDs, the local corpus; then approves each settings change and skip proposal. This gate is not optional
+and is never a rubber stamp — which is exactly why cleanup happens **after** it, not before.
 
 ### 12. ⚙ Cleanup, then publish
 
-Only **after** approval, delete all sensitive scratch and verify it is gone, then publish:
+Only **after** approval, promote the already-reviewed record candidate into the tracked diff, then
+delete all sensitive scratch and verify it is gone:
 
 ```bash
+uv run --no-project python "$SKILL/scripts/prepare_harvest.py" record \
+  --scratch "$SCRATCH" --out "notes/harvest-records/$(date +%F).json" --approved
 uv run --no-project python "$SKILL/scripts/prepare_harvest.py" cleanup --scratch "$SCRATCH" --yes
 uv run --no-project python "$LBW/scripts/brain_structure.py" --expect-clean
 ```
 
-`cleanup` removes the whole scratch root (corpus, manifests, proposals, critic notes, brief, IMAP env)
-and refuses without `--yes`; `brain_structure.py --expect-clean` confirms no `.rootcause/harvest/`
-scratch root remains. Then:
+`record` revalidates current ledger/run state and writes the approved candidate byte-for-byte; it
+refuses without `--approved`. `cleanup` removes the whole scratch root and refuses without `--yes`;
+`brain_structure.py --expect-clean` confirms no `.rootcause/harvest/` root remains. Then:
 
-- finalize the commit on the approved diff (amend or replace the step-10 WIP commit on `dev/<branch>`,
-  then merge/fast-forward it to `main` via the `brain-git-sync` flow) and add the committed
-  **harvest record** per
-  [`templates/harvest-record.md`](templates/harvest-record.md) (counts, dates, holdout scores, kit
-  version only — no opaque IDs or raw data; suggested home `notes/harvest-records/`);
+- finalize the commit on the approved diff, including the generated
+  [`harvest record`](templates/harvest-record.md), then merge/fast-forward it to `main` via the
+  `brain-git-sync` flow;
 - run the full [`brain-publish`](../brain-publish/SKILL.md) flow: `brain-git-sync` precondition, dev-ref
   replay/debug, server sync, channel promote where applicable, and exact-SHA verification;
 - settings-only changes: record the exact `rc` commands and the verification run id;

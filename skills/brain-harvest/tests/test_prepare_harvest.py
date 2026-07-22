@@ -126,12 +126,13 @@ def write_corpus(root: Path, text: str, name: str = "corpus.md") -> Path:
     return path
 
 
-def prepare(tmp: Path, text: str, **cfg_overrides) -> Path:
+def prepare(tmp: Path, text: str, export_id: str = "exp-test", **cfg_overrides) -> Path:
     corpus = write_corpus(tmp, text)
     scratch = tmp / "scratch"
     cfg = dict(ph.DEFAULTS)
     cfg.update(cfg_overrides)
-    ph.prepare_scratch(corpus, scratch, cfg)
+    ph.prepare_scratch(corpus, scratch, cfg, export_id=export_id,
+                       preflight=ph.synthetic_preflight(export_id))
     return scratch
 
 
@@ -215,7 +216,8 @@ class PrepareTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
             first = prepare(Path(a), V2_CORPUS, holdout_count=1)
             second = prepare(Path(b), V2_CORPUS, holdout_count=1)
-            for name in ("manifest.jsonl", "clusters.json", "ledger.json", "holdout.json"):
+            for name in ("manifest.jsonl", "clusters.json", "ledger.json", "holdout.json",
+                         "replay-cases.json", "run.json"):
                 self.assertEqual((first / name).read_bytes(), (second / name).read_bytes(), name)
             self.assertEqual(sorted(p.name for p in (first / "threads").iterdir()),
                              sorted(p.name for p in (second / "threads").iterdir()))
@@ -227,21 +229,51 @@ class PrepareTests(unittest.TestCase):
             (scratch / "threads" / "H999999.md").write_text("stale", encoding="utf-8")
             (scratch / "manifest.jsonl").write_text("corrupted", encoding="utf-8")
             cfg = dict(ph.DEFAULTS, holdout_count=1)
-            ph.prepare_scratch(Path(tmp) / "corpus.md", scratch, cfg)
+            ph.prepare_scratch(Path(tmp) / "corpus.md", scratch, cfg, export_id="exp-test",
+                               preflight=ph.synthetic_preflight("exp-test"))
             self.assertFalse((scratch / "threads" / "H999999.md").exists())
             self.assertEqual((scratch / "manifest.jsonl").read_bytes(), original)
 
-    def test_ids_are_opaque_and_ordered_by_first_date_then_section(self):
+    def test_ids_are_opaque_content_derived_and_manifest_first_field(self):
         with tempfile.TemporaryDirectory() as tmp:
             scratch = prepare(Path(tmp), V2_CORPUS, holdout_count=1)
             rows = read_manifest(scratch)
-            self.assertEqual([r["id"] for r in rows], [f"H{i:06d}" for i in range(1, 9)])
-            self.assertEqual(rows[0]["date_first"], "2010-05-01")
+            self.assertEqual(len({r["id"] for r in rows}), 8)
+            self.assertTrue(all(ph.OPAQUE_ID_RE.fullmatch(r["id"]) for r in rows))
             self.assertEqual([list(r)[0] for r in rows], ["id"] * 8, "first key must be id")
-            ordering = [(r["date_first"] or "", r["section_index"]) for r in rows]
-            self.assertEqual(ordering, sorted(ordering))
+            self.assertEqual([r["id"] for r in rows], sorted(r["id"] for r in rows))
             for path in (scratch / "threads").iterdir():
-                self.assertRegex(path.name, r"^H\d{6}\.md$")
+                self.assertRegex(path.name, r"^H[0-9a-f]{32}\.md$")
+
+    def test_ids_stay_stable_across_full_delta_and_reordered_overlap(self):
+        meta, body = ph.parse_front_matter(V2_CORPUS)
+        sections = ph.split_sections(body)
+        front = ("---\nharvest_format: v2\nharvested_at: " + meta["harvested_at"] + "\n---\n\n")
+        delta = front + "\n\n".join([sections[1], sections[6]]) + "\n"
+        reordered = front + "\n\n".join(reversed(sections)) + "\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ("full", "delta", "reordered"):
+                (root / name).mkdir()
+            full_rows = read_manifest(prepare(root / "full", V2_CORPUS, holdout_count=0))
+            delta_rows = read_manifest(prepare(root / "delta", delta, holdout_count=0))
+            reordered_rows = read_manifest(prepare(root / "reordered", reordered, holdout_count=0))
+            full = {row["date_first"]: row["id"] for row in full_rows}
+            self.assertEqual({row["date_first"]: row["id"] for row in delta_rows},
+                             {row["date_first"]: full[row["date_first"]] for row in delta_rows})
+            self.assertEqual({row["date_first"]: row["id"] for row in reordered_rows}, full)
+
+    def test_duplicate_indistinguishable_threads_fail_before_outputs(self):
+        meta, body = ph.parse_front_matter(V2_CORPUS)
+        section = ph.split_sections(body)[0]
+        duplicate = section.replace("— #1", "— #2", 1)
+        corpus = ("---\nharvest_format: v2\nharvested_at: " + meta["harvested_at"] +
+                  "\n---\n\n" + section + "\n\n" + duplicate + "\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.assertRaisesRegex(ph.HarvestError, "duplicate indistinguishable"):
+                prepare(root, corpus, holdout_count=0)
+            self.assertFalse((root / "scratch" / "manifest.jsonl").exists())
 
     def test_mixed_bucket_and_generic_subjects_never_form_topic_clusters(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -303,14 +335,15 @@ class PrepareTests(unittest.TestCase):
 
     def test_risk_markers_deep_read_and_over_cap_report(self):
         with tempfile.TemporaryDirectory() as tmp:
-            scratch = prepare(Path(tmp), V2_CORPUS, holdout_count=0)
+            scratch = prepare(Path(tmp), V2_CORPUS, holdout_count=0, risk_cap=0.9)
             rows = {r["date_first"]: r for r in read_manifest(scratch)}
             self.assertIn("payment_dispute", rows["2010-05-01"]["risk_markers"])
             self.assertIn("refund", rows["2010-05-01"]["risk_markers"])
             ledger = read_ledger(scratch)
-            self.assertFalse(ledger["risk"]["over_cap"], "1/8 flagged is under the 15% cap")
-            self.assertEqual(ledger["risk"]["flagged"], 1)
-            self.assertAlmostEqual(ledger["risk"]["share"], 0.125)
+            self.assertFalse(ledger["risk"]["over_cap"])
+            self.assertGreater(ledger["risk"]["flagged"], 1,
+                               "ambiguous forced-deep threads share the bounded risk gate")
+            self.assertGreater(ledger["risk"]["share"], 0.125)
             self.assertGreaterEqual(ledger["risk"]["by_marker"]["payment_dispute"], 1)
             risky_id = rows["2010-05-01"]["id"]
             cluster = next(c for c in read_clusters(scratch) if risky_id in c["thread_ids"])
@@ -322,8 +355,9 @@ class PrepareTests(unittest.TestCase):
             scratch = prepare(Path(tmp), V2_CORPUS, holdout_count=0, risk_cap=0.1)
             ledger = read_ledger(scratch)
             self.assertTrue(ledger["risk"]["over_cap"])
-            self.assertEqual(ledger["risk"]["by_marker"],
-                             {"payment_dispute": 1, "refund": 1})
+            self.assertEqual(ledger["risk"]["by_marker"]["payment_dispute"], 1)
+            self.assertEqual(ledger["risk"]["by_marker"]["refund"], 1)
+            self.assertGreaterEqual(ledger["risk"]["by_marker"]["ambiguous_generic_subject"], 1)
             # report-only: the ledger is intact and reading plans stayed capped
             self.assertEqual(ph.verify_scratch(scratch), [])
             for cluster in read_clusters(scratch):
@@ -336,18 +370,59 @@ class PrepareTests(unittest.TestCase):
             config = tmp_path / "config.json"
             config.write_text(json.dumps({"risk_cap": 0.9, "unknown_knob": 1}), encoding="utf-8")
             args = SimpleNamespace(corpus=str(corpus), scratch=str(tmp_path / "scratch"),
-                                   config=str(config), holdout=1, seed=7)
+                                   config=str(config), holdout=1, seed=7, export_id="exp-test")
             cfg = ph.load_config(args)
             self.assertEqual(cfg["risk_cap"], 0.9)
             self.assertEqual(cfg["holdout_count"], 1)
             self.assertEqual(cfg["seed"], 7)
             self.assertNotIn("unknown_knob", cfg)
-            with mock.patch.object(ph, "check_safe_output"):
+            with mock.patch.object(ph, "check_safe_output", return_value=tmp_path):
+                Path(args.scratch).mkdir()
+                write_json(Path(args.scratch) / "preflight.json",
+                           ph.synthetic_preflight("exp-test", repo_root=str(tmp_path)))
                 self.assertEqual(ph.cmd_prepare(args), 0)
             self.assertFalse(read_ledger(Path(args.scratch))["risk"]["over_cap"])
 
+    def test_prepare_rejects_preflight_from_another_checkout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            corpus = write_corpus(root, V2_CORPUS)
+            scratch = root / "scratch"
+            scratch.mkdir()
+            write_json(scratch / "preflight.json",
+                       ph.synthetic_preflight("exp-test", repo_root=str(root / "other")))
+            args = SimpleNamespace(corpus=str(corpus), scratch=str(scratch), config=None,
+                                   holdout=1, seed=0, export_id="exp-test")
+            with mock.patch.object(ph, "check_safe_output", return_value=root):
+                with self.assertRaisesRegex(ph.HarvestError, "different brain checkout"):
+                    ph.cmd_prepare(args)
+
 
 class HoldoutAndLedgerTests(unittest.TestCase):
+    def test_ledger_expand_makes_still_yielding_followup_executable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = prepare(Path(tmp), V2_CORPUS, holdout_count=0, sample_cap=1, risk_cap=1)
+            ledger = read_ledger(scratch)
+            cluster = next(item for item in read_clusters(scratch)
+                           if len(item["thread_ids"]) > len(item["sample_ids"]) + len(item["deep_read_ids"]))
+            deep, sampled = cluster["deep_read_ids"], cluster["sample_ids"]
+            report = {"cluster": cluster["id"], "read_deep": deep, "read_sampled": sampled,
+                      "route_elsewhere": [], "contradictions": [],
+                      "saturation": {"still_yielding": True, "note": "new rule at cap"},
+                      "counts": {"assigned": len(cluster["thread_ids"]),
+                                 "read": len(deep) + len(sampled)}}
+            report_path = write_json(scratch / "drafts" / f"{cluster['id']}.report.json", report)
+            merged_ledger, merged_clusters = ph.apply_reports(scratch, [report_path])
+            write_json(scratch / "ledger.json", merged_ledger)
+            write_json(scratch / "clusters.json", merged_clusters)
+            before = set(ledger["reading_plan"]["sample_ids"])
+            self.assertEqual(ph.main(["ledger", "expand", "--scratch", str(scratch),
+                                      "--cluster", cluster["id"], "--count", "1"]), 0)
+            after = read_ledger(scratch)
+            self.assertEqual(len(set(after["reading_plan"]["sample_ids"]) - before), 1)
+            self.assertEqual(after["followups"][0]["trigger"], "still_yielding")
+            self.assertEqual(ph.verify_scratch(scratch), [])
+
     def test_holdout_reserved_eligible_and_absent_from_all_reading_plans(self):
         with tempfile.TemporaryDirectory() as tmp:
             scratch = prepare(Path(tmp), V2_CORPUS, holdout_count=1)
@@ -366,6 +441,48 @@ class HoldoutAndLedgerTests(unittest.TestCase):
             self.assertEqual(ledger["threads"][holdout["ids"][0]]["status"], "holdout")
             # only the long-external prose-answered thread is eligible in this corpus
             self.assertEqual(rows[holdout["ids"][0]]["date_first"], "2022-03-01")
+            replay = json.loads((scratch / "replay-cases.json").read_text(encoding="utf-8"))
+            self.assertEqual(replay["count"], 1)
+            self.assertEqual(replay["cases"], holdout["replay_cases"])
+            self.assertIn("would like to know", replay["cases"][0]["question"])
+            self.assertIn("arrange an inspection", replay["cases"][0]["historical_answer"])
+
+    def test_holdout_rejects_outbound_first_and_automated_and_redacts_replay(self):
+        corpus = """---
+harvest_format: v2
+harvested_at: 2026-01-02T03:04:05Z
+---
+
+## Detailed billing question — #1
+**external (2025-01-01):**
+Dear Alice, could you explain invoice INV-ABCD1234 for alice@example.test? See https://private.test/a or call +32 470 12 34 56 because we would like to know what happened.
+**mailbox (2025-01-02):**
+We checked the invoice carefully and can confirm the correction. Write to owner@example.test if anything remains unclear.
+
+## Outbound campaign — #2
+**mailbox (2025-02-01):**
+We wanted to send you this campaign introduction with enough prose to pass the simple reply threshold.
+**external (2025-02-02):**
+Could you explain this campaign and what it means for us because we would like to know all details?
+**mailbox (2025-02-03):**
+We can explain the campaign with this long human-looking answer, but the thread started outbound.
+
+## Automated question — #3
+**external (2025-03-01):**
+This is an automated notification. Could you explain why this delivery status notification was sent to us?
+**mailbox (2025-03-02):**
+We can explain this automated notification with a sufficiently long prose-looking mailbox message.
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = prepare(Path(tmp), corpus, holdout_count=1, holdout_min_external_chars=20)
+            replay = json.loads((scratch / "replay-cases.json").read_text(encoding="utf-8"))
+            self.assertEqual(replay["count"], 1)
+            encoded = json.dumps(replay)
+            for private in ("Alice", "alice@example.test", "owner@example.test", "private.test",
+                            "+32 470 12 34 56", "INV-ABCD1234"):
+                self.assertNotIn(private, encoded)
+            for marker in ("[name]", "[email]", "[link]", "[phone]", "[identifier]"):
+                self.assertIn(marker, encoded)
 
     def test_verify_catches_double_assignment_and_missing_thread(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -416,18 +533,29 @@ class HoldoutAndLedgerTests(unittest.TestCase):
             self.assertIn(moved, clusters["mixed"]["thread_ids"])
             self.assertEqual(clusters["C01"]["size"], len(clusters["C01"]["thread_ids"]))
             self.assertEqual(ph.verify_scratch(scratch), [])
+            # Re-entering ledger apply with the same complete cluster report is a no-op.
+            self.assertEqual(ph.main(["ledger", "apply", "--scratch", str(scratch),
+                                      str(report_path)]), 0)
+            self.assertEqual(ph.verify_scratch(scratch), [])
 
-    def test_ledger_apply_never_touches_holdout_threads(self):
+    def test_ledger_apply_hard_fails_on_holdout_threads(self):
         with tempfile.TemporaryDirectory() as tmp:
             scratch = prepare(Path(tmp), V2_CORPUS, holdout_count=1)
             holdout_id = read_ledger(scratch)["holdout"]["ids"][0]
-            report = {"cluster": "C01", "read_deep": [holdout_id], "read_sampled": [holdout_id],
+            self.assertFalse((scratch / "threads" / f"{holdout_id}.md").exists(),
+                             "raw holdout must not enter the synthesis-readable thread tree")
+            report = {"cluster": "C01", "read_deep": [holdout_id], "read_sampled": [],
                       "route_elsewhere": [{"id": holdout_id, "suggested_cluster": "mixed",
-                                           "reason": "should be ignored"}]}
+                                           "reason": "must fail"}],
+                      "contradictions": [], "saturation": {"still_yielding": False, "note": ""},
+                      "counts": {"assigned": 1, "read": 1}}
             report_path = scratch / "drafts" / "C01.report.json"
             report_path.write_text(json.dumps(report), encoding="utf-8")
-            self.assertEqual(ph.main(["ledger", "apply", "--scratch", str(scratch),
-                                      str(report_path)]), 0)
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                self.assertEqual(ph.main(["ledger", "apply", "--scratch", str(scratch),
+                                          str(report_path)]), 2)
+            self.assertIn("holdout leakage", stderr.getvalue())
             record = read_ledger(scratch)["threads"][holdout_id]
             self.assertEqual(record["status"], "holdout")
             self.assertEqual(record["read"], "none", "holdouts are reserved for the evaluation")
@@ -435,7 +563,539 @@ class HoldoutAndLedgerTests(unittest.TestCase):
             self.assertEqual(ph.verify_scratch(scratch), [])
 
 
+def write_json(path: Path, value: object) -> Path:
+    path.write_text(json.dumps(value, indent=2), encoding="utf-8")
+    return path
+
+
+def build_step10_fixture(tmp: Path, holdout_count: int = 1) -> dict:
+    scratch = prepare(tmp, V2_CORPUS, holdout_count=holdout_count, sample_cap=1, risk_cap=1,
+                      export_id="exp-2026-01-02-safe")
+    manifest = read_manifest(scratch)
+    ledger = read_ledger(scratch)
+    origins: dict[str, set[str]] = {}
+    for row in manifest:
+        if row["cluster"]:
+            origins.setdefault(row["cluster"], set()).add(row["id"])
+    planned_deep = set(ledger["reading_plan"]["deep_read_ids"])
+    planned_sampled = set(ledger["reading_plan"]["sample_ids"])
+    reports = []
+    for cluster, members in sorted(origins.items()):
+        deep = sorted(members & planned_deep)
+        sampled = sorted(members & planned_sampled)
+        report = {
+            "cluster": cluster,
+            "read_deep": deep,
+            "read_sampled": sampled,
+            "route_elsewhere": [],
+            "contradictions": [],
+            "saturation": {"still_yielding": False, "note": "sample saturated"},
+            "counts": {"assigned": len(members), "read": len(deep) + len(sampled)},
+        }
+        reports.append(write_json(scratch / "drafts" / f"{cluster}.report.json", report))
+    merged_ledger, merged_clusters = ph.apply_reports(scratch, reports)
+    write_json(scratch / "ledger.json", merged_ledger)
+    write_json(scratch / "clusters.json", merged_clusters)
+    ledger = merged_ledger
+
+    verification_dir = scratch / "settings-verification"
+    verification_dir.mkdir()
+    before_settings = write_json(verification_dir / "persona-before.json",
+                                 {"persona": {"guidance": "verbose"}})
+    after_settings = write_json(verification_dir / "persona-after.json",
+                                {"persona": {"guidance": "concise"}})
+    reduction = write_json(scratch / "critic" / "reduced.json", {
+        "settings_changes": [{
+            "surface": "persona", "scope": "mailbox", "status": "applied",
+            "summary": "Prefer concise answers", "scope_authority": True,
+            "verification": {
+                "pre_read_at": "2026-01-02T03:00:00Z",
+                "post_read_at": "2026-01-02T03:01:00Z",
+                "before_file": "settings-verification/persona-before.json",
+                "after_file": "settings-verification/persona-after.json",
+                "before_sha256": ph.hashlib.sha256(before_settings.read_bytes()).hexdigest(),
+                "after_sha256": ph.hashlib.sha256(after_settings.read_bytes()).hexdigest(),
+                "resolved_scope": "mailbox", "resolved_target": "mailbox-test",
+            },
+        }],
+        "skip_proposals": [{
+            "summary": "Skip repeated automated receipts",
+            "evidence_class": "presence_without_prose_reply", "evidence_count": 1,
+            "evidence_ids": [next(row["id"] for row in manifest
+                                  if not row["prose_reply"] and row["occurrences"] == 1
+                                  and row["id"] not in ledger["holdout"]["ids"])],
+        }],
+        "durable_rules": [{
+            "summary": "Warranty handling is stable", "evidence_strength": 1,
+            "evidence_ids": [next(thread_id for thread_id, row in ledger["threads"].items()
+                                  if row["read"] != "none")],
+            "era": "recent", "stale_era": False,
+        }],
+        "contradictions": [{
+            "topic": "warranty timing", "status": "resolved",
+            "resolution": "recent evidence supersedes old handling", "supersession": "old -> recent",
+        }],
+    })
+    holdout_ids = ledger["holdout"]["ids"]
+    holdout_id = holdout_ids[0]
+    evaluation_value = {
+        "holdouts": [{
+            "id": thread_id, "replay_id": f"ask-replay-{index}",
+            "status": "succeeded", "trace_url": f"https://app.example.test/runs/holdout-{index}",
+            "brain_sha": "a" * 40,
+            "scores": {"factual_agreement": 4, "routing": 3, "tone": 4},
+            "notes": "Checked against private answer for alice@example.test at https://private.invalid/raw",
+        } for index, thread_id in enumerate(holdout_ids, start=1)],
+        "production_replay": {
+            "run_id": "run-representative-1", "status": "succeeded", "cost_usd": 0.1,
+            "trace_url": "https://app.example.test/runs/representative",
+            "brain_sha": "a" * 40, "brain_diff": "Added the new warranty route",
+        },
+    }
+    evaluation = write_json(scratch / "brief" / "evaluation.json", evaluation_value)
+    metrics = write_json(scratch / "brief" / "metrics.json", {
+        "token_usage": {"input": 1200, "output": 300, "total": 1500},
+        "cost_usd": 0.5, "wall_clock_seconds": 90.25, "preparation_seconds": 0.25,
+    })
+    return {"scratch": scratch, "reports": reports, "reduction": reduction,
+            "evaluation": evaluation, "metrics": metrics, "holdout_id": holdout_id}
+
+
+def review_argv(fixture: dict) -> list[str]:
+    argv = ["review", "--scratch", str(fixture["scratch"])]
+    for report in fixture["reports"]:
+        argv.extend(["--agent-report", str(report)])
+    argv.extend(["--reduction", str(fixture["reduction"]),
+                 "--evaluation", str(fixture["evaluation"]),
+                 "--metrics", str(fixture["metrics"]),
+                 "--harvest-date", "2026-01-03", "--kit-version", "v0.3.0"])
+    return argv
+
+
+class Step10ReviewAndRecordTests(unittest.TestCase):
+    def test_review_rejects_holdout_content_without_identifier(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = build_step10_fixture(Path(tmp))
+            replay = json.loads((fixture["scratch"] / "replay-cases.json").read_text())
+            leaked = replay["cases"][0]["historical_answer"]
+            (fixture["scratch"] / "drafts" / "copied-holdout.md").write_text(leaked)
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(review_argv(fixture)), 2)
+            self.assertIn("holdout content leakage", stderr.getvalue())
+
+    def test_review_scans_explicit_synthesis_inputs_outside_scratch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fixture = build_step10_fixture(root)
+            replay = json.loads((fixture["scratch"] / "replay-cases.json").read_text())
+            report = json.loads(fixture["reports"][0].read_text())
+            report["saturation"]["note"] = replay["cases"][0]["question"]
+            external_report = write_json(root / "external-report.json", report)
+            fixture["reports"][0] = external_report
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(review_argv(fixture)), 2)
+            self.assertIn("holdout content leakage in synthesis input", stderr.getvalue())
+
+    def test_evaluation_requires_distinct_holdout_and_production_runs(self):
+        ids = {"H" + "0" * 32, "H" + "1" * 32}
+        evaluation = {
+            "holdouts": [{
+                "id": thread_id, "replay_id": "duplicate-run", "status": "succeeded",
+                "trace_url": "https://app.example.test/runs/duplicate", "brain_sha": "a" * 40,
+                "scores": {"factual_agreement": 4, "routing": 3, "tone": 4}, "notes": "",
+            } for thread_id in sorted(ids)],
+            "production_replay": {
+                "run_id": "representative", "status": "succeeded", "cost_usd": 0.1,
+                "trace_url": "https://app.example.test/runs/representative",
+                "brain_sha": "a" * 40, "brain_diff": "changed",
+            },
+        }
+        with self.assertRaisesRegex(ph.HarvestError, "distinct replay id and trace URL"):
+            ph.validate_evaluation(evaluation, ids)
+
+        evaluation["holdouts"][1]["replay_id"] = "holdout-2"
+        evaluation["holdouts"][1]["trace_url"] = "https://app.example.test/runs/holdout-2"
+        evaluation["production_replay"]["run_id"] = "duplicate-run"
+        with self.assertRaisesRegex(ph.HarvestError, "distinct from every holdout replay"):
+            ph.validate_evaluation(evaluation, ids)
+
+    def test_review_requires_bound_before_after_settings_snapshots(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = build_step10_fixture(Path(tmp))
+            snapshot = fixture["scratch"] / "settings-verification" / "persona-after.json"
+            snapshot.write_text('{"persona":{"guidance":"tampered"}}')
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(review_argv(fixture)), 2)
+            self.assertIn("after settings snapshot digest changed", stderr.getvalue())
+
+    def test_review_preserves_previous_bundle_on_late_validation_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = build_step10_fixture(Path(tmp))
+            self.assertEqual(ph.main(review_argv(fixture)), 0)
+            brief_dir = fixture["scratch"] / "brief"
+            before = {name: (brief_dir / name).read_bytes()
+                      for name in ("review-brief.md", "record-source.json", "record-candidate.json")}
+            metrics = json.loads(fixture["metrics"].read_text())
+            metrics["token_usage"]["total"] += 1
+            write_json(fixture["metrics"], metrics)
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(ph.main(review_argv(fixture)), 2)
+            self.assertEqual(before, {name: (brief_dir / name).read_bytes() for name in before})
+
+    def test_review_rejects_changed_preflight_and_risk_over_cap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = build_step10_fixture(Path(tmp))
+            preflight_path = fixture["scratch"] / "preflight.json"
+            preflight = json.loads(preflight_path.read_text())
+            preflight["target"]["mailbox"] = "different-mailbox"
+            write_json(preflight_path, preflight)
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(review_argv(fixture)), 2)
+            self.assertIn("preflight changed", stderr.getvalue())
+
+            (Path(tmp) / "risk").mkdir()
+            fixture = build_step10_fixture(Path(tmp) / "risk")
+            ledger = read_ledger(fixture["scratch"])
+            ledger["risk"]["over_cap"] = True
+            write_json(fixture["scratch"] / "ledger.json", ledger)
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(review_argv(fixture)), 2)
+            self.assertIn("risk.over_cap", stderr.getvalue())
+
+            (Path(tmp) / "access").mkdir()
+            fixture = build_step10_fixture(Path(tmp) / "access")
+            preflight_path = fixture["scratch"] / "preflight.json"
+            preflight = json.loads(preflight_path.read_text())
+            preflight["access"]["read"]["persona"] = False
+            preflight["scope_matrix"]["persona"]["target_available"] = False
+            preflight["scope_matrix"]["persona"]["available_scopes"] = []
+            write_json(preflight_path, preflight)
+            run_path = fixture["scratch"] / "run.json"
+            run = json.loads(run_path.read_text())
+            run["preflight"]["sha256"] = ph.document_digest(preflight)
+            write_json(run_path, run)
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(review_argv(fixture)), 2)
+            self.assertIn("setting/target read", stderr.getvalue())
+
+            preflight["access"]["read"]["persona"] = True
+            preflight["scope_matrix"]["persona"]["target_available"] = True
+            preflight["scope_matrix"]["persona"]["available_scopes"] = ["mailbox"]
+            preflight["access"]["write"]["persona"] = False
+            preflight["scope_matrix"]["persona"]["write_verified"] = False
+            write_json(preflight_path, preflight)
+            run["preflight"]["sha256"] = ph.document_digest(preflight)
+            write_json(run_path, run)
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(review_argv(fixture)), 2)
+            self.assertIn("without verified write access", stderr.getvalue())
+
+    def test_review_rejects_unverified_setting_scope_and_torn_bundle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fixture = build_step10_fixture(root)
+            reduction = json.loads(fixture["reduction"].read_text())
+            reduction["settings_changes"][0].update({
+                "surface": "triage_policy", "scope": "tenant", "scope_authority": True,
+            })
+            reduction["settings_changes"][0]["verification"].update(
+                {"resolved_scope": "tenant", "resolved_target": "tenant-test"})
+            write_json(fixture["reduction"], reduction)
+            preflight_path = fixture["scratch"] / "preflight.json"
+            preflight = json.loads(preflight_path.read_text())
+            preflight["scope_matrix"]["triage_policy"]["available_scopes"] = ["project"]
+            run_path = fixture["scratch"] / "run.json"
+            run = json.loads(run_path.read_text())
+            run["preflight"]["sha256"] = ph.document_digest(preflight)
+            write_json(preflight_path, preflight)
+            write_json(run_path, run)
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(review_argv(fixture)), 2)
+            self.assertIn("verified tenant triage_policy target/read", stderr.getvalue())
+
+            reduction["settings_changes"] = []
+            write_json(fixture["reduction"], reduction)
+            self.assertEqual(ph.main(review_argv(fixture)), 0)
+            brief = fixture["scratch"] / "brief" / "review-brief.md"
+            brief.write_text(brief.read_text() + "torn\n")
+            output = root / "notes" / "harvest-record.json"
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(["record", "--scratch", str(fixture["scratch"]),
+                                          "--out", str(output), "--approved"]), 2)
+            self.assertIn("bundle is incomplete or mixed", stderr.getvalue())
+            self.assertFalse(output.exists())
+
+    def test_reduction_evidence_is_machine_reconciled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = build_step10_fixture(Path(tmp))
+            reduction = json.loads(fixture["reduction"].read_text())
+            reduction["skip_proposals"][0]["evidence_count"] += 1
+            write_json(fixture["reduction"], reduction)
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(review_argv(fixture)), 2)
+            self.assertIn("occurrence sum", stderr.getvalue())
+
+            (Path(tmp) / "durable").mkdir()
+            fixture = build_step10_fixture(Path(tmp) / "durable")
+            reduction = json.loads(fixture["reduction"].read_text())
+            unread = next(thread_id for thread_id, row in read_ledger(fixture["scratch"])["threads"].items()
+                          if row["status"] == "assigned" and row["read"] == "none")
+            reduction["durable_rules"][0]["evidence_ids"] = [unread]
+            write_json(fixture["reduction"], reduction)
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(review_argv(fixture)), 2)
+            self.assertIn("not semantically read", stderr.getvalue())
+
+    def test_review_parser_accepts_single_or_repeated_agent_report_flags(self):
+        common = ["--scratch", "scratch", "--reduction", "reduced.json",
+                  "--evaluation", "evaluation.json", "--metrics", "metrics.json",
+                  "--harvest-date", "2026-01-03", "--kit-version", "v0.3.0"]
+        single = ph.parser().parse_args(["review", "--agent-report", "a.json", "b.json", *common])
+        repeated = ph.parser().parse_args(["review", "--agent-report", "a.json",
+                                           "--agent-report", "b.json", *common])
+        self.assertEqual(single.agent_reports, ["a.json", "b.json"])
+        self.assertEqual(repeated.agent_reports, single.agent_reports)
+
+    def test_review_and_approved_record_are_deterministic_and_exact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fixture = build_step10_fixture(root)
+            self.assertEqual(ph.main(review_argv(fixture)), 0)
+            brief_dir = fixture["scratch"] / "brief"
+            first = {name: (brief_dir / name).read_bytes()
+                     for name in ("review-brief.md", "record-source.json", "record-candidate.json")}
+            self.assertEqual(ph.main(review_argv(fixture)), 0)
+            for name, expected in first.items():
+                self.assertEqual((brief_dir / name).read_bytes(), expected, name)
+
+            brief = first["review-brief.md"].decode()
+            self.assertIn("1500 total", brief)
+            self.assertIn("Wall clock: 90.250s (preparation 0.250s)", brief)
+            self.assertIn("at mailbox-test", brief)
+            self.assertIn("Resolved brain SHA: `" + "a" * 40 + "`", brief)
+            candidate = first["record-candidate.json"]
+            self.assertNotIn(fixture["holdout_id"].encode(), candidate)
+            self.assertNotIn(b"alice@example.test", candidate)
+            self.assertNotIn(b"private.invalid", candidate)
+            self.assertNotIn(b"run-representative-1", candidate)
+
+            output = root / "notes" / "harvest-record.json"
+            self.assertEqual(ph.main(["record", "--scratch", str(fixture["scratch"]),
+                                      "--out", str(output)]), 2)
+            self.assertFalse(output.exists())
+            record_args = ph.parser().parse_args(["record", "--scratch", str(fixture["scratch"]),
+                                                  "--out", str(output), "--approved"])
+            self.assertEqual(ph.cmd_record(record_args, destination_checker=lambda out, scratch: None), 0)
+            self.assertEqual(output.read_bytes(), candidate,
+                             "approved record must be the exact operator-reviewed candidate")
+            self.assertEqual(ph.cmd_record(record_args, destination_checker=lambda out, scratch: None), 0,
+                             "identical existing record is an idempotent no-op")
+            output.write_text("different\n", encoding="utf-8")
+            with self.assertRaisesRegex(ph.HarvestError, "different existing"):
+                ph.cmd_record(record_args, destination_checker=lambda out, scratch: None)
+
+    def test_review_reconciles_replay_cases_and_requested_holdout_count(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = build_step10_fixture(Path(tmp))
+            replay_path = fixture["scratch"] / "replay-cases.json"
+            replay = json.loads(replay_path.read_text())
+            replay["cases"][0]["question"] = "tampered private evaluation question"
+            write_json(replay_path, replay)
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(review_argv(fixture)), 2)
+            self.assertIn("does not reconcile", stderr.getvalue())
+
+            # Regenerate, then prove a short reservation cannot masquerade as the requested set.
+            short_root = Path(tmp) / "short"
+            short_root.mkdir()
+            fixture = build_step10_fixture(short_root)
+            run_path = fixture["scratch"] / "run.json"
+            run = json.loads(run_path.read_text())
+            run["config"]["holdout_count"] = 2
+            write_json(run_path, run)
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(review_argv(fixture)), 2)
+            self.assertIn("does not match requested", stderr.getvalue())
+
+    def test_prepare_fails_when_requested_holdout_cannot_be_filled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ph.HarvestError, "requested 2, found 1"):
+                prepare(Path(tmp), V2_CORPUS, holdout_count=2)
+
+    def test_holdout_leakage_in_reduction_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = build_step10_fixture(Path(tmp))
+            reduction = json.loads(fixture["reduction"].read_text())
+            reduction["durable_rules"][0]["summary"] += " from " + fixture["holdout_id"]
+            write_json(fixture["reduction"], reduction)
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                self.assertEqual(ph.main(review_argv(fixture)), 2)
+            self.assertIn("holdout leakage", stderr.getvalue())
+            self.assertFalse((fixture["scratch"] / "brief" / "record-candidate.json").exists())
+
+    def test_review_scans_unlisted_draft_and_critic_artifacts_for_holdout_leakage(self):
+        for directory, filename in (("drafts", "notes.md"), ("critic", "early-critic.txt")):
+            with self.subTest(directory=directory), tempfile.TemporaryDirectory() as tmp:
+                fixture = build_step10_fixture(Path(tmp))
+                (fixture["scratch"] / directory / filename).write_text(
+                    "Private evidence from " + fixture["holdout_id"], encoding="utf-8")
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    self.assertEqual(ph.main(review_argv(fixture)), 2)
+                self.assertIn(f"{directory}/{filename}", stderr.getvalue())
+                self.assertFalse((fixture["scratch"] / "brief" / "record-candidate.json").exists())
+
+    def test_evaluation_score_and_production_replay_schema_failures(self):
+        stable_id = "H" + "0" * 32
+        holdout = {stable_id}
+        valid = {
+            "holdouts": [{"id": stable_id, "replay_id": "replay-1",
+                          "status": "succeeded", "trace_url": "https://example.test/holdout/1",
+                          "brain_sha": "b" * 40,
+                          "scores": {"factual_agreement": 4, "routing": 4, "tone": 4},
+                          "notes": ""}],
+            "production_replay": {"run_id": "run-1", "status": "succeeded", "cost_usd": 0.1,
+                                  "trace_url": "https://example.test/run/1", "brain_sha": "b" * 40,
+                                  "brain_diff": "one route changed"},
+        }
+        ph.validate_evaluation(valid, holdout)
+        cases = []
+        duplicate = json.loads(json.dumps(valid))
+        duplicate["holdouts"].append(duplicate["holdouts"][0])
+        cases.append((duplicate, "duplicate score"))
+        bad_score = json.loads(json.dumps(valid))
+        bad_score["holdouts"][0]["scores"]["tone"] = 5
+        cases.append((bad_score, "<= 4"))
+        bad_sha = json.loads(json.dumps(valid))
+        bad_sha["production_replay"]["brain_sha"] = "main"
+        cases.append((bad_sha, "40-char SHA"))
+        no_diff = json.loads(json.dumps(valid))
+        del no_diff["production_replay"]["brain_diff"]
+        cases.append((no_diff, "missing"))
+        bad_trace = json.loads(json.dumps(valid))
+        bad_trace["production_replay"]["trace_url"] = "local-run"
+        cases.append((bad_trace, "HTTP"))
+        failed_holdout = json.loads(json.dumps(valid))
+        failed_holdout["holdouts"][0]["status"] = "failed"
+        cases.append((failed_holdout, "successful"))
+        mismatched_sha = json.loads(json.dumps(valid))
+        mismatched_sha["holdouts"][0]["brain_sha"] = "c" * 40
+        cases.append((mismatched_sha, "same dev brain SHA"))
+        for value, error in cases:
+            with self.subTest(error=error), self.assertRaisesRegex(ph.HarvestError, error):
+                ph.validate_evaluation(value, holdout)
+
+    def test_report_coverage_completeness_and_out_of_plan_reads_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = build_step10_fixture(Path(tmp))
+            incomplete = dict(fixture)
+            incomplete["reports"] = fixture["reports"][:-1]
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(review_argv(incomplete)), 2)
+            self.assertIn("cover every", stderr.getvalue())
+
+            ledger = read_ledger(fixture["scratch"])
+            planned = set(ledger["reading_plan"]["deep_read_ids"] + ledger["reading_plan"]["sample_ids"])
+            manifest = read_manifest(fixture["scratch"])
+            unplanned = next(row for row in manifest if row["cluster"] and row["id"] not in planned)
+            report_path = next(path for path in fixture["reports"]
+                               if json.loads(path.read_text())["cluster"] == unplanned["cluster"])
+            report = json.loads(report_path.read_text())
+            report["read_sampled"].append(unplanned["id"])
+            report["counts"]["read"] += 1
+            write_json(report_path, report)
+            # Reflecting the extra read in the ledger must not make an out-of-plan read acceptable.
+            ledger["threads"][unplanned["id"]]["read"] = "sampled"
+            write_json(fixture["scratch"] / "ledger.json", ledger)
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(review_argv(fixture)), 2)
+            self.assertIn("out-of-plan", stderr.getvalue())
+
+    def test_still_yielding_requires_completed_follow_up_before_review(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = build_step10_fixture(Path(tmp))
+            report = json.loads(fixture["reports"][0].read_text())
+            report["saturation"] = {"still_yielding": True, "note": "new rules at the cap"}
+            write_json(fixture["reports"][0], report)
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(review_argv(fixture)), 2)
+            self.assertIn("follow-up assignment", stderr.getvalue())
+
+    def test_record_candidate_tampering_and_private_fields_are_rejected_or_omitted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fixture = build_step10_fixture(root)
+            self.assertEqual(ph.main(review_argv(fixture)), 0)
+            candidate_path = fixture["scratch"] / "brief" / "record-candidate.json"
+            candidate = json.loads(candidate_path.read_text())
+            serialized = json.dumps(candidate)
+            for forbidden in ("replay_id", "run_id", "trace_url", "brain_sha", "brain_diff",
+                              fixture["holdout_id"], "alice@example.test"):
+                self.assertNotIn(forbidden, serialized)
+            candidate["harvest_record"]["holdout"]["cases"][0]["scores"]["tone"] = 0
+            write_json(candidate_path, candidate)
+            output = root / "record.json"
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(["record", "--scratch", str(fixture["scratch"]),
+                                          "--out", str(output), "--approved"]), 2)
+            self.assertIn("incomplete or mixed", stderr.getvalue())
+            self.assertFalse(output.exists())
+
+    def test_record_rejects_format_only_candidate_byte_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fixture = build_step10_fixture(root)
+            self.assertEqual(ph.main(review_argv(fixture)), 0)
+            candidate_path = fixture["scratch"] / "brief" / "record-candidate.json"
+            candidate_path.write_text(json.dumps(json.loads(candidate_path.read_text())), encoding="utf-8")
+            output = root / "record.json"
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(["record", "--scratch", str(fixture["scratch"]),
+                                          "--out", str(output), "--approved"]), 2)
+            self.assertIn("incomplete or mixed", stderr.getvalue())
+            self.assertFalse(output.exists())
+
+
 class SafetyAndCLITests(unittest.TestCase):
+    def test_capability_normalization_and_record_destination_safety(self):
+        self.assertEqual(ph.normalize_capabilities('{"grants":["CONFIG:WRITE","admin:*"]}'),
+                         ["admin:*", "config:write"])
+        self.assertTrue(ph.capability_allows(["admin:*"], "triage:write"))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            scratch = root / ".rootcause" / "harvest" / "x"
+            output = root / "notes" / "record.json"
+            def git(cmd, **kwargs):
+                if cmd[1] == "rev-parse":
+                    return SimpleNamespace(returncode=0, stdout=str(root) + "\n")
+                return SimpleNamespace(returncode=0 if "ignored" in str(cmd[-1]) else 1)
+            ph.validate_record_destination(output, scratch, git_runner=git)
+            with self.assertRaisesRegex(ph.HarvestError, "must not be ignored"):
+                ph.validate_record_destination(root / "ignored" / "record.json", scratch,
+                                               git_runner=git)
+            with self.assertRaisesRegex(ph.HarvestError, "inside git root"):
+                ph.validate_record_destination(root.parent / "elsewhere.json", scratch,
+                                               git_runner=git)
+
+    def test_explicit_preflight_fails_closed_on_auth_access(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp) / "scratch"
+            (scratch / "corpus").mkdir(parents=True)
+            write_corpus(scratch / "corpus", V2_CORPUS)
+            def git(cmd, **kwargs):
+                if cmd[1] == "rev-parse":
+                    return SimpleNamespace(returncode=0, stdout=tmp + "\n")
+                return SimpleNamespace(returncode=0, stdout="## main\n")
+            args = SimpleNamespace(scratch=str(scratch), project="p", mailbox="m",
+                                   provider="google", export_id="e")
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = ph.cmd_preflight(args, rc_runner=lambda argv: (1, "", "denied"),
+                                        git_runner=git)
+            self.assertEqual(code, 1)
+            artifact = json.loads((scratch / "preflight.json").read_text())
+            self.assertFalse(artifact["verification"]["auth"])
+            self.assertFalse(artifact["verification"]["access"])
     def test_cleanup_requires_yes_removes_root_and_verifies_gone(self):
         with tempfile.TemporaryDirectory() as tmp:
             scratch = prepare(Path(tmp), V2_CORPUS, holdout_count=0)
@@ -493,8 +1153,11 @@ class SafetyAndCLITests(unittest.TestCase):
                 code = ph.cmd_preflight(args, rc_runner=lambda argv: None, git_runner=git)
             output = stdout.getvalue()
             self.assertEqual(code, 0, "missing rc degrades to WARN, not failure")
-            self.assertEqual(output.count("rc not available"), 4)
+            self.assertEqual(output.count("rc not available"), 11)
             self.assertIn("formats ['v2']", output)
+            artifact = json.loads((scratch / "preflight.json").read_text(encoding="utf-8"))
+            self.assertEqual(artifact["corpus"], {"files": 1, "formats": ["v2"]})
+            self.assertFalse(artifact["scope_matrix"]["triage_policy"]["mailbox_scope"])
 
             write_corpus(scratch / "corpus", V2_CORPUS.replace("harvest_format: v2",
                                                                "harvest_format: v9"), "bad.md")
@@ -507,10 +1170,146 @@ class SafetyAndCLITests(unittest.TestCase):
             self.assertEqual(code, 1, "unsupported corpus format must FAIL preflight")
             self.assertEqual(calls, [
                 ["auth", "status"],
-                ["project", "mailbox", "ls"],
+                ["auth", "access"],
+                ["project", "mailbox", "ls", "-o", "json"],
                 ["project", "settings", "behavior", "get", "-o", "json"],
                 ["project", "triage", "policy", "get", "-o", "json"],
+                ["project", "triage", "rules", "ls", "-o", "json"],
+                ["dev", "console", "database", "list", "-o", "json"],
+                ["dev", "console", "capabilities"],
+                ["fleet", "health"],
+                ["project", "corpus", "ls", "-o", "json"],
+                ["self", "doctor"],
             ])
+
+    def test_preflight_explicit_context_runs_targeted_inventory_and_keeps_raw_rc_private(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp) / "scratch"
+            (scratch / "corpus").mkdir(parents=True)
+            write_corpus(scratch / "corpus", V2_CORPUS)
+
+            def git(cmd, **kwargs):
+                if cmd[1] == "rev-parse":
+                    return SimpleNamespace(returncode=0, stdout=tmp + "\n")
+                if cmd[1] == "status":
+                    return SimpleNamespace(returncode=0, stdout="## main\n M local.md\n")
+                return SimpleNamespace(returncode=0)
+
+            calls = []
+            raw_secret = "mailbox-secret-output"
+
+            def rc(argv):
+                calls.append(argv)
+                if argv[-5:] == ["project", "mailbox", "ls", "-o", "json"]:
+                    return (0, json.dumps({"mailboxes": [{"id": "mb-safe", "provider": "google"}],
+                                           "private": raw_secret}), "")
+                if argv[-2:] == ["auth", "access"]:
+                    return (0, json.dumps({"capabilities": ["config:write"]}), "")
+                if argv[-4:] == ["project", "corpus", "get", "exp-safe"]:
+                    return (0, json.dumps({"id": "exp-safe", "project": "project-safe",
+                                           "tenant": "tenant-safe", "mailbox": "mb-safe",
+                                           "provider": "google"}), "")
+                return (0, raw_secret, "")
+
+            args = SimpleNamespace(scratch=str(scratch), project="project-safe", tenant="tenant-safe",
+                                   mailbox="mb-safe", provider="google", export_id="exp-safe")
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                self.assertEqual(ph.cmd_preflight(args, rc_runner=rc, git_runner=git), 0)
+            self.assertNotIn(raw_secret, stdout.getvalue())
+            artifact = json.loads((scratch / "preflight.json").read_text(encoding="utf-8"))
+            self.assertEqual(artifact["target"], {"project": "project-safe", "tenant": "tenant-safe",
+                                                   "mailbox": "mb-safe", "provider": "google",
+                                                   "export_id": "exp-safe"})
+            self.assertTrue(artifact["scope_matrix"]["persona"]["target_available"])
+            self.assertTrue(all(call[:2] == ["--project", "project-safe"] for call in calls))
+            self.assertIn(["--project", "project-safe", "project", "mailbox", "settings", "get",
+                           "mb-safe", "-o", "json"], calls)
+            self.assertIn(["--project", "project-safe", "project", "tenant", "settings", "get",
+                           "tenant-safe", "-o", "json"], calls)
+            self.assertIn(["--project", "project-safe", "--tenant", "tenant-safe", "project",
+                           "triage", "policy", "get", "-o", "json"], calls)
+            self.assertIn(["--project", "project-safe", "--tenant", "tenant-safe", "project",
+                           "corpus", "get", "exp-safe"], calls)
+
+    def test_preflight_explicit_context_fails_closed_on_settings_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp) / "scratch"
+            (scratch / "corpus").mkdir(parents=True)
+            write_corpus(scratch / "corpus", V2_CORPUS)
+
+            def git(cmd, **kwargs):
+                if cmd[1] == "rev-parse":
+                    return SimpleNamespace(returncode=0, stdout=tmp + "\n")
+                if cmd[1] == "status":
+                    return SimpleNamespace(returncode=0, stdout="## main\n")
+                return SimpleNamespace(returncode=0)
+
+            def rc(argv):
+                if argv[-5:] == ["project", "mailbox", "ls", "-o", "json"]:
+                    return 0, json.dumps({"mailboxes": [{"id": "mb-safe", "provider": "google"}]}), ""
+                if argv[-2:] == ["auth", "access"]:
+                    return 0, json.dumps({"capabilities": ["config:write"]}), ""
+                if argv[-4:] == ["project", "corpus", "get", "exp-safe"]:
+                    return 0, json.dumps({"id": "exp-safe", "project": "project-safe",
+                                          "mailbox": "mb-safe", "provider": "google"}), ""
+                if argv[-6:] == ["project", "triage", "policy", "get", "-o", "json"]:
+                    return 7, "", "denied"
+                return 0, "{}", ""
+
+            args = SimpleNamespace(scratch=str(scratch), project="project-safe", mailbox="mb-safe",
+                                   provider="google", export_id="exp-safe")
+            with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                self.assertEqual(ph.cmd_preflight(args, rc_runner=rc, git_runner=git), 1)
+            self.assertIn("[FAIL] rc triage policy", stdout.getvalue())
+            artifact = json.loads((scratch / "preflight.json").read_text())
+            self.assertEqual(artifact["result"], "fail")
+            self.assertEqual(artifact["scope_matrix"]["triage_policy"]["available_scopes"], [])
+            with self.assertRaisesRegex(ph.HarvestError, "without failed checks"):
+                ph.validate_preflight(artifact, expected_export_id="exp-safe")
+
+    def test_preflight_provider_must_belong_to_the_exact_target_mailbox(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp) / "scratch"
+            (scratch / "corpus").mkdir(parents=True)
+            write_corpus(scratch / "corpus", V2_CORPUS)
+
+            def git(cmd, **kwargs):
+                if cmd[1] == "rev-parse":
+                    return SimpleNamespace(returncode=0, stdout=tmp + "\n")
+                if cmd[1] == "status":
+                    return SimpleNamespace(returncode=0, stdout="## main\n")
+                return SimpleNamespace(returncode=0)
+
+            inventory = {"mailboxes": [{"id": "mb-target", "provider": "google"},
+                                        {"id": "mb-other", "provider": "microsoft"}]}
+
+            def rc(argv):
+                if argv[-5:] == ["project", "mailbox", "ls", "-o", "json"]:
+                    return 0, json.dumps(inventory), ""
+                return 0, "{}", ""
+
+            args = SimpleNamespace(scratch=str(scratch), project="", mailbox="mb-target",
+                                   provider="microsoft", export_id="")
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(ph.cmd_preflight(args, rc_runner=rc, git_runner=git), 1)
+            artifact = json.loads((scratch / "preflight.json").read_text())
+            provider_check = next(check for check in artifact["checks"]
+                                  if check["name"] == "target provider")
+            self.assertEqual(provider_check["status"], "fail")
+
+    def test_preflight_git_failure_does_not_write_private_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp) / "scratch"
+
+            def git(cmd, **kwargs):
+                return SimpleNamespace(returncode=128, stdout="")
+
+            args = SimpleNamespace(scratch=str(scratch))
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(ph.cmd_preflight(args, rc_runner=lambda argv: None,
+                                                  git_runner=git), 1)
+            self.assertFalse((scratch / "preflight.json").exists())
 
 
 TOPICS = (
@@ -606,7 +1405,8 @@ class LargeCorpusTests(unittest.TestCase):
         corpus = write_corpus(tmp, generate_v2_corpus())
         cls.scratch = tmp / "scratch"
         started = time.monotonic()
-        ph.prepare_scratch(corpus, cls.scratch, dict(ph.DEFAULTS))
+        ph.prepare_scratch(corpus, cls.scratch, dict(ph.DEFAULTS), export_id="exp-large",
+                           preflight=ph.synthetic_preflight("exp-large"))
         cls.elapsed = time.monotonic() - started
 
     @classmethod
@@ -624,7 +1424,8 @@ class LargeCorpusTests(unittest.TestCase):
         self.assertLessEqual(statuses, set(ph.PRIMARY_STATUSES))
         self.assertEqual(ledger["corpus"]["date_span"][0][:4], "2007")
         self.assertEqual(ledger["corpus"]["date_span"][1][:4], "2026")
-        self.assertEqual(len((list((self.scratch / "threads").iterdir()))), 1000)
+        self.assertEqual(len(list((self.scratch / "threads").iterdir())),
+                         1000 - len(ledger["holdout"]["ids"]))
 
     def test_automated_share_languages_and_families_look_like_real_harvests(self):
         rows = read_manifest(self.scratch)
@@ -652,7 +1453,7 @@ class LargeCorpusTests(unittest.TestCase):
         for cluster in clusters.values():
             self.assertLessEqual(len(cluster["sample_ids"]), ph.DEFAULTS["sample_cap"])
             for tid in cluster["deep_read_ids"]:
-                self.assertTrue(rows[tid]["risk_markers"])
+                self.assertTrue(rows[tid]["risk_markers"] or rows[tid]["ambiguous"])
             if cluster["size"] > ph.DEFAULTS["sample_cap"] * 2:
                 eras = {rows[tid]["era"] for tid in cluster["sample_ids"]}
                 self.assertGreater(len(eras), 1, f"{cluster['id']} sample must span era bands")

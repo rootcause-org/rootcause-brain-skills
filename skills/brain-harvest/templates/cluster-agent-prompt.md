@@ -124,10 +124,10 @@ proposal:
 
 ```json
 {"cluster":"{{CLUSTER_ID}}",
- "read_deep":["H000001"],
- "read_sampled":["H000002"],
- "route_elsewhere":[{"id":"H000123","suggested_cluster":"C05","reason":"..."}],
- "contradictions":[{"ids":["H000010","H000200"],"topic":"...","note":"..."}],
+ "read_deep":["H0123456789abcdef0123456789abcdef"],
+ "read_sampled":["H1123456789abcdef0123456789abcdef"],
+ "route_elsewhere":[{"id":"H2123456789abcdef0123456789abcdef","suggested_cluster":"C05","reason":"..."}],
+ "contradictions":[{"ids":["H3123456789abcdef0123456789abcdef","H4123456789abcdef0123456789abcdef"],"topic":"...","note":"..."}],
  "saturation":{"still_yielding":false,"note":"..."},
  "counts":{"assigned":210,"read":52}}
 ```
