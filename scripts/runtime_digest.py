@@ -59,7 +59,8 @@ def _digest(paths: list[str], read: Callable[[str], bytes]) -> str:
         raw = read(path)
         if path == PYPROJECT:
             raw = _canonicalize(raw.decode("utf-8", "replace"), version).encode()
-        elif version.encode() in raw:
+        elif re.search(rf"(?<![0-9.]){re.escape(version)}(?![0-9.])",
+                       raw.decode("utf-8", "replace")):
             sys.exit(
                 f"runtime_digest: tracked file {path} carries the version literal {version!r}; "
                 "canonicalize or untrack it — the digest must not change on the release bump"

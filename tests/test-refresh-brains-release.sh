@@ -187,6 +187,12 @@ git -C "$CL" add refresh-brains.sh scripts/runtime_digest.py \
 git -C "$CL" diff --cached --quiet || git -C "$CL" commit -q -m "test: install classifier under test"
 git -C "$CL" push -q -u origin main
 
+# A larger dotted number containing the next version is not a release literal (for example RFC
+# 9110 section 10.2.3 must not block a v0.2.3 release).
+printf '\n# RFC 9110 section 10.2.3\n' >>"$CL/runtime/lib/api.py"
+git -C "$CL" commit -q -am "test: add dotted-number collision"
+git -C "$CL" push -q origin main
+
 cl_release() {  # release a patch (extra flags in $@); fail loudly on error
   if ! RC_BRAINS_ROOT="$TMP/brains" "$CL/refresh-brains.sh" --release patch --no-image \
       "$TMP/not-a-brain" "$@" >"$TMP/classify.out" 2>&1; then
