@@ -24,6 +24,8 @@ Default to evidence-first. A single run is signal, not permission to oversteer t
 
 1. Resolve the input.
    - Run UUID: continue with `rc run debug <uuid>`.
+   - `rc fleet actions` row: use its `run_id`, not the action-run `id`; the tokenized `run_url` opens
+     the same originating run in the UI. A null `run_id` is a direct operator action with no run trace.
    - Thread/session id: run `rc run thread <id>`. If it prints a run UUID, continue with that run. If
      there is no run, explain the public channel/support boundary.
    - Question/prompt: use `brain-ask` unless the user explicitly asked to trigger and inspect a fresh

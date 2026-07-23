@@ -98,6 +98,9 @@ Read:
    rc dev console action preflight <id> --params '{"key":"value"}'
    rc dev console action run <id> --params '{"key":"value"}'
    ```
+   These commands discover definitions and preflight/execute one action. For read-only history across
+   runs, exact stored params, and originating run links, use `rc fleet actions` from the
+   [`rc-fleet`](../rc-fleet/SKILL.md) skill.
    `run` is a real state-changing operation. Use it only when the user asked for execution or the task
    clearly requires it and params were grounded. Report the action run id, status, and result summary.
 
