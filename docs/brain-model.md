@@ -150,8 +150,8 @@ Before the main loop runs, a cheap **triage** classifier decides process-vs-skip
 from the operator's tunable triage guidance plus a brain-derived knowledge block: the brain's root
 `AGENTS.md` (always) and the full body of every brain `.md` whose frontmatter declares
 `include_in: [triage]`. Use the tag to teach triage the project's **decline / ownership / scope** rules
-— senders or topics that are not for this mailbox, automated alert/notification mail that needs no
-reply, and wrong-addressee patterns.
+— semantic topic categories that are not owned by this mailbox, broad notification classes, and
+wrong-addressee patterns that require judgement.
 
 ```markdown
 ---
@@ -166,6 +166,12 @@ the default bias to process still win, and skips are always reviewable (feedback
 brain can inform triage but never silently black-hole mail. Recommended home is a `triage.md` at the
 brain root, but the frontmatter tag — not the filename — is the contract, and it is a list that
 generalizes to future host-assembled prompts. Don't restate `AGENTS.md`; it is always included.
+
+**Exact allow/block selectors belong in settings, never in the brain.** A sender address/domain,
+subject/header match, or other deterministic blacklist/whitelist must be configured with
+`rc project triage rules` (`effect=skip|force_process`). Spam allow/block entries use
+`rc project senders`. Do not duplicate these selectors in `AGENTS.md`, `triage.md`, a skill, or a
+brain test: settings run before brain-guided judgement and are the UI's source of truth.
 
 ### Feeding the grounding pre-step (`include_in: [grounding]`)
 

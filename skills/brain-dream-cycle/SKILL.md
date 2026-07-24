@@ -79,12 +79,17 @@ Read when relevant:
    | Missing reusable script, action instructions, action selection rules | Brain files or `actions/<id>/`. |
    | Voice, language, signature, formality, wording preference, “sound more like us” | Persona settings via `rc project settings behavior`. |
    | Which inbound mail should become a draft, broad draft/no-draft guidance | Triage policy via `rc project triage policy`. |
-   | Deterministic always-skip or always-process rule based on sender/subject/header | Triage hard rule via `rc project triage rules`. |
+   | Deterministic draft blacklist/whitelist based on sender/subject/header | Triage hard rule via `rc project triage rules` (`skip` / `force_process`). |
+   | Spam blacklist/whitelist by sender | Spam settings via `rc project senders` (`block` / `allow`). |
    | Shared project channel promotion | `brain-publish` exact-SHA public `rc` flow. |
    | Missing public surface, tenant publish, action wiring, cache divergence | `brain-publish` support request. |
 
    Avoid raw email quotes, one-off customer facts, copied private data, and generic RootCause behavior
    that belongs in product docs rather than the project brain.
+
+   Never encode a deterministic blacklist/whitelist in `AGENTS.md`, `triage.md`, a brain skill, or a
+   brain test. Settings are the source of truth; keeping the same selector in the brain creates a
+   second, weaker rule that can diverge from the UI.
 
 5. Inspect current settings before changing them:
    ```bash
@@ -102,8 +107,10 @@ Read when relevant:
    rc project mailbox settings set <mailbox-id> persona.guidance="..."
 
    rc project triage policy set "Draft customer support questions; ignore vendor newsletters and automated alerts."
-   rc project triage rules add effect=skip match_kind=subject_contains pattern="newsletter" reason="marketing mail"
-   rc project triage rules add effect=force_process match_kind=sender_address pattern="vip@example.com" reason="VIP support mailbox"
+   rc --scope project project triage rules add effect=skip match_kind=sender_address pattern="alerts@example.com" reason="automated alerts"
+   rc --scope project project triage rules add effect=force_process match_kind=sender_address pattern="vip@example.com" reason="VIP support mailbox"
+   rc --scope project project senders block "spam.example.com" --reason "known spam sender"
+   rc --scope project project senders allow "partner.example.com" --reason "trusted sender"
    ```
    Keep persona and triage concise. If guidance starts becoming product knowledge or a runbook, put it
    in the brain instead. Use `effect=skip` for deterministic no-draft mail and `effect=force_process`

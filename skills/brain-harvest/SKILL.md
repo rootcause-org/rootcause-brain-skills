@@ -313,12 +313,15 @@ rg -n "<customer phrase>|<internal term>|<policy name>" AGENTS.md skills notes p
 | Missing reusable script, action instructions, action selection rules | Brain files or `actions/<id>/`. |
 | Voice, language, signature, formality, wording preference, "sound more like us" | Persona settings via `rc project settings behavior`. |
 | Which inbound mail should become a draft, broad draft/no-draft guidance | Triage policy via `rc project triage policy`. |
-| Deterministic always-skip or always-process rule based on sender/subject/header | Triage hard rule via `rc project triage rules`. |
+| Deterministic draft blacklist/whitelist based on sender/subject/header | Triage hard rule via `rc project triage rules` (`skip` / `force_process`). |
 | Shared project channel promotion | `brain-publish` exact-SHA public `rc` flow. |
 | Missing public surface, tenant publish, action wiring, cache divergence | `brain-publish` support request. |
 
 Onboarding-shaped outputs land where the mechanical seeder points: `notes/onboarding-inbox.md`-style
 survey facts and `notes/mailbox-patterns.md`-style distilled patterns, plus case/terminology files.
+
+Never copy a deterministic blacklist/whitelist selector into brain prose or a brain test. Apply it
+only through the settings surface above so the UI and CLI share one source of truth.
 
 **Apply persona + triage at the narrowest writable scope (§6 scope matrix).** Re-read the current values
 (step 1) immediately before mutating, and verify the resolved source afterward. Writable scope is not

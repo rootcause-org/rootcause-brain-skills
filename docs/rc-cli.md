@@ -41,6 +41,9 @@ rc project triage policy set "..."
 rc project triage rules ls
 rc project triage rules add effect=skip match_kind=subject_contains pattern="newsletter"
 rc project triage rules add effect=force_process match_kind=sender_domain pattern="example.com"
+rc project senders ls
+rc project senders block "spam.example.com" --reason "known spam sender"
+rc project senders allow "partner.example.com" --reason "trusted sender"
 rc dev brain status
 rc dev brain sync
 rc dev brain promote --channel stable --sha <exact-full-40-character-sha>
@@ -176,10 +179,15 @@ rc project triage policy set "..."
 rc project triage rules ls -o json
 rc project triage rules add effect=skip match_kind=subject_contains pattern="newsletter" reason="marketing mail"
 rc project triage rules add effect=force_process match_kind=sender_domain pattern="example.com" reason="VIP support domain"
+rc project senders ls -o json
+rc project senders block "spam.example.com" --reason "known spam sender"
+rc project senders allow "partner.example.com" --reason "trusted sender"
 ```
 
 Persona settings own voice, language, formality, signature, and wording preferences. Triage policy/rules
-own whether inbound mail deserves a draft. Product facts and runbooks belong in the brain.
+own whether inbound mail deserves a draft; sender settings own spam allow/block rules. Deterministic
+blacklists/whitelists belong on these settings surfaces, never in brain prose or brain tests. Product
+facts and runbooks belong in the brain.
 
 ## Env
 
