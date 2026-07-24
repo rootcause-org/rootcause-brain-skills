@@ -14,6 +14,14 @@ record in [`docs/brain-harvest-improvements.md`](brain-harvest-improvements.md) 
   reading plans, an era-banded metadata layer, a risk-marker distribution report, a reserved holdout,
   and a machine-verified coverage ledger. The field-notes' top recommendation (a `cluster_index.py`) was
   never built; this supersedes it. All numeric knobs are tunable defaults via `--config`.
+- **Local IMAP exporter feeds `prepare` directly.** `skills/brain-harvest/scripts/local_imap_harvest.py`
+  now emits a `harvest_format: v1` corpus blob at `<out>/corpus/corpus.md` — the exact section shape the
+  server's canonical renderer (`rootcause/internal/export/harvest_render.go` `render()`) produces, with
+  real sender addresses — alongside the legacy `INDEX.md` + `threads/` split (kept one deprecation
+  release). Deep-IMAP harvests therefore flow through the deterministic pipeline (`prepare --corpus
+  <out>/corpus/`) instead of being forced onto the manual fallback. Because the export is sent-folder
+  only, every message is mailbox-authored (`direction: mailbox_first`, no external-question holdouts —
+  run with `--holdout 0`); paired inbound-thread expansion stays future work.
 - **Single ignored scratch root.** Everything sensitive (corpus, manifest, ledger, drafts, critic notes,
   brief, IMAP env) lives under `.rootcause/harvest/<tag>/`. Cleanup is a structural delete-and-verify of
   that root — no artifact registry.

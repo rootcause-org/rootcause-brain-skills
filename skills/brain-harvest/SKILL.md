@@ -145,12 +145,24 @@ uv run "$SKILL/scripts/local_imap_harvest.py" --env "$SCRATCH/imap.env" --out "$
 The IMAP env file is secret material: never print it, commit it, or keep it after the session (cleanup
 in step 12 removes it with the rest of scratch).
 
-**Note — the IMAP exporter feeds the manual fallback, not `prepare` yet.** `local_imap_harvest.py`
-writes a split directory (`INDEX.md` + `threads/YYYY-MM--slug--n.md`), not a v1/v2 corpus blob with
-`harvest_format` front-matter, so `prepare_harvest.py` cannot parse it today. For a deep IMAP corpus,
-use the [manual fallback path](#fallback-the-v1-manual-path-one-release-only) below (read `INDEX.md`,
-cluster from metadata, fan out) until the exporter emits a v1/v2 blob. The hosted provider path above is
-the one that flows through `prepare`.
+**The IMAP exporter now feeds `prepare` directly.** `local_imap_harvest.py` writes a `harvest_format: v1`
+corpus blob at `$SCRATCH/imap-export/corpus/corpus.md` — the same section shape the server's canonical
+renderer emits, with **real sender addresses** (the natural fit for locally-fetched mail) — so
+`prepare_harvest.py` parses it exactly like the hosted corpus. It also still writes a human-readable
+`INDEX.md` + `threads/` split at the top level for one deprecation release; the blob lives in its own
+`corpus/` subdir so pointing `prepare` there never trips over the non-front-mattered `INDEX.md`. In step 2,
+point `prepare` at the blob dir:
+
+```bash
+uv run --no-project python "$SKILL/scripts/prepare_harvest.py" prepare \
+  --corpus "$SCRATCH/imap-export/corpus/" --scratch "$SCRATCH" --export-id "$EXPORT_ID"
+```
+
+Because the export is **sent-folder only**, every rendered message is mailbox-authored: expect
+`direction: mailbox_first` and no external-question holdouts, so pass `--holdout 0` (a sent-only corpus
+cannot fill the default reserve). Deep inbound-thread expansion is still future work — until then this
+corpus proves only what the mailbox *sent*. The [manual fallback path](#fallback-the-v1-manual-path-one-release-only)
+below remains only for a corpus `prepare_harvest.py` genuinely cannot parse.
 
 An unbound diagnostic preflight checks local Git/gitignore/format plus best-effort `rc` environment
 state (and degrades to WARN when `rc` is absent):

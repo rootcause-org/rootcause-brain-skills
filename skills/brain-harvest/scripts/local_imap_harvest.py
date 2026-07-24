@@ -6,11 +6,20 @@
 Reads IMAP credentials from a local env file written by `rc project mailbox imap-env`, connects to the mailbox,
 exports a capped sent-folder corpus, and writes:
 
-  <out>/INDEX.md
-  <out>/threads/*.md
+  <out>/corpus/corpus.md   # v1 harvest blob, parseable by prepare_harvest.py
+  <out>/INDEX.md           # human-readable index (backward-compat, one release)
+  <out>/threads/*.md       # per-thread split (backward-compat, one release)
+
+The `corpus/corpus.md` blob carries `harvest_format: v1` front-matter and the exact section shape the
+server's canonical renderer emits (rootcause/internal/export/harvest_render.go `render()`), so
+`prepare_harvest.py` parses it directly instead of routing deep-IMAP harvests to the manual fallback.
+The blob lives in its own `corpus/` subdir precisely so `prepare --corpus <out>/corpus/` never trips over
+the non-front-mattered `INDEX.md` left at the top level for one deprecation release.
 
 This v1 is intentionally conservative: it exports sent-folder messages grouped by RFC thread root or
-normalized subject. It does not deep-expand every referenced inbound message across folders yet.
+normalized subject. It does not deep-expand every referenced inbound message across folders yet, so every
+rendered message is mailbox-authored (expect `direction: mailbox_first` downstream, and no external-question
+holdouts — a sent-only corpus cannot fill the default holdout reserve).
 """
 
 from __future__ import annotations
@@ -53,6 +62,7 @@ class ParsedMessage:
     sender: str
     recipients: tuple[str, ...]
     text: str
+    attachments: tuple[str, ...] = ()
 
 
 def parse_env(path: Path) -> dict[str, str]:
@@ -149,7 +159,8 @@ def choose_sent_folder(conn: imaplib.IMAP4, requested: str | None) -> str:
     return "Sent"
 
 
-def search_uids(conn: imaplib.IMAP4, folder: str, max_messages: int) -> list[str]:
+def search_uids(conn: imaplib.IMAP4, folder: str, max_messages: int) -> tuple[list[str], bool]:
+    """Return the (most-recent) capped UID list plus whether the cap dropped older messages."""
     typ, _ = conn.select(imap_quote(folder), readonly=True)
     if typ != "OK":
         raise SystemExit(f"could not select sent folder {folder!r}")
@@ -158,7 +169,7 @@ def search_uids(conn: imaplib.IMAP4, folder: str, max_messages: int) -> list[str
         raise SystemExit("IMAP UID SEARCH failed")
     raw = b" ".join(part for part in data or [] if isinstance(part, bytes))
     uids = [u.decode("ascii", errors="ignore") for u in raw.split() if u]
-    return uids[-max_messages:]
+    return uids[-max_messages:], len(uids) > max_messages
 
 
 def fetch_message(conn: imaplib.IMAP4, uid: str) -> bytes | None:
@@ -234,6 +245,23 @@ def message_text(msg: email.message.EmailMessage, max_chars: int) -> str:
     return text
 
 
+def message_attachments(msg: email.message.EmailMessage) -> tuple[str, ...]:
+    """Attachment filenames only — we never export attachment bytes (mirrors harvest_render.go)."""
+    names: list[str] = []
+    if not msg.is_multipart():
+        return ()
+    for part in msg.walk():
+        if part.get_content_maintype() == "multipart":
+            continue
+        disp = (part.get_content_disposition() or "").lower()
+        filename = part.get_filename()
+        if disp == "attachment" or (filename and disp != "inline"):
+            name = (filename or "attachment").strip()
+            if name:
+                names.append(re.sub(r"\s+", " ", name))
+    return tuple(names)
+
+
 def parse_message(uid: str, raw: bytes, max_chars: int) -> ParsedMessage:
     msg = email.message_from_bytes(raw, policy=email.policy.default)
     subject = str(msg.get("subject", "")).strip() or "(no subject)"
@@ -258,6 +286,7 @@ def parse_message(uid: str, raw: bytes, max_chars: int) -> ParsedMessage:
         sender=sender,
         recipients=recipients,
         text=message_text(msg, max_chars),
+        attachments=message_attachments(msg),
     )
 
 
@@ -283,6 +312,83 @@ def escape_cell(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
 
 
+# --- v1 corpus blob (parseable by prepare_harvest.py) ---------------------------------------
+# The shape below is a byte-for-byte match of rootcause/internal/export/harvest_render.go `render()`
+# (HarvestFormatVersion "v1"), the reference renderer whose output prepare_harvest.py's
+# parse_front_matter/split_sections/parse_section consume. Keep them in lockstep on any change.
+
+HARVEST_FORMAT_VERSION = "v1"
+
+
+def render_date(dt: datetime | None) -> str:
+    # A message with no parseable Date still needs a yyyy-mm-dd or prepare_harvest's MSG_RE drops it.
+    # Mirror Go's zero-time formatting ("0001-01-01") so the block round-trips as a real message.
+    return dt.strftime("%Y-%m-%d") if dt else "0001-01-01"
+
+
+def one_line(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def thread_participants(group: list[ParsedMessage]) -> str:
+    """Unique sender addresses in first-seen order (harvest_render.go threadParticipants)."""
+    ordered: list[str] = []
+    for msg in group:
+        addr = msg.sender
+        if addr and addr not in ordered:
+            ordered.append(addr)
+    return ", ".join(ordered)
+
+
+def thread_span(group: list[ParsedMessage]) -> str:
+    dates = [m.date for m in group if m.date]
+    if not dates:
+        return ""
+    lo, hi = min(dates), max(dates)
+    if lo == hi:
+        return render_date(lo)
+    return f"{render_date(lo)} → {render_date(hi)}"
+
+
+def render_message_block(msg: ParsedMessage, mailbox: str) -> str:
+    body = (msg.text or "").strip()
+    if not body and not msg.attachments:
+        return ""  # empty body + no attachments: skip so no dangling header (mirrors Go)
+    frm = msg.sender or one_line(mailbox) or "unknown@local"
+    out = f"\n**{frm} ({render_date(msg.date)}):**\n"
+    if body:
+        out += body + "\n"
+    for name in msg.attachments:
+        out += f"_[attachment: {name}]_\n"
+    return out
+
+
+def render_corpus_blob(mailbox: str, harvested_at: str, cleaned: bool, truncated: bool,
+                       groups: list[list[ParsedMessage]]) -> str:
+    parts = [
+        "---\n"
+        f"harvest_format: {HARVEST_FORMAT_VERSION}\n"
+        f"mailbox: {one_line(mailbox)}\n"
+        f"harvested_at: {harvested_at}\n"
+        f"threads: {len(groups)}\n"
+        f"cleaned: {'true' if cleaned else 'false'}\n"
+        f"truncated: {'true' if truncated else 'false'}\n"
+        "---\n"
+    ]
+    for idx, group in enumerate(groups, start=1):
+        subject = one_line(group[0].subject) or "(no subject)"
+        parts.append(f"\n## {subject} — #{idx}\n")
+        participants = thread_participants(group)
+        if participants:
+            parts.append(f"**Participants:** {participants}\n")
+        span = thread_span(group)
+        if span:
+            parts.append(f"**Span:** {span}\n")
+        for msg in group:
+            parts.append(render_message_block(msg, mailbox))
+    return "".join(parts)
+
+
 def group_messages(messages: Iterable[ParsedMessage]) -> list[list[ParsedMessage]]:
     groups: dict[str, list[ParsedMessage]] = {}
     for msg in messages:
@@ -294,12 +400,14 @@ def group_messages(messages: Iterable[ParsedMessage]) -> list[list[ParsedMessage
     return out
 
 
-def write_output(out: Path, env: dict[str, str], folder: str, messages: list[ParsedMessage]) -> None:
+def write_output(out: Path, env: dict[str, str], folder: str, messages: list[ParsedMessage],
+                 *, cleaned: bool = False, truncated: bool = False) -> None:
     ensure_rootcause_gitignore(out)
     threads = out / "threads"
     threads.mkdir(parents=True, exist_ok=True)
     groups = group_messages(messages)
-    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    now_dt = datetime.now(timezone.utc).replace(microsecond=0)
+    now = now_dt.isoformat()
 
     index_lines = [
         f"# Local IMAP harvest {env['RC_MAILBOX_ID']}",
@@ -358,6 +466,19 @@ def write_output(out: Path, env: dict[str, str], folder: str, messages: list[Par
     out.mkdir(parents=True, exist_ok=True)
     (out / "INDEX.md").write_text("\n".join(index_lines) + "\n", encoding="utf-8")
 
+    # The prepare-ready v1 blob. Its own subdir keeps `prepare --corpus <out>/corpus/` from scanning
+    # the non-front-mattered INDEX.md (a top-level *.md) alongside it.
+    corpus_dir = out / "corpus"
+    corpus_dir.mkdir(parents=True, exist_ok=True)
+    blob = render_corpus_blob(
+        env.get("RC_IMAP_EMAIL", ""),
+        now_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        cleaned,
+        truncated,
+        groups,
+    )
+    (corpus_dir / "corpus.md").write_text(blob, encoding="utf-8")
+
 
 def run_export(args: argparse.Namespace) -> int:
     env_path = Path(args.env)
@@ -368,7 +489,7 @@ def run_export(args: argparse.Namespace) -> int:
     try:
         folder = choose_sent_folder(conn, args.folder)
         log(f"selected sent folder: {folder}")
-        uids = search_uids(conn, folder, args.max_messages)
+        uids, capped = search_uids(conn, folder, args.max_messages)
         log(f"fetching {len(uids)} sent messages (cap {args.max_messages})")
         parsed: list[ParsedMessage] = []
         for i, uid in enumerate(uids, start=1):
@@ -384,8 +505,10 @@ def run_export(args: argparse.Namespace) -> int:
             conn.logout()
         except Exception:
             pass
-    write_output(out, env, folder, parsed)
-    log(f"wrote {len(parsed)} messages -> {out}")
+    # cleaned=False: raw text/plain bodies are exported without stripping quoted history.
+    body_truncated = any((m.text or "").rstrip().endswith("[truncated]") for m in parsed)
+    write_output(out, env, folder, parsed, cleaned=False, truncated=capped or body_truncated)
+    log(f"wrote {len(parsed)} messages -> {out} (corpus blob: {out / 'corpus' / 'corpus.md'})")
     print(out)
     return 0
 
@@ -423,7 +546,7 @@ def selftest() -> int:
             parse_message(*_fixture_message("2", "Another subject", "Wed, 2 Apr 2025 10:00:00 +0000", "Second answer."), max_chars=1000),
         ]
         out = root / ".rootcause" / "exports" / "selftest"
-        write_output(out, env, "Sent", messages)
+        write_output(out, env, "Sent", messages, cleaned=False, truncated=False)
         index = (out / "INDEX.md").read_text(encoding="utf-8")
         if "Invoice question" not in index or "threads:" not in index:
             print("selftest failed: INDEX.md missing expected content", file=sys.stderr)
@@ -434,6 +557,13 @@ def selftest() -> int:
         thread_files = list((out / "threads").glob("*.md"))
         if len(thread_files) != 2:
             print(f"selftest failed: thread file count {len(thread_files)}", file=sys.stderr)
+            return 1
+        blob = (out / "corpus" / "corpus.md").read_text(encoding="utf-8")
+        if not blob.startswith("---\nharvest_format: v1\n") or "## " not in blob:
+            print("selftest failed: corpus blob missing v1 front-matter/sections", file=sys.stderr)
+            return 1
+        if "**support@example.test (2025-04-01):**" not in blob:
+            print("selftest failed: corpus blob missing rendered message block", file=sys.stderr)
             return 1
     print("selftest ok")
     return 0
