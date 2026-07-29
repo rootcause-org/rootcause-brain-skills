@@ -132,12 +132,25 @@ with `jq`. Use [`rc-debug`](../skills/rc-debug/SKILL.md) for the analysis-first 
 
 ```bash
 rc dev learning evidence --limit 50 -o json
+rc dev learning evidence --plane deltas --include-bodies -o json
+rc fleet runs --days 14 --learning=sent_delta --format agent
 ```
 
-Use this for a local dream-cycle pass from a brain checkout. It returns two ranked planes: human
-feedback on runs and sent-vs-proposed deltas. Drill only the runs that justify an edit with
-`rc run debug <id>`. Use [`brain-dream-cycle`](../skills/brain-dream-cycle/SKILL.md) for the full
-brain/persona/triage decision workflow.
+Use this for a local dream-cycle pass from a brain checkout. It returns ranked planes — human
+feedback on runs, sent-vs-proposed deltas, and triage skips/corrections — selectable with `--plane
+feedback|deltas|triage`. Raw `proposed_body`/`sent_body` are omitted unless `--include-bodies` is
+passed. `rc fleet runs --learning[=<signal>]` reaches the same candidates from the run index, but
+carries only the pointer (`LRN:` flag), never the bodies.
+
+Render the delta plane with
+[`sent_delta_report.py`](../skills/brain-dream-cycle/scripts/sent_delta_report.py) rather than reading
+JSON: it writes a self-contained HTML file with a word-level diff per delta, the drill command, and
+room for the per-delta conclusion. Output lands under the gitignored `.rootcause/dream/` because it
+embeds raw customer mail.
+
+Drill only the runs that justify an edit with `rc run debug <id>`. Use
+[`brain-dream-cycle`](../skills/brain-dream-cycle/SKILL.md) for the full brain/persona/triage decision
+workflow.
 
 ## Mailbox Harvest And Exports
 

@@ -43,17 +43,42 @@ Read when relevant:
 2. Pull broad evidence first:
    ```bash
    rc dev learning evidence --limit 50 -o json
-   rc fleet runs --kind email --days 14
+   rc dev learning evidence --plane feedback --limit 50 -o json
+   rc fleet runs --kind email --days 14 --learning
    rc fleet patterns --days 30
    ```
    Weight evidence in this order: explicit feedback, sent-vs-proposed deltas, repeated run patterns,
    then journal/debug traces. Use `rc dev learning evidence` instead of private DB queries; it already ranks
-   feedback by sharpest criticism and sent deltas by strongest human rewrite.
+   feedback by sharpest criticism and sent deltas by strongest human rewrite. `--plane
+   feedback|deltas|triage` narrows it; `rc fleet runs --learning` finds the same candidates from the
+   run side.
 
    Stop here if the corpus is empty or too weak. Report "no durable lesson" with the commands run
    rather than creating a speculative brain rule.
 
-3. Drill progressively, only for evidence that can justify an edit:
+3. Read the sent-vs-proposed deltas as diffs, not JSON:
+   ```bash
+   uv run --no-project python "$SKILL/scripts/sent_delta_report.py" --limit 20
+   uv run --no-project python "$SKILL/scripts/sent_delta_report.py" --limit 20 \
+     --annotations .rootcause/dream/notes.json --conclusion .rootcause/dream/conclusion.md
+   ```
+   The script calls `rc dev learning evidence --plane deltas --include-bodies` and writes one
+   self-contained HTML file under the gitignored `.rootcause/dream/`. Per delta it shows the drill
+   command, a fuzzy paragraph alignment with a **word-level** diff inside each pair (a line diff
+   would paint every rewritten paragraph solid red/green and hide the actual edit), kept/removed/
+   added word counts, a `polish → replaced` shape verdict, and the quoted reply history collapsed out
+   of the diff. Deltas are ordered most-rewritten first.
+
+   Use it as the audit trail for the decision, not just as reading material: put the per-delta
+   reasoning in `--annotations` (`{"<delta-id>": "why this matters"}`) and the overall call in
+   `--conclusion`, so the human reviewing the change sees each proposed/sent pair next to the
+   conclusion drawn from it. Cite delta ids and run ids in the final report.
+
+   Read `--from-json -` instead when the evidence JSON is already in hand. The output embeds raw
+   customer mail: never commit it, never paste bodies into brain files, and delete it when the cycle
+   is done.
+
+4. Drill progressively, only for evidence that can justify an edit:
    ```bash
    rc run debug <run-id>
    rc run brain-diff <run-id> -o json
@@ -71,7 +96,7 @@ Read when relevant:
    | Conversation wording / sender context | `rc run thread <id>` | `rc run trace <id> -o json` |
    | Whether a previous brain edit helped | `rc run brain-diff <id> -o json` | compare with current brain files |
 
-4. Decide the durable home:
+5. Decide the durable home:
 
    | Evidence says | Write to |
    |---|---|
@@ -91,7 +116,7 @@ Read when relevant:
    brain test. Settings are the source of truth; keeping the same selector in the brain creates a
    second, weaker rule that can diverge from the UI.
 
-5. Inspect current settings before changing them:
+6. Inspect current settings before changing them:
    ```bash
    rc project settings behavior get -o json
    rc project triage policy get -o json
@@ -117,7 +142,7 @@ Read when relevant:
    for deterministic draft-worthy mail. If a temporary rule is created for verification, delete it with
    `rc project triage rules rm <id>` before finishing.
 
-6. Apply brain changes narrowly. Search first; edit the smallest existing home:
+7. Apply brain changes narrowly. Search first; edit the smallest existing home:
    ```bash
    rg -n "<customer phrase>|<internal term>|<policy name>" AGENTS.md skills notes playbooks actions 2>/dev/null
    ```
@@ -125,7 +150,7 @@ Read when relevant:
    `skills/*/SKILL.md`, `notes/`, scripts, or bounded `actions/<id>/` files over creating new top-level
    structure.
 
-7. Verify with the cheapest check that proves the change:
+8. Verify with the cheapest check that proves the change:
    ```bash
    uv run "$SKILL/scripts/brain_test.py"
    git diff --check
@@ -137,7 +162,7 @@ Read when relevant:
    triage rules, prefer a prompt or harmless disabled create/delete check that proves the API contract
    without touching unrelated mail.
 
-8. Publish:
+9. Publish:
    - Brain files changed: commit, push, then use `brain-publish`.
    - Settings changed only: record the exact `rc` commands and verification run id.
    - Public surface missing: use `brain-publish` support-request template with evidence and desired

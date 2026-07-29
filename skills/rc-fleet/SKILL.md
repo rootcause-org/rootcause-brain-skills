@@ -25,9 +25,12 @@ Read:
    rc fleet runs --days 7
    rc fleet runs --format agent
    rc fleet runs --kind email --days 14
+   rc fleet runs --days 14 --learning=sent_delta --format agent
    ```
    Pass through supplied `--days <n>` and `--kind email|prompt|mcp|analysis`. Read the per-run flag
    table, aggregate rates, and worst offenders. `--format agent` is the token-lean shortlist.
+   `--learning` (bare, or `=feedback|sent_delta|triage_skipped|triage_corrected`) narrows to runs a
+   dream cycle can learn from.
 
 2. Find actions across runs before drilling into individual traces:
    ```bash
@@ -62,9 +65,16 @@ Read:
    - `$!`: cost spike.
    - `CTX.Nk`: context rot.
    - `GD`: grounding discarded.
+   - `LRN:<signals>`: dream-cycle learning candidate — human feedback, a sent-vs-proposed edit, or a
+     triage skip/correction on that run.
 
 4. Drill two to five flagged runs with the `rc-debug` skill. The worst-offenders section gives full
    UUIDs.
+
+   `LRN:sent_delta` says only *that* a human rewrote the draft. Fleet never carries the two bodies.
+   For what the brain proposed against what was actually sent, switch to
+   [`brain-dream-cycle`](../brain-dream-cycle/SKILL.md), which reads them from
+   `rc dev learning evidence` and renders a word-level diff report.
 
 5. Confirm systemic failures:
    ```bash
