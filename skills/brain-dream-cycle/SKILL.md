@@ -28,17 +28,17 @@ Read when relevant:
 ## Workflow
 
 1. Confirm scope and local state. Do this before reading evidence so project/tenant mistakes fail
-   early:
+   early. The two skill paths are used throughout — this cycle's own scripts and, in step 8,
+   `local-brain-work`'s test harness:
    ```bash
+   DREAM_SKILL=<absolute path to skills/brain-dream-cycle>
+   LOCAL_SKILL="$(cd "$DREAM_SKILL/../local-brain-work" && pwd)"
    rc auth status
    git status --short --branch
    git pull --ff-only
    ```
-   Preserve local work. In a tenant checkout, keep tenant-specific lessons in the tenant brain or tenant
-   settings unless they clearly apply to the shared project.
-
-   If the checkout has local work, preserve it. In a tenant checkout, keep tenant-specific lessons in
-   the tenant brain or tenant settings unless they clearly apply to the shared project.
+   Preserve local work. In a tenant checkout, keep tenant-specific lessons in the tenant brain or
+   tenant settings unless they clearly apply to the shared project.
 
 2. Pull broad evidence first:
    ```bash
@@ -58,25 +58,39 @@ Read when relevant:
 
 3. Read the sent-vs-proposed deltas as diffs, not JSON:
    ```bash
-   uv run --no-project python "$SKILL/scripts/sent_delta_report.py" --limit 20
-   uv run --no-project python "$SKILL/scripts/sent_delta_report.py" --limit 20 \
+   uv run --no-project python "$DREAM_SKILL/scripts/sent_delta_report.py" --limit 20
+   uv run --no-project python "$DREAM_SKILL/scripts/sent_delta_report.py" --limit 20 \
      --annotations .rootcause/dream/notes.json --conclusion .rootcause/dream/conclusion.md
    ```
    One `rc dev learning evidence --plane deltas --include-bodies` call, two files under the
    gitignored `.rootcause/dream/`, one per audience:
 
-   - **`.md` — read this one.** Signal index first (which deltas share a marker: dropped date, dropped
-     link, unfilled placeholder, dropped confirmation question, rewritten sign-off, length shift),
-     then each delta as `[-removed-]`/`{+added+}` with its run id, unchanged paragraphs omitted.
-     Group by signal before deciding: one delta is an anecdote, three sharing a marker is a pattern.
-     The markers are regex-level, never a judgement — confirm on the body before writing anything
-     durable.
+   - **`.md` — read this one.** Two grouping axes, then the deltas. **Delta categories** first — the
+     server's own capture-time classification (`factual | tone | policy | omission | addition |
+     other`), assigned from the bodies and stable across projects. Then the **signal index** (dropped
+     date, dropped link, unfilled placeholder, dropped confirmation question, rewritten sign-off,
+     length shift) as the secondary axis: regex-level markers, never a judgement — confirm on the body
+     before writing anything durable. Then each delta as `[-removed-]`/`{+added+}` with its run id and
+     trace link, unchanged paragraphs omitted. One delta is an anecdote; three sharing a category or
+     marker is a pattern.
    - **`.html` — hand this to the human.** Same alignment, rendered side-by-side/inline with
-     word-level highlighting and a `polish → replaced` verdict per delta. Do not read it yourself.
+     word-level highlighting, a `polish → replaced` verdict and the category per delta. Do not read it
+     yourself.
 
    Both use a fuzzy paragraph alignment with a **word-level** diff inside each pair (a line diff would
    paint every rewritten paragraph solid red/green and hide the actual edit), drop quoted reply
    history from the diff, and order deltas most-rewritten first.
+
+   **Two similarity numbers, never the same thing.** The report's `polish → replaced` verdict and its
+   ordering come from the script's own word-level metric over display text. The payload's
+   `server similarity` is the host's character-level edit distance over its own normalized text; it is
+   printed with that label in the markdown and nowhere else. Do not average or substitute them.
+
+   **Bodies live 14 days.** Retention scrubs message bodies at the host's email TTL, so a delta older
+   than that has no wording left to diff. Those rows still arrive, flagged `bodies_scrubbed`, and land
+   in an **Aged out (description only)** section carrying the server's category + description — good
+   as corroboration for a pattern, never as the sole evidence for a durable edit. Run the cycle
+   reasonably close to the sends if you want the wording.
 
    Write the reasoning back in so evidence and conclusion ship together: `--annotations`
    (`{"<delta-id>": "why this matters"}`) per delta and `--conclusion` for the overall call. Both land
@@ -159,7 +173,7 @@ Read when relevant:
 
 8. Verify with the cheapest check that proves the change:
    ```bash
-   uv run "$SKILL/scripts/brain_test.py"
+   uv run "$LOCAL_SKILL/scripts/brain_test.py"
    git diff --check
    git push origin dev/<branch>
    rc ask "<customer-style case that previously failed>" --brain-ref dev/<branch>

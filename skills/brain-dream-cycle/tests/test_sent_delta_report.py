@@ -199,6 +199,54 @@ class RenderTest(unittest.TestCase):
         md = sdr.render_markdown([self.item], [diff], {}, "s", "", "out.html")
         self.assertNotIn("+}Alken", md)
 
+    def test_markdown_groups_by_server_category_and_labels_the_server_metric(self):
+        item = dict(self.item, delta_category="factual", run_url="https://app.example.com/runs/x?t=t")
+        _, diff = self.page()
+        md = sdr.render_markdown([item], [diff], {}, "s", "", "out.html")
+        self.assertIn("## Delta categories", md)
+        self.assertIn("| 1 | factual | d1e2f3a4 |", md)
+        self.assertIn("· factual", md)                       # on the delta head
+        self.assertIn("[trace](https://app.example.com/runs/x?t=t)", md)
+        # The payload metric must never read as the script's own word-level similarity.
+        self.assertIn("server similarity 21%", md)
+
+    def test_markdown_reports_aged_out_deltas_from_their_descriptions(self):
+        _, diff = self.page()
+        aged = {"id": "aa11bb22-0000-0000-0000-000000000000", "bodies_scrubbed": True,
+                "delta_category": "omission", "delta_description": "Human added the cancellation policy"}
+        md = sdr.render_markdown([self.item], [diff], {}, "s", "", "out.html", [aged])
+        self.assertIn("## Aged out (description only)", md)
+        self.assertIn("Human added the cancellation policy", md)
+        self.assertIn("1 further delta(s) aged out", md)
+
+
+class ServerCleanedBodyTest(unittest.TestCase):
+    """The server's own cleaner wins when it ships; split_quotes stays the older-server fallback."""
+
+    proposed = "Bedankt voor je bericht.\n\nWe zien je dinsdag."
+    # Outlook's glued header block — split_quotes' (From|Van|Von):.+<.+@.+> shape needs the angle
+    # brackets and misses this, which is exactly why the server-side cleaner is preferred.
+    raw_sent = ("Bedankt voor je bericht.\n\nWe zien je donderdag.\n\n"
+                "Van:Sam <sam@example.com>\nVerzonden:maandag 1 juni 2026 9:00\n"
+                "Onderwerp:Afspraak\n\nKan het vroeger?")
+
+    def test_clean_body_is_diffed_and_the_raw_trailer_is_still_shown(self):
+        item = {"proposed_body": self.proposed, "sent_body": self.raw_sent,
+                "sent_body_clean": "Bedankt voor je bericht.\n\nWe zien je donderdag."}
+        diff = sdr.diff_for(item)
+        self.assertEqual([r.kind for r in diff.rows], ["equal", "changed"])
+        self.assertNotIn("Verzonden", "".join(t for r in diff.rows for _, t in r.inline))
+
+    def test_missing_clean_body_falls_back_to_split_quotes(self):
+        item = {"proposed_body": self.proposed, "sent_body": self.raw_sent}
+        self.assertEqual(sdr.diff_for(item).rows, sdr.build_diff(self.proposed, self.raw_sent).rows)
+
+    def test_keep_quotes_bypasses_both_cleaners(self):
+        item = {"proposed_body": self.proposed, "sent_body": self.raw_sent,
+                "sent_body_clean": "Bedankt voor je bericht.\n\nWe zien je donderdag."}
+        diff = sdr.diff_for(item, keep_quotes=True)
+        self.assertIn("Verzonden", "".join(t for r in diff.rows for _, t in r.inline))
+
 
 if __name__ == "__main__":
     unittest.main()

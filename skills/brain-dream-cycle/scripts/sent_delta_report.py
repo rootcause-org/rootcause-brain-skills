@@ -242,11 +242,19 @@ def align(a_paras: list[str], b_paras: list[str]) -> list[tuple[int | None, int 
     return pairs
 
 
-def build_diff(proposed: str, sent: str, keep_quotes: bool = False) -> Diff:
-    quoted = ""
-    if not keep_quotes:
-        proposed, _ = split_quotes(proposed)
-        sent, quoted = split_quotes(sent)
+def build_diff(proposed: str, sent: str, keep_quotes: bool = False,
+               quoted: str | None = None) -> Diff:
+    """Diff a proposed draft against a sent body.
+
+    quoted is the escape hatch for a PRE-CLEANED sent side (the server's `sent_body_clean`): pass the
+    trailer to display and the sent text is diffed as given. Left None, split_quotes does the work —
+    the fallback path for an older server, kept because brains pin kit tags and can outlive a deploy.
+    """
+    if quoted is None:
+        quoted = ""
+        if not keep_quotes:
+            proposed, _ = split_quotes(proposed)
+            sent, quoted = split_quotes(sent)
     a_paras, b_paras = paragraphs(proposed), paragraphs(sent)
     rows: list[Row] = []
     kept = removed = added = 0
@@ -270,6 +278,22 @@ def build_diff(proposed: str, sent: str, keep_quotes: bool = False) -> Diff:
             rows.append(Row("insert", [], [("ins", b_paras[bj])], [("ins", b_paras[bj])]))
             added += _words(tokens(b_paras[bj]))
     return Diff(rows, kept, removed, added, quoted)
+
+
+def diff_for(item: dict, keep_quotes: bool = False) -> Diff:
+    """Diff one evidence item, preferring the server's cleaned sent side.
+
+    `sent_body_clean` is `cleanbody` — the same deterministic cleaner the pipeline runs on inbound
+    mail: quoted history in every locale we see, glued Outlook `Van:/Verzonden:` header blocks,
+    mobile/vendor footers, legal boilerplate. It is strictly stronger than split_quotes, which stays
+    the fallback for payloads from an older server. The collapsed history block still comes from the
+    local heuristic over the RAW body, so nothing that was stripped disappears from the human report.
+    """
+    clean = (item.get("sent_body_clean") or "").strip()
+    if not clean or keep_quotes:
+        return build_diff(item["proposed_body"], item["sent_body"], keep_quotes)
+    return build_diff(item["proposed_body"], clean,
+                      quoted=split_quotes(item["sent_body"])[1])
 
 
 # ---------------------------------------------------------------------------- signals
@@ -356,21 +380,42 @@ def md_ops(ops: list[tuple[str, str]]) -> str:
     return _clip("".join(out))
 
 
+def category_of(item: dict) -> str:
+    """The server's coarse delta_category. Empty for rows no describer ran on (the Embassy lane, or a
+    capture whose LLM pass failed) — those keep the regex signal markers as their only grouping."""
+    return str(item.get("delta_category") or "").strip()
+
+
 def render_markdown(items: list[dict], diffs: list[Diff], notes: dict[str, str], scope: str,
-                    conclusion: str, html_path: str) -> str:
+                    conclusion: str, html_path: str, aged_out: list[dict] | None = None) -> str:
+    aged_out = aged_out or []
     shapes: dict[str, int] = {}
     index: dict[str, list[str]] = {}
+    categories: dict[str, list[str]] = {}
     for item, diff in zip(items, diffs):
         shapes[diff.shape] = shapes.get(diff.shape, 0) + 1
+        categories.setdefault(category_of(item) or "uncategorized", []).append(short(item.get("id")))
         for name in signals(diff):
             index.setdefault(name, []).append(short(item.get("id")))
 
     out = [f"# Sent vs proposed — {scope}", ""]
     out.append(f"{len(items)} deltas, most-rewritten first · "
                + " · ".join(f"{n}× {s}" for s, n in sorted(shapes.items(), key=lambda kv: -kv[1])))
+    if aged_out:
+        out.append(f"{len(aged_out)} further delta(s) aged out — bodies scrubbed at the 14-day "
+                   "retention TTL, descriptions below.")
     out.append(f"Human-facing diff report: `{html_path}`")
     if conclusion:
         out += ["", "## Conclusion so far", "", conclusion]
+    if categories:
+        # The server's own axis, and the one to group by FIRST: it was assigned from the bodies at
+        # capture time, survives retention, and means the same thing across projects — unlike the
+        # regex markers below, which are this tenant's prose at kit-release cadence.
+        out += ["", "## Delta categories", "",
+                "The server's capture-time classification. Group by this first; the regex signals "
+                "below are a secondary axis.", "", "| n | category | deltas |", "|--:|---|---|"]
+        for name, ids in sorted(categories.items(), key=lambda kv: -len(kv[1])):
+            out.append(f"| {len(ids)} | {name} | {', '.join(ids)} |")
     if index:
         out += ["", "## Signal index", "",
                 "Regex-level markers, not judgements — one delta is an anecdote, three sharing a "
@@ -383,7 +428,16 @@ def render_markdown(items: list[dict], diffs: list[Diff], notes: dict[str, str],
     for item, diff in zip(items, diffs):
         run_id = item.get("related_run_id") or ""
         head = f"### {short(item.get('id'))} · {diff.shape} · −{diff.removed}/+{diff.added} words"
+        if cat := category_of(item):
+            head += f" · {cat}"
         meta = [f"run `{run_id}`" if run_id else "no related run (drill via thread)"]
+        if url := item.get("run_url"):
+            meta.append(f"[trace]({url})")
+        # "server similarity" is NOT diff.similarity above: the server measures character-level
+        # Levenshtein over its own normalized text, this script measures word-level Dice over display
+        # text. Different numbers by design — never read one as the other.
+        if isinstance(item.get("similarity"), (int, float)):
+            meta.append(f"server similarity {item['similarity']:.0%}")
         if found := signals(diff):
             meta.append("signals: " + ", ".join(found))
         out += ["", head, "", " · ".join(meta)]
@@ -404,6 +458,20 @@ def render_markdown(items: list[dict], diffs: list[Diff], notes: dict[str, str],
                 out.append(f"~ {md_ops(row.inline)}")
         if skipped:
             out.append(f"({skipped} unchanged paragraph{'s' if skipped > 1 else ''} omitted)")
+
+    if aged_out:
+        # The durable half of the plane: retention blanks the bodies at EmailTTL but keeps the
+        # description + category, so an old edit still carries its lesson — just not its wording.
+        out += ["", "## Aged out (description only)", "",
+                "Bodies scrubbed at the 14-day retention TTL; no diff is possible. Treat these as "
+                "corroboration for a pattern, never as the sole evidence for a durable edit.", ""]
+        for item in aged_out:
+            bits = [f"`{short(item.get('id'))}`"]
+            if cat := category_of(item):
+                bits.append(cat)
+            if url := item.get("run_url"):
+                bits.append(f"[trace]({url})")
+            out.append(f"- {' · '.join(bits)} — {str(item.get('delta_description') or '').strip() or 'no description'}")
 
     out += ["", "## Next", "",
             "1. Group by signal before deciding — a single delta rarely justifies a durable edit.",
@@ -517,10 +585,16 @@ def fmt_time(value: str) -> str:
 def render_card(index: int, item: dict, diff: Diff, note: str) -> str:
     run_id = item.get("related_run_id") or ""
     url = item.get("run_url") or ""
+    # The human report carries plain-language verdicts only — no ids, no metrics, no rc commands
+    # (pinned by test). delta_category qualifies: "factual"/"tone"/"omission" reads as English. The
+    # payload's numeric `similarity` deliberately does not.
+    tags = [f'<span class="tag shape">{esc(diff.shape)}</span>']
+    if cat := category_of(item):
+        tags.append(f'<span class="tag">{esc(cat)}</span>')
     blocks = [
         f'<div class="head"><h2>#{index} · {esc(fmt_time(item.get("sent_at", "")))} · '
         f'{esc(str(item.get("sender") or "unknown sender"))}</h2>'
-        f'<div class="tags"><span class="tag shape">{esc(diff.shape)}</span></div></div>'
+        f'<div class="tags">{"".join(tags)}</div></div>'
     ]
     if item.get("delta_description"):
         blocks.append(f'<p class="note"><b>Server delta note:</b> '
@@ -540,7 +614,7 @@ def render_card(index: int, item: dict, diff: Diff, note: str) -> str:
 
 
 def render(items: list[dict], diffs: list[Diff], notes: dict[str, str], scope: str,
-           conclusion: str) -> str:
+           conclusion: str, aged_out: int = 0) -> str:
     shapes: dict[str, int] = {}
     for d in diffs:
         shapes[d.shape] = shapes.get(d.shape, 0) + 1
@@ -549,8 +623,9 @@ def render(items: list[dict], diffs: list[Diff], notes: dict[str, str], scope: s
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     cards = "".join(render_card(i + 1, item, diff, notes.get(str(item.get("id")), ""))
                     for i, (item, diff) in enumerate(zip(items, diffs)))
+    aged = f" · {aged_out} aged out (older than 14 days, wording no longer kept)" if aged_out else ""
     head = (f"<h1>Sent vs proposed — {esc(scope)}</h1>"
-            f'<div class="meta">{len(items)} deltas · {esc(summary or "—")} · generated {generated}</div>')
+            f'<div class="meta">{len(items)} deltas · {esc(summary or "—")}{esc(aged)} · generated {generated}</div>')
     if conclusion:
         head += f'<div class="card"><p class="note" style="border:0"><b>Conclusion</b>\n{esc(conclusion)}</p></div>'
     controls = ('<div class="controls"><span class="meta">View</span>'
@@ -588,10 +663,22 @@ def main(argv: list[str] | None = None) -> int:
     if not items:
         print("no sent-vs-proposed deltas in this scope/window", file=sys.stderr)
         return 1
-    missing = [i for i in items if not (i.get("proposed_body") and i.get("sent_body"))]
+    # Three ways a delta can lack bodies, and they mean different things. AGED OUT: the server scrubbed
+    # them at its 14-day email TTL and flags bodies_scrubbed — the LLM-authored description survives and
+    # is still real signal, so those rows get their own section instead of being silently dropped. NOT
+    # REQUESTED: the caller passed a payload fetched without --include-bodies. HOLLOW: neither, which is
+    # a genuine data problem. Telling the human to "re-run with --include-bodies" is only right for the
+    # middle case.
+    aged_out = [i for i in items if i.get("bodies_scrubbed") and not i.get("sent_body")]
     items = [i for i in items if i.get("proposed_body") and i.get("sent_body")]
+    hollow = len(payload.get("deltas") or []) - len(items) - len(aged_out)
     if not items:
-        print("deltas carry no bodies — re-run with --include-bodies", file=sys.stderr)
+        if aged_out and not hollow:
+            print(f"every delta in this window has aged out ({len(aged_out)} scrubbed at the 14-day "
+                  "retention TTL); their descriptions are still in the payload — widen with --limit or "
+                  "run the cycle closer to the sends", file=sys.stderr)
+        else:
+            print("deltas carry no bodies — re-run with --include-bodies", file=sys.stderr)
         return 1
 
     notes: dict[str, str] = {}
@@ -603,7 +690,7 @@ def main(argv: list[str] | None = None) -> int:
                   file=sys.stderr)
     conclusion = Path(args.conclusion).read_text("utf-8").strip() if args.conclusion else ""
 
-    diffs = [build_diff(i["proposed_body"], i["sent_body"], args.keep_quotes) for i in items]
+    diffs = [diff_for(i, args.keep_quotes) for i in items]
     order = sorted(range(len(items)), key=lambda k: diffs[k].similarity)
     items = [items[k] for k in order]
     diffs = [diffs[k] for k in order]
@@ -617,14 +704,18 @@ def main(argv: list[str] | None = None) -> int:
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M")
     out = Path(args.out) if args.out else Path(".rootcause/dream") / f"{stamp}-sent-deltas.html"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render(items, diffs, notes, scope, conclusion), "utf-8")
+    out.write_text(render(items, diffs, notes, scope, conclusion, len(aged_out)), "utf-8")
     md = out.with_suffix(".md")
-    md.write_text(render_markdown(items, diffs, notes, scope, conclusion, str(out)), "utf-8")
+    md.write_text(render_markdown(items, diffs, notes, scope, conclusion, str(out), aged_out), "utf-8")
     if ".rootcause" not in out.resolve().parts:
         print(f"warning: {out} is outside .rootcause/ and holds raw customer mail — do not commit",
               file=sys.stderr)
-    if missing:
-        print(f"note: {len(missing)} delta(s) skipped for missing bodies", file=sys.stderr)
+    if aged_out:
+        print(f"note: {len(aged_out)} delta(s) aged out (bodies scrubbed at 14 days); their "
+              "descriptions are in the markdown report", file=sys.stderr)
+    if hollow:
+        print(f"note: {hollow} delta(s) skipped for missing bodies — re-fetch with --include-bodies",
+              file=sys.stderr)
     print(f"{md}\n{out}")  # agent reads the markdown; the HTML is for the human
     return 0
 
