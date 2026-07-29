@@ -62,21 +62,28 @@ Read when relevant:
    uv run --no-project python "$SKILL/scripts/sent_delta_report.py" --limit 20 \
      --annotations .rootcause/dream/notes.json --conclusion .rootcause/dream/conclusion.md
    ```
-   The script calls `rc dev learning evidence --plane deltas --include-bodies` and writes one
-   self-contained HTML file under the gitignored `.rootcause/dream/`. Per delta it shows the drill
-   command, a fuzzy paragraph alignment with a **word-level** diff inside each pair (a line diff
-   would paint every rewritten paragraph solid red/green and hide the actual edit), kept/removed/
-   added word counts, a `polish → replaced` shape verdict, and the quoted reply history collapsed out
-   of the diff. Deltas are ordered most-rewritten first.
+   One `rc dev learning evidence --plane deltas --include-bodies` call, two files under the
+   gitignored `.rootcause/dream/`, one per audience:
 
-   Use it as the audit trail for the decision, not just as reading material: put the per-delta
-   reasoning in `--annotations` (`{"<delta-id>": "why this matters"}`) and the overall call in
-   `--conclusion`, so the human reviewing the change sees each proposed/sent pair next to the
-   conclusion drawn from it. Cite delta ids and run ids in the final report.
+   - **`.md` — read this one.** Signal index first (which deltas share a marker: dropped date, dropped
+     link, unfilled placeholder, dropped confirmation question, rewritten sign-off, length shift),
+     then each delta as `[-removed-]`/`{+added+}` with its run id, unchanged paragraphs omitted.
+     Group by signal before deciding: one delta is an anecdote, three sharing a marker is a pattern.
+     The markers are regex-level, never a judgement — confirm on the body before writing anything
+     durable.
+   - **`.html` — hand this to the human.** Same alignment, rendered side-by-side/inline with
+     word-level highlighting and a `polish → replaced` verdict per delta. Do not read it yourself.
 
-   Read `--from-json -` instead when the evidence JSON is already in hand. The output embeds raw
-   customer mail: never commit it, never paste bodies into brain files, and delete it when the cycle
-   is done.
+   Both use a fuzzy paragraph alignment with a **word-level** diff inside each pair (a line diff would
+   paint every rewritten paragraph solid red/green and hide the actual edit), drop quoted reply
+   history from the diff, and order deltas most-rewritten first.
+
+   Write the reasoning back in so evidence and conclusion ship together: `--annotations`
+   (`{"<delta-id>": "why this matters"}`) per delta and `--conclusion` for the overall call. Both land
+   in both files. Cite delta ids and run ids in the final report.
+
+   Use `--from-json -` when the evidence JSON is already in hand. Both files embed raw customer mail:
+   never commit them, never paste bodies into brain files, delete when the cycle is done.
 
 4. Drill progressively, only for evidence that can justify an edit:
    ```bash

@@ -272,7 +272,149 @@ def build_diff(proposed: str, sent: str, keep_quotes: bool = False) -> Diff:
     return Diff(rows, kept, removed, added, quoted)
 
 
-# ---------------------------------------------------------------------------- rendering
+# ---------------------------------------------------------------------------- signals
+
+# Cheap regex-level markers over what the human removed against what they added. They are a *sorting*
+# aid for the agent — three deltas sharing a marker is worth reading as a pattern, one is an anecdote.
+# None of them is a judgement; the agent still has to read the bodies before writing anything durable.
+DAY_WORDS = ("maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag"
+             "|monday|tuesday|wednesday|thursday|friday|saturday|sunday"
+             "|januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december")
+DATE_RE = re.compile(rf"\b\d{{1,2}}[/.-]\d{{1,2}}(?:[/.-]\d{{2,4}})?\b|\b\d{{1,2}}\s?u\s?\d{{2}}\b"
+                     rf"|\b\d{{1,2}}:\d{{2}}\b|\b(?:{DAY_WORDS})\b", re.IGNORECASE)
+LINK_RE = re.compile(r"https?://|\bwww\.", re.IGNORECASE)
+PLACEHOLDER_RE = re.compile(r"\[\[.+?\]\]|\{\{.+?\}\}|\bTODO\b|\bTBD\b|<[A-Z_]{4,}>")
+GREETING_RE = re.compile(r"^(beste|hallo|hi|hey|dag|geachte|goedendag)\b", re.IGNORECASE)
+SIGNOFF_RE = re.compile(r"\b(groeten|groetjes|regards|vriendelijke|hartelijk|sincerely)\b",
+                        re.IGNORECASE)
+
+SIGNAL_LABELS = {
+    "date_dropped": "brain named a date/time the human took out",
+    "link_dropped": "brain sent a link the human took out",
+    "placeholder_leak": "draft still held an unfilled placeholder",
+    "confirm_dropped": "brain asked the customer to confirm; the human did not",
+    "greeting_changed": "greeting or addressee changed",
+    "signoff_changed": "sign-off block rewritten",
+    "human_wrote_more": "human answered with substantially more than the draft",
+    "human_wrote_less": "human cut the draft down",
+}
+
+
+def signals(diff: Diff) -> list[str]:
+    gone = " ".join(t for row in diff.rows for op, t in row.left if op == "del")
+    new = " ".join(t for row in diff.rows for op, t in row.right if op == "ins")
+    found = []
+    if DATE_RE.search(gone) and not DATE_RE.search(new):
+        found.append("date_dropped")
+    if LINK_RE.search(gone) and not LINK_RE.search(new):
+        found.append("link_dropped")
+    if PLACEHOLDER_RE.search(gone):
+        found.append("placeholder_leak")
+    if "?" in gone and "?" not in new:
+        found.append("confirm_dropped")
+    changed = [row for row in diff.rows if row.kind != "equal"]
+    if changed and GREETING_RE.match(_flat(changed[0].left + changed[0].right)):
+        found.append("greeting_changed")
+    if any(SIGNOFF_RE.search(_flat(row.left + row.right)) for row in changed):
+        found.append("signoff_changed")
+    if diff.added >= 2 * diff.removed and diff.added >= 20:
+        found.append("human_wrote_more")
+    elif diff.removed >= 2 * diff.added and diff.removed >= 20:
+        found.append("human_wrote_less")
+    return found
+
+
+def _flat(ops: list[tuple[str, str]]) -> str:
+    return re.sub(r"\s+", " ", "".join(t for _, t in ops)).strip()
+
+
+def short(value: object) -> str:
+    """First uuid segment — enough to name a delta in prose, cheap in tokens."""
+    return str(value or "").split("-")[0] or "?"
+
+
+# ---------------------------------------------------------------------------- markdown (agent)
+
+MD_CAP = 400  # per paragraph; the agent needs the wording, not every clause of a long block
+
+
+def _clip(text: str) -> str:
+    flat = re.sub(r"\s+", " ", text).strip()
+    return flat if len(flat) <= MD_CAP else flat[:MD_CAP].rstrip() + " …"
+
+
+def md_ops(ops: list[tuple[str, str]]) -> str:
+    out = []
+    for op, text in ops:
+        body = re.sub(r"\s+", " ", text)
+        if op == "eq":
+            out.append(body)
+            continue
+        # Trailing space stays outside the marker, or words run together on the next chunk.
+        core, trail = body.rstrip(), body[len(body.rstrip()):]
+        out.append(f"[-{core}-]{trail}" if op == "del" else f"{{+{core}+}}{trail}")
+    return _clip("".join(out))
+
+
+def render_markdown(items: list[dict], diffs: list[Diff], notes: dict[str, str], scope: str,
+                    conclusion: str, html_path: str) -> str:
+    shapes: dict[str, int] = {}
+    index: dict[str, list[str]] = {}
+    for item, diff in zip(items, diffs):
+        shapes[diff.shape] = shapes.get(diff.shape, 0) + 1
+        for name in signals(diff):
+            index.setdefault(name, []).append(short(item.get("id")))
+
+    out = [f"# Sent vs proposed — {scope}", ""]
+    out.append(f"{len(items)} deltas, most-rewritten first · "
+               + " · ".join(f"{n}× {s}" for s, n in sorted(shapes.items(), key=lambda kv: -kv[1])))
+    out.append(f"Human-facing diff report: `{html_path}`")
+    if conclusion:
+        out += ["", "## Conclusion so far", "", conclusion]
+    if index:
+        out += ["", "## Signal index", "",
+                "Regex-level markers, not judgements — one delta is an anecdote, three sharing a "
+                "marker is a pattern worth drilling.", "", "| n | signal | deltas |", "|--:|---|---|"]
+        for name, ids in sorted(index.items(), key=lambda kv: -len(kv[1])):
+            out.append(f"| {len(ids)} | {SIGNAL_LABELS[name]} | {', '.join(ids)} |")
+
+    out += ["", "## Deltas", "",
+            "`[-…-]` the human removed · `{+…+}` the human added · unchanged paragraphs omitted."]
+    for item, diff in zip(items, diffs):
+        run_id = item.get("related_run_id") or ""
+        head = f"### {short(item.get('id'))} · {diff.shape} · −{diff.removed}/+{diff.added} words"
+        meta = [f"run `{run_id}`" if run_id else "no related run (drill via thread)"]
+        if found := signals(diff):
+            meta.append("signals: " + ", ".join(found))
+        out += ["", head, "", " · ".join(meta)]
+        if item.get("delta_description"):
+            out.append(f"server note: {str(item['delta_description']).strip()}")
+        if notes.get(str(item.get("id"))):
+            out.append(f"**conclusion:** {notes[str(item['id'])]}")
+        out.append("")
+        skipped = 0
+        for row in diff.rows:
+            if row.kind == "equal":
+                skipped += 1
+            elif row.kind == "delete":
+                out.append(f"- {_clip(_flat(row.left))}")
+            elif row.kind == "insert":
+                out.append(f"+ {_clip(_flat(row.right))}")
+            else:
+                out.append(f"~ {md_ops(row.inline)}")
+        if skipped:
+            out.append(f"({skipped} unchanged paragraph{'s' if skipped > 1 else ''} omitted)")
+
+    out += ["", "## Next", "",
+            "1. Group by signal before deciding — a single delta rarely justifies a durable edit.",
+            "2. Drill one representative per group: `rc run debug <run-id>`.",
+            "3. Route with the durable-home table in the skill: brain file, persona settings, triage "
+            "policy/rule, or action wiring. Wording-only deltas belong in persona, never in a brain file.",
+            "4. Verify with `rc ask` against a `dev/*` brain ref before publishing.", ""]
+    return "\n".join(out)
+
+
+# ---------------------------------------------------------------------------- rendering (human)
 
 CSS = """
 :root{--bg:#fff;--fg:#1b1f24;--muted:#5b6570;--line:#d8dee4;--card:#fff;--sub:#f6f8fa;
@@ -285,10 +427,9 @@ body{margin:0;padding:24px;background:var(--bg);color:var(--fg);
 font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
 h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:0}
 .wrap{max-width:1180px;margin:0 auto}
-.banner{border:1px solid #c9a227;background:#fff8e1;color:#5c4400;padding:8px 12px;border-radius:6px;
-margin:12px 0;font-size:12.5px}
-@media (prefers-color-scheme:dark){.banner{background:#2e2611;color:#f0dfa8;border-color:#6b5a1e}}
 .meta{color:var(--muted);font-size:12.5px}
+.foot{padding:8px 14px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+.foot a{color:var(--accent);text-decoration:none}
 .controls{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0;border-bottom:1px solid var(--line);
 display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
 button{font:inherit;padding:4px 10px;border:1px solid var(--line);background:var(--card);color:var(--fg);
@@ -375,27 +516,11 @@ def fmt_time(value: str) -> str:
 
 def render_card(index: int, item: dict, diff: Diff, note: str) -> str:
     run_id = item.get("related_run_id") or ""
-    tags = [
-        f'<span class="tag shape">{esc(diff.shape)}</span>',
-        f'<span class="tag">kept {diff.kept}w · −{diff.removed}w · +{diff.added}w</span>',
-        f'<span class="tag">word similarity {diff.similarity:.0%}</span>',
-    ]
-    if item.get("similarity") is not None:
-        tags.append(f'<span class="tag">server similarity {float(item["similarity"]):.0%}</span>')
-    if item.get("channel"):
-        tags.append(f'<span class="tag">{esc(str(item["channel"]))}</span>')
-    if item.get("turn_index") is not None:
-        tags.append(f'<span class="tag">turn {item["turn_index"]}</span>')
-
-    ids = [f"thread {item.get('thread_id') or '—'}", f"session {item.get('session_id') or '—'}"]
-    cmd = (f"rc run debug {run_id}" if run_id
-           else "no related run — drill via thread/session (Embassy-sourced delta)")
+    url = item.get("run_url") or ""
     blocks = [
         f'<div class="head"><h2>#{index} · {esc(fmt_time(item.get("sent_at", "")))} · '
         f'{esc(str(item.get("sender") or "unknown sender"))}</h2>'
-        f'<div class="tags">{"".join(tags)}</div>'
-        f'<div class="meta mono" style="margin-top:6px">{esc(" · ".join(ids))}</div>'
-        f'<div class="cmd mono">{esc(cmd)}</div></div>'
+        f'<div class="tags"><span class="tag shape">{esc(diff.shape)}</span></div></div>'
     ]
     if item.get("delta_description"):
         blocks.append(f'<p class="note"><b>Server delta note:</b> '
@@ -407,6 +532,10 @@ def render_card(index: int, item: dict, diff: Diff, note: str) -> str:
         blocks.append(f"<details class=\"quoted\"><summary>Quoted history on the sent message "
                       f"({len(diff.quoted.splitlines())} lines, excluded from the diff)</summary>"
                       f"<pre>{esc(diff.quoted)}</pre></details>")
+    if url:
+        blocks.append(f'<div class="foot"><a href="{esc(url)}">Open the run ↗</a></div>')
+    elif run_id:
+        blocks.append(f'<div class="foot">run <span class="mono">{esc(short(run_id))}</span></div>')
     return f'<div class="card">{"".join(blocks)}</div>'
 
 
@@ -421,9 +550,7 @@ def render(items: list[dict], diffs: list[Diff], notes: dict[str, str], scope: s
     cards = "".join(render_card(i + 1, item, diff, notes.get(str(item.get("id")), ""))
                     for i, (item, diff) in enumerate(zip(items, diffs)))
     head = (f"<h1>Sent vs proposed — {esc(scope)}</h1>"
-            f'<div class="meta">{len(items)} deltas · {esc(summary or "—")} · generated {generated}</div>'
-            '<div class="banner">Raw customer mail. Keep under the gitignored <code>.rootcause/</code> '
-            "tree, do not commit, delete when the dream cycle is done.</div>")
+            f'<div class="meta">{len(items)} deltas · {esc(summary or "—")} · generated {generated}</div>')
     if conclusion:
         head += f'<div class="card"><p class="note" style="border:0"><b>Conclusion</b>\n{esc(conclusion)}</p></div>'
     controls = ('<div class="controls"><span class="meta">View</span>'
@@ -491,12 +618,14 @@ def main(argv: list[str] | None = None) -> int:
     out = Path(args.out) if args.out else Path(".rootcause/dream") / f"{stamp}-sent-deltas.html"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(render(items, diffs, notes, scope, conclusion), "utf-8")
+    md = out.with_suffix(".md")
+    md.write_text(render_markdown(items, diffs, notes, scope, conclusion, str(out)), "utf-8")
     if ".rootcause" not in out.resolve().parts:
         print(f"warning: {out} is outside .rootcause/ and holds raw customer mail — do not commit",
               file=sys.stderr)
     if missing:
         print(f"note: {len(missing)} delta(s) skipped for missing bodies", file=sys.stderr)
-    print(out)
+    print(f"{md}\n{out}")  # agent reads the markdown; the HTML is for the human
     return 0
 
 

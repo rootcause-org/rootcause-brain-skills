@@ -144,9 +144,13 @@ carries only the pointer (`LRN:` flag), never the bodies.
 
 Render the delta plane with
 [`sent_delta_report.py`](../skills/brain-dream-cycle/scripts/sent_delta_report.py) rather than reading
-JSON: it writes a self-contained HTML file with a word-level diff per delta, the drill command, and
-room for the per-delta conclusion. Output lands under the gitignored `.rootcause/dream/` because it
-embeds raw customer mail.
+JSON. One call, two files under the gitignored `.rootcause/dream/`: a token-lean `.md` for the agent
+(signal index, `[-removed-]`/`{+added+}` bodies, run ids) and a `.html` for the human (side-by-side
+word-level diff). Both embed raw customer mail.
+
+Two gaps worth knowing: the endpoint has no date window, only `--limit` over a divergence ranking; and
+delta rows carry no `run_url`, so a report cannot link to the run page the way `rc fleet actions` rows
+can. Minting a link would cost one API call per delta.
 
 Drill only the runs that justify an edit with `rc run debug <id>`. Use
 [`brain-dream-cycle`](../skills/brain-dream-cycle/SKILL.md) for the full brain/persona/triage decision
