@@ -61,7 +61,7 @@ pointers, and action rules.
 Read these before changing product-facing docs/skills:
 
 - [docs/brain-model.md](docs/brain-model.md) — audience, brain-vs-external context, prompt boundary,
-  layout, refs, mounts, tenant/project model.
+  `include_in` frontmatter (triage/grounding/agent), layout, refs, mounts, tenant/project model.
 - [docs/run-trace-model.md](docs/run-trace-model.md) — how to read `rc run debug`.
 - [docs/side-effects.md](docs/side-effects.md) — read-only vs explicit side effects.
 - [docs/support-boundary.md](docs/support-boundary.md) — brain fix vs support escalation.

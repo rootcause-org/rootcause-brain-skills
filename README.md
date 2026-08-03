@@ -92,7 +92,7 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 
 | Path | What |
 |---|---|
-| [docs/brain-model.md](docs/brain-model.md) | Audience, brain-vs-external context, prompt boundary, layout, mounts, refs. |
+| [docs/brain-model.md](docs/brain-model.md) | Audience, brain-vs-external context, prompt boundary, `include_in` frontmatter, layout, mounts, refs. |
 | [docs/run-trace-model.md](docs/run-trace-model.md) | How to read `rc run debug` index/JSONL. |
 | [docs/mirrors.md](docs/mirrors.md) | Source mirrors and freshness/debug rules. |
 | [docs/knowledge-base.md](docs/knowledge-base.md) | Traverse `/kb` and committed `knowledge/`, including frontmatter search from `rc dev console bash`. |

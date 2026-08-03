@@ -144,6 +144,33 @@ Do not duplicate generic rails such as "be grounded", "do not invent", "finish w
 `queryPreamble` is a separate machine-facing/raw-data mode; mention it only when a brain rule would
 otherwise wrongly force customer tone, localization, or identifier hiding into raw investigations.
 
+### The `include_in` contract — hard-loading a doc into a host prompt
+
+`include_in` is a **YAML list** in a brain `.md`'s frontmatter. The **tag** is the contract, never the
+filename, and one doc can feed several host prompts (`include_in: [grounding, agent]`). Each tag pastes
+the doc's **full body** into a different host-assembled prompt:
+
+| Tag | Who holds it | What belongs there | Caps (per file / total) |
+|---|---|---|---|
+| `triage` | the **gatekeeper** — the cheap process-vs-skip classifier | decline / ownership / scope knowledge (convention: root `triage.md`) | 8KB / 24KB |
+| `grounding` | the **file-picker** — the cheap retrieval pre-step that chooses which files the main agent starts with | always-load-bearing **orientation** maps: system map, domain glossary | 8KB / 24KB |
+| `agent` | the **answer-writer** — the main loop, pasted right after `AGENTS.md` | **reference** material the writer must hold in full: schema/column maps, identifier tables, field lists | 16KB / 48KB |
+
+Pick the role by asking **who must hold the doc**. The pre-step only forwards `path:span` refs
+*probabilistically*; if the main agent must **always** have the content — not just when a selector deems
+it relevant — tag `agent`. The tag is a guarantee; span selection is not. A doc tagged both `grounding`
+and `agent` is marked in the selector's context as "already auto-pasted to the main agent", so the
+selector doesn't waste selections re-forwarding it.
+
+Standing rule for every role: **tag sparingly**. Each tagged doc is a per-run token tax on every thread;
+the caps are a safety net, not a budget. `AGENTS.md` never needs a tag (it is always pasted). And a
+pointer line in `AGENTS.md` is **not** a substitute for the `agent` tag — the model will not burn a turn
+following a pointer mid-task.
+
+Scan scope for the `grounding`/`agent` roles: the whole brain plus any bound tenant brain; a **mirror**
+file is only picked up at the repo root as `*.md` or under `doc/`, `docs/`, `.claude/`, `.agents/`;
+`/kb` never. Truncation past a cap appends an explicit marker — the agent may read the rest with `bash`.
+
 ### Feeding the triage gate (`include_in: [triage]`)
 
 Before the main loop runs, a cheap **triage** classifier decides process-vs-skip. Its prompt is built
@@ -164,8 +191,7 @@ Conventions: keep it **short** (it rides every triage call) and in **customer la
 quoted back to the mailbox owner as feedback. It is context, not a hard rule: deterministic rules and
 the default bias to process still win, and skips are always reviewable (feedback note + override), so a
 brain can inform triage but never silently black-hole mail. Recommended home is a `triage.md` at the
-brain root, but the frontmatter tag — not the filename — is the contract, and it is a list that
-generalizes to future host-assembled prompts. Don't restate `AGENTS.md`; it is always included.
+brain root. Don't restate `AGENTS.md`; it is always included.
 
 **Exact allow/block selectors belong in settings, never in the brain.** A sender address/domain,
 subject/header match, or other deterministic blacklist/whitelist must be configured with
@@ -175,16 +201,31 @@ brain test: settings run before brain-guided judgement and are the UI's source o
 
 ### Feeding the grounding pre-step (`include_in: [grounding]`)
 
-The same `include_in` list feeds a second host prompt. A file tagged `include_in: [grounding]` has its
-**full body hard-loaded into the grounding pre-step's turn-1 on every thread** — pasted right after
-`/brain/AGENTS.md` so the cheap file-selector starts **oriented** — and, unlike `AGENTS.md`, it stays
-fully **selectable**, so the pre-step still forwards its `path:span` refs to the main agent when
-relevant. Per-file **8KB** / **24KB** total caps clamp it. **Tag sparingly** — a handful of files, each
-earning its tokens; this is a **per-run token tax on every thread**. Reserve it for a project's
-**always-load-bearing overviews** (a system map, the core glossary) and **never** for case runbooks or
-FAQ items — that per-topic content is retrieval's job, fetched on demand. The whole brain (and tenant
-brain) is scanned; a **mirror** file is only picked up at the repo root as `*.md` or under `doc/`,
-`docs/`, `.claude/`, `.agents/`.
+A file tagged `include_in: [grounding]` has its **full body hard-loaded into the grounding pre-step's
+turn-1 on every thread** — pasted right after `/brain/AGENTS.md` so the cheap file-selector starts
+**oriented** — and, unlike `AGENTS.md`, it stays fully **selectable**, so the pre-step still forwards its
+`path:span` refs to the main agent when relevant. Reserve it for a project's **always-load-bearing
+overviews** (a system map, the core glossary) and **never** for case runbooks or FAQ items — that
+per-topic content is retrieval's job, fetched on demand.
+
+The trap: this tag reaches the **selector only**. The main answer-writing agent never sees the body — it
+sees, at best, a forwarded span. If the content must be in the writer's hands, add `agent`.
+
+### Feeding the main agent (`include_in: [agent]`)
+
+A file tagged `include_in: [agent]` is pasted into the **main loop's bootstrap**, right after
+`AGENTS.md` — the answer-writer holds it in full, every run, guaranteed. Reserve it for **reference**
+material the writer cannot afford to guess at: schema/column maps, identifier tables, enum/field lists.
+Bigger caps (**16KB** / **48KB**) because reference tables are bigger than orientation maps — not
+because the budget is looser.
+
+**Worked example — the cautionary tale.** kampadmin-staff's `skills/records/schema.md` is a verified
+"guessed → real column names" SQL map, and it was tagged `[grounding]` only. The selector saw it every
+run but forwarded its path in just 1 of 3 relevant runs — while the **main** agent wrote 100% of the
+SQL. In the 2026-08-03 fleet review, **76% of 25 sampled SQL failures were guessed identifiers already
+mapped in that file** (`first_name`→`firstname`, `tenants.code`→`client_codename`,
+`admin_users`→`admins`, …). Fix: retag `[grounding, agent]`. Lesson: **a schema map that only reaches
+the retrieval pre-step is invisible to the model that queries the database.**
 
 ### Writing for grounding — author checklist
 
@@ -211,6 +252,9 @@ an irrelevant one is an active distractor. Checklist:
   triage call (subsection above).
 - `include_in: [grounding]` — only always-load-bearing overviews; it taxes every thread, never
   runbooks or FAQ items (subsection above).
+- `include_in: [agent]` — reference the answer-writer must hold in full (schema/column maps, identifier
+  tables). If the main agent guessing wrong is a real failure mode, a `grounding` tag alone won't save
+  it (subsection above).
 - Customer language everywhere — filenames, descriptions, `AGENTS.md` routing rows; retrieval is
   lexical `rg` over the words customers write, so a correct doc missing those words is invisible.
 - Flat archives (e.g. FAQ imports): greppable frontmatter facets on every item plus a generated
