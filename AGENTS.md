@@ -40,7 +40,8 @@ Keep these planes explicit in every skill, template, and brain edit:
 - **Local brain development:** a developer or coding agent runs outside production from a brain
   checkout. After OAuth login, it may use the public `rc` CLI for runs, settings, diagnostics, and
   guarded production primitives. The CLI skills in this kit serve only this context and install
-  locally through gitignored symlinks; they never mount into `/brain`.
+  locally into the ignored Codex-native `.agents/skills/` tree; `.claude/skills` is a compatibility
+  alias when safe. They never mount into `/brain`.
 - **Production main loop:** the model has `bash` plus its scenario terminal tool (`reply` for email),
   not an `rc` binary. The committed brain is mounted read-only at `/brain`. Ground through `/brain`
   scripts and the injected `lib.db`, `lib.cloudwatch`, `lib.http`, `lib.fs`, `lib.connectors`,

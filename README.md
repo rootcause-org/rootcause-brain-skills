@@ -26,10 +26,14 @@ uv run "$SKILL/scripts/brain_run.py" --brief
 uv run "$SKILL/scripts/brain_test.py" --live
 ```
 
-Do not install this kit as a user/global Claude Code or Codex plugin. Brain Dev skills are
+Do not install this kit as a user/global Codex or Claude Code plugin. Brain Dev skills are
 brain-repo-relative: install them from inside each `rootcause-brain-*` checkout so agents discover
 exactly one repo-local copy, scoped to that brain. User/global installs make the same skills appear in
 unrelated projects and can drift from the pinned brain checkout.
+
+The installer makes `.agents/skills/` the canonical Codex discovery tree. On clean checkouts,
+`.claude/skills` is only a compatibility alias. All install paths are ignored locally through
+`.git/info/exclude`, so setup does not modify the brain's tracked `.gitignore`.
 
 Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 

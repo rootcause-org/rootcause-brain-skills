@@ -7,8 +7,8 @@
 #     run-time pollution; an untracked one can never reach /brain. Gitignored = guaranteed safe.
 #   - Committing the kit into each brain re-creates the multi-copy skill-drift this repo kills.
 #
-# Model: ONE pinned clone on disk, SYMLINKED into each brain's gitignored `.agents/skills/` +
-# `.claude/skills/` discovery dirs. One source of truth, per-repo discovery, zero /brain footprint.
+# Model: ONE pinned clone on disk, SYMLINKED into each brain's locally ignored `.agents/skills/`
+# discovery tree. Claude Code gets a compatibility alias at `.claude/skills`; Codex is canonical.
 # Do not also install this kit as a user/global Claude Code or Codex plugin; that creates a second,
 # project-agnostic discovery path and makes Brain Dev appear in unrelated repos.
 #
@@ -136,6 +136,13 @@ fi
 is_brain_dir "$BRAIN" || {
   echo "error: $BRAIN has no skills/ or playbooks/ or projection.yaml or .rootcause.toml — not a brain checkout?" >&2; exit 1; }
 
+EXCLUDE="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path info/exclude 2>/dev/null)" || {
+  echo "error: $BRAIN is not a Git checkout" >&2
+  exit 1
+}
+BRAIN_PREFIX="$(git -C "$BRAIN" rev-parse --show-prefix)"
+IGNORE_ROOT="/$BRAIN_PREFIX"
+
 # 1. One pinned clone on disk (shared by every brain). Pin the shared clone to a tag, never float main.
 #    If RC_BRAIN_KIT points at the checkout running this install.sh, treat it as a developer/local
 #    override and do not mutate it.
@@ -177,34 +184,19 @@ else
   fi
 fi
 
-# 2. Gitignored symlinks into the brain: every shipped skill at the standard discovery paths.
-#    `.agents/skills/<name>` is vendor-neutral and Codex auto-discovers it; `.claude/skills/<name>` is
-#    Claude Code's skill discovery path. The engine ships INSIDE the Local Brain Work skill (scripts/), so the
-#    symlink carries it along; the canonical runtime/ stays in the shared clone (resolved via the link).
-mkdir -p "$BRAIN/.agents/skills" "$BRAIN/.claude/skills"
-
-link_skill() {
-  src="$1"
-  name="$(basename "$src")"
-  for base in "$BRAIN/.agents/skills" "$BRAIN/.claude/skills"; do
-    dst="$base/$name"
-    if [ -L "$dst" ]; then
-      rm "$dst"
-    elif [ -e "$dst" ]; then
-      echo "error: $dst exists and is not a symlink; refusing to overwrite user content" >&2
-      exit 1
-    fi
-    ln -s "$src" "$dst"
-  done
+# 2. Remove retired installer symlinks. A name alone does not prove ownership: preserve links whose
+#    target is outside this kit, plus all real user files and directories.
+is_kit_link() {
+  local path="$1"
+  local target
+  [ -L "$path" ] || return 1
+  target="$(readlink "$path")"
+  case "$target" in
+    "$KIT"/skills/*|"$KIT"/commands/*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
-for src in "$KIT"/skills/*; do
-  [ -d "$src" ] || continue
-  [ -f "$src/SKILL.md" ] || continue
-  link_skill "$src"
-done
-
-# Retired symlinks. Remove only symlinks; leave real user files alone.
 for old in \
   "$BRAIN/.claude/commands/brain-dev.md" \
   "$BRAIN/.agents/skills/brain-dev" \
@@ -221,23 +213,155 @@ for old in \
   "$BRAIN/.agents/skills/rc-run" \
   "$BRAIN/.claude/skills/rc-run"
 do
-  [ -L "$old" ] && rm "$old"
+  is_kit_link "$old" && rm "$old"
 done
 
-# 3. Ignore rules (idempotent). Committing the RULE is fine — it's tiny, documents intent, and blocks
-#    an accidental `git add` of the symlinks. They stay untracked → never reach /brain.
-GI="$BRAIN/.gitignore"
-# `/.rootcause/` = the wholesale-ignored local-artifact dir: rc CLI debug dumps, brain_dump run dumps,
-# and any future rc/kit subfolder. One rule, future-proof — never edit the ignore per new tool again.
-grep -qxF "/.rootcause/" "$GI" 2>/dev/null || echo "/.rootcause/" >> "$GI"
+# 3. Codex-first discovery. `.agents/skills/` is the one canonical per-brain tree. Claude Code uses
+#    `.claude/skills -> ../.agents/skills` when possible. An existing compatibility directory is
+#    collapsed to the alias only when it contains installer-owned links and nothing user-owned.
+if [ -L "$BRAIN/.agents/skills" ]; then
+  echo "error: $BRAIN/.agents/skills is a symlink; refusing to replace the canonical Codex tree" >&2
+  exit 1
+fi
+mkdir -p "$BRAIN/.agents/skills" "$BRAIN/.claude"
+
+link_one_skill() {
+  local src="$1"
+  local dst="$2"
+  local current
+  if [ -L "$dst" ]; then
+    current="$(readlink "$dst")"
+    if [ "$current" != "$src" ]; then
+      echo "error: $dst is a user-managed symlink; refusing to overwrite it" >&2
+      exit 1
+    fi
+    rm "$dst"
+  elif [ -e "$dst" ]; then
+    echo "error: $dst exists and is not an installer symlink; refusing to overwrite user content" >&2
+    exit 1
+  fi
+  ln -s "$src" "$dst"
+}
+
+# Classify the Claude compatibility path without changing it. A directory containing only links made
+# by the previous installer can migrate to the alias. Any unrelated entry keeps directory fallback.
+CLAUDE_SKILLS="$BRAIN/.claude/skills"
+CLAUDE_MODE="alias"
+CLAUDE_MIGRATE=0
+if [ -L "$CLAUDE_SKILLS" ]; then
+  if [ "$(readlink "$CLAUDE_SKILLS")" != "../.agents/skills" ]; then
+    echo "error: $CLAUDE_SKILLS is a user-managed symlink; refusing to overwrite it" >&2
+    exit 1
+  fi
+elif [ -e "$CLAUDE_SKILLS" ] && [ ! -d "$CLAUDE_SKILLS" ]; then
+  echo "error: $CLAUDE_SKILLS exists and is not a directory; refusing to overwrite user content" >&2
+  exit 1
+elif [ -d "$CLAUDE_SKILLS" ]; then
+  CLAUDE_MIGRATE=1
+  while IFS= read -r -d '' entry; do
+    name="$(basename "$entry")"
+    src="$KIT/skills/$name"
+    if [ ! -L "$entry" ] || [ ! -f "$src/SKILL.md" ] || [ "$(readlink "$entry")" != "$src" ]; then
+      CLAUDE_MODE="directory"
+      CLAUDE_MIGRATE=0
+      break
+    fi
+  done < <(find "$CLAUDE_SKILLS" -mindepth 1 -maxdepth 1 -print0)
+fi
+
+# Preflight every shipped-name destination before changing current links.
 for src in "$KIT"/skills/*; do
   [ -d "$src" ] || continue
   [ -f "$src/SKILL.md" ] || continue
-  name="$(basename "$src")"
-  for rule in "/.agents/skills/$name" "/.claude/skills/$name"; do
-  grep -qxF "$rule" "$GI" 2>/dev/null || echo "$rule" >> "$GI"
-  done
+  dst="$BRAIN/.agents/skills/$(basename "$src")"
+  if [ -L "$dst" ] && [ "$(readlink "$dst")" != "$src" ]; then
+    echo "error: $dst is a user-managed symlink; refusing to overwrite it" >&2
+    exit 1
+  elif [ ! -L "$dst" ] && [ -e "$dst" ]; then
+    echo "error: $dst exists and is not an installer symlink; refusing to overwrite user content" >&2
+    exit 1
+  fi
 done
+
+if [ "$CLAUDE_MODE" = "directory" ]; then
+  for src in "$KIT"/skills/*; do
+    [ -d "$src" ] || continue
+    [ -f "$src/SKILL.md" ] || continue
+    dst="$CLAUDE_SKILLS/$(basename "$src")"
+    if [ -L "$dst" ] && [ "$(readlink "$dst")" != "$src" ]; then
+      echo "error: $dst is a user-managed symlink; refusing to overwrite it" >&2
+      exit 1
+    elif [ ! -L "$dst" ] && [ -e "$dst" ]; then
+      echo "error: $dst exists and is not an installer symlink; refusing to overwrite user content" >&2
+      exit 1
+    fi
+  done
+fi
+
+for src in "$KIT"/skills/*; do
+  [ -d "$src" ] || continue
+  [ -f "$src/SKILL.md" ] || continue
+  link_one_skill "$src" "$BRAIN/.agents/skills/$(basename "$src")"
+done
+
+if [ "$CLAUDE_MODE" = "alias" ]; then
+  if [ "$CLAUDE_MIGRATE" = 1 ]; then
+    # Remove only links verified above as belonging to this kit, then collapse the empty directory.
+    for src in "$KIT"/skills/*; do
+      [ -d "$src" ] || continue
+      [ -f "$src/SKILL.md" ] || continue
+      dst="$CLAUDE_SKILLS/$(basename "$src")"
+      [ -L "$dst" ] && [ "$(readlink "$dst")" = "$src" ] && rm "$dst"
+    done
+    rmdir "$CLAUDE_SKILLS"
+  fi
+  [ -L "$CLAUDE_SKILLS" ] || ln -s ../.agents/skills "$CLAUDE_SKILLS"
+else
+  # Preserve unrelated Claude user content. Mirror shipped skills only inside this fallback directory.
+  for src in "$KIT"/skills/*; do
+    [ -d "$src" ] || continue
+    [ -f "$src/SKILL.md" ] || continue
+    link_one_skill "$src" "$CLAUDE_SKILLS/$(basename "$src")"
+  done
+fi
+
+# 4. Local-only ignore rules (idempotent). Never dirty a brain's tracked `.gitignore` just to install
+#    developer tooling. Replace only this installer's marked block, preserving every user rule.
+mkdir -p "$(dirname "$EXCLUDE")"
+touch "$EXCLUDE"
+BRAIN_ID="${BRAIN_PREFIX%/}"
+[ -n "$BRAIN_ID" ] || BRAIN_ID="."
+EXCLUDE_BEGIN="# rootcause-brain-skills: begin managed local install ($BRAIN_ID)"
+EXCLUDE_END="# rootcause-brain-skills: end managed local install ($BRAIN_ID)"
+EXCLUDE_TMP="$(mktemp "${EXCLUDE}.tmp.XXXXXX")"
+if ! awk -v begin="$EXCLUDE_BEGIN" -v end="$EXCLUDE_END" '
+  $0 == begin { managed = 1; next }
+  managed && $0 == end { managed = 0; next }
+  !managed { print }
+  END { if (managed) exit 2 }
+' "$EXCLUDE" >"$EXCLUDE_TMP"; then
+  rm "$EXCLUDE_TMP"
+  echo "error: malformed managed block in $EXCLUDE" >&2
+  exit 1
+fi
+mv "$EXCLUDE_TMP" "$EXCLUDE"
+{
+  echo "$EXCLUDE_BEGIN"
+  echo "${IGNORE_ROOT}.rootcause/"
+  for src in "$KIT"/skills/*; do
+    [ -d "$src" ] || continue
+    [ -f "$src/SKILL.md" ] || continue
+    name="$(basename "$src")"
+    echo "${IGNORE_ROOT}.agents/skills/$name"
+    if [ "$CLAUDE_MODE" = "directory" ]; then
+      echo "${IGNORE_ROOT}.claude/skills/$name"
+    fi
+  done
+  if [ "$CLAUDE_MODE" = "alias" ]; then
+    echo "${IGNORE_ROOT}.claude/skills"
+  fi
+  echo "$EXCLUDE_END"
+} >>"$EXCLUDE"
 
 echo
 echo "installed skills (gitignored):"
@@ -250,5 +374,10 @@ echo "The engine ships inside the Local Brain Work skill:"
 echo "  SKILL=$KIT/skills/local-brain-work"
 echo "  uv run \"\$SKILL/scripts/brain_run.py\" --brief"
 echo "  uv run \"\$SKILL/scripts/brain_test.py\" --live"
-echo "Claude Code auto-discovers .claude/skills; Codex auto-discovers .agents/skills."
+echo "Codex auto-discovers the canonical .agents/skills tree."
+if [ "$CLAUDE_MODE" = "alias" ]; then
+  echo "Claude Code compatibility: .claude/skills -> ../.agents/skills"
+else
+  echo "Claude Code compatibility: preserved user-owned .claude/skills directory"
+fi
 echo "Do not also install Brain Dev as a user/global plugin; keep discovery repo-local."

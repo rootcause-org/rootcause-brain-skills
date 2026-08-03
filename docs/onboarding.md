@@ -29,11 +29,13 @@ Local gitignored install, recommended:
 bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh)
 ```
 
-This creates/updates one shared clone at `~/.rootcause-brain-skills`, symlinks shipped skills into the
-brain's gitignored `.agents/skills/` and `.claude/skills/`, and keeps the kit out of committed `/brain`.
+This creates/updates one shared clone at `~/.rootcause-brain-skills` and links shipped skills into the
+brain's Codex-native `.agents/skills/`. Claude Code gets `.claude/skills` as a compatibility alias
+when that path has no user content. Both paths are ignored locally through `.git/info/exclude`, so
+installation neither changes tracked `.gitignore` nor reaches committed `/brain`.
 
-Do not install Brain Dev as a user/global Claude Code or Codex plugin. These skills must be discovered
-from the brain checkout's `.agents/skills/` or `.claude/skills/` symlinks. A user/global install makes
+Do not install Brain Dev as a user/global Codex or Claude Code plugin. These skills must be discovered
+from the brain checkout's canonical `.agents/skills/` tree. A user/global install makes
 the same skills appear in unrelated projects and can drift from the brain's pinned repo-local install.
 
 Update later with `brain-dev-upgrade`.
