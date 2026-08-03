@@ -62,11 +62,12 @@ Read:
 3. Interpret run flags:
    - `ERRxn`: bash failures.
    - `EGRxn`: blocked egress.
-   - `$!`: cost spike.
-   - `CTX.Nk`: context rot.
    - `GD`: grounding discarded.
    - `LRN:<signals>`: dream-cycle learning candidate — human feedback, a sent-vs-proposed edit, or a
      triage skip/correction on that run.
+
+   Heaviness is not a flag: judge it from the run's turn count and wall-clock duration. Unusually
+   many turns or a long duration against the fleet's norm marks a run worth drilling.
 
 4. Drill two to five flagged runs with the `rc-debug` skill. The worst-offenders section gives full
    UUIDs.

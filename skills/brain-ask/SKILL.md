@@ -46,7 +46,7 @@ Read:
    selection.
 
 3. Relay the result: draft/note/actions for the default email simulation, or the direct answer for
-   `--scenario raw`; include caveats, run accounting (`status`, turns, cost, outcome), and trace URL.
+   `--scenario raw`; include caveats, run accounting (`status`, turns, outcome), and trace URL.
    Capture the printed `run_id`. If status is `error`, surface the error and stop.
 
    If the draft/note mentions a state-changing operation (booked, moved, cancelled, refunded, sent,

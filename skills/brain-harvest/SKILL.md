@@ -448,10 +448,10 @@ Have a comparison agent score each answer against the paired historical answer o
 scale 0–4 for factual agreement, routing, and tone. Each holdout records successful status, an absolute
 trace URL, a unique replay ID, and a resolved SHA; neither IDs nor traces may be reused across cases.
 Pick a distinct representative new route for the required
-full production replay. Record all scores plus its run id, status, cost, trace URL, resolved
+full production replay. Record all scores plus its run id, status, turns, trace URL, resolved
 40-character brain SHA, and brain diff in the strict `evaluation.json` contract. All holdouts and the
-representative replay must succeed at that same SHA. Record token usage,
-total cost, wall clock, and preparation time in `metrics.json`. Use
+representative replay must succeed at that same SHA. Record turns,
+wall clock, and preparation time in `metrics.json`. Use
 [`templates/review-brief.md`](templates/review-brief.md) for both schemas, then generate:
 
 ```bash

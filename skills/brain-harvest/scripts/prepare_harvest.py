@@ -1352,12 +1352,12 @@ def validate_evaluation(value: Any, holdout_ids: set[str], path: str = "evaluati
         raise HarvestError(f"{path}.holdouts must score each reserved holdout exactly once; "
                            f"expected {sorted(holdout_ids)}, got {sorted(seen)}")
     replay = require_object(value["production_replay"], f"{path}.production_replay",
-                            {"run_id", "status", "cost_usd", "trace_url", "brain_sha", "brain_diff"})
+                            {"run_id", "status", "turns", "trace_url", "brain_sha", "brain_diff"})
     production_run_id = require_string(replay["run_id"], f"{path}.production_replay.run_id")
     if require_string(replay["status"], f"{path}.production_replay.status").casefold() \
             not in SUCCESS_STATUSES:
         raise HarvestError(f"{path}.production_replay.status must be successful")
-    require_number(replay["cost_usd"], f"{path}.production_replay.cost_usd")
+    require_int(replay["turns"], f"{path}.production_replay.turns", minimum=1)
     trace_url = require_string(replay["trace_url"], f"{path}.production_replay.trace_url")
     parsed = urlparse(trace_url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -1400,14 +1400,8 @@ def validate_replay_cases(value: Any, holdout_ids: set[str], path: str = "replay
 
 
 def validate_metrics(value: Any, path: str = "metrics") -> dict[str, Any]:
-    value = require_object(value, path,
-                           {"token_usage", "cost_usd", "wall_clock_seconds", "preparation_seconds"})
-    usage = require_object(value["token_usage"], f"{path}.token_usage", {"input", "output", "total"})
-    for field_name in ("input", "output", "total"):
-        require_int(usage[field_name], f"{path}.token_usage.{field_name}")
-    if usage["total"] != usage["input"] + usage["output"]:
-        raise HarvestError(f"{path}.token_usage.total must equal input + output")
-    require_number(value["cost_usd"], f"{path}.cost_usd")
+    value = require_object(value, path, {"turns", "wall_clock_seconds", "preparation_seconds"})
+    require_int(value["turns"], f"{path}.turns", minimum=1)
     require_number(value["wall_clock_seconds"], f"{path}.wall_clock_seconds", positive=True)
     require_number(value["preparation_seconds"], f"{path}.preparation_seconds")
     if value["preparation_seconds"] > value["wall_clock_seconds"]:
@@ -1676,14 +1670,12 @@ def build_review_brief(ledger: dict[str, Any], run: dict[str, Any], coverage_row
     replay = evaluation["production_replay"]
     lines.extend(["", "### Representative production replay [local+ephemeral]", "",
                   f"- Run: `{md_cell(replay['run_id'])}` · status: {md_cell(replay['status'])} · "
-                  f"cost: ${replay['cost_usd']:.6f}",
+                  f"turns: {replay['turns']}",
                   f"- Trace: {md_cell(replay['trace_url'])}",
                   f"- Resolved brain SHA: `{replay['brain_sha']}`",
                   f"- Brain diff: {md_cell(replay['brain_diff'])}"])
-    usage = metrics["token_usage"]
-    lines.extend(["", "## 7. Run cost [committed subset]", "",
-                  f"- Tokens: {usage['total']} total ({usage['input']} input, {usage['output']} output)",
-                  f"- Cost: ${metrics['cost_usd']:.6f}",
+    lines.extend(["", "## 7. Run effort [committed subset]", "",
+                  f"- Turns: {metrics['turns']}",
                   f"- Wall clock: {metrics['wall_clock_seconds']:.3f}s "
                   f"(preparation {metrics['preparation_seconds']:.3f}s)", ""])
     return "\n".join(lines)
@@ -1876,8 +1868,6 @@ def cmd_review(args: argparse.Namespace,
                            f"{sorted(discovered_topics - reduced_topics)}")
     evaluation = validate_evaluation(load_json(Path(args.evaluation)), holdout_ids)
     metrics = validate_metrics(load_json(Path(args.metrics)))
-    if evaluation["production_replay"]["cost_usd"] > metrics["cost_usd"]:
-        raise HarvestError("production replay cost cannot exceed total run cost")
     coverage_rows, totals = coverage_summary(ledger, clusters_doc)
     brief = build_review_brief(ledger, run, coverage_rows, totals, reports, reduction, evaluation, metrics)
     source = sanitized_review_source(ledger, run, totals, evaluation, metrics)
@@ -2608,7 +2598,7 @@ def parser() -> argparse.ArgumentParser:
     review.add_argument("--evaluation", required=True,
                         help="strict holdout scores plus production_replay metadata JSON")
     review.add_argument("--metrics", required=True,
-                        help="strict token_usage/cost_usd/wall_clock_seconds/preparation_seconds JSON")
+                        help="strict turns/wall_clock_seconds/preparation_seconds JSON")
     review.add_argument("--harvest-date", required=True,
                         help="YYYY-MM-DD used in the exact tracked-safe record candidate")
     review.add_argument("--kit-version", required=True,

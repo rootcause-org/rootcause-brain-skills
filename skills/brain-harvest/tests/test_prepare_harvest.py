@@ -647,15 +647,14 @@ def build_step10_fixture(tmp: Path, holdout_count: int = 1) -> dict:
             "notes": "Checked against private answer for alice@example.test at https://private.invalid/raw",
         } for index, thread_id in enumerate(holdout_ids, start=1)],
         "production_replay": {
-            "run_id": "run-representative-1", "status": "succeeded", "cost_usd": 0.1,
+            "run_id": "run-representative-1", "status": "succeeded", "turns": 12,
             "trace_url": "https://app.example.test/runs/representative",
             "brain_sha": "a" * 40, "brain_diff": "Added the new warranty route",
         },
     }
     evaluation = write_json(scratch / "brief" / "evaluation.json", evaluation_value)
     metrics = write_json(scratch / "brief" / "metrics.json", {
-        "token_usage": {"input": 1200, "output": 300, "total": 1500},
-        "cost_usd": 0.5, "wall_clock_seconds": 90.25, "preparation_seconds": 0.25,
+        "turns": 42, "wall_clock_seconds": 90.25, "preparation_seconds": 0.25,
     })
     return {"scratch": scratch, "reports": reports, "reduction": reduction,
             "evaluation": evaluation, "metrics": metrics, "holdout_id": holdout_id}
@@ -705,7 +704,7 @@ class Step10ReviewAndRecordTests(unittest.TestCase):
                 "scores": {"factual_agreement": 4, "routing": 3, "tone": 4}, "notes": "",
             } for thread_id in sorted(ids)],
             "production_replay": {
-                "run_id": "representative", "status": "succeeded", "cost_usd": 0.1,
+                "run_id": "representative", "status": "succeeded", "turns": 12,
                 "trace_url": "https://app.example.test/runs/representative",
                 "brain_sha": "a" * 40, "brain_diff": "changed",
             },
@@ -736,7 +735,7 @@ class Step10ReviewAndRecordTests(unittest.TestCase):
             before = {name: (brief_dir / name).read_bytes()
                       for name in ("review-brief.md", "record-source.json", "record-candidate.json")}
             metrics = json.loads(fixture["metrics"].read_text())
-            metrics["token_usage"]["total"] += 1
+            metrics["turns"] = 0
             write_json(fixture["metrics"], metrics)
             with contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(ph.main(review_argv(fixture)), 2)
@@ -869,7 +868,7 @@ class Step10ReviewAndRecordTests(unittest.TestCase):
                 self.assertEqual((brief_dir / name).read_bytes(), expected, name)
 
             brief = first["review-brief.md"].decode()
-            self.assertIn("1500 total", brief)
+            self.assertIn("Turns: 42", brief)
             self.assertIn("Wall clock: 90.250s (preparation 0.250s)", brief)
             self.assertIn("at mailbox-test", brief)
             self.assertIn("Resolved brain SHA: `" + "a" * 40 + "`", brief)
@@ -955,7 +954,7 @@ class Step10ReviewAndRecordTests(unittest.TestCase):
                           "brain_sha": "b" * 40,
                           "scores": {"factual_agreement": 4, "routing": 4, "tone": 4},
                           "notes": ""}],
-            "production_replay": {"run_id": "run-1", "status": "succeeded", "cost_usd": 0.1,
+            "production_replay": {"run_id": "run-1", "status": "succeeded", "turns": 12,
                                   "trace_url": "https://example.test/run/1", "brain_sha": "b" * 40,
                                   "brain_diff": "one route changed"},
         }

@@ -24,7 +24,8 @@ markdown index first; use JSONL only for targeted drill-down.
 
 1. Header: project, status, kind, test-run marker, tenant, `brain_ref`, `brain_resolved`.
 2. Outcome: what draft/raw answer/action proposal the run produced.
-3. Flags: failures, blocked egress, missing callback, cost spikes, aborted grounding.
+3. Flags: failures, blocked egress, missing callback, aborted grounding; plus heaviness read off
+   turn count and wall-clock duration.
 4. Projection and warm-start sections: what context existed before the main loop.
 5. Grounding pre-step: which files were selected or discarded before the main loop.
 6. Timeline: non-search main-loop steps; drill JSONL by `disp` for full command/stdout/stderr.

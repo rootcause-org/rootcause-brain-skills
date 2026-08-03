@@ -2,7 +2,7 @@
 
 Run the deterministic generator after replaying every reserved holdout against the pushed dev ref.
 The command validates the ledger, every final agent report, reduced proposals, scores, representative
-production replay, token usage, cost, and wall clock before writing anything:
+production replay, turns, and wall clock before writing anything:
 
 ```bash
 uv run --no-project python "$SKILL/scripts/prepare_harvest.py" review \
@@ -38,7 +38,7 @@ from the record.
      "scores":{"factual_agreement":4,"routing":3,"tone":4}, "notes":"private comparison note"}
   ],
   "production_replay": {
-    "run_id":"run handle", "status":"succeeded", "cost_usd":0.12,
+    "run_id":"run handle", "status":"succeeded", "turns":14,
     "trace_url":"https://trace.example/run", "brain_sha":"40 lowercase hex characters",
     "brain_diff":"distilled description of the resolved brain diff"
   }
@@ -47,13 +47,11 @@ from the record.
 
 ## Metrics input
 
-Write `$SCRATCH/brief/metrics.json`. `total` must equal `input + output`; preparation time cannot exceed
-the full wall clock; production replay cost cannot exceed total cost.
+Write `$SCRATCH/brief/metrics.json`. Preparation time cannot exceed the full wall clock.
 
 ```json
 {
-  "token_usage":{"input":1200,"output":300,"total":1500},
-  "cost_usd":0.50,
+  "turns":42,
   "wall_clock_seconds":90.25,
   "preparation_seconds":0.25
 }
@@ -68,7 +66,7 @@ an interrupted old/new mixture until `review` is rerun:
 
 - `brief/review-brief.md` — full operator evidence: effective config/corpus digest, reconciled per-cluster
   coverage, saturation, settings scope, skip evidence, durable rules/eras, contradictions, holdout
-  scorecard, production replay metadata, tokens/cost/wall clock;
+  scorecard, production replay metadata, turns/wall clock;
 - `brief/record-source.json` — sanitized machine source with ordinal holdouts only;
 - `brief/record-candidate.json` — exact tracked-safe candidate the operator approves.
 

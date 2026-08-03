@@ -65,7 +65,7 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 | `local_imap_harvest.py` | Connects to IMAP from the laptop and writes a raw local sent-history corpus. |
 | `brain-website-scout` plan | Calls Firecrawl map and same-domain public discovery endpoints; may consume Firecrawl credits and writes only gitignored local artifacts. |
 | `brain-website-scout` scrape/run | Opens the approved public-page selection through Firecrawl, consumes page/proxy credits, and writes split gitignored local captures. |
-| `rc ask` against `main` | Creates a real production run; may create draft/journal/test artifacts and bill usage. |
+| `rc ask` against `main` | Creates a real production run; may create draft/journal/test artifacts. |
 | `rc ask --brain-ref dev/<branch>` | Creates a test run; no callback or durable journal push; proposals are test artifacts. |
 | `rc run feedback` / `rc run retry` | Writes learning feedback / creates a replacement production run. |
 | `rc dev brain promote --channel <channel> --sha <sha>` | Moves a shared project brain channel for all its runs/tenants; project-maintainer only and audited. |

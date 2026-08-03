@@ -44,8 +44,7 @@ harvest under `notes/harvest-records/`; the upper date span plus export handle i
       ]
     },
     "run_metrics": {
-      "token_usage": {"input": 120000, "output": 18000, "total": 138000},
-      "cost_usd": 3.25,
+      "turns": 42,
       "wall_clock_seconds": 480.0,
       "preparation_seconds": 2.1
     },

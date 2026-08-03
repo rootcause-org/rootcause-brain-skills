@@ -18,8 +18,8 @@ those guarantees while making "thorough" mean mechanically complete coverage plu
 reading — not repeated full-corpus LLM reading.
 
 Framing note: this workflow runs roughly once per new customer mailbox, occasionally re-run.
-Unattended wall clock is a secondary cost; the primary costs are **operator minutes**, **token
-spend**, and — above all — **output quality**, which the previous draft never measured. Targets
+Unattended wall clock is a secondary cost; the primary costs are **operator minutes**, **agent
+turns**, and — above all — **output quality**, which the previous draft never measured. Targets
 below are reweighted accordingly.
 
 ## Verified ground truth (do not re-derive; checked 2026-07-19)
@@ -66,7 +66,7 @@ export time and the human approval wait:
 
 - under five minutes of active operator time before the single diff-review gate, aided by a
   generated review brief (see §10);
-- measured token cost reported per run; wall clock reported per run. Directional target: meaningfully
+- turns reported per run; wall clock reported per run. Directional target: meaningfully
   below the ~40-minute baseline. No median/p95 statistics — with two historical runs they are
   unmeasurable; benchmark against synthetic fixtures instead (see Rollout);
 - 100% of threads represented in a machine-verified coverage ledger (assigned, deep-read, sampled,
@@ -329,7 +329,7 @@ whole exercise and is here made systematic.
 - a comparison agent scores each answer against the historical human answer on factual agreement,
   routing, and tone, and writes a short scorecard into the review brief;
 - the full production replay (one representative new route on a pushed dev ref, recording run ID,
-  status, cost, trace URL, resolved brain SHA, and brain diff) remains required.
+  status, turns, trace URL, resolved brain SHA, and brain diff) remains required.
 
 **Operator review brief** (generated, local+ephemeral except where noted):
 
@@ -338,7 +338,7 @@ whole exercise and is here made systematic.
 - notable durable rules with evidence strength and era flags;
 - discovered contradictions and how reduction resolved them;
 - holdout scorecard;
-- token cost and wall clock for the run;
+- turns and wall clock for the run;
 - a sanitized subset of the brief (counts and scorecard, no opaque IDs) may be committed as the
   harvest record below.
 
@@ -397,5 +397,5 @@ raw v2 itself.
 3. Add structural validation, review brief, holdout evaluation, and the committed harvest record.
 4. In parallel, ship `rootcause-cli` v2 splitting, `--out` rescue, and format advertising.
 5. Validate against the synthetic fixtures: coverage and privacy gates must pass, holdout
-   scorecard must be generated, token cost and wall clock reported and meaningfully under the
+   scorecard must be generated, turns and wall clock reported and meaningfully under the
    40-minute baseline.
