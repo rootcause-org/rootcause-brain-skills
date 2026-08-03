@@ -67,10 +67,6 @@ def _dur(ms) -> str:
     return f"{ms // 60_000}m{(ms % 60_000) // 1000:02d}s"
 
 
-def _cost(v) -> str:
-    return f"${v:.4f}" if v else ""
-
-
 def _gist(text: str, limit: int = 100) -> str:
     """First sentence-ish of a reasoning blob, single line, truncated."""
     line = " ".join((text or "").split())
@@ -343,18 +339,6 @@ def flags(bundle: dict) -> list[str]:
         out.append(f"run errored: `{run['error']}`")
     if not _has_result(run):
         out.append("no stored callback — the run never produced one")
-    # The loop's own accumulator (callback metadata) vs the ai_usage ledger: a gap means some call's
-    # usage row never landed (or was double-counted) — an accounting bug worth a look. Coerce both to
-    # float: the operator path hands the ledger sum as a psycopg Decimal while metadata cost is a JSON
-    # float, and float−Decimal / float×Decimal both raise TypeError — a crash on the very runs this
-    # flag exists to surface. float() is a no-op on the API path (both already float), so byte-identical.
-    meta_cost = (run.get("metadata") or {}).get("total_cost_usd")
-    ledger_cost = run.get("run_cost_usd") or 0
-    meta_cost = float(meta_cost) if meta_cost else meta_cost
-    ledger_cost = float(ledger_cost) if ledger_cost else ledger_cost
-    if meta_cost and ledger_cost and abs(meta_cost - ledger_cost) > 0.02 * max(meta_cost, ledger_cost):
-        out.append(f"cost accounting gap: callback metadata says {_cost(meta_cost)} "
-                   f"but the ai_usage ledger sums to {_cost(ledger_cost)}")
     if any(e["grounding"] for e in events) and _selected_docs(events) is None:
         aborted = next((e for e in events if e["tool"] == "grounding_aborted"), None)
         out.append(
@@ -383,14 +367,15 @@ def flags(bundle: dict) -> list[str]:
         if len(steps) > 1:
             out.append(f"[{', '.join(steps)}] identical command ran {len(steps)}×: `{_cell(cmd, 60)}`")
 
-    # Cost spikes: a turn way above the median paid turn.
-    costs = [e["cost_usd"] for e in events if e.get("cost_usd")]
-    if len(costs) >= 4:
-        median = statistics.median(costs)
+    # Slow turns: a turn way above the median — where the run's wall clock actually went. The 10s
+    # floor keeps a fast run's jitter (2ms vs 20ms) from flagging.
+    durations = [e["duration_ms"] for e in events if e.get("duration_ms")]
+    if len(durations) >= 4:
+        median = statistics.median(durations)
         for e in events:
-            c = e.get("cost_usd")
-            if c and median and c > 4 * median and c > 0.01:
-                out.append(f"[{e['disp']}] cost spike {_cost(c)} ({c / median:.0f}× median turn)")
+            d = e.get("duration_ms")
+            if d and median and d > 4 * median and d > 10_000:
+                out.append(f"[{e['disp']}] slow turn {_dur(d)} ({d / median:.0f}× median turn)")
 
     for e in (e for e in egress if _egr_blocked(e)):
         # Operator rows carry port + timestamp; the aggregated API shape carries neither — render what
@@ -453,10 +438,6 @@ def render_index(bundle: dict) -> str:
     meta = run.get("metadata") or {}
     main = [e for e in events if not e["grounding"]]
     pre = [e for e in events if e["grounding"]]
-    # The direct ai_usage sum is the true spend (callback metadata covers the main loop only; the
-    # per-event join misses run_event_id-NULL rows like a discarded grounding pass).
-    cost_total = run.get("run_cost_usd") or meta.get("total_cost_usd")
-    tokens_total = run.get("run_total_tokens") or meta.get("total_tokens")
     model = meta.get("model") or next((e["model"] for e in events if e.get("model")), "")
     blocked = sum(_egr_count(e) for e in egress if _egr_blocked(e))
     created, finished = _as_dt(run.get("created_at")), _as_dt(run.get("finished_at"))
@@ -480,7 +461,7 @@ def render_index(bundle: dict) -> str:
         f"- **Thread / Session:** `{run.get('thread_id')}` / `{run.get('session_id')}`",
         f"- **Created / Finished:** {created} / {finished or '(unfinished)'}"
         + (f" · {dur}" if dur else ""),
-        f"- **Model:** `{model or '?'}` · **Cost:** {_cost(cost_total) or '?'} · **Tokens:** {tokens_total or '?'}",
+        f"- **Model:** `{model or '?'}`",
         f"- **Steps:** {len(main)} main" + (f" + {len(pre)} grounding" if pre else "")
         + f" · **Egress:** {len(egress)}" + (f" ({blocked} blocked)" if blocked else ""),
         f"- **Events (full, queryable):** `{jsonl_name}` — one JSON object per event; "
@@ -544,8 +525,7 @@ def render_index(bundle: dict) -> str:
               "", _fence(_trim_system_prompt(sysp)), ""]
 
     if pre:
-        pre_cost = sum(e.get("cost_usd") or 0 for e in pre)
-        L += ["", f"## Grounding pre-step — P1–P{len(pre)}" + (f" · {_cost(pre_cost)}" if pre_cost else ""), ""]
+        L += ["", f"## Grounding pre-step — P1–P{len(pre)}", ""]
         sel = _selected_docs(events)
         if sel and sel.get("summary"):
             L += [f"> {sel['summary']}", ""]  # the model's one-line rationale (why these files — or why none)
@@ -686,15 +666,6 @@ def _param_bits(params: dict) -> list[str]:
 # ---------------------------------------------------------------- event log (the JSONL drill-down)
 
 
-def _num(v):
-    """Decimal → float so jq can compare numerically (`.cost_usd > 0.01`); ints/None pass through.
-    Integral values come back as int — SUM(tokens) is a Decimal that would print as `940724.0`."""
-    if v is None or isinstance(v, int):
-        return v
-    f = float(v)
-    return int(f) if f.is_integer() else f
-
-
 def _iso(dt):
     if dt is None:
         return None
@@ -705,8 +676,8 @@ def emit_jsonl(bundle: dict) -> Iterable[str]:
     """Yield the JSONL lines (no trailing newline) for a run bundle: a `{type:"run"}` header (run
     metadata + draft/note bodies + egress) followed by one `{type:"event"}` line per tool call —
     every field FULL and untruncated, so jq can pull a step's whole command/output/reasoning. `disp`
-    mirrors the index's `#` column (main steps `1,2,…`; grounding steps `P1,P2,…`). The header's
-    rollups are `run_`-prefixed so event-space queries (`select(.cost_usd > 0.01)`) never match it.
+    mirrors the index's `#` column (main steps `1,2,…`; grounding steps `P1,P2,…`). Filter on
+    `.type` to keep the header out of event-space queries.
 
     Calls `decorate` itself; join the lines with "\\n" (+ a trailing newline) to write the file."""
     run = bundle["run"]
@@ -739,8 +710,6 @@ def emit_jsonl(bundle: dict) -> Iterable[str]:
         "created_at": _iso(_as_dt(run.get("created_at"))),
         "finished_at": _iso(_as_dt(run.get("finished_at"))),
         "model": model or None,
-        "run_cost_usd": _num(run.get("run_cost_usd")),
-        "run_total_tokens": _num(run.get("run_total_tokens")),
         "draft": run.get("draft") or None,
         "notes": [{"key": n.get("key"), "body": n.get("body") or ""} for n in run.get("notes") or []],
         "proposed_actions": run.get("proposed_actions") if "proposed_actions" in run else None,
@@ -768,8 +737,6 @@ def emit_jsonl(bundle: dict) -> Iterable[str]:
             "duration_ms": e.get("duration_ms"),
             "at": _iso(_as_dt(e.get("at"))),
             "reasoning": e.get("reasoning") or None,
-            "cost_usd": _num(e.get("cost_usd")),
-            "total_tokens": e.get("total_tokens"),
             "model": e.get("model"),
         }
         # Bash's full input is `command`; the other tools carry their structured input in `args`

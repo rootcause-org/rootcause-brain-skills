@@ -26,16 +26,16 @@ Bundle contract (what this renderer reads — see the server spec for the produc
         "thread_id", "session_id", "topic", "question",
         "warm_start_digest", "grounding_seed", "system_prompt",   # untrimmed
         "created_at", "finished_at",                              # ISO str or datetime
-        "model", "run_cost_usd", "run_total_tokens",
+        "model",
         "draft": "<full body or null>",
         "notes": [{"key", "body"}],
         "proposed_actions": [{"slug", "status", "params", ...}],
         "pii_masks": [{"label","source","count", ...}],              # optional, if API exposes it
-        "metadata": {...} | null,                                 # run_url/trace_url/total_cost_usd/…
+        "metadata": {...} | null,                                 # run_url/trace_url/…
         "egress": [{"host","port","scheme","url","bytes_out","decision","at"}],  # per-ROW (see note)
       },
       "events": [{"seq","tool","args","command","stdout","stderr","exit_code","status",
-                  "duration_ms","at","reasoning","cost_usd","total_tokens","model"}],
+                  "duration_ms","at","reasoning","model"}],
     }
 
 > Note on egress: this renderer needs the per-ROW egress shape (it does the by-host aggregation and

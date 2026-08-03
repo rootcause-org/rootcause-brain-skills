@@ -37,8 +37,6 @@ def _bundle(**run_over):
         "created_at": "2026-06-21T12:00:00+00:00",
         "finished_at": "2026-06-21T12:00:42+00:00",
         "model": "claude-x",
-        "run_cost_usd": 0.1234,
-        "run_total_tokens": 5000,
         "draft": "Hello,\n\nYou have one open invoice for €42.\n\nBest,\nSupport",
         "notes": [{"key": "internal", "body": "Customer is on the pro plan."}],
         "metadata": {"model": "claude-x", "run_url": "https://example/runs/abcd1234"},
@@ -52,26 +50,25 @@ def _bundle(**run_over):
         {"seq": -2, "tool": "bash", "args": {"command": "cd /brain && rg invoice /brain/skills/billing/SKILL.md"},
          "command": "cd /brain && rg invoice /brain/skills/billing/SKILL.md", "stdout": "12: open invoice\n", "stderr": "",
          "exit_code": 0, "status": "ok", "duration_ms": 120, "at": "2026-06-21T12:00:01+00:00",
-         "reasoning": "Look for invoice docs.", "cost_usd": 0.001, "total_tokens": 100, "model": "claude-x"},
+         "reasoning": "Look for invoice docs.", "model": "claude-x"},
         {"seq": -1, "tool": "submit_selection",
          "args": {"selected": [{"path": "/brain/skills/billing/SKILL.md", "reason": "invoice flow"}],
                   "summary": "billing doc covers it"},
          "stdout": "", "stderr": "", "exit_code": 0, "status": "ok", "duration_ms": 5, "at": "2026-06-21T12:00:02+00:00",
-         "reasoning": "", "cost_usd": 0.002, "total_tokens": 50, "model": "claude-x"},
+         "reasoning": "", "model": "claude-x"},
         {"seq": 1, "tool": "bash",
          "args": {"command": "cd /brain && python -c 'from lib import db; print(db.query(\"select 1\"))'"},
          "command": "cd /brain && python -c 'from lib import db; print(db.query(\"select 1\"))'",
          "stdout": "[{'?column?': 1}]\n", "stderr": "", "exit_code": 0, "status": "ok", "duration_ms": 800,
          "at": "2026-06-21T12:00:20+00:00", "reasoning": "Query open invoices for the account.",
-         "cost_usd": 0.05, "total_tokens": 2000, "model": "claude-x"},
+         "model": "claude-x"},
         {"seq": 2, "tool": "bash", "args": {"command": "cd /brain && python boom.py"},
          "command": "cd /brain && python boom.py", "stdout": "", "stderr": "Traceback: KeyError 'x'\n",
          "exit_code": 1, "status": "error", "duration_ms": 90, "at": "2026-06-21T12:00:25+00:00",
-         "reasoning": "Try the helper.", "cost_usd": 0.01, "total_tokens": 300, "model": "claude-x"},
+         "reasoning": "Try the helper.", "model": "claude-x"},
         {"seq": 3, "tool": "reply", "args": {"draft": True, "journal": False},
          "stdout": "", "stderr": "", "exit_code": 0, "status": "ok", "duration_ms": 10,
-         "at": "2026-06-21T12:00:40+00:00", "reasoning": "Send the answer.", "cost_usd": 0.06,
-         "total_tokens": 2450, "model": "claude-x"},
+         "at": "2026-06-21T12:00:40+00:00", "reasoning": "Send the answer.", "model": "claude-x"},
     ]
     return {"run": run, "events": events}
 
@@ -123,6 +120,14 @@ class RenderIndex(unittest.TestCase):
     def test_failing_step_flagged(self):
         flag_lines = flags(_bundle())
         self.assertTrue(any("[2]" in f and "error" in f for f in flag_lines))
+
+    def test_slow_turn_flagged(self):
+        # Default bundle is all sub-second: no turn clears the 10s floor, so nothing fires.
+        self.assertFalse(any("slow turn" in f for f in flags(_bundle())))
+        bundle = _bundle()
+        bundle["events"][2]["duration_ms"] = 120_000
+        flag_lines = flags(bundle)
+        self.assertTrue(any("[1]" in f and "slow turn 2m00s" in f for f in flag_lines))
 
     def test_files_read(self):
         events = _bundle()["events"]
@@ -262,7 +267,6 @@ class EmitJsonl(unittest.TestCase):
         self.assertEqual(header["type"], "run")
         self.assertEqual(header["run_id"], "abcd1234-5678-90ab-cdef-1234567890ab")
         self.assertEqual(header["draft"].splitlines()[0], "Hello,")
-        self.assertEqual(header["run_total_tokens"], 5000)  # int, not 5000.0
         events = [json.loads(x) for x in lines[1:]]
         self.assertEqual([e["type"] for e in events], ["event"] * 5)
         self.assertEqual([e["disp"] for e in events], ["P1", "P2", "1", "2", "3"])
@@ -314,16 +318,15 @@ class EmitJsonl(unittest.TestCase):
 
 
 class ByteIdentity(unittest.TestCase):
-    """The renderer output is byte-identical across bundle timestamp/cost shapes: ISO-string
-    timestamps and float costs vs datetime objects and Decimal costs/tokens."""
+    """The renderer output is byte-identical across bundle timestamp shapes: ISO strings vs
+    datetime objects."""
 
     @staticmethod
     def _operator_shape(bundle: dict) -> dict:
-        """Re-cast an API-shape bundle with datetimes for every timestamp and Decimal for money/token
-        columns, matching alternate producer shapes."""
+        """Re-cast an API-shape bundle with datetimes for every timestamp, matching alternate
+        producer shapes."""
         from copy import deepcopy
         from datetime import datetime
-        from decimal import Decimal
 
         b = deepcopy(bundle)
 
@@ -333,16 +336,10 @@ class ByteIdentity(unittest.TestCase):
         run = b["run"]
         run["created_at"] = dt(run["created_at"])
         run["finished_at"] = dt(run["finished_at"])
-        if run.get("run_cost_usd") is not None:
-            run["run_cost_usd"] = Decimal(str(run["run_cost_usd"]))
-        if run.get("run_total_tokens") is not None:
-            run["run_total_tokens"] = Decimal(str(run["run_total_tokens"]))
         for g in run.get("egress") or []:
             g["at"] = dt(g["at"])
         for e in b["events"]:
             e["at"] = dt(e["at"])
-            if e.get("cost_usd") is not None:
-                e["cost_usd"] = Decimal(str(e["cost_usd"]))
         return b
 
     def _assert_identical(self, api_bundle: dict):
@@ -362,17 +359,6 @@ class ByteIdentity(unittest.TestCase):
 
     def test_test_run_with_brain_ref(self):
         self._assert_identical(_bundle(brain_ref="dev/refund-rework", trigger="test"))
-
-    def test_cost_accounting_gap_decimal_ledger(self):
-        # Operator path: ledger cost is a psycopg Decimal, metadata cost a JSON float, >2% apart — the
-        # cost-accounting-gap flag must fire (not raise float−Decimal TypeError) and read identically to
-        # the all-float API shape.
-        from decimal import Decimal
-        api = _bundle(run_cost_usd=1.00, metadata={"total_cost_usd": 1.10})
-        op = _bundle(run_cost_usd=Decimal("1.00"), metadata={"total_cost_usd": 1.10})
-        af, of = flags(api), flags(op)
-        self.assertTrue(any("cost accounting gap" in f for f in af))
-        self.assertEqual(af, of)  # Decimal ledger renders identically to float ledger
 
     def test_with_blocked_egress(self):
         egress = [
