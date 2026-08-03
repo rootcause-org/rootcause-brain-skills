@@ -195,8 +195,18 @@ an irrelevant one is an active distractor. Checklist:
 - `description:` frontmatter on every `skills/*/SKILL.md`, `skills/cases/*.md` runbook, and
   `actions/*/manifest.yaml` — "when to open this" in customer vocabulary, ≤90 chars; it renders
   inline on the file's tree line and the offline lint fails missing/overlong ones.
-- Python scripts: first docstring line = one-line purpose; it is the script's tree gloss, so agents
-  inventory scripts without opening them.
+- Python scripts: first docstring line = **usage + purpose** — e.g. `backup_status.py <backup-id> —
+  why-isn't-this-backup-running triage.` It is the script's tree gloss and the only line an agent sees
+  before calling, so teach the invocation, not just the topic.
+- Single-identifier scripts take the identifier **positionally *and* by flag**: argparse positional
+  `nargs="?"` next to the flag, merged post-parse, error when the two disagree. An agent's first guess
+  is positional (`backup_status.py 116672`), so a flag-only script burns a turn on every run — 72
+  wasted calls in one fleet window. Pattern: `skills/pb-admin-api/scripts/context_dump.py`
+  (`email_arg` + `--email`, merged in `_parse_email`).
+- argparse errors carry a copy-pasteable invocation — ``backup id required — e.g. `backup_status.py
+  116672` `` — the error text is all the agent has to retry from.
+- Never rename an established script or function; agents pattern-match names across runs. If
+  production keeps guessing a name that doesn't exist, add a one-line alias instead of failing it.
 - `include_in: [triage]` — decline/ownership/scope rules triage must know; short, it rides every
   triage call (subsection above).
 - `include_in: [grounding]` — only always-load-bearing overviews; it taxes every thread, never
