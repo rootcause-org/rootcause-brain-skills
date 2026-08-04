@@ -22,6 +22,11 @@ links, correspondent names, or the opaque IDs that index the scratch corpus. The
 cluster drafts, critic notes, review brief, and evidence filenames are all sensitive until reduced;
 they live under one gitignored scratch root and are deleted only after the human gate.
 
+**Every harvest has two required outputs:** durable business knowledge in the brain, and a distilled
+reply voice in persona settings. Apply voice at the harvested business scope: tenant settings for a
+tenant checkout, otherwise project settings. Never make the mailbox the durable home for harvested
+voice; inspect mailbox overrides only to ensure they do not shadow the chosen tenant/project values.
+
 ## Required Context
 
 Read when relevant:
@@ -341,7 +346,7 @@ uniform across surfaces:
 
 | Signal | Narrowest writable target today | Rule |
 |---|---|---|
-| Persona | **mailbox** (also tenant, project) | Apply at the harvested mailbox. |
+| Persona | **tenant when tenant-bound; otherwise project** | Always synthesize harvested voice at the business scope; never mailbox. |
 | Triage policy | **tenant or project only — no mailbox scope** | Mailbox-derived evidence necessarily widens; widen only with explicit scope authority, else emit a **pending recommendation**. |
 | Hard rules | **tenant or project only — no mailbox scope** | Same widening rule; require deterministic evidence per §5. |
 | Brain facts | tenant or project brain | Match the business scope of the fact. |
@@ -351,6 +356,12 @@ necessarily widens to tenant/project. Widen only with explicit scope authority; 
 pending recommendation in the review brief, not a silent write. If the needed narrow scope is
 unavailable, produce a pending recommendation / support gap rather than writing a broader setting.
 
+Persona synthesis is mandatory: derive concise `tone`, `language`, `formality`, and `guidance` from the
+recent human replies; set `signature` only when repeated evidence supports it. If evidence genuinely
+cannot support a field, record that gap rather than inventing a value. A harvest is not complete until
+the supported persona fields are applied and the harvested mailbox resolves those fields from the target
+tenant/project. Reconcile or explicitly surface any mailbox override that shadows them.
+
 For every change marked `applied`, save the immediate pre-write and post-write `get -o json` responses
 under `$SCRATCH/settings-verification/`. Record their scratch-relative filenames, SHA-256 digests,
 timezone-qualified timestamps, resolved scope, and exact target in `reduced.json`; the post-read must
@@ -359,11 +370,10 @@ Pending recommendations use `"verification": null`. For tenant triage, use the e
 `--project <project> --tenant <slug>` selectors on both reads and the write.
 
 ```bash
-# Voice the sent history reveals → persona (mailbox scope exists here). Keys: persona.tone,
-# persona.signature, persona.language, persona.formality, persona.guidance (free-text catch-all).
-rc project mailbox settings set <mailbox-id> persona.guidance="..." persona.tone="..."
-rc project settings behavior set persona.signature="— The Support Team"   # project scope
-rc project tenant settings set <slug> persona.guidance="..."              # tenant-specific voice
+# Voice from human replies → tenant when tenant-bound, otherwise project.
+# Keys: persona.tone, persona.signature, persona.language, persona.formality, persona.guidance.
+rc project tenant settings set <slug> persona.tone="..." persona.language="..." persona.formality="..." persona.guidance="..."
+rc project settings behavior set persona.tone="..." persona.language="..." persona.formality="..." persona.guidance="..."
 
 # Broad draft / no-draft judgement the corpus shows → triage policy (tenant/project only)
 rc project triage policy set "Draft customer support + billing questions; skip vendor newsletters and automated alerts."
@@ -535,7 +545,8 @@ unparseable export while v2 splitting/rescue lands in `rc` (see the migration no
   exists" from a local repo search.
 - Run the critic on the **first draft, before reduction** — not after polishing.
 - Skip rules only from presence-without-prose-reply evidence with occurrence counts (§5); never from
-  absence or raw frequency. Persona has mailbox scope; triage policy and hard rules do not — widen only
+  absence or raw frequency. Harvested persona targets tenant or project; triage policy and hard rules
+  do not have mailbox scope — widen only
   with explicit scope authority, else a pending recommendation (§6).
 - Edit an archetype template's skeleton; do not invent new top-level brain structure per harvest.
 - Do not hide draft/no-draft policy in persona; use triage for it and actions for confirmed mutations.

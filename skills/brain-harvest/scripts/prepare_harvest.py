@@ -751,7 +751,7 @@ def synthetic_preflight(export_id: str = "exp-test", *, repo_root: str = "/synth
                          "provider": True, "export": True},
         "scope_matrix": {
             "persona": {"available_scopes": ["mailbox", "tenant", "project"],
-                        "narrowest_target": "mailbox", "target_available": True,
+                        "narrowest_target": "tenant", "target_available": True,
                         "write_verified": True},
             "triage_policy": {"available_scopes": ["tenant", "project"],
                               "narrowest_target": "tenant", "mailbox_scope": False,
@@ -1212,8 +1212,8 @@ def validate_reduction(value: Any, path: str = "reduction") -> dict[str, Any]:
         if not isinstance(change["scope_authority"], bool):
             raise HarvestError(f"{item_path}.scope_authority must be boolean")
         require_string(change["summary"], f"{item_path}.summary")
-        if surface == "persona" and status == "applied" and scope != "mailbox":
-            raise HarvestError(f"{item_path}: applied persona must use mailbox scope")
+        if surface == "persona" and status == "applied" and scope == "mailbox":
+            raise HarvestError(f"{item_path}: harvested persona must use tenant or project scope")
         if surface in {"triage_policy", "hard_rule"} and scope == "mailbox":
             raise HarvestError(f"{item_path}: {surface} has no mailbox scope")
         if surface in {"triage_policy", "hard_rule"} and status == "applied" \
@@ -1299,6 +1299,11 @@ def reconcile_settings_verification(reduction: dict[str, Any], scratch: Path,
     for index, change in enumerate(reduction["settings_changes"]):
         if change["status"] != "applied":
             continue
+        if change["surface"] == "persona":
+            expected_scope = "tenant" if target.get("tenant") else "project"
+            if change["scope"] != expected_scope:
+                raise HarvestError(f"reduction.settings_changes[{index}] persona scope must match "
+                                   f"harvest business scope {expected_scope}")
         verification = change["verification"]
         expected_target = target[change["scope"]]
         if not expected_target or verification["resolved_target"] != expected_target:
@@ -2285,7 +2290,7 @@ def validate_preflight(value: Any, *, expected_export_id: str = "") -> dict[str,
     target = require_object(value["target"], "preflight.json.target",
                             {"project", "tenant", "mailbox", "provider", "export_id"})
     for key in target:
-        require_string(target[key], f"preflight.json.target.{key}")
+        require_string(target[key], f"preflight.json.target.{key}", allow_empty=key == "tenant")
     if expected_export_id and target["export_id"] != expected_export_id:
         raise HarvestError("preflight export does not match requested export")
     verification = require_object(value["verification"], "preflight.json.verification",
@@ -2321,7 +2326,7 @@ def validate_preflight(value: Any, *, expected_export_id: str = "") -> dict[str,
                               f"preflight.json.scope_matrix.{matrix_key}.available_scopes")
         if len(scopes) != len(set(scopes)) or not set(scopes) <= allowed_scopes[matrix_key]:
             raise HarvestError(f"preflight {matrix_key} available scopes are invalid")
-        if entry["target_available"] is not bool(scopes):
+        if entry["target_available"] is not (entry["narrowest_target"] in scopes):
             raise HarvestError(f"preflight {matrix_key} target availability does not match verified scopes")
         if entry["write_verified"] is not access["write"][permission_key]:
             raise HarvestError(f"preflight {matrix_key} write verification is inconsistent")
@@ -2505,15 +2510,16 @@ def cmd_preflight(args: argparse.Namespace,
 
     scope_matrix = {
         "persona": {"available_scopes": persona_scopes,
-                    "narrowest_target": "mailbox", "target_available": bool(persona_scopes),
+                    "narrowest_target": resolved_settings_scope,
+                    "target_available": resolved_settings_scope in persona_scopes,
                     "write_verified": write_access["persona"]},
         "triage_policy": {"available_scopes": triage_scopes,
-                          "narrowest_target": "tenant", "mailbox_scope": False,
-                          "target_available": bool(triage_scopes),
+                          "narrowest_target": resolved_settings_scope, "mailbox_scope": False,
+                          "target_available": resolved_settings_scope in triage_scopes,
                           "write_verified": write_access["triage_policy"]},
         "hard_rules": {"available_scopes": hard_rule_scopes,
-                       "narrowest_target": "tenant", "mailbox_scope": False,
-                       "target_available": bool(hard_rule_scopes),
+                       "narrowest_target": resolved_settings_scope, "mailbox_scope": False,
+                       "target_available": resolved_settings_scope in hard_rule_scopes,
                        "write_verified": write_access["hard_rule"]},
         "brain_facts": {"available_scopes": ["tenant", "project"],
                         "narrowest_target": "business_scope"},

@@ -47,7 +47,7 @@ Final deltas grouped by home and topic, plus the two carry-forwards the review b
 # Reduced deltas
 
 ## Brain facts        — per topic: add|revise|retire <file>: <delta> · era · [superseded: <old era>]
-## Persona            — voice/formality/signature/language deltas (mailbox scope)
+## Persona            — mandatory voice/formality/language/guidance deltas at tenant/project scope; signature only with repeated evidence
 ## Triage             — draft|escalate rules; skip/no-draft (§5, with occurrence count)
 ## Pending recommendations — scope-blocked triage/hard-rule widenings (§6)
 
@@ -70,7 +70,7 @@ exact top-level keys and fields; use empty arrays, never omitted keys:
        "before_file":"settings-verification/persona-before.json",
        "after_file":"settings-verification/persona-after.json",
        "before_sha256":"64 lowercase hex", "after_sha256":"64 lowercase hex",
-       "resolved_scope":"mailbox", "resolved_target":"exact preflight target"
+       "resolved_scope":"tenant", "resolved_target":"exact preflight target"
      }}
   ],
   "skip_proposals": [

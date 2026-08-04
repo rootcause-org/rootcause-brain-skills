@@ -65,8 +65,9 @@ These are deliberate product decisions, not refactors:
   individually in the review brief with its occurrence count. Absence-based inference is prohibited
   (unanswered inbound mail is never exported), pending a paired inbound/no-reply export that does not
   exist yet.
-- **Scope matrix corrected (§6).** Persona is writable at mailbox scope; **triage policy and hard rules
-  are project/tenant only — no mailbox scope exists.** Mailbox-derived triage evidence necessarily
+- **Scope matrix corrected (§6).** Harvested persona is applied at tenant scope when tenant-bound and
+  project scope otherwise; mailbox settings are checked only for shadowing overrides. **Triage policy
+  and hard rules are project/tenant only — no mailbox scope exists.** Mailbox-derived triage evidence necessarily
   widens, so it is applied only with explicit scope authority, otherwise carried as a pending
   recommendation. v1's "narrowest scope project → tenant → mailbox" guidance did not reflect this.
 - **Cluster-level resume replaces batches.** Resume granularity is the whole cluster: a draft either

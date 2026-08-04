@@ -37,7 +37,9 @@ A future implementation agent should treat these as established facts:
   eviction scrubs only after done + consumed ≥48h (`exports.sql:63-78`). Consumed ≠ evicted. The
   only missing piece is client-side: `rc` discards the downloaded bytes on split failure
   (`export.go:124-134`) and `--out`/`--split` are mutually exclusive, so there is no rescue path.
-- **Settings scopes:** persona is writable at mailbox, tenant, and project scope via public `rc`
+- **Settings scopes:** persona is writable at mailbox, tenant, and project scope via public `rc`;
+  harvest deliberately writes it at the business scope (tenant when bound, otherwise project), while
+  mailbox reads detect shadowing overrides
   (`hierarchy_settings.go`, `mailbox.go:30`, `tenant.go:43`, `surface.go:63`). **Triage policy and
   hard rules are project + tenant only; no mailbox scope exists** (`triage.go:149`).
 - **`rc self doctor` exists** (`doctor.go`) with a structured report; advertising supported corpus
@@ -227,12 +229,13 @@ wrong for policy truth: a 2012 answer distilled as current policy is a quality b
 
 ### 6. Scope-aware settings application
 
-Verified scope reality (see ground truth): persona is writable at mailbox scope; triage policy and
+Persona is writable at all three hierarchy levels, but harvested voice describes the business, not one
+channel. It therefore targets the tenant when tenant-bound and the project otherwise. Triage policy and
 hard rules are **project + tenant only**. The matrix:
 
 | Signal | Narrowest writable target today | Rule |
 |---|---|---|
-| Persona | mailbox | Apply at the harvested mailbox. |
+| Persona | tenant when tenant-bound; otherwise project | Mandatory harvest output; verify the mailbox resolves it from this scope. |
 | Triage policy | tenant (multi-tenant) or project | Mailbox-derived evidence necessarily widens; widen only with explicit scope authority, otherwise emit a pending recommendation. |
 | Hard rules | tenant or project | Same widening rule; require deterministic evidence per §5. |
 | Brain facts | tenant or project brain | Match the business scope of the fact. |
@@ -377,7 +380,8 @@ turning re-runs from a full harvest into a small delta.
 
 - No hosted LLM mining tier or private RootCause operator path.
 - No raw correspondence, names, or identifiers committed for traceability.
-- No automatic project-wide persona/triage widening.
+- No mailbox-scoped persona writes from harvest; voice targets the reviewed tenant/project business scope.
+- No automatic triage widening beyond the reviewed business scope.
 - No skip rules from absence-of-evidence; presence-without-prose-reply only, per §5.
 - No requirement to deep-read repetitive low-risk threads beyond the stratified sample.
 - No weakening of the single human diff gate before push.

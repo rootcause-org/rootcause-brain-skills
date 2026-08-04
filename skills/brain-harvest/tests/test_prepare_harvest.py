@@ -606,7 +606,7 @@ def build_step10_fixture(tmp: Path, holdout_count: int = 1) -> dict:
                                 {"persona": {"guidance": "concise"}})
     reduction = write_json(scratch / "critic" / "reduced.json", {
         "settings_changes": [{
-            "surface": "persona", "scope": "mailbox", "status": "applied",
+            "surface": "persona", "scope": "tenant", "status": "applied",
             "summary": "Prefer concise answers", "scope_authority": True,
             "verification": {
                 "pre_read_at": "2026-01-02T03:00:00Z",
@@ -615,7 +615,7 @@ def build_step10_fixture(tmp: Path, holdout_count: int = 1) -> dict:
                 "after_file": "settings-verification/persona-after.json",
                 "before_sha256": ph.hashlib.sha256(before_settings.read_bytes()).hexdigest(),
                 "after_sha256": ph.hashlib.sha256(after_settings.read_bytes()).hexdigest(),
-                "resolved_scope": "mailbox", "resolved_target": "mailbox-test",
+                "resolved_scope": "tenant", "resolved_target": "tenant-test",
             },
         }],
         "skip_proposals": [{
@@ -727,6 +727,50 @@ class Step10ReviewAndRecordTests(unittest.TestCase):
                 self.assertEqual(ph.main(review_argv(fixture)), 2)
             self.assertIn("after settings snapshot digest changed", stderr.getvalue())
 
+    def test_review_rejects_mailbox_scoped_harvested_persona(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = build_step10_fixture(Path(tmp))
+            reduction = json.loads(fixture["reduction"].read_text())
+            reduction["settings_changes"][0]["scope"] = "mailbox"
+            reduction["settings_changes"][0]["verification"].update(
+                {"resolved_scope": "mailbox", "resolved_target": "mailbox-test"})
+            write_json(fixture["reduction"], reduction)
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(ph.main(review_argv(fixture)), 2)
+            self.assertIn("harvested persona must use tenant or project scope", stderr.getvalue())
+
+    def test_review_accepts_project_persona_for_flat_harvest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = build_step10_fixture(Path(tmp))
+            reduction = json.loads(fixture["reduction"].read_text())
+            reduction["settings_changes"][0]["scope"] = "project"
+            reduction["settings_changes"][0]["verification"].update(
+                {"resolved_scope": "project", "resolved_target": "project-test"})
+            write_json(fixture["reduction"], reduction)
+
+            preflight_path = fixture["scratch"] / "preflight.json"
+            preflight = json.loads(preflight_path.read_text())
+            preflight["target"]["tenant"] = ""
+            preflight["scope_matrix"]["persona"].update({
+                "available_scopes": ["mailbox", "project"],
+                "narrowest_target": "project",
+                "target_available": True,
+            })
+            for key in ("triage_policy", "hard_rules"):
+                preflight["scope_matrix"][key].update({
+                    "available_scopes": ["project"],
+                    "narrowest_target": "project",
+                    "target_available": True,
+                })
+            write_json(preflight_path, preflight)
+            run_path = fixture["scratch"] / "run.json"
+            run = json.loads(run_path.read_text())
+            run["target"]["tenant"] = ""
+            run["preflight"]["sha256"] = ph.document_digest(preflight)
+            write_json(run_path, run)
+
+            self.assertEqual(ph.main(review_argv(fixture)), 0)
+
     def test_review_preserves_previous_bundle_on_late_validation_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             fixture = build_step10_fixture(Path(tmp))
@@ -779,7 +823,7 @@ class Step10ReviewAndRecordTests(unittest.TestCase):
 
             preflight["access"]["read"]["persona"] = True
             preflight["scope_matrix"]["persona"]["target_available"] = True
-            preflight["scope_matrix"]["persona"]["available_scopes"] = ["mailbox"]
+            preflight["scope_matrix"]["persona"]["available_scopes"] = ["tenant"]
             preflight["access"]["write"]["persona"] = False
             preflight["scope_matrix"]["persona"]["write_verified"] = False
             write_json(preflight_path, preflight)
@@ -803,6 +847,7 @@ class Step10ReviewAndRecordTests(unittest.TestCase):
             preflight_path = fixture["scratch"] / "preflight.json"
             preflight = json.loads(preflight_path.read_text())
             preflight["scope_matrix"]["triage_policy"]["available_scopes"] = ["project"]
+            preflight["scope_matrix"]["triage_policy"]["target_available"] = False
             run_path = fixture["scratch"] / "run.json"
             run = json.loads(run_path.read_text())
             run["preflight"]["sha256"] = ph.document_digest(preflight)
@@ -870,7 +915,7 @@ class Step10ReviewAndRecordTests(unittest.TestCase):
             brief = first["review-brief.md"].decode()
             self.assertIn("Turns: 42", brief)
             self.assertIn("Wall clock: 90.250s (preparation 0.250s)", brief)
-            self.assertIn("at mailbox-test", brief)
+            self.assertIn("at tenant-test", brief)
             self.assertIn("Resolved brain SHA: `" + "a" * 40 + "`", brief)
             candidate = first["record-candidate.json"]
             self.assertNotIn(fixture["holdout_id"].encode(), candidate)

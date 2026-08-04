@@ -38,12 +38,13 @@ Check every proposed settings change against the writable-scope reality:
 
 | Signal | Narrowest writable target | Rule |
 |---|---|---|
-| Persona | mailbox | Apply at the harvested mailbox. |
+| Persona | tenant when tenant-bound; otherwise project | Required harvest output; never apply at mailbox scope. |
 | Triage policy | tenant or project (no mailbox scope) | Mailbox-derived evidence necessarily widens; widen **only** with explicit scope authority, else emit a **pending recommendation**. |
 | Hard rules | tenant or project | Same widening rule; require deterministic evidence per §5. |
 | Brain facts | tenant or project brain | Match the business scope of the fact. |
 
-Flag any triage/hard-rule change that would widen mailbox-derived evidence to tenant/project **without
+Flag any persona change not targeting the harvested tenant/project. Flag any triage/hard-rule change
+that would widen mailbox-derived evidence to tenant/project **without
 explicit scope authority** — it must become a pending recommendation, not a silent write.
 
 ### 5. Cross-cluster contradictions
