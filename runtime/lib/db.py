@@ -292,9 +292,9 @@ def _defaulted_to_standard(db: str | None) -> str | None:
 
 def _excluded_columns() -> dict:
     """Parse ``RC_DB_EXCLUDED_COLUMNS`` (JSON: exact DSN env name → the columns the project's
-    data-scoping hides). Shape per env: ``{"global_exclude": [...], "tables": {"<t>": {"exclude":
-    [...]}|{"include": [...]}}}``. Host-injected from the scope_manifest. Absent/malformed → ``{}``
-    (never raise — auto-heal is best-effort, a query must never break because this is missing)."""
+    data-scoping hides). Shape per env: ``{"tables": {"<t>": {"exclude": [...]}|{"include":
+    [...]}}}``. Host-injected from the scope_manifest. Absent/malformed → ``{}`` (never raise —
+    auto-heal is best-effort, a query must never break because this is missing)."""
     import json
 
     raw = os.environ.get("RC_DB_EXCLUDED_COLUMNS")
@@ -336,12 +336,6 @@ def _hidden_column_notes(emap: dict, table: str | None = None, pattern: str | No
     if not emap:
         return []
     notes = []
-    globals_ = sorted(str(c) for c in (emap.get("global_exclude") or []) if isinstance(c, str))
-    if pattern:
-        globals_ = [c for c in globals_ if _pattern_matches(pattern, c)]
-    if globals_:
-        notes.append(f"data-scoping: hidden column names: {', '.join(globals_)} (where present).")
-
     tables = emap.get("tables") or {}
     if table:
         rules = [(table, tables.get(table))]
@@ -372,11 +366,9 @@ def _warn_hidden_column_notes(emap: dict, table: str | None = None, pattern: str
 
 
 def _is_hidden(emap: dict, table: str, col: str) -> bool:
-    """Does the scope_manifest hide ``col`` on ``table``? True iff it's in the global blacklist, the
-    table's exclude list, or (whitelist mode) NOT in the table's include list. The whitelist case is
-    why we can't enumerate hidden columns up front — we test per requested column."""
-    if col in (emap.get("global_exclude") or []):
-        return True
+    """Does the scope_manifest hide ``col`` on ``table``? True iff it's in the table's exclude list,
+    or (whitelist mode) NOT in the table's include list. The whitelist case is why we can't enumerate
+    hidden columns up front — we test per requested column."""
     t = (emap.get("tables") or {}).get(table)
     if not isinstance(t, dict):
         return False

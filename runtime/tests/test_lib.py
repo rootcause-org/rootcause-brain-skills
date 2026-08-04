@@ -358,30 +358,27 @@ class Introspection(unittest.TestCase):
     def test_columns_warns_about_hidden_and_allowlisted_columns(self):
         os.environ["APP_DSN"] = "postgres://app"
         os.environ["RC_DB_EXCLUDED_COLUMNS"] = (
-            '{"APP_DSN":{"global_exclude":["encrypted_password"],'
-            '"tables":{"admins":{"include":["id","tenant_id"]},'
+            '{"APP_DSN":{"tables":{"admins":{"include":["id","tenant_id"]},'
             '"mail_senders":{"exclude":["smtp_password"]}}}}'
         )
         with mock.patch.object(db, "query", return_value=[]), warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             db.columns("admins", db="app")
         messages = [str(w.message) for w in caught]
-        self.assertTrue(any("encrypted_password" in m and "hidden column names" in m for m in messages))
         self.assertTrue(any("admins shows an allowlisted subset" in m for m in messages))
         self.assertFalse(any("smtp_password" in m for m in messages))
 
     def test_tables_with_column_warns_about_hidden_pattern_matches_and_allowlists(self):
         os.environ["APP_DSN"] = "postgres://app"
         os.environ["RC_DB_EXCLUDED_COLUMNS"] = (
-            '{"APP_DSN":{"global_exclude":["encrypted_password"],'
-            '"tables":{"admins":{"include":["id","tenant_id"]},'
-            '"mail_senders":{"exclude":["smtp_password"]}}}}'
+            '{"APP_DSN":{"tables":{"admins":{"include":["id","tenant_id"]},'
+            '"mail_senders":{"exclude":["encrypted_password","smtp_password"]}}}}'
         )
         with mock.patch.object(db, "query", return_value=[]), warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             db.tables_with_column("%password%", db="app")
         messages = [str(w.message) for w in caught]
-        self.assertTrue(any("encrypted_password" in m and "hidden column names" in m for m in messages))
+        self.assertTrue(any("mail_senders.encrypted_password" in m for m in messages))
         self.assertTrue(any("mail_senders.smtp_password" in m for m in messages))
         self.assertTrue(any("admins shows an allowlisted subset" in m for m in messages))
 
@@ -524,7 +521,6 @@ class ExcludedColumnHeal(unittest.TestCase):
     non-simple queries alone, and never empties the SELECT."""
 
     EMAP = {
-        "global_exclude": ["encrypted_password"],
         "tables": {
             "mail_senders": {"exclude": ["smtp_password"]},
             "admins": {"include": ["id", "tenant_id"]},
@@ -537,11 +533,6 @@ class ExcludedColumnHeal(unittest.TestCase):
         )
         self.assertEqual(dropped, ["smtp_password"])
         self.assertEqual(sql, "SELECT id, host FROM mail_senders WHERE id = 5")
-
-    def test_drops_global_excluded_column(self):
-        sql, dropped = db._strip_excluded("SELECT id, encrypted_password FROM admins", self.EMAP)
-        self.assertEqual(dropped, ["encrypted_password"])
-        self.assertEqual(sql, "SELECT id FROM admins")
 
     def test_whitelist_drops_non_included(self):
         # admins is include-only [id, tenant_id]; `email` isn't whitelisted ⇒ hidden ⇒ dropped.
