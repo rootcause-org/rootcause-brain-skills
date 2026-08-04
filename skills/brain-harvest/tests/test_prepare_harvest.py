@@ -119,6 +119,32 @@ _[attachment: label.pdf]_
 Just one line for you.
 """
 
+V3_CORPUS = """---
+harvest_format: v3
+harvested_at: 2026-01-02T03:04:05Z
+accepted_count: 2
+rejection_reasons: {"no_contact_message":3,"no_later_admin_reply":5,"unverified_admin":2,"automation_only":7,"malformed_structure":1}
+actor_types: {"automation":7,"contact":12,"human_admin":4,"system":2}
+initiation_types: {"email":14,"messenger":5,"unknown":1}
+candidate_bands: [{"start":"2025-01-01T00:00:00Z","end":"2025-07-01T00:00:00Z","count":11},{"start":"2025-07-01T00:00:00Z","end":"2026-01-01T00:00:00Z","count":10}]
+deduplicated: 1
+---
+
+## Login question — #1
+**outbound/human_admin (2025-06-01):**
+An earlier admin note does not establish the reply pair.
+**inbound/contact (2025-06-02):**
+Could you explain why login is unavailable and how we can restore access to the account?
+**outbound/human_admin (2025-06-03):**
+We verified the account state and restored access. Please retry with the same login address.
+
+## Billing question — #2
+**inbound/contact (2025-08-01):**
+Could you clarify this invoice and confirm whether the adjustment is already included?
+**outbound/human_admin (2025-08-02):**
+The adjustment is included in the current invoice and no additional payment is required.
+"""
+
 
 def write_corpus(root: Path, text: str, name: str = "corpus.md") -> Path:
     path = root / name
@@ -189,13 +215,55 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(meta["harvest_format"], "v2")
         self.assertEqual(len(ph.split_sections(body)), 8)
 
-    def test_unknown_format_v3_fails_with_recovery_hint(self):
+    def test_unknown_format_v4_fails_with_recovery_hint(self):
         with tempfile.TemporaryDirectory() as tmp:
             corpus = write_corpus(Path(tmp), V2_CORPUS.replace("harvest_format: v2",
-                                                               "harvest_format: v3"))
-            with self.assertRaisesRegex(ph.HarvestError, r"v3.*rc project corpus download") as ctx:
+                                                               "harvest_format: v4"))
+            with self.assertRaisesRegex(ph.HarvestError, r"v4.*rc project corpus download") as ctx:
                 ph.load_threads([corpus])
             self.assertIn("48h", str(ctx.exception))
+
+    def test_v3_requires_explicit_structural_headings_and_ordered_reply(self):
+        _, body = ph.parse_front_matter(V3_CORPUS)
+        first = ph.parse_section(ph.split_sections(body)[0], "v3", "", 0)
+        self.assertEqual([(m.direction, m.actor_role, m.role) for m in first.messages], [
+            ("outbound", "human_admin", "mailbox"),
+            ("inbound", "contact", "external"),
+            ("outbound", "human_admin", "mailbox"),
+        ])
+        legacy = ph.split_sections(body)[0].replace("inbound/contact", "external", 1)
+        with self.assertRaisesRegex(ph.HarvestError, "body/header inference is forbidden"):
+            ph.parse_section(legacy, "v3", "", 0)
+        automation = ph.split_sections(body)[0].replace("outbound/human_admin", "outbound/automation")
+        with self.assertRaisesRegex(ph.HarvestError, "inbound/contact or outbound/human_admin"):
+            ph.parse_section(automation, "v3", "", 0)
+        no_later_reply = ph.split_sections(body)[0].rsplit("**outbound/human_admin", 1)[0]
+        with self.assertRaisesRegex(ph.HarvestError, "contact inbound followed"):
+            ph.parse_section(no_later_reply, "v3", "", 0)
+
+    def test_v3_rejects_non_chronological_messages(self):
+        _, body = ph.parse_front_matter(V3_CORPUS)
+        section = ph.split_sections(body)[1].replace("2025-08-02", "2025-07-31")
+        with self.assertRaisesRegex(ph.HarvestError, "chronological"):
+            ph.parse_section(section, "v3", "", 1)
+
+    def test_v3_diagnostics_are_strict_half_open_count_distributions(self):
+        meta, _ = ph.parse_front_matter(V3_CORPUS)
+        diagnostics = ph.parse_diagnostics(meta, "fixture")
+        self.assertEqual(diagnostics["accepted_count"], 2)
+        self.assertEqual(diagnostics["rejection_reasons"]["automation_only"], 7)
+        self.assertEqual(diagnostics["candidate_bands"][0]["end"],
+                         diagnostics["candidate_bands"][1]["start"])
+        partial = dict(meta)
+        del partial["actor_types"]
+        with self.assertRaisesRegex(ph.HarvestError, "partial harvest diagnostics"):
+            ph.parse_diagnostics(partial, "fixture")
+        overlap = dict(meta)
+        overlap["candidate_bands"] = overlap["candidate_bands"].replace(
+            '"2025-07-01T00:00:00Z","end":"2026',
+            '"2025-06-30T00:00:00Z","end":"2026')
+        with self.assertRaisesRegex(ph.HarvestError, "non-overlapping"):
+            ph.parse_diagnostics(overlap, "fixture")
 
     def test_missing_front_matter_fails_with_recovery_hint(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -217,7 +285,7 @@ class PrepareTests(unittest.TestCase):
             first = prepare(Path(a), V2_CORPUS, holdout_count=1)
             second = prepare(Path(b), V2_CORPUS, holdout_count=1)
             for name in ("manifest.jsonl", "clusters.json", "ledger.json", "holdout.json",
-                         "replay-cases.json", "run.json"):
+                         "replay-cases.json", "run.json", "diagnostics.json", "diagnostics.md"):
                 self.assertEqual((first / name).read_bytes(), (second / name).read_bytes(), name)
             self.assertEqual(sorted(p.name for p in (first / "threads").iterdir()),
                              sorted(p.name for p in (second / "threads").iterdir()))
@@ -308,6 +376,33 @@ class PrepareTests(unittest.TestCase):
             contact = by_family[("contact", "2026-01-01")]
             self.assertTrue(contact["form_source"])
             self.assertFalse(contact["prose_reply"])
+
+    def test_v3_prepare_emits_structural_manifest_and_counts_only_diagnostics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = prepare(Path(tmp), V3_CORPUS, holdout_count=0)
+            rows = read_manifest(scratch)
+            self.assertTrue(all(row["source_format"] == "v3" for row in rows))
+            self.assertTrue(all(row["structural_messages"] for row in rows))
+            billing = next(row for row in rows if row["subject_family"] == "billing-question")
+            self.assertEqual(billing["message_directions"], {"inbound": 1, "outbound": 1})
+            self.assertEqual(billing["actor_roles"], {"contact": 1, "human_admin": 1})
+            diagnostics = json.loads((scratch / "diagnostics.json").read_text())
+            self.assertTrue(diagnostics["available"])
+            self.assertEqual(diagnostics["accepted_count"], 2)
+            self.assertEqual(diagnostics["deduplicated"], 1)
+            human = (scratch / "diagnostics.md").read_text()
+            self.assertIn("automation_only: 7", human)
+            self.assertIn("[2025-01-01T00:00:00Z, 2025-07-01T00:00:00Z): 11", human)
+            for private in ("Login question", "Billing question", "account", "invoice", "@"):
+                self.assertNotIn(private, human)
+
+    def test_legacy_diagnostics_use_accepted_interactions_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = V2_CORPUS.replace("accepted_interactions: 8", "accepted_interactions: 13")
+            scratch = prepare(Path(tmp), corpus, holdout_count=0)
+            diagnostics = json.loads((scratch / "diagnostics.json").read_text())
+            self.assertFalse(diagnostics["available"])
+            self.assertEqual(diagnostics["accepted_count"], 13)
 
     def test_v1_end_to_end_prepare(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -672,6 +767,24 @@ def review_argv(fixture: dict) -> list[str]:
 
 
 class Step10ReviewAndRecordTests(unittest.TestCase):
+    def test_review_embeds_counts_only_source_diagnostics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = build_step10_fixture(Path(tmp))
+            write_json(fixture["scratch"] / "diagnostics.json", {
+                "schema_version": 1, "available": True, "accepted_count": 8,
+                "rejection_reasons": {"automation_only": 12, "no_later_admin_reply": 4},
+                "actor_types": {"automation": 12, "contact": 9, "human_admin": 8},
+                "initiation_types": {"email": 19},
+                "candidate_bands": [{"start": "2025-01-01T00:00:00Z",
+                                     "end": "2026-01-01T00:00:00Z", "count": 26}],
+                "deduplicated": 2,
+            })
+            self.assertEqual(ph.main(review_argv(fixture)), 0)
+            brief = (fixture["scratch"] / "brief" / "review-brief.md").read_text()
+            self.assertIn("Accepted: 8 · Deduplicated: 2", brief)
+            self.assertIn("automation_only=12", brief)
+            self.assertIn("Candidate bands: 1; candidates: 26", brief)
+
     def test_review_rejects_holdout_content_without_identifier(self):
         with tempfile.TemporaryDirectory() as tmp:
             fixture = build_step10_fixture(Path(tmp))

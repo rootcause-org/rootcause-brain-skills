@@ -111,7 +111,7 @@ they clearly apply to the shared project. Preserve local work.
 
 **Acquire the corpus.** Reuse a fresh export if one exists; otherwise branch by mailbox provider.
 
-Hosted provider path (Gmail/Microsoft):
+Hosted provider path (Gmail/Microsoft/Intercom):
 
 ```bash
 rc project corpus ls -o json                       # has this mailbox been harvested already?
@@ -123,10 +123,19 @@ rc project corpus download <export-id> --out "$SCRATCH/corpus/corpus.md"
 `rc project mailbox harvest` triggers a **production** provider sweep of the mailbox's sent history into
 a cleaned Markdown corpus; `rc project corpus download` marks the export consumed (starting the
 server-side eviction window, ~48h) and lands raw mail on local disk. Download with `--out` and let
-`prepare_harvest.py` parse the raw bytes: it reads corpus **v1 and v2** itself, so `rc corpus download
+`prepare_harvest.py` parse the raw bytes: it reads corpus **v1, v2, and v3** itself, so `rc corpus download
 --split` is a convenience, not a dependency. **This matters today:** the server emits v2, and released
 `rc` hard-rejects v2 in its splitter, so `--out` + local parse is the working path. If you already have
 a `--split` directory from an older export, point `prepare` at that directory instead.
+
+**Intercom dialect.** Harvest remains a read-only hosted export; it neither enables production inbox
+processing nor writes to Intercom. The server searches `first_admin_reply_at` in configurable bounded,
+half-open date bands, paginates each band, deduplicates boundary overlap, hydrates candidates, and keeps
+only a contact message followed later by a verified human-admin reply. Corpus v3 headings are explicit
+`inbound/contact` and `outbound/human_admin`; `prepare` rejects unstructured or misordered v3 messages
+instead of guessing from headers or bodies. Bots, automation, system/team events, unverified admins,
+admin-before-contact-only conversations, and malformed structures are rejected and counted. Do not mix
+Help Center/KB work into a conversation harvest and never add a raw conversation dump to a brain.
 
 IMAP guard rails: for IMAP mailboxes, treat hosted harvest as a shallow/smoke path only (the server may
 cap rendered IMAP refs, currently 100, and warn that deep IMAP belongs in local tooling). Before any
@@ -181,7 +190,7 @@ Preparation requires the machine-reconciled form: pass the explicit context and 
 ```bash
 uv run --no-project python "$SKILL/scripts/prepare_harvest.py" preflight \
   --scratch "$SCRATCH" --project <project> --mailbox <mailbox-id> \
-  [--tenant <tenant-slug>] --provider <google|microsoft|imap> --export-id "$EXPORT_ID"
+  [--tenant <tenant-slug>] --provider <google|microsoft|imap|intercom> --export-id "$EXPORT_ID"
 ```
 
 It sniffs the acquired format; checks Git state/gitignore plus public auth/access, mailbox/provider,
@@ -202,7 +211,8 @@ uv run --no-project python "$SKILL/scripts/prepare_harvest.py" verify --scratch 
 
 `prepare` requires that verified artifact, binds its canonical digest and exact target into `run.json`,
 then parses the raw corpus into an opaque-ID manifest and writes synthesis-only `threads/`, `manifest.jsonl`,
-`clusters.json`, `ledger.json`, `holdout.json`, `replay-cases.json`, and `run.json` atomically
+`clusters.json`, `ledger.json`, `holdout.json`, `replay-cases.json`, `diagnostics.json`,
+`diagnostics.md`, and `run.json` atomically
 (re-running replaces them; it is deterministic and idempotent over the same corpus bytes). It:
 
 - assigns each thread a content-derived opaque `H<32-hex>` ID that remains stable across full/delta
@@ -221,6 +231,10 @@ then parses the raw corpus into an opaque-ID manifest and writes synthesis-only 
   contact/identifier-redacted local replay cases; if the requested count is unavailable, preparation
   hard-fails so you deliberately lower `--holdout` or acquire a larger corpus;
   raw holdout threads are never written under `threads/`;
+- writes counts-only pre-synthesis diagnostics (accepted/rejection reasons, actor types, initiation
+  types, date-band candidates, deduplication) with no bodies, names, emails, or raw source IDs. Read
+  `diagnostics.md` before fan-out; unexpected/noisy distributions are a stop-and-fix signal, and the
+  same distributions are embedded in the final operator review brief;
 - reports the **forced-deep distribution** across risk markers plus ambiguous generic-subject threads:
   if their union exceeds the cap (default 15%), the ledger marks `over_cap: true` with the per-marker
   breakdown so you prune rules **before** fan-out rather than silently reintroducing read-everything.
@@ -525,14 +539,15 @@ The harvest record is the watermark for a future incremental `--since` re-harves
 
 ## Fallback: the v1 manual path (one release only)
 
-For a corpus `prepare_harvest.py` cannot parse (an unsupported `harvest_format`, or a shape neither v1
-nor v2), fall back for one release to the pre-v2 manual flow: `rc project corpus download --split` into
+For a corpus `prepare_harvest.py` cannot parse (an unsupported `harvest_format`, or a shape outside
+v1/v2/v3), fall back for one release to the pre-v2 manual flow: `rc project corpus download --split` into
 a gitignored dir, read its `INDEX.md`, cluster from thread metadata, fan out per-topic subagents that
 read only their own `threads/`, then critic-on-first-draft → reduce → durable homes → lint → verify →
 publish → delete the export dir. The privacy, critic-before-reduce, and post-approval-cleanup rules
 above all still apply; only the deterministic manifest/ledger/holdout machinery is unavailable. Prefer
 `prepare_harvest.py` whenever it can parse the corpus — the manual path exists only to unblock an
-unparseable export while v2 splitting/rescue lands in `rc` (see the migration note).
+unparseable export while v2 splitting/rescue lands in `rc` (see the migration note). Never use this
+fallback to bypass rejected v3 structure or diagnostics; reacquire or fix the exporter instead.
 
 ## Discipline
 

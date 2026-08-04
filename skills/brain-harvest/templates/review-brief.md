@@ -65,8 +65,8 @@ multi-file transaction, so it publishes `bundle-manifest.json` last as a commit 
 an interrupted old/new mixture until `review` is rerun:
 
 - `brief/review-brief.md` — full operator evidence: effective config/corpus digest, reconciled per-cluster
-  coverage, saturation, settings scope, skip evidence, durable rules/eras, contradictions, holdout
-  scorecard, production replay metadata, turns/wall clock;
+  coverage, counts-only source diagnostics, saturation, settings scope, skip evidence, durable
+  rules/eras, contradictions, holdout scorecard, production replay metadata, turns/wall clock;
 - `brief/record-source.json` — sanitized machine source with ordinal holdouts only;
 - `brief/record-candidate.json` — exact tracked-safe candidate the operator approves.
 

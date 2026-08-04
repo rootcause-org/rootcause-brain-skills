@@ -3,7 +3,7 @@
 # ///
 """Deterministic local preparation and review gates for brain harvest (spec §1, §3, §5, §7, §10).
 
-Parses a raw harvest corpus (format v1 or v2) into a private, opaque-ID manifest, a dumb work-
+Parses a raw harvest corpus (format v1, v2, or structurally normalized v3) into a private, opaque-ID manifest, a dumb work-
 partitioning clustering with a mandatory `mixed` bucket, stratified per-cluster reading plans,
 a risk-marker distribution report, a reserved holdout, and a machine-verified coverage ledger.
 Everything lives under one gitignored scratch root; raw subjects/filenames never leave it.
@@ -60,7 +60,7 @@ DEFAULTS: dict[str, Any] = {
 }
 
 OUTPUT_NAMES = ("threads", "manifest.jsonl", "clusters.json", "ledger.json", "holdout.json",
-                "replay-cases.json", "run.json")
+                "replay-cases.json", "run.json", "diagnostics.json", "diagnostics.md")
 PRIMARY_STATUSES = ("assigned", "holdout", "excluded_noise")
 READ_STATES = ("none", "sampled", "deep")
 # 128-bit truncated SHA-256. It is opaque, stable across corpus ordering/subsets, and leaves enough
@@ -80,6 +80,10 @@ ATT_RE = re.compile(r"^_\[attachment:\s*(.*?)\]_\s*$")
 # Colon-only: a hyphen separator would false-strip real subjects ("re-order confirmation").
 REPLY_PREFIX = re.compile(r"^\s*(re|fw|fwd|aw|wg|antw|antwort|ref|rép|rep|tr|sv|vs|r)\s*:\s*", re.I)
 WORD_RE = re.compile(r"[a-zà-ÿ']+")
+DIAGNOSTIC_FIELDS = ("accepted_count", "rejection_reasons", "actor_types", "initiation_types",
+                     "candidate_bands", "deduplicated")
+SAFE_CATEGORY_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+V3_MESSAGE_ROLES = {("inbound", "contact"), ("outbound", "human_admin")}
 
 # Generic subject families must never determine a topic cluster alone (spec §1); localized too.
 GENERIC_FAMILIES = {
@@ -186,6 +190,8 @@ class Message:
     date: str | None
     body: str
     attachments: list[str]
+    direction: str = ""
+    actor_role: str = ""
 
 
 @dataclass
@@ -235,7 +241,7 @@ def parse_front_matter(raw: str) -> tuple[dict[str, str], str]:
     text = raw.lstrip("﻿").replace("\r\n", "\n").replace("\r", "\n")
     if not text.startswith("---\n"):
         raise HarvestError(
-            "missing '---' front-matter fence; expected a harvest corpus (harvest_format: v1|v2). "
+            "missing '---' front-matter fence; expected a harvest corpus (harvest_format: v1|v2|v3). "
             "Re-download with 'rc project corpus download --out <file>' and retry."
         )
     rest = text[4:]
@@ -280,6 +286,21 @@ def classify_role(token: str, fmt: str, mailbox: str) -> str:
     return "mailbox" if mailbox and lowered == mailbox.strip().lower() else "external"
 
 
+def classify_message(token: str, fmt: str, mailbox: str, section: int) -> tuple[str, str, str]:
+    """Adapt provider headings to one internal role while making v3 structure mandatory."""
+    if fmt != "v3":
+        return classify_role(token, fmt, mailbox), "", ""
+    parts = [part.strip().lower() for part in token.split("/")]
+    if len(parts) != 2 or tuple(parts) not in V3_MESSAGE_ROLES:
+        raise HarvestError(
+            f"section {section} v3 message heading must be inbound/contact or "
+            "outbound/human_admin; body/header inference is forbidden"
+        )
+    direction, actor_role = parts
+    role = "external" if direction == "inbound" else "mailbox"
+    return role, direction, actor_role
+
+
 def parse_section(raw: str, fmt: str, mailbox: str, index: int) -> Thread:
     lines = raw.split("\n")
     match = HEADER_RE.match(lines[0])
@@ -294,7 +315,8 @@ def parse_section(raw: str, fmt: str, mailbox: str, index: int) -> Thread:
     for line in lines[1:]:
         header = MSG_RE.match(line)
         if header:
-            current = {"role": classify_role(header.group(1), fmt, mailbox),
+            role, direction, actor_role = classify_message(header.group(1), fmt, mailbox, index)
+            current = {"role": role, "direction": direction, "actor_role": actor_role,
                        "date": header.group(2), "body": [], "attachments": []}
             raw_messages.append(current)
             continue
@@ -312,38 +334,178 @@ def parse_section(raw: str, fmt: str, mailbox: str, index: int) -> Thread:
         else:
             current["body"].append(line)
     messages = [Message(role=m["role"], date=m["date"], body="\n".join(m["body"]).strip(),
-                        attachments=m["attachments"]) for m in raw_messages]
+                        attachments=m["attachments"], direction=m["direction"],
+                        actor_role=m["actor_role"]) for m in raw_messages]
+    if fmt == "v3":
+        dates = [message.date for message in messages]
+        if dates != sorted(dates):
+            raise HarvestError(f"section {index} v3 messages must be chronological")
+        accepted_pair = any(
+            message.direction == "inbound" and message.actor_role == "contact"
+            and any(later.direction == "outbound" and later.actor_role == "human_admin"
+                    for later in messages[position + 1:])
+            for position, message in enumerate(messages)
+        )
+        if not accepted_pair:
+            raise HarvestError(
+                f"section {index} v3 must contain contact inbound followed by verified human_admin outbound"
+            )
     return Thread(source_format=fmt, section_index=index, subject=subject,
                   occurrence_index=occurrence_index, occurrences=occurrences,
                   participants=participants, span=span, messages=messages, raw=raw)
 
 
-def load_threads(files: list[Path]) -> tuple[list[Thread], str, list[str]]:
+def parse_count_map(raw: str, field_name: str) -> dict[str, int]:
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HarvestError(f"{field_name} must be a JSON object of category counts") from exc
+    if not isinstance(value, dict):
+        raise HarvestError(f"{field_name} must be a JSON object of category counts")
+    result: dict[str, int] = {}
+    for category, count in value.items():
+        if not isinstance(category, str) or not SAFE_CATEGORY_RE.fullmatch(category):
+            raise HarvestError(f"{field_name} contains unsafe category {category!r}")
+        if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+            raise HarvestError(f"{field_name}.{category} must be a non-negative integer")
+        result[category] = count
+    return dict(sorted(result.items()))
+
+
+def parse_utc_timestamp(value: Any, path: str) -> str:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise HarvestError(f"{path} must be an RFC3339 UTC timestamp ending in Z")
+    try:
+        datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as exc:
+        raise HarvestError(f"{path} must be an RFC3339 UTC timestamp") from exc
+    return value
+
+
+def utc_datetime(value: str) -> datetime:
+    return datetime.fromisoformat(value[:-1] + "+00:00")
+
+
+def parse_diagnostics(meta: dict[str, str], source: str) -> dict[str, Any] | None:
+    present = [field_name for field_name in DIAGNOSTIC_FIELDS if field_name in meta]
+    if not present:
+        return None
+    missing = sorted(set(DIAGNOSTIC_FIELDS) - set(present))
+    if missing:
+        raise HarvestError(f"{source} has partial harvest diagnostics; missing {missing}")
+
+    integer_fields: dict[str, int] = {}
+    for field_name in ("accepted_count", "deduplicated"):
+        try:
+            value = int(meta[field_name])
+        except ValueError as exc:
+            raise HarvestError(f"{source} {field_name} must be a non-negative integer") from exc
+        if value < 0 or str(value) != meta[field_name]:
+            raise HarvestError(f"{source} {field_name} must be a non-negative integer")
+        integer_fields[field_name] = value
+
+    try:
+        bands_value = json.loads(meta["candidate_bands"])
+    except json.JSONDecodeError as exc:
+        raise HarvestError(f"{source} candidate_bands must be a JSON array") from exc
+    if not isinstance(bands_value, list):
+        raise HarvestError(f"{source} candidate_bands must be a JSON array")
+    bands: list[dict[str, Any]] = []
+    previous_end = ""
+    for index, item in enumerate(bands_value):
+        if not isinstance(item, dict) or set(item) != {"start", "end", "count"}:
+            raise HarvestError(f"{source} candidate_bands[{index}] must contain start/end/count")
+        start = parse_utc_timestamp(item["start"], f"candidate_bands[{index}].start")
+        end = parse_utc_timestamp(item["end"], f"candidate_bands[{index}].end")
+        if utc_datetime(start) >= utc_datetime(end):
+            raise HarvestError(f"{source} candidate_bands[{index}] must be a non-empty [start,end) band")
+        if previous_end and utc_datetime(start) < utc_datetime(previous_end):
+            raise HarvestError(f"{source} candidate_bands must be sorted and non-overlapping")
+        if not isinstance(item["count"], int) or isinstance(item["count"], bool) or item["count"] < 0:
+            raise HarvestError(f"{source} candidate_bands[{index}].count must be non-negative")
+        bands.append({"start": start, "end": end, "count": item["count"]})
+        previous_end = end
+    return {
+        "available": True,
+        **integer_fields,
+        "rejection_reasons": parse_count_map(meta["rejection_reasons"], "rejection_reasons"),
+        "actor_types": parse_count_map(meta["actor_types"], "actor_types"),
+        "initiation_types": parse_count_map(meta["initiation_types"], "initiation_types"),
+        "candidate_bands": bands,
+    }
+
+
+def combine_diagnostics(items: list[dict[str, Any] | None], accepted_fallback: int) -> dict[str, Any]:
+    if not any(item is not None for item in items):
+        return {"schema_version": 1, "available": False, "accepted_count": accepted_fallback,
+                "rejection_reasons": {}, "actor_types": {}, "initiation_types": {},
+                "candidate_bands": [], "deduplicated": 0}
+    if any(item is None for item in items):
+        raise HarvestError("cannot combine corpora with and without harvest diagnostics")
+    present = [item for item in items if item is not None]
+    combined: dict[str, Any] = {"schema_version": 1, "available": True,
+                                "accepted_count": sum(item["accepted_count"] for item in present),
+                                "rejection_reasons": {}, "actor_types": {}, "initiation_types": {},
+                                "candidate_bands": [],
+                                "deduplicated": sum(item["deduplicated"] for item in present)}
+    for map_name in ("rejection_reasons", "actor_types", "initiation_types"):
+        counts: Counter[str] = Counter()
+        for item in present:
+            counts.update(item[map_name])
+        combined[map_name] = dict(sorted(counts.items()))
+    combined["candidate_bands"] = sorted(
+        (band for item in present for band in item["candidate_bands"]), key=lambda band: band["start"]
+    )
+    for previous, current in zip(combined["candidate_bands"], combined["candidate_bands"][1:]):
+        if utc_datetime(current["start"]) < utc_datetime(previous["end"]):
+            raise HarvestError("combined candidate_bands overlap")
+    return combined
+
+
+def load_threads(files: list[Path]) -> tuple[list[Thread], str, list[str], dict[str, Any]]:
     threads: list[Thread] = []
     harvested: list[str] = []
     formats: list[str] = []
+    diagnostics: list[dict[str, Any] | None] = []
+    accepted_fallback = 0
     index = 0
     for path in files:
         meta, body = parse_front_matter(path.read_bytes().decode("utf-8", "replace"))
         fmt = meta.get("harvest_format", "")
-        if fmt not in ("v1", "v2"):
+        if fmt not in ("v1", "v2", "v3"):
             raise HarvestError(
                 f"unsupported harvest_format {fmt or '(missing)'!r} in {path.name}; this parser "
-                "supports v1 and v2 only. Re-download with 'rc project corpus download --out <file>' "
-                "and confirm the server emitted v1 or v2 before retrying (the 48h eviction window "
+                "supports v1, v2, and v3 only. Re-download with 'rc project corpus download --out <file>' "
+                "and confirm the server emitted a supported format before retrying (the 48h eviction window "
                 "allows a fresh re-download)."
             )
         mailbox = meta.get("mailbox", "")
         harvested.append(meta.get("harvested_at", ""))
         formats.append(fmt)
-        for section in split_sections(body):
+        item_diagnostics = parse_diagnostics(meta, path.name)
+        if fmt == "v3" and item_diagnostics is None:
+            raise HarvestError(f"{path.name} v3 corpus must include the complete diagnostics bundle")
+        diagnostics.append(item_diagnostics)
+        sections = split_sections(body)
+        raw_accepted = meta.get("accepted_interactions")
+        if raw_accepted is None:
+            accepted_fallback += len(sections)
+        else:
+            try:
+                accepted = int(raw_accepted)
+            except ValueError as exc:
+                raise HarvestError(f"{path.name} accepted_interactions must be non-negative") from exc
+            if accepted < 0 or str(accepted) != raw_accepted:
+                raise HarvestError(f"{path.name} accepted_interactions must be non-negative")
+            accepted_fallback += accepted
+        for section in sections:
             threads.append(parse_section(section, fmt, mailbox, index))
             index += 1
     if not threads:
         raise HarvestError("corpus contains no threads (no '## <subject> — #<n>' sections found)")
     harvested_at = max(h for h in harvested if h) if any(harvested) else ""
     fmt_label = "+".join(sorted(set(formats)))
-    return threads, harvested_at, [fmt_label]
+    return threads, harvested_at, [fmt_label], combine_diagnostics(diagnostics, accepted_fallback)
 
 
 # --- metadata -------------------------------------------------------------------------------
@@ -635,6 +797,13 @@ def manifest_row(thread: Thread) -> dict[str, Any]:
         "subject_family": thread.subject_family, "language": thread.language,
         "message_count": thread.message_count, "mailbox_message_count": thread.mailbox_message_count,
         "external_message_count": thread.external_message_count, "direction": thread.direction,
+        "structural_messages": thread.source_format == "v3",
+        "message_directions": dict(sorted(Counter(
+            message.direction for message in thread.messages if message.direction
+        ).items())),
+        "actor_roles": dict(sorted(Counter(
+            message.actor_role for message in thread.messages if message.actor_role
+        ).items())),
         "form_source": thread.form_source, "attachments": thread.attachments,
         "prose_reply": thread.prose_reply, "prose_reply_count": thread.prose_reply_count,
         "occurrences": thread.occurrences, "risk_markers": thread.risk_markers,
@@ -658,7 +827,7 @@ def risk_report(threads: list[Thread], cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_outputs(threads: list[Thread], plans: list[dict[str, Any]], harvested_at: str,
-                  corpus_format: str, cfg: dict[str, Any]) -> dict[str, str]:
+                  corpus_format: str, cfg: dict[str, Any], diagnostics: dict[str, Any]) -> dict[str, str]:
     by_id = sorted(threads, key=lambda t: t.id)
     manifest = "".join(json.dumps(manifest_row(t), ensure_ascii=False) + "\n" for t in by_id)
 
@@ -699,12 +868,35 @@ def build_outputs(threads: list[Thread], plans: list[dict[str, Any]], harvested_
         },
         "assigned": assigned_count,
     }
+    diagnostics_lines = [
+        "# Harvest pre-synthesis diagnostics", "",
+        f"Accepted: {diagnostics['accepted_count']}",
+        f"Deduplicated: {diagnostics['deduplicated']}", "",
+    ]
+    for heading, key in (("Rejection reasons", "rejection_reasons"),
+                         ("Actor types", "actor_types"),
+                         ("Initiation types", "initiation_types")):
+        diagnostics_lines.extend([f"## {heading}", ""])
+        counts = diagnostics[key]
+        diagnostics_lines.extend(f"- {category}: {count}" for category, count in counts.items())
+        if not counts:
+            diagnostics_lines.append("- unavailable")
+        diagnostics_lines.append("")
+    diagnostics_lines.extend(["## Candidate date bands", ""])
+    diagnostics_lines.extend(
+        f"- [{band['start']}, {band['end']}): {band['count']}"
+        for band in diagnostics["candidate_bands"]
+    )
+    if not diagnostics["candidate_bands"]:
+        diagnostics_lines.append("- unavailable")
     return {
         "manifest.jsonl": manifest,
         "clusters.json": json.dumps(clusters_doc, indent=2, ensure_ascii=False) + "\n",
         "holdout.json": json.dumps(holdout_doc, indent=2, ensure_ascii=False) + "\n",
         "replay-cases.json": json.dumps(replay_doc, indent=2, ensure_ascii=False) + "\n",
         "ledger.json": json.dumps(ledger_doc, indent=2, ensure_ascii=False) + "\n",
+        "diagnostics.json": json.dumps(diagnostics, indent=2, ensure_ascii=False) + "\n",
+        "diagnostics.md": "\n".join(diagnostics_lines).rstrip() + "\n",
     }
 
 
@@ -851,7 +1043,7 @@ def prepare_scratch(corpus: Path, scratch: Path, cfg: dict[str, Any], export_id:
         if source.resolve() != destination.resolve():
             shutil.copy2(source, destination)
 
-    threads, harvested_at, formats = load_threads(sources)
+    threads, harvested_at, formats, diagnostics = load_threads(sources)
     harvested = date.fromisoformat(harvested_at[:10]) if harvested_at else None
     for thread in threads:
         compute_metadata(thread, cfg, harvested)
@@ -864,7 +1056,7 @@ def prepare_scratch(corpus: Path, scratch: Path, cfg: dict[str, Any], export_id:
                            "lower --holdout deliberately or acquire a larger corpus")
     finalize(threads, holdout)
     plans = build_cluster_plans(clusters, cfg)
-    outputs = build_outputs(threads, plans, harvested_at, formats[0], cfg)
+    outputs = build_outputs(threads, plans, harvested_at, formats[0], cfg, diagnostics)
     run_doc = {
         "schema_version": 1,
         "generated_at": harvested_at,
@@ -888,7 +1080,7 @@ def prepare_scratch(corpus: Path, scratch: Path, cfg: dict[str, Any], export_id:
         for thread in sorted((item for item in threads if not item.holdout), key=lambda t: t.id):
             (threads_dir / f"{thread.id}.md").write_text(thread.raw + "\n", encoding="utf-8")
         for name in ("manifest.jsonl", "clusters.json", "holdout.json", "replay-cases.json",
-                     "ledger.json"):
+                     "ledger.json", "diagnostics.json", "diagnostics.md"):
             (stage / name).write_text(outputs[name], encoding="utf-8")
         (stage / "run.json").write_text(json.dumps(run_doc, indent=2, ensure_ascii=False) + "\n",
                                         encoding="utf-8")
@@ -1589,20 +1781,66 @@ def md_cell(value: Any) -> str:
     return str(value).replace("|", "\\|").replace("\n", " ").strip()
 
 
+def validate_diagnostics_artifact(value: Any) -> dict[str, Any]:
+    value = require_object(value, "diagnostics.json", {
+        "schema_version", "available", "accepted_count", "rejection_reasons", "actor_types",
+        "initiation_types", "candidate_bands", "deduplicated",
+    })
+    if value["schema_version"] != 1 or not isinstance(value["available"], bool):
+        raise HarvestError("diagnostics.json must be schema v1 with boolean availability")
+    for field_name in ("accepted_count", "deduplicated"):
+        require_int(value[field_name], f"diagnostics.json.{field_name}")
+    for field_name in ("rejection_reasons", "actor_types", "initiation_types"):
+        encoded = json.dumps(value[field_name], separators=(",", ":"))
+        if parse_count_map(encoded, field_name) != value[field_name]:
+            raise HarvestError(f"diagnostics.json.{field_name} must be sorted")
+    bands = require_list(value["candidate_bands"], "diagnostics.json.candidate_bands")
+    if not value["available"]:
+        if any(value[field_name] for field_name in
+               ("rejection_reasons", "actor_types", "initiation_types", "candidate_bands")) \
+                or value["deduplicated"] != 0:
+            raise HarvestError("unavailable diagnostics may contain only the accepted fallback count")
+        return value
+    # Reuse the corpus parser's half-open/sorted validation without accepting a partial bundle.
+    reparsed = parse_diagnostics({
+        "accepted_count": str(value["accepted_count"]),
+        "rejection_reasons": json.dumps(value["rejection_reasons"]),
+        "actor_types": json.dumps(value["actor_types"]),
+        "initiation_types": json.dumps(value["initiation_types"]),
+        "candidate_bands": json.dumps(bands),
+        "deduplicated": str(value["deduplicated"]),
+    }, "diagnostics.json")
+    if reparsed is None:
+        raise HarvestError("diagnostics.json is missing")
+    return value
+
+
 def build_review_brief(ledger: dict[str, Any], run: dict[str, Any], coverage_rows: list[dict[str, Any]],
                        totals: dict[str, int], reports: list[dict[str, Any]],
                        reduction: dict[str, Any], evaluation: dict[str, Any],
-                       metrics: dict[str, Any]) -> str:
+                       metrics: dict[str, Any], diagnostics: dict[str, Any]) -> str:
     lines = [
         "# Brain harvest operator review brief", "", "## Run inputs [local+ephemeral]", "",
         f"- Export: `{md_cell(run['export_id'])}`",
         f"- Corpus digest: `{run['inputs']['corpus_sha256']}` ({run['inputs']['format']}, "
         f"{run['inputs']['corpus_files']} file(s))",
         f"- Effective config: `{json.dumps(run['config'], sort_keys=True, separators=(',', ':'))}`",
+        "", "## Pre-synthesis source diagnostics [local+ephemeral]", "",
+        f"Accepted: {diagnostics['accepted_count']} · Deduplicated: {diagnostics['deduplicated']}", "",
+    ]
+    for heading, key in (("Rejections", "rejection_reasons"), ("Actors", "actor_types"),
+                         ("Initiation", "initiation_types")):
+        rendered = ", ".join(f"{category}={count}"
+                             for category, count in diagnostics[key].items()) or "unavailable"
+        lines.append(f"- {heading}: {rendered}")
+    bands = diagnostics["candidate_bands"]
+    lines.append(f"- Candidate bands: {len(bands)}; candidates: "
+                 f"{sum(band['count'] for band in bands)}")
+    lines.extend([
         "", "## 1. Coverage summary [local+ephemeral]", "",
         "| Cluster | Label | Scanned | Deep-read | Sampled | Noise (excluded) | Rerouted |",
         "|---|---|---:|---:|---:|---:|---:|",
-    ]
+    ])
     for row in coverage_rows:
         lines.append("| {cluster} | {label} | {scanned} | {deep_read} | {sampled} | "
                      "{noise_excluded} | {rerouted} |".format(**{k: md_cell(v) for k, v in row.items()}))
@@ -1822,8 +2060,9 @@ def cmd_review(args: argparse.Namespace,
     require_int(inputs["corpus_files"], "run.json.inputs.corpus_files", minimum=1)
     if not re.fullmatch(r"[0-9a-f]{64}", str(inputs["corpus_sha256"])):
         raise HarvestError("run.json.inputs.corpus_sha256 must be a lowercase SHA-256")
-    if inputs["format"] not in {"v1", "v2", "v1+v2"}:
-        raise HarvestError("run.json.inputs.format must be v1, v2, or v1+v2")
+    formats = inputs["format"].split("+")
+    if not formats or len(formats) != len(set(formats)) or not set(formats) <= {"v1", "v2", "v3"}:
+        raise HarvestError("run.json.inputs.format must be a sorted combination of v1, v2, and v3")
     preflight = validate_review_preflight(scratch, run)
     if ledger.get("risk", {}).get("over_cap") is not False:
         raise HarvestError("risk.over_cap is true; prune marker rules and rerun prepare before fan-out")
@@ -1873,8 +2112,10 @@ def cmd_review(args: argparse.Namespace,
                            f"{sorted(discovered_topics - reduced_topics)}")
     evaluation = validate_evaluation(load_json(Path(args.evaluation)), holdout_ids)
     metrics = validate_metrics(load_json(Path(args.metrics)))
+    diagnostics = validate_diagnostics_artifact(load_json(scratch / "diagnostics.json"))
     coverage_rows, totals = coverage_summary(ledger, clusters_doc)
-    brief = build_review_brief(ledger, run, coverage_rows, totals, reports, reduction, evaluation, metrics)
+    brief = build_review_brief(ledger, run, coverage_rows, totals, reports, reduction, evaluation,
+                               metrics, diagnostics)
     source = sanitized_review_source(ledger, run, totals, evaluation, metrics)
     try:
         date.fromisoformat(args.harvest_date)
@@ -2395,7 +2636,7 @@ def cmd_preflight(args: argparse.Namespace,
                 formats.add(meta.get("harvest_format", "?"))
             except HarvestError:
                 formats.add("unparseable")
-        unsupported = formats - {"v1", "v2"}
+        unsupported = formats - {"v1", "v2", "v3"}
         add("FAIL" if unsupported else "OK", "corpus format",
             f"{len(files)} file(s), formats {sorted(formats)}")
 
@@ -2569,7 +2810,7 @@ def parser() -> argparse.ArgumentParser:
     pre.add_argument("--project", help="explicit rc project context")
     pre.add_argument("--tenant", help="explicit tenant slug for tenant-scoped inventory")
     pre.add_argument("--mailbox", help="explicit mailbox id to validate and scope")
-    pre.add_argument("--provider", choices=("google", "microsoft", "imap"),
+    pre.add_argument("--provider", choices=("google", "microsoft", "imap", "intercom"),
                      help="expected provider for --mailbox")
     pre.add_argument("--export-id", help="existing export id to inventory")
 
