@@ -16,6 +16,8 @@ is required to work on it.
 | `skills/*/scripts/*.py` | Grounding scripts; import `from lib import db/fs/http/...` from `rootcause-runtime`. |
 | `tests/`, fixtures | Brain-local test fixtures; safe to commit when project-specific. |
 | `actions/<id>/` | Optional action catalog: manifest plus script/preflight. Proposal is in-loop; execution is gated later. |
+| `.replypenignore` | Canonical root run-visibility rules for committed maintainer-only content. |
+| `.rcignore` | Supported internal/legacy alias; its ignored set is unioned with `.replypenignore`. |
 | `.rootcause/` | Gitignored local artifacts: debug dumps, projection previews, run dumps. Never commit. |
 
 ## Audience And Ownership
@@ -171,6 +173,24 @@ Scan scope for the `grounding`/`agent` roles: the whole brain plus any bound ten
 file is only picked up at the repo root as `*.md` or under `doc/`, `docs/`, `.claude/`, `.agents/`;
 `/kb` never. Truncation past a cap appends an explicit marker — the agent may read the rest with `bash`.
 
+### Run-visible filesystem boundary (`.replypenignore`)
+
+Use a root `.replypenignore` when committed maintainer-only content must be physically absent from a
+production run. `.rcignore` is a supported internal/legacy alias. Both use gitignore syntax; when both
+exist, RootCause unions their ignored sets. Negation only reverses an earlier rule in the same file—it
+cannot reveal a path hidden by the other control.
+
+The boundary applies to every file type in project brains, tenant brains, and source mirrors. When a
+control exists, RootCause materializes a Git-history-free view with ignored paths and both control files
+removed. The mount, auto-rendered trees, `include_in` discovery, grounding selection, baked references,
+evaluation workspace, and customer brain viewer all use that same view. Reads, copies, unsafe symlinks,
+and path-normalization failures abort visibility processing; they never fall back to the raw source.
+Without either control file, the original source remains on the zero-copy path.
+
+Use normal Git patterns: comments/blank lines, escaped leading `#` or `!`, rooted paths, directory
+patterns, `**`, and `!` negation. `exclude_in` frontmatter is not a visibility feature and is treated as
+ordinary unknown metadata.
+
 ### Feeding the triage gate (`include_in: [triage]`)
 
 Before the main loop runs, a cheap **triage** classifier decides process-vs-skip. Its prompt is built
@@ -255,6 +275,8 @@ an irrelevant one is an active distractor. Checklist:
 - `include_in: [agent]` — reference the answer-writer must hold in full (schema/column maps, identifier
   tables). If the main agent guessing wrong is a real failure mode, a `grounding` tag alone won't save
   it (subsection above).
+- `.replypenignore` — physically remove committed maintainer-only paths from every run-visible surface;
+  never use `exclude_in` frontmatter for visibility.
 - Customer language everywhere — filenames, descriptions, `AGENTS.md` routing rows; retrieval is
   lexical `rg` over the words customers write, so a correct doc missing those words is invisible.
 - Flat archives (e.g. FAQ imports): greppable frontmatter facets on every item plus a generated
@@ -281,8 +303,9 @@ flowchart LR
     KB --> W
 ```
 
-Only committed files travel to `/brain`. Untracked or gitignored local kit installs, `.env`, dumps, and
-test artifacts stay on the laptop.
+Only committed, run-visible files travel to `/brain`. Root `.replypenignore` / `.rcignore` rules remove
+maintainer-only committed paths; untracked or gitignored local kit installs, `.env`, dumps, and test
+artifacts stay on the laptop.
 
 ## Project And Tenant Brains
 

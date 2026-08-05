@@ -20,6 +20,9 @@ Read:
 Read [docs/mirrors.md](../../docs/mirrors.md) when a script uses `lib.fs`, `/mirrors`, or source/KB
 mounts.
 
+For committed maintainer-only content, use root `.replypenignore` rules described in the brain model.
+Do not use `exclude_in` frontmatter: it has no run-visibility effect.
+
 ## Route Broad Prompts
 
 | User intent | Use |
