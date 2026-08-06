@@ -192,6 +192,18 @@ Use normal Git patterns: comments/blank lines, escaped leading `#` or `!`, roote
 patterns, `**`, and `!` negation. `exclude_in` frontmatter is not a visibility feature and is treated as
 ordinary unknown metadata.
 
+Default to hiding committed files that help maintainers verify the brain but do not help a production
+run answer a customer: unit/integration tests, test-only fixtures, coverage output, build artifacts,
+internal design notes, and local tooling. Keep them committed and runnable locally; remove them only
+from the run-visible view. Typical rules are `/tests/`, `/skills/**/tests/`, `/actions/**/tests/`, and
+`/conftest.py` (adapt to the repo rather than copying blindly).
+
+Do not expose a test suite merely because it demonstrates a script's inputs or outputs. Put the stable
+contract in the script docstring, its `SKILL.md`, or a concise reference/example instead; that is easier
+to retrieve and costs less context. Keep a test or fixture visible only when the production run has an
+explicit diagnostic workflow that reads or executes it and its contents are safe for the runtime
+audience. This is a relevance boundary, not a secrecy substitute: ignored files still live in Git.
+
 ### Feeding the triage gate (`include_in: [triage]`)
 
 Before the main loop runs, a cheap **triage** classifier decides process-vs-skip. Its prompt is built
@@ -277,7 +289,8 @@ an irrelevant one is an active distractor. Checklist:
   tables). If the main agent guessing wrong is a real failure mode, a `grounding` tag alone won't save
   it (subsection above).
 - `.replypenignore` — physically remove committed maintainer-only paths from every run-visible surface;
-  never use `exclude_in` frontmatter for visibility.
+  default-hide tests/test fixtures unless a production diagnostic explicitly uses them, and never use
+  `exclude_in` frontmatter for visibility.
 - Customer language everywhere — filenames, descriptions, `AGENTS.md` routing rows; retrieval is
   lexical `rg` over the words customers write, so a correct doc missing those words is invisible.
 - Flat archives (e.g. FAQ imports): greppable frontmatter facets on every item plus a generated
