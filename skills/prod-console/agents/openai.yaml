@@ -1,4 +1,4 @@
 interface:
   display_name: "Prod Console"
-  short_description: "Direct guarded production rc access"
-  default_prompt: "Use $prod-console to discover and run the right guarded production primitive with rc."
+  short_description: "Guarded production console and mirror refresh"
+  default_prompt: "Use $prod-console to refresh pushed source grounding or run the exact guarded production primitive with rc."

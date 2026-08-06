@@ -1,6 +1,6 @@
 ---
 name: prod-console
-description: "Direct guarded production access from a brain checkout through `rc dev console`. Use when a developer or their coding agent already knows the exact production primitive to run: SQL/schema lookup, dry-run-first rare SQL write, cataloged brain script discovery, log command planning, or preflight-first action execution. No rootcause-side LLM; the caller reasons locally and rootcause supplies scoped, audited hands."
+description: "Direct guarded production access from a brain checkout through `rc dev console` and exact source-mirror refresh through `rc dev mirror`. Use when a developer or their coding agent already knows the exact production primitive to run: refresh a pushed source commit, SQL/schema lookup, dry-run-first rare SQL write, cataloged brain script discovery, log command planning, or preflight-first action execution. No rootcause-side LLM; the caller reasons locally and rootcause supplies scoped, audited hands."
 ---
 
 # prod-console - direct production primitives
@@ -25,6 +25,7 @@ Read:
 
 - [docs/side-effects.md](../../docs/side-effects.md)
 - [docs/brain-model.md](../../docs/brain-model.md)
+- [docs/mirrors.md](../../docs/mirrors.md)
 
 ## Workflow
 
@@ -42,6 +43,12 @@ Read:
    rc dev brain sync
    rc dev console bash list
    ```
+   If a pushed source mirror change must be visible immediately, run from that source checkout:
+   ```bash
+   rc dev mirror refresh --repo <configured-name> --expect-sha "$(git rev-parse HEAD)"
+   ```
+   Run it once per affected RootCause project. Success proves the exact commit is mounted for the next
+   ask or console workspace; do not restart Docker.
 
 2. For database work, fetch only what you need:
    ```bash
