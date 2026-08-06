@@ -10,6 +10,10 @@ brain refs read-only at `/brain`; local `.env`, installed skills, and `.rootcaus
 reach a run. Source mirrors (`/mirrors/<name>`), optional knowledge-base sync (`/kb`), live grounding
 data, and actions are separate runtime inputs. Start with [docs/brain-model.md](docs/brain-model.md).
 
+Cross-project file-format skills (xlsx/csv/pdf) are mounted read-only at `/skills` in every run
+container — don't reinvent file parsing in brains. Their libraries (openpyxl, pandas, pypdf,
+pdfplumber, fpdf2) ship in the workspace image, so brain scripts can import them directly.
+
 The public `rc` CLI belongs to **local brain development only**. The production main LLM loop has
 `bash` plus its scenario terminal tool (`reply` for email), no `rc` binary, and a read-only `/brain`.
 Its grounding path is `/brain` scripts plus the project/run's injected `lib.*` capabilities. Never
