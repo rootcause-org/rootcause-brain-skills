@@ -42,7 +42,8 @@ Read:
    ```
    Use `--file <path>` (repeatable; `--attach` is a deprecated alias) to ground the run on local
    files: staged read-only in the run workspace for the agent to open. Caps: 4 files, 5 MiB each,
-   15 MiB total; allowed types png/jpeg/webp/gif/pdf/csv/txt/json/xlsx (content-sniffed server-side).
+   15 MiB total; allowed types: any plain-text file (yaml, sql, code, logs, …), png/jpeg/webp/gif,
+   pdf, csv, json, xlsx — content-sniffed server-side; other binaries/archives are rejected.
    Generated files do not come back on this lane yet — the answer is text only.
    Use `--brain-ref dev/<branch>` only for an already-pushed dev branch after Local Brain Work has
    covered local checks that fit the change. It keeps `main` live and the run is flagged `test`: no
