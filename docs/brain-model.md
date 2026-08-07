@@ -188,6 +188,11 @@ evaluation workspace, and customer brain viewer all use that same view. Reads, c
 and path-normalization failures abort visibility processing; they never fall back to the raw source.
 Without either control file, the original source remains on the zero-copy path.
 
+Ignore the canonical source-of-truth path only. A safe relative symlink to ignored in-repo content is
+omitted automatically; do not duplicate the rule for compatibility aliases. Absolute, escaping, broken,
+or otherwise unsafe symlinks still abort visibility processing. This target-aware omission is a
+RootCause visibility extension; ordinary gitignore matching considers the symlink entry path itself.
+
 Use normal Git patterns: comments/blank lines, escaped leading `#` or `!`, rooted paths, directory
 patterns, `**`, and `!` negation. `exclude_in` frontmatter is not a visibility feature and is treated as
 ordinary unknown metadata.
