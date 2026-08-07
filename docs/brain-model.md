@@ -166,9 +166,18 @@ and `agent` is marked in the selector's context as "already auto-pasted to the m
 selector doesn't waste selections re-forwarding it.
 
 Standing rule for every role: **tag sparingly**. Each tagged doc is a per-run token tax on every thread;
-the caps are a safety net, not a budget. `AGENTS.md` never needs a tag (it is always pasted). And a
-pointer line in `AGENTS.md` is **not** a substitute for the `agent` tag — the model will not burn a turn
-following a pointer mid-task.
+the caps are a safety net, not a budget. `AGENTS.md` inclusion depends on its mount:
+
+| Path | Grounding pre-step | Main agent |
+|---|---|---|
+| `/brain/AGENTS.md` | automatic | automatic |
+| `/tenant/AGENTS.md` | selectable; tag `grounding` only to guarantee it | automatic, after the project brain |
+| `/mirrors/<repo>/AGENTS.md` | explicit `grounding` tag | explicit `agent` tag |
+
+Use both tags when both consumers must hold a mirror's instructions. Do not tag `/brain/AGENTS.md`, and
+do not add the redundant `agent` tag to `/tenant/AGENTS.md`. Triage is separate: every file, including
+`AGENTS.md`, needs an explicit `triage` tag. A pointer line in `AGENTS.md` is **not** a substitute for an
+`agent` tag — the model will not burn a turn following a pointer mid-task.
 
 Scan scope for the `grounding`/`agent` roles: the whole brain plus any bound tenant brain; a **mirror**
 file is only picked up at the repo root as `*.md` or under `doc/`, `docs/`, `.claude/`, `.agents/`;
@@ -212,9 +221,9 @@ audience. This is a relevance boundary, not a secrecy substitute: ignored files 
 ### Feeding the triage gate (`include_in: [triage]`)
 
 Before the main loop runs, a cheap **triage** classifier decides process-vs-skip. Its prompt is built
-from the operator's tunable triage guidance plus a brain-derived knowledge block: the brain's root
-`AGENTS.md` (always) and the full body of every brain `.md` whose frontmatter declares
-`include_in: [triage]`. Use the tag to teach triage the project's **decline / ownership / scope** rules
+from the operator's tunable triage guidance plus the full body of every project-brain `.md` whose
+frontmatter declares `include_in: [triage]`. Nothing is automatic, including `AGENTS.md`. Use the tag to
+teach triage the project's **decline / ownership / scope** rules
 — semantic topic categories that are not owned by this mailbox, broad notification classes, and
 wrong-addressee patterns that require judgement.
 
@@ -229,7 +238,7 @@ Conventions: keep it **short** (it rides every triage call) and in **customer la
 quoted back to the mailbox owner as feedback. It is context, not a hard rule: deterministic rules and
 the default bias to process still win, and skips are always reviewable (feedback note + override), so a
 brain can inform triage but never silently black-hole mail. Recommended home is a `triage.md` at the
-brain root. Don't restate `AGENTS.md`; it is always included.
+brain root.
 
 **Exact allow/block selectors belong in settings, never in the brain.** A sender address/domain,
 subject/header match, or other deterministic blacklist/whitelist must be configured with
