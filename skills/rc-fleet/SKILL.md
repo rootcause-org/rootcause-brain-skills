@@ -1,6 +1,6 @@
 ---
 name: rc-fleet
-description: Review recent production runs with `rc fleet runs`, discover exact cross-run action history with `rc fleet actions`, then mine systemic failures with `rc fleet patterns`. Use inside a brain checkout for run health, action arguments/statuses/run links over a date window, worst-offender triage, recurring failures, or when no single run is known yet.
+description: Review recent production runs with `rc fleet runs`, including audits limited to human-scored reviews, discover exact cross-run action history with `rc fleet actions`, then mine systemic failures with `rc fleet patterns`. Use inside a brain checkout for run health, review-score audits, action arguments/statuses/run links over a date window, worst-offender triage, recurring failures, or when no single run is known yet.
 ---
 
 # rc-fleet - recent run digest
@@ -25,12 +25,17 @@ Read:
    rc fleet runs --days 7
    rc fleet runs --format agent
    rc fleet runs --kind email --days 14
+   rc fleet runs --kind email --days 14 --reviewed --format agent
+   rc fleet runs --kind email --days 14 --reviewed -o json
    rc fleet runs --days 14 --learning=sent_delta --format agent
    ```
    Pass through supplied `--days <n>` and `--kind email|prompt|mcp|analysis`. Read the per-run flag
    table, aggregate rates, and worst offenders. `--format agent` is the token-lean shortlist.
    `--learning` (bare, or `=feedback|sent_delta|triage_skipped|triage_corrected`) narrows to runs a
-   dream cycle can learn from.
+   dream cycle can learn from. `--reviewed` is different: it returns every run with a 1–5 human score,
+   including held-out evaluation threads that learning correctly excludes. Its JSON rows include
+   `review.score` and `review.comment`; use this filter for reply audits and never substitute
+   `--learning=feedback` when the request says "scored" or "reviewed."
 
 2. Find actions across runs before drilling into individual traces:
    ```bash
