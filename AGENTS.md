@@ -119,10 +119,12 @@ executes writes, and `brain_action.py --commit` writes to whatever `.env.action`
 **Did you touch `runtime/lib/**`, `runtime/pyproject.toml`, or `runtime/requirements.lock`? Then you
 owe a release — a bare merge/push does NOT reach prod.** The box installs the *pinned tag*, not `main`,
 so unreleased lib bytes never ship. Close it out with `./refresh-brains.sh --release <patch|minor>`
-(bumps, publishes main, then tags/pushes the whole line below; `--relock` if deps changed), then in the **rootcause** repo
-`scripts/bump-workspace-pin.py vX.Y.Z` → commit → promote. Full steps: [RELEASING.md](RELEASING.md).
-rootcause's `promote.py` preflight now **FAILs** while lib commits sit past the pin (even unpushed local
-ones), so a forgotten release blocks the next deploy — but don't rely on the gate; release as you go.
+(bumps, publishes main, tags/pushes the whole line below, then bumps + commits the sibling
+**rootcause** pin for you; `--relock` if deps changed) and **promote rootcause** afterwards. Full
+steps: [RELEASING.md](RELEASING.md). Three gates back this up: the release exits non-zero if the prod
+bump did not land, rootcause CI (`scripts/check_workspace_pin.py`) goes red on unconsumed drift, and
+rootcause's `promote.py` preflight **FAILs** while lib commits sit past the pin (even unpushed local
+ones) — but don't rely on the gates; release as you go.
 
 One version line moves together:
 
