@@ -11,7 +11,7 @@ Diagnosis is read-only by default. Test-run creation and action execution are ex
 | `uv run scripts/local_imap_harvest.py ...` | Connects to the IMAP server from the laptop and writes a raw local corpus. Must be gitignored, treated as customer mail, and deleted after synthesis. |
 | `rc ask` against `main` | Creates a real production run. It may create a draft, journal/test artifacts, and proposed actions. |
 | `rc ask --brain-ref dev/<branch>` | Creates a test run against a pushed dev ref. It does not post a callback or durable journal push; proposed actions/PRs are test artifacts. |
-| `rc run feedback <id>` | Records score/comment feedback for consolidation. |
+| `rc run feedback <id>` | Records score/comment feedback for consolidation. With `--processed`/`--unprocessed`/`--resolution-note` it instead mutates the existing feedback row's operator triage state (project-admin tier). |
 | `rc run retry <id>` | Creates a replacement production run, optionally at a different model tier. |
 | `rc dev brain promote --channel <channel> --sha <sha>` | Moves a shared project brain channel for all its runs/tenants. Project-maintainer only; exact-SHA, serialized, idempotent, and audited. |
 | Action proposal | LLM proposes only. No customer mutation. |

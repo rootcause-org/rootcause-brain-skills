@@ -142,6 +142,17 @@ feedback|deltas|triage`. Raw `proposed_body`/`sent_body` are omitted unless `--i
 passed. `rc fleet runs --learning[=<signal>]` reaches the same candidates from the run index, but
 carries only the pointer (`LRN:` flag), never the bodies.
 
+Close the loop on feedback you acted on:
+
+```bash
+rc run feedback <run-id> --processed --resolution-note "brain runbook updated"
+rc run feedback <run-id> --unprocessed
+```
+
+Mark handled feedback processed so the next fleet review or dream cycle can skip it; the optional
+`--resolution-note` records what was done. Both need project-admin authority (tenant admins are
+denied), and processed rows render greyed-out on the web Feedback tab.
+
 Render the delta plane with
 [`sent_delta_report.py`](../skills/brain-dream-cycle/scripts/sent_delta_report.py) rather than reading
 JSON. One call, two files under the gitignored `.rootcause/dream/`: a token-lean `.md` for the agent

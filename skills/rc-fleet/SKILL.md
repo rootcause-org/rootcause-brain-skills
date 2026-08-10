@@ -82,7 +82,13 @@ Read:
    [`brain-dream-cycle`](../brain-dream-cycle/SKILL.md), which reads them from
    `rc dev learning evidence` and renders a word-level diff report.
 
-5. Confirm systemic failures:
+5. Close out feedback you acted on, so the next review starts from the unprocessed remainder:
+   ```bash
+   rc run feedback <id> --processed --resolution-note "added mirror runbook for refund flow"
+   ```
+   Project-admin authority only; `--unprocessed` reopens a row.
+
+6. Confirm systemic failures:
    ```bash
    rc fleet patterns --days 14
    rc fleet patterns --days 30
