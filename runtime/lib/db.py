@@ -6,7 +6,8 @@ name (``"powertools"``), the exact env-var name (``"MOMENTUM_POWERTOOLS_DSN"``),
 ``db`` may be omitted with a single database configured, with ``PG_DSN`` set, or when the project has
 a STANDARD database (the operator's default, injected as ``RC_DB_DEFAULT``) — a multi-DB run then
 reads the standard. ``databases()`` lists what this run has. ``tables()`` / ``columns()`` introspect
-the effective schema. ``--list`` (or a bad ``db=``) shows each database's purpose — the descriptions
+the effective schema; ``columns()`` / ``tables_with_column()`` return a `ColumnList` whose elements
+ARE the column names and also answer to ``c.type`` / ``c["data_type"]`` / ``c["column_name"]``. ``--list`` (or a bad ``db=``) shows each database's purpose — the descriptions
 come from project metadata in the ``RC_DB_DESCRIPTIONS`` env var (a JSON object keyed by the exact
 DSN env-var name), so the agent learns which DB is which without trial-and-error.
 
@@ -601,8 +602,151 @@ def tables(schema: str | None = None, db: str | None = None) -> list[dict]:
     )
 
 
-def columns(table: str, schema: str | None = None, db: str | None = None) -> list[dict]:
+# Every key an agent plausibly reaches for on an introspected column, mapped to the canonical
+# attribute. Introspection results used to be raw information_schema dicts, so `column_name` /
+# `data_type` stay first-class — the point of this type is that NO reasonable guess raises.
+_COLUMN_KEYS = {
+    "name": "name",
+    "column": "name",
+    "column_name": "name",
+    "type": "type",
+    "dtype": "type",
+    "data_type": "type",
+    "table": "table",
+    "table_name": "table",
+}
+
+
+class Column(str):
+    """One introspected column: a ``str`` equal to its NAME, that is also dict- and object-like.
+
+    ``c.lower()``/``str(c)``/``c == "email"`` (it is the name) · ``c.name`` / ``c["name"]`` /
+    ``c["column_name"]`` · ``c.type`` / ``c["type"]`` / ``c["data_type"]`` · ``c.table`` /
+    ``c["table_name"]`` · ``c.get(k, default)`` · ``dict(c)`` / ``c.to_dict()`` for JSON.
+    """
+
+    def __new__(cls, name, data_type=None, table=None):
+        self = super().__new__(cls, name)
+        self.name = str(name)
+        self.type = data_type
+        self.table = table
+        return self
+
+    @property
+    def qualified(self) -> str:
+        return f"{self.table}.{self.name}" if self.table else self.name
+
+    def __getitem__(self, key):
+        # str keys = mapping access; int/slice keeps plain-str indexing (c[0] == 'e').
+        if isinstance(key, str):
+            try:
+                return getattr(self, _COLUMN_KEYS[key])
+            except KeyError:
+                raise KeyError(
+                    f"{key!r} is not a column field — use one of {sorted(_COLUMN_KEYS)} "
+                    f"(or just use the column itself: it IS the name {self.name!r})"
+                ) from None
+        return str.__getitem__(self, key)
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def keys(self) -> list[str]:
+        return ["name", "type"] + (["table"] if self.table else [])
+
+    def values(self) -> list:
+        return [self[k] for k in self.keys()]
+
+    def items(self) -> list[tuple]:
+        return [(k, self[k]) for k in self.keys()]
+
+    def __contains__(self, item) -> bool:
+        # Serves both mental models: dict-like key check AND str-like substring check.
+        if isinstance(item, str) and item in _COLUMN_KEYS:
+            return True
+        return str.__contains__(self, item)
+
+    def to_dict(self) -> dict:
+        """Plain dict — for ``json.dumps`` and anything that insists on a mapping."""
+        return dict(self.items())
+
+    def __repr__(self) -> str:
+        return f"{self.qualified} ({self.type})" if self.type else self.qualified
+
+
+class ColumnList(list):
+    """``list[Column]`` that also reads like the mapping an agent expects from introspection.
+
+    ``cols.keys()`` (names) · ``"email" in cols`` · ``cols["email"]`` → `Column` ·
+    ``cols.get("email")`` · ``cols[0]`` / slices stay list access · iterating yields `Column`
+    (each one a plain column-name string) · ``print(cols)`` shows an aligned name/type listing.
+    """
+
+    def keys(self) -> list[str]:
+        return [c.name if isinstance(c, Column) else str(c) for c in self]
+
+    names = keys
+
+    def types(self) -> dict:
+        """``{name: data_type}``."""
+        return {c.name: c.type for c in self if isinstance(c, Column)}
+
+    def _find(self, name: str):
+        for c in self:
+            if str(c) == name:
+                return c
+        low = name.lower()
+        for c in self:
+            if str(c).lower() == low:
+                return c
+        return None
+
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            hit = self._find(key)
+            if hit is None:
+                raise KeyError(f"no column {key!r} — available: {', '.join(self.keys()) or '(none)'}")
+            return hit
+        got = list.__getitem__(self, key)
+        return ColumnList(got) if isinstance(key, slice) else got
+
+    def get(self, key, default=None):
+        hit = self._find(key) if isinstance(key, str) else None
+        return default if hit is None else hit
+
+    def __contains__(self, item) -> bool:
+        return self._find(item) is not None if isinstance(item, str) else list.__contains__(self, item)
+
+    def to_dicts(self) -> list[dict]:
+        """Plain ``list[dict]`` — the pre-`Column` shape, for JSON or a DataFrame."""
+        return [c.to_dict() if isinstance(c, Column) else dict(c) for c in self]
+
+    def __repr__(self) -> str:
+        if not self:
+            return "(no columns — wrong table name, or the schema hides them all)"
+        cols = [c if isinstance(c, Column) else Column(c) for c in self]
+        width = max(len(c.qualified) for c in cols)
+        body = "\n".join(f"  {c.qualified.ljust(width)}  {c.type or ''}".rstrip() for c in cols)
+        return f"{len(self)} columns:\n{body}"
+
+
+def columns(table: str, schema: str | None = None, db: str | None = None) -> "ColumnList":
     """Column names + types for one table — schema introspection when the layout is unknown.
+
+    Returns a `ColumnList` (a ``list`` of `Column`) that answers to every intuitive access pattern:
+
+        cols = db.columns("people")
+        print(cols)                     # readable name + type listing
+        cols.keys()                     # ['id', 'email', ...]
+        "email" in cols                 # True (name membership, case-insensitive)
+        cols["email"].type              # 'character varying'
+        for c in cols:
+            c.lower(), str(c)           # c IS the column name (str subclass)
+            c["name"], c["column_name"] # mapping access, legacy key still works
+            c["type"], c["data_type"], c.type
 
     ``schema=None`` (default) introspects the run's EFFECTIVE schema via ``current_schema()`` — the
     same resolution an unqualified table reference uses. On a tenant-scoped run that is the per-run
@@ -618,16 +762,21 @@ def columns(table: str, schema: str | None = None, db: str | None = None) -> lis
         db=db,
     )
     _warn_hidden_column_notes(_excluded_map_for_db(db), table=table)
-    return rows
+    return ColumnList(
+        Column(r["column_name"], r["data_type"], table=table) for r in rows
+    )
 
 
-def tables_with_column(name_like: str, schema: str | None = None, db: str | None = None) -> list[dict]:
+def tables_with_column(name_like: str, schema: str | None = None, db: str | None = None) -> "ColumnList":
     """Find (table, column) pairs whose column name matches an ILIKE pattern, e.g. ``%email%``.
 
     The entry point for locating where data lives (an account email, a usage column) when the
     schema isn't pinned down — discover the identifier here, never take it from the ticket.
     ``schema=None`` (default) searches the run's EFFECTIVE schema (``current_schema()``) — the
     ``scope_<id>`` views on a scoped run, ``public`` on a flat project (see `columns`).
+
+    Same `ColumnList` shape as `columns`, with the owning table on each hit: ``c.table`` /
+    ``c["table_name"]`` (``c.qualified`` → ``"people.email"``).
     """
     rows = query(
         "select table_name, column_name, data_type from information_schema.columns "
@@ -637,7 +786,9 @@ def tables_with_column(name_like: str, schema: str | None = None, db: str | None
         db=db,
     )
     _warn_hidden_column_notes(_excluded_map_for_db(db), pattern=name_like)
-    return rows
+    return ColumnList(
+        Column(r["column_name"], r["data_type"], table=r["table_name"]) for r in rows
+    )
 
 
 # Affordance aliases for common model guesses. Keep these thin so the canonical helpers stay the

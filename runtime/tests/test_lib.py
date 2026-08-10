@@ -383,6 +383,94 @@ class Introspection(unittest.TestCase):
         self.assertTrue(any("admins shows an allowlisted subset" in m for m in messages))
 
 
+class ColumnShape(unittest.TestCase):
+    """Introspection results must survive every intuitive access pattern (no DB needed)."""
+
+    def _cols(self):
+        with mock.patch.object(
+            db,
+            "query",
+            return_value=[
+                {"column_name": "id", "data_type": "uuid"},
+                {"column_name": "email", "data_type": "character varying"},
+            ],
+        ):
+            return db.columns("people")
+
+    def test_element_is_the_column_name(self):
+        c = self._cols()[1]
+        self.assertEqual(c, "email")
+        self.assertEqual(str(c), "email")
+        self.assertEqual(c.upper(), "EMAIL")  # str methods still work
+        self.assertEqual(f"select {c} from people", "select email from people")
+
+    def test_element_mapping_and_attribute_access(self):
+        c = self._cols()[1]
+        for key in ("name", "column", "column_name"):
+            self.assertEqual(c[key], "email")
+        for key in ("type", "dtype", "data_type"):
+            self.assertEqual(c[key], "character varying")
+        self.assertEqual(c.name, "email")
+        self.assertEqual(c.type, "character varying")
+        self.assertEqual(c.table, "people")
+        self.assertEqual(c["table_name"], "people")
+        self.assertEqual(c.get("nope", "fallback"), "fallback")
+        self.assertEqual(c[0], "e")  # int indexing stays str behaviour
+        self.assertIn("column_name", c)  # dict mental model
+        self.assertIn("mai", c)  # str mental model
+
+    def test_unknown_key_error_lists_valid_ones(self):
+        with self.assertRaises(KeyError) as ctx:
+            self._cols()[0]["kolom"]
+        self.assertIn("column_name", str(ctx.exception))
+
+    def test_dict_and_json_round_trip(self):
+        import json
+
+        from lib import _output
+
+        cols = self._cols()
+        self.assertEqual(dict(cols[0]), {"name": "id", "type": "uuid", "table": "people"})
+        self.assertEqual(cols.to_dicts()[0]["name"], "id")
+        self.assertEqual(json.loads(_output.render(cols, "json"))[0]["type"], "uuid")
+        self.assertIn("name,type,table", _output.render(cols, "csv"))
+
+    def test_list_behaves_like_a_mapping_of_names(self):
+        cols = self._cols()
+        self.assertEqual(cols.keys(), ["id", "email"])
+        self.assertEqual(cols.names(), ["id", "email"])
+        self.assertIn("email", cols)
+        self.assertIn("EMAIL", cols)  # case-insensitive name membership
+        self.assertNotIn("nope", cols)
+        self.assertEqual(cols["email"].type, "character varying")
+        self.assertIsNone(cols.get("nope"))
+        self.assertEqual(cols.types(), {"id": "uuid", "email": "character varying"})
+        self.assertEqual(cols[0], "id")  # positional access preserved
+        self.assertIsInstance(cols[:1], db.ColumnList)
+        with self.assertRaises(KeyError) as ctx:
+            cols["nope"]
+        self.assertIn("available: id, email", str(ctx.exception))
+
+    def test_repr_is_readable(self):
+        text = repr(self._cols())
+        self.assertIn("2 columns:", text)
+        self.assertIn("people.email", text)
+        self.assertIn("character varying", text)
+        self.assertIn("(no columns", repr(db.ColumnList()))
+
+    def test_tables_with_column_carries_the_table(self):
+        with mock.patch.object(
+            db,
+            "query",
+            return_value=[{"table_name": "people", "column_name": "email", "data_type": "text"}],
+        ):
+            hits = db.tables_with_column("%email%")
+        self.assertEqual(hits[0], "email")
+        self.assertEqual(hits[0].table, "people")
+        self.assertEqual(hits[0]["table_name"], "people")
+        self.assertEqual(hits[0].qualified, "people.email")
+
+
 class UndefinedHint(unittest.TestCase):
     """_undefined_hint turns a projected-away column into actionable guidance, not a rewrite-from-scratch."""
 

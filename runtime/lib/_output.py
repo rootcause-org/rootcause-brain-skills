@@ -26,7 +26,13 @@ _TRUNCATED = "…(truncated)…"
 
 
 def render(rows: list[dict], fmt: str = "csv") -> str:
-    """Render rows as ``csv`` | ``json`` | ``table``. Non-scalar cells are JSON-encoded for CSV/table."""
+    """Render rows as ``csv`` | ``json`` | ``table``. Non-scalar cells are JSON-encoded for CSV/table.
+
+    Rows that are mapping-LIKE rather than real dicts (``db.columns`` returns ``Column`` objects, which
+    are str subclasses) are normalized first, so JSON keeps the object shape instead of collapsing to
+    a bare string list.
+    """
+    rows = [r if isinstance(r, dict) else dict(r) for r in rows]
     if fmt == "json":
         return json.dumps(rows, indent=2, default=str)
     if not rows:
