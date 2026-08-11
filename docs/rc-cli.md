@@ -105,6 +105,39 @@ Unsupported project/tenant selectors fail locally instead of being silently igno
 `rc project env set/rm/reveal` only reaches a tenant env when the OAuth token itself is tenant-bound;
 `--tenant` does not retarget those writes.
 
+## Principal Scoping
+
+A project may narrow runs below the tenant to one asserted end-user identity — a **principal** (e.g. a
+parent or a staff leader on a family-admin product). The run's database views then already encode that
+requester: hidden tables raise `UndefinedTable`, per-audience columns are simply absent from the view,
+and `RC_PRINCIPAL_SCOPED=1` / `RC_PRINCIPAL_KIND` mark the run. Brain scripts must tolerate all three
+(lib.db auto-heals a SELECT naming a policy-hidden column) and must **never re-filter by ids taken from
+the message body** — identity is host-asserted, not prompt-inferred.
+
+What you can do from a brain checkout:
+
+```bash
+# The one real per-identity preview: mints the same scoped views a run gets, reports
+# per-table counts, sample rows, compiled predicates, and unconstrained_tables.
+rc project database preview <DSN_ENV> --tenant <slug> \
+  --principal-kind <kind> --principal-id <uuid> -o json
+# Omit the principal flags for the tenant-wide view; --table <name> narrows to one view.
+```
+
+The scoping rules themselves (`scope_manifest` / `principal_manifest` on the project row) are
+operator-owned data — not editable through public `rc`. Propose changes via a RootCause support
+request. Practices that keep proposed rules readable and safe:
+
+- Derive per-kind **typed claims** once (`uuid[]`, `allow_empty`) and keep every predicate a
+  membership test (`col = ANY(:my_ids)`) instead of repeating subqueries per table.
+- Have each kind derive every claim (the other kind's as empty sets): an empty array matches no row
+  naturally, so predicates need no `:principal_kind = '…'` guards.
+- Whole table irrelevant/sensitive to end users → `principal_hidden`; per-audience column →
+  `principal_exclude_columns` ({kind → [cols]}, `"*"` = every asserted kind). Exclusion beats
+  masking — the column is gone, not tokenized.
+- Verify every kind with `preview` after a change; the engine fails closed (a missing claim refuses
+  the run) rather than silently widening, so an error here is the guardrail working.
+
 ## `rc ask`
 
 `rc ask` triggers a real production run and waits by default.
