@@ -155,7 +155,9 @@ Use the smallest checks that cover the change:
 
 ```bash
 uv run --no-project python -m py_compile skills/local-brain-work/scripts/*.py
-cd runtime && uv run --with . --with pytest --no-project pytest tests -q
+# PYTHONPATH is load-bearing: `--with .` can serve a CACHED wheel of an unchanged version, so
+# without it your edits to runtime/lib may not be what gets tested.
+cd runtime && PYTHONPATH=$(pwd) uv run --with . --with pytest --no-project pytest tests -q
 ./check-release-coherence.sh
 ```
 
