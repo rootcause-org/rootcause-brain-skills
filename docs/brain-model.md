@@ -48,6 +48,12 @@ interchangeable.
 | Grounding databases/APIs | `lib.db`, `lib.http`, etc. | Live read-only facts: customers, orders, invoices, app state, remote API data. Runtime-owned HTTP attempts emit the [HTTP audit contract](http-audit.md). | How to query safely, which scripts encapsulate repeated lookups, and what findings mean for the customer. |
 | Actions | `actions/<id>/` plus host catalog | Vetted write intents, parameter schemas, read-only preflight, optional hosted execution script. | When an action is the right resolution, required evidence for params, and reviewer-facing caveats. |
 
+`lib.db` hydrates Postgres array columns into real Python lists — `enum[]` included, which psycopg
+itself hands back as the raw `"{parent,child}"` literal. A brain that runs against an **older pinned
+runtime** can still see that literal, so keep boundary code shape-tolerant — normalize once
+(`if isinstance(v, str): ...`) instead of assuming one shape, and never iterate the value blind (a
+literal string iterates as characters).
+
 If a fact changes with the customer's app state or source code, prefer a grounding script or mirror
 lookup over copying it into prose. If a fact is a stable support policy, product concept, customer
 promise, or decision tree, put it in the brain with tests where practical.

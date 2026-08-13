@@ -16,6 +16,9 @@ single-table shape), it's dropped, the trimmed query runs, and a warning names w
 one extra field doesn't fail the whole query. A column that ISN'T hidden (a typo) still raises, with a
 scoping-aware hint. The hidden-column map comes from the ``RC_DB_EXCLUDED_COLUMNS`` env var.
 
+Array columns hydrate to real Python lists (``enum[]`` included — see `query`), so
+``row["roles"]`` is a ``list``, never the raw ``"{parent,child}"`` literal.
+
 Read-only by provisioning; this module adds a belt-and-suspenders ``READ ONLY``
 transaction plus a ``statement_timeout`` so a stray write fails loudly and a runaway query can't
 hang the run. ``psycopg`` is imported lazily, so the module — its DSN resolution, and the CLI's
@@ -44,21 +47,44 @@ _HOST_DSN_VARS = ("DATABASE_URL",)
 _ARRAY_OIDS: dict[str, frozenset] = {}
 
 
+# Postgres prefixes the literal with explicit bounds when an array's lower bound isn't 1
+# ("[0:1]={a,b}", "[1:2][1:2]={{1,2},{3,4}}"). Rare, but without this the value would fall through
+# as a bare string.
+_ARRAY_DIMS_RE = re.compile(r"^\[[-\d:\]\[]+\]=")
+
+
+def _looks_like_array_literal(s: str) -> bool:
+    """Could this string be an array output literal? Shape only — NEVER the decision to parse.
+
+    Used purely as a cheap prefilter for whether a result set is worth one `_array_oids` lookup;
+    the authoritative test is always the column's type OID. Lossless in that direction: Postgres
+    renders every array as ``{...}`` (optionally behind a dimension prefix), so a value failing
+    this test cannot be an array."""
+    return bool(s[:1] == "{" or _ARRAY_DIMS_RE.match(s))
+
+
 def _parse_pg_array(text: str):
     """Parse a Postgres array output literal into a (possibly nested) Python list.
 
-    psycopg parses arrays of KNOWN element types (``text[]``, ``int[]``, …) into lists itself; it
-    leaves arrays of element types it has no loader for — chiefly **enum arrays** and other
-    user-defined types — as the **raw literal string** (``"{parent}"``, ``"{parent,child}"``,
+    psycopg parses arrays of KNOWN element types (``text[]``, ``int[]``, ``uuid[]``, …) into lists
+    itself; it leaves arrays of element types it has no loader for — chiefly **enum arrays** and
+    other user-defined types — as the **raw literal string** (``"{parent}"``, ``"{parent,child}"``,
     ``"{}"``). Iterating that string by mistake (``list(role)`` → characters) is a silent footgun,
     so `query` routes such values through here.
 
     Handles the array grammar: quoted elements with backslash escapes (``{"a,b","x\\"y"}``),
-    unquoted ``NULL`` → ``None`` (a quoted ``"NULL"`` stays the string), empty ``{}`` → ``[]``, and
-    nesting (``{{1,2},{3}}``). Elements come back as ``str`` (the caller casts as needed). A value
-    that isn't an array literal is returned unchanged.
+    unquoted ``NULL`` → ``None`` (a quoted ``"NULL"`` stays the string), empty ``{}`` → ``[]``,
+    nesting (``{{1,2},{3}}``), and a dimension prefix (``[0:1]={a,b}``). Elements come back as
+    ``str`` — the types that reach here are enum/uuid/domain-ish, and psycopg already produced real
+    ``int``/``float`` lists for the numeric arrays it knows, so no coercion is attempted (cast
+    yourself if a custom numeric domain shows up). A value that isn't an array literal — e.g. a
+    whole column replaced by a PII ``⟦pii:…⟧`` token — is returned unchanged; tokens *inside* a
+    literal are ordinary string elements.
     """
     s = text.strip()
+    dims = _ARRAY_DIMS_RE.match(s)
+    if dims:
+        s = s[dims.end():]
     if not (s.startswith("{") and s.endswith("}")):
         return text
     i = 0
@@ -119,7 +145,10 @@ def _array_oids(conn, dsn: str) -> frozenset:
 
     Lets `query` tell that a value psycopg returned as a *string* actually came from an array
     column (an unhandled element type, e.g. an enum array) and should be parsed — without touching
-    real text columns that merely contain braces."""
+    real text columns that merely contain braces. ``typcategory`` is the only robust source: enum
+    arrays (and other user-defined types) get **per-database OIDs**, so no static table can cover
+    them. One round trip per DSN per process, and `query` only spends it when a result set actually
+    contains an array-shaped string."""
     oids = _ARRAY_OIDS.get(dsn)
     if oids is None:
         with conn.cursor() as cur:
@@ -481,6 +510,12 @@ def query(
     ``['%' + term + '%']``) — both work; don't mix a static-`%` literal into a query that also binds
     params, since then psycopg scans the whole string and the literal ``%`` needs doubling (``%%``).
 
+    Arrays: an array column always comes back as a real Python ``list`` — including ``enum[]`` and
+    other types psycopg has no loader for, which the wire hands us as the literal ``"{a,b}"``
+    (`_parse_pg_array`). ``{}`` → ``[]``, a NULL *element* → ``None`` in the list, but a NULL
+    *column* stays ``None`` (not ``[]``) so "no value" and "empty array" stay distinguishable.
+    Detection is by the column's type OID, so a text column holding ``"{a,b}"`` is left alone.
+
     Auto-heal: if the project's data-scoping hides a column you SELECT (standard single-table shape),
     that column is dropped, the trimmed query runs, and a warning names what was dropped — so one extra
     field doesn't fail the whole query. A column that ISN'T manifest-hidden (a typo) is left in and
@@ -562,19 +597,19 @@ def query(
             raw = cur.fetchall()
         # Enum/other unhandled array columns come back from psycopg as the raw literal string
         # ("{parent}"); parse those into lists so callers get a real list everywhere. Built-in
-        # arrays already arrive as lists (not str) and so are untouched; the brace + array-OID
-        # guards keep us off ordinary text columns. OID set is fetched once per DSN (cached).
-        array_oids = _array_oids(conn, dsn) if raw else frozenset()
+        # arrays already arrive as lists (not str) and so are untouched. The DECISION to parse is
+        # the column's array type OID — never the value's shape, since a plain text column may
+        # legitimately hold "{not,an,array}". Shape is only a prefilter for whether to spend the
+        # (cached, once-per-DSN) pg_type round trip at all, so an array-free query pays nothing.
+        may_have_arrays = any(
+            isinstance(v, str) and _looks_like_array_literal(v) for row in raw for v in row
+        )
+        array_oids = _array_oids(conn, dsn) if may_have_arrays else frozenset()
         out: list[dict] = []
         for row in raw:
             d = {}
             for col, val in zip(cols, row):
-                if (
-                    isinstance(val, str)
-                    and val[:1] == "{"
-                    and val[-1:] == "}"
-                    and col.type_code in array_oids
-                ):
+                if isinstance(val, str) and col.type_code in array_oids:
                     val = _parse_pg_array(val)
                 d[col.name] = val
             out.append(d)
