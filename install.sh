@@ -225,23 +225,33 @@ if [ -L "$BRAIN/.agents/skills" ]; then
 fi
 mkdir -p "$BRAIN/.agents/skills" "$BRAIN/.claude"
 
-link_one_skill() {
+preflight_link() {
   local src="$1"
   local dst="$2"
-  local current
-  if [ -L "$dst" ]; then
-    current="$(readlink "$dst")"
-    if [ "$current" != "$src" ]; then
-      echo "error: $dst is a user-managed symlink; refusing to overwrite it" >&2
-      exit 1
-    fi
-    rm "$dst"
-  elif [ -e "$dst" ]; then
+  if [ -L "$dst" ] && [ "$(readlink "$dst")" != "$src" ]; then
+    echo "error: $dst is a user-managed symlink; refusing to overwrite it" >&2
+    exit 1
+  elif [ ! -L "$dst" ] && [ -e "$dst" ]; then
     echo "error: $dst exists and is not an installer symlink; refusing to overwrite user content" >&2
     exit 1
   fi
+}
+
+link_managed() {
+  local src="$1"
+  local dst="$2"
+  preflight_link "$src" "$dst"
+  [ -L "$dst" ] && rm "$dst"
   ln -s "$src" "$dst"
 }
+
+# Shared reference docs, linked once per brain. Skills cross-reference them as `../../docs/*.md`
+# (templates: `../../../docs/*`), which only resolves if `docs` sits beside the skills tree — and
+# `.claude/skills/<skill>/../../docs` lands in `.claude/`, so that side needs its own alias.
+DOCS_SRC="$KIT/docs"
+DOCS_DST="$BRAIN/.agents/docs"
+DOCS_CLAUDE_ALIAS="../.agents/docs"
+DOCS_CLAUDE_DST="$BRAIN/.claude/docs"
 
 # Classify the Claude compatibility path without changing it. A directory containing only links made
 # by the previous installer can migrate to the alias. Any unrelated entry keeps directory fallback.
@@ -273,36 +283,30 @@ fi
 for src in "$KIT"/skills/*; do
   [ -d "$src" ] || continue
   [ -f "$src/SKILL.md" ] || continue
-  dst="$BRAIN/.agents/skills/$(basename "$src")"
-  if [ -L "$dst" ] && [ "$(readlink "$dst")" != "$src" ]; then
-    echo "error: $dst is a user-managed symlink; refusing to overwrite it" >&2
-    exit 1
-  elif [ ! -L "$dst" ] && [ -e "$dst" ]; then
-    echo "error: $dst exists and is not an installer symlink; refusing to overwrite user content" >&2
-    exit 1
-  fi
+  preflight_link "$src" "$BRAIN/.agents/skills/$(basename "$src")"
 done
+if [ -d "$DOCS_SRC" ]; then
+  preflight_link "$DOCS_SRC" "$DOCS_DST"
+  preflight_link "$DOCS_CLAUDE_ALIAS" "$DOCS_CLAUDE_DST"
+fi
 
 if [ "$CLAUDE_MODE" = "directory" ]; then
   for src in "$KIT"/skills/*; do
     [ -d "$src" ] || continue
     [ -f "$src/SKILL.md" ] || continue
-    dst="$CLAUDE_SKILLS/$(basename "$src")"
-    if [ -L "$dst" ] && [ "$(readlink "$dst")" != "$src" ]; then
-      echo "error: $dst is a user-managed symlink; refusing to overwrite it" >&2
-      exit 1
-    elif [ ! -L "$dst" ] && [ -e "$dst" ]; then
-      echo "error: $dst exists and is not an installer symlink; refusing to overwrite user content" >&2
-      exit 1
-    fi
+    preflight_link "$src" "$CLAUDE_SKILLS/$(basename "$src")"
   done
 fi
 
 for src in "$KIT"/skills/*; do
   [ -d "$src" ] || continue
   [ -f "$src/SKILL.md" ] || continue
-  link_one_skill "$src" "$BRAIN/.agents/skills/$(basename "$src")"
+  link_managed "$src" "$BRAIN/.agents/skills/$(basename "$src")"
 done
+if [ -d "$DOCS_SRC" ]; then
+  link_managed "$DOCS_SRC" "$DOCS_DST"
+  link_managed "$DOCS_CLAUDE_ALIAS" "$DOCS_CLAUDE_DST"
+fi
 
 if [ "$CLAUDE_MODE" = "alias" ]; then
   if [ "$CLAUDE_MIGRATE" = 1 ]; then
@@ -321,7 +325,7 @@ else
   for src in "$KIT"/skills/*; do
     [ -d "$src" ] || continue
     [ -f "$src/SKILL.md" ] || continue
-    link_one_skill "$src" "$CLAUDE_SKILLS/$(basename "$src")"
+    link_managed "$src" "$CLAUDE_SKILLS/$(basename "$src")"
   done
 fi
 
@@ -359,6 +363,10 @@ mv "$EXCLUDE_TMP" "$EXCLUDE"
   done
   if [ "$CLAUDE_MODE" = "alias" ]; then
     echo "${IGNORE_ROOT}.claude/skills"
+  fi
+  if [ -d "$DOCS_SRC" ]; then
+    echo "${IGNORE_ROOT}.agents/docs"
+    echo "${IGNORE_ROOT}.claude/docs"
   fi
   echo "$EXCLUDE_END"
 } >>"$EXCLUDE"

@@ -9,6 +9,8 @@ KIT="$TMP/kit"
 mkdir -p "$KIT/skills/alpha" "$KIT/skills/beta"
 printf '%s\n' '---' 'name: alpha' 'description: Alpha.' '---' >"$KIT/skills/alpha/SKILL.md"
 printf '%s\n' '---' 'name: beta' 'description: Beta.' '---' >"$KIT/skills/beta/SKILL.md"
+mkdir -p "$KIT/docs"
+printf '%s\n' '# shared doc' >"$KIT/docs/brain-model.md"
 
 new_brain() {
   local name="$1"
@@ -36,6 +38,17 @@ assert_clean_local_install() {
   grep -qxF '/.agents/skills/alpha' "$exclude"
   grep -qxF '/.agents/skills/beta' "$exclude"
   grep -qxF '/.claude/skills' "$exclude"
+  grep -qxF '/.agents/docs' "$exclude"
+  grep -qxF '/.claude/docs' "$exclude"
+}
+
+# A skill's `../../docs/x.md` cross-reference resolves LOGICALLY (as a markdown reader walks it), so
+# assert the paths those links name in each tree — not the physical ones a symlink hop would reach.
+assert_docs_links_resolve() {
+  test "$(readlink "$BRAIN/.agents/docs")" = "$KIT/docs"
+  test "$(readlink "$BRAIN/.claude/docs")" = '../.agents/docs'
+  test -f "$BRAIN/.agents/docs/brain-model.md"
+  test -f "$BRAIN/.claude/docs/brain-model.md"
 }
 
 # Clean install: one Codex-native tree and one relative Claude compatibility alias.
@@ -45,13 +58,16 @@ test "$(readlink "$BRAIN/.agents/skills/alpha")" = "$KIT/skills/alpha"
 test "$(readlink "$BRAIN/.agents/skills/beta")" = "$KIT/skills/beta"
 test "$(readlink "$BRAIN/.claude/skills")" = '../.agents/skills'
 assert_clean_local_install
+assert_docs_links_resolve
 
 # Idempotence keeps the same topology and does not duplicate local excludes.
 run_install >"$TMP/idempotent.out"
 test "$(readlink "$BRAIN/.claude/skills")" = '../.agents/skills'
 exclude="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path info/exclude)"
 test "$(grep -c '^/.agents/skills/alpha$' "$exclude")" = 1
+test "$(grep -c '^/.agents/docs$' "$exclude")" = 1
 assert_clean_local_install
+assert_docs_links_resolve
 
 # Previous installer-created per-skill Claude links migrate to the single alias.
 new_brain migrate
@@ -76,6 +92,7 @@ grep -q 'preserved user-owned .claude/skills directory' "$TMP/fallback.out"
 exclude="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path info/exclude)"
 grep -qxF '/.agents/skills/alpha' "$exclude"
 grep -qxF '/.claude/skills/alpha' "$exclude"
+assert_docs_links_resolve
 if grep -qxF '/.claude/skills' "$exclude"; then
   echo "error: fallback directory was ignored wholesale" >&2
   exit 1
@@ -98,6 +115,18 @@ if run_install >"$TMP/refusal.out" 2>&1; then
 fi
 grep -q 'refusing to overwrite user content' "$TMP/refusal.out"
 test "$(cat "$BRAIN/.agents/skills/alpha/SKILL.md")" = 'do not overwrite'
+
+# A user-owned .agents/docs is content too: refuse before any link is rewritten.
+new_brain docs-refusal
+mkdir -p "$BRAIN/.agents/docs"
+printf '%s\n' 'user notes' >"$BRAIN/.agents/docs/notes.md"
+if run_install >"$TMP/docs-refusal.out" 2>&1; then
+  echo "error: installer overwrote a user-owned .agents/docs" >&2
+  exit 1
+fi
+grep -q 'refusing to overwrite user content' "$TMP/docs-refusal.out"
+test "$(cat "$BRAIN/.agents/docs/notes.md")" = 'user notes'
+test ! -e "$BRAIN/.agents/skills/alpha"
 
 # A foreign Claude symlink is also preserved and refused.
 new_brain claude-refusal
@@ -148,6 +177,7 @@ run_install >"$TMP/nested.out"
 exclude="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path info/exclude)"
 grep -qxF '/tenant/.agents/skills/alpha' "$exclude"
 grep -qxF '/tenant/.claude/skills' "$exclude"
+grep -qxF '/tenant/.agents/docs' "$exclude"
 test -z "$(git -C "$REPO" status --short)"
 
 # A second nested brain keeps the first brain's independently managed excludes.
