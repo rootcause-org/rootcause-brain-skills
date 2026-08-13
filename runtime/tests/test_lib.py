@@ -554,8 +554,9 @@ class TableNotFoundMessage(unittest.TestCase):
         os.environ.update(self._clean)
 
     def _fake_psycopg(self):
-        """A psycopg double whose cursor.execute raises a REAL UndefinedTable (so the except clause, which
-        catches the concrete class, fires) and whose errors.* are real classes."""
+        """A psycopg double whose cursor.execute raises a REAL UndefinedTable for the USER query (so the
+        except clause, which catches the concrete class, fires) and whose errors.* are real classes.
+        The timeout SET LOCALs query() always emits first must pass through untouched."""
 
         class _UndefinedTable(Exception):
             diag = mock.Mock(message_hint=None)
@@ -563,8 +564,13 @@ class TableNotFoundMessage(unittest.TestCase):
         class _UndefinedColumn(Exception):
             diag = mock.Mock(message_hint=None)
 
+        def execute(sql, *_a, **_k):
+            if sql.lstrip().upper().startswith("SET"):
+                return None
+            raise _UndefinedTable('relation "accounts" does not exist')
+
         cur = mock.MagicMock()
-        cur.execute.side_effect = _UndefinedTable('relation "accounts" does not exist')
+        cur.execute.side_effect = execute
         cur.__enter__ = lambda s: cur
         cur.__exit__ = lambda *a: False
         conn = mock.MagicMock()
@@ -584,7 +590,7 @@ class TableNotFoundMessage(unittest.TestCase):
         os.environ["RC_DB_DESCRIPTIONS"] = '{"MOMENTUM_POWERTOOLS_DSN":"Credits / usage."}'
         with mock.patch.dict(sys.modules, {"psycopg": self._fake_psycopg()}):
             with self.assertRaises(RuntimeError) as ctx:
-                db.query("select * from accounts", timeout_ms=0)  # no db= → defaults to the standard
+                db.query("select * from accounts")  # no db= → defaults to the standard
         msg = str(ctx.exception)
         self.assertIn("No db= was passed", msg)
         self.assertIn("'ruby'", msg)  # the standard that was used
@@ -598,7 +604,7 @@ class TableNotFoundMessage(unittest.TestCase):
         os.environ["RC_DB_DEFAULT"] = "MOMENTUM_RUBY_DSN"
         with mock.patch.dict(sys.modules, {"psycopg": self._fake_psycopg()}):
             with self.assertRaises(RuntimeError) as ctx:
-                db.query("select * from accounts", db="ruby", timeout_ms=0)
+                db.query("select * from accounts", db="ruby")
         msg = str(ctx.exception)
         self.assertNotIn("No db= was passed", msg)
         self.assertIn("lib.db.columns", msg)  # the generic undefined hint

@@ -20,9 +20,14 @@ Array columns hydrate to real Python lists (``enum[]`` included — see `query`)
 ``row["roles"]`` is a ``list``, never the raw ``"{parent,child}"`` literal.
 
 Read-only by provisioning; this module adds a belt-and-suspenders ``READ ONLY``
-transaction plus a ``statement_timeout`` so a stray write fails loudly and a runaway query can't
-hang the run. ``psycopg`` is imported lazily, so the module — its DSN resolution, and the CLI's
-``--list`` — loads even where the driver isn't installed.
+transaction plus server-side timeouts so a stray write fails loudly and a runaway query can't hang
+the run. The timeout is a HARD CAP, not a suggestion: every query runs under ``statement_timeout``
+(+ ``idle_in_transaction_session_timeout``, + ``transaction_timeout`` on PG 17+), defaulting to 30s
+and never exceeding **120s** — ``timeout_ms=0``/``None`` means "default", never "unlimited", and a
+larger request is clamped with a warning. One SQL statement per `query` call (a second top-level
+statement raises), so a query can't smuggle a ``SET statement_timeout = 0`` past the cap.
+``psycopg`` is imported lazily, so the module — its DSN resolution, and the CLI's ``--list`` —
+loads even where the driver isn't installed.
 
 CLI (token-efficient one-offs from bash):
 
@@ -36,7 +41,24 @@ import re
 import warnings
 
 DEFAULT_TIMEOUT_MS = 30_000
+# Hard ceiling on any caller-supplied timeout. A grounding read that needs >2 minutes is a query
+# to rewrite, not to wait for: the run has a budget, and the dbproxy in front of the database
+# refuses CancelRequest, so the ONLY thing that stops a runaway query is the server-side timeout we
+# set here. Nothing a caller passes can raise or disable it.
+MAX_TIMEOUT_MS = 120_000
+# How much longer than statement_timeout the PG17 transaction_timeout backstop runs (see `_timeout_sql`).
+_TRANSACTION_TIMEOUT_SLACK_MS = 2_000
 DEFAULT_CONNECT_TIMEOUT_SECONDS = 15
+
+# Dead-network protection: without these libpq inherits the OS default (~2h before a vanished peer
+# is noticed), so a dropped NAT/VPN mapping would hang the run far past any statement_timeout —
+# which only ticks while the server is reachable. ~60s to notice instead.
+_KEEPALIVE_KWARGS = {
+    "keepalives": 1,
+    "keepalives_idle": 30,
+    "keepalives_interval": 10,
+    "keepalives_count": 3,
+}
 
 # The host's own operational store (registry + River + audit log) — never a grounding target.
 # Excluded from discovery so the agent can't accidentally pick it.
@@ -492,6 +514,144 @@ def _strip_excluded(sql: str, emap: dict):
     return new_sql, dropped
 
 
+def _effective_timeout_ms(timeout_ms) -> int:
+    """The timeout we will actually SET: caller's value, defaulted and clamped to `MAX_TIMEOUT_MS`.
+
+    ``0``/``None``/negative mean "use the default" — NEVER "no timeout" (the old meaning, which let a
+    caller disable the only backstop there is). A larger-than-cap request is honoured up to the cap
+    and warned about, so the caller learns why its 10-minute query died at 2 minutes."""
+    try:
+        ms = int(timeout_ms or DEFAULT_TIMEOUT_MS)
+    except (TypeError, ValueError):
+        ms = DEFAULT_TIMEOUT_MS
+    if ms <= 0:
+        ms = DEFAULT_TIMEOUT_MS
+    if ms > MAX_TIMEOUT_MS:
+        warnings.warn(
+            f"timeout_ms={ms} exceeds the {MAX_TIMEOUT_MS} ms hard cap for grounding reads — "
+            f"clamped to {MAX_TIMEOUT_MS} ms. Narrow the query (index-friendly filters, LIMIT, "
+            f"pre-aggregate) instead of waiting longer.",
+            stacklevel=3,
+        )
+        ms = MAX_TIMEOUT_MS
+    return ms
+
+
+def _skip_noise(s: str, i: int) -> int:
+    """Advance past whitespace, ``--`` line comments and (nestable) ``/* */`` block comments."""
+    n = len(s)
+    while i < n:
+        c = s[i]
+        if c.isspace() or c == ";":  # a stray extra ';' is noise, not a second statement
+            i += 1
+        elif s.startswith("--", i):
+            nl = s.find("\n", i)
+            i = n if nl == -1 else nl + 1
+        elif s.startswith("/*", i):
+            depth, i = 1, i + 2
+            while i < n and depth:
+                if s.startswith("/*", i):
+                    depth, i = depth + 1, i + 2
+                elif s.startswith("*/", i):
+                    depth, i = depth - 1, i + 2
+                else:
+                    i += 1
+        else:
+            break
+    return i
+
+
+def _first_top_level_semicolon(sql: str) -> int:
+    """Index of the first ``;`` that is real SQL punctuation, or ``-1``.
+
+    A scanner, not a split: a ``;`` inside a single-quoted literal (``'a;b'``, ``''`` escapes), a
+    double-quoted identifier, a dollar-quoted body (``$$…;…$$``, ``$tag$…$tag$``) or a comment is
+    ordinary text and must not count — otherwise legitimate queries would be rejected."""
+    i, n = 0, len(sql)
+    while i < n:
+        c = sql[i]
+        if c == "'":
+            i += 1
+            while i < n:
+                if sql[i] == "'":
+                    if i + 1 < n and sql[i + 1] == "'":  # '' = escaped quote, string continues
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                i += 1
+        elif c == '"':
+            i += 1
+            while i < n and sql[i] != '"':
+                i += 1
+            i += 1
+        elif c == "$":
+            m = re.match(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$", sql[i:])
+            if m:
+                tag = m.group(0)
+                end = sql.find(tag, i + len(tag))
+                i = n if end == -1 else end + len(tag)
+            else:  # $1 placeholder or a bare '$' — not a dollar quote
+                i += 1
+        elif sql.startswith("--", i) or sql.startswith("/*", i):
+            i = _skip_noise(sql, i)
+        elif c == ";":
+            return i
+        else:
+            i += 1
+    return -1
+
+
+def _reject_multi_statement(sql: str) -> None:
+    """Raise unless ``sql`` is ONE statement (a trailing ``;`` and trailing comments are fine).
+
+    psycopg sends a params-less query over the simple protocol, which happily runs every statement in
+    the string and returns only the LAST result. So ``"SET statement_timeout=0; select …"`` would
+    quietly lift the cap this module exists to enforce (and return ``[]`` while the real query ran
+    unbounded). Refuse at the client instead of trusting the server-side GUCs to survive."""
+    i = _first_top_level_semicolon(sql)
+    if i == -1:
+        return
+    if _skip_noise(sql, i) >= len(sql):  # only whitespace/comments/`;` after it ⇒ single statement
+        return
+    raise RuntimeError(
+        "multiple SQL statements in one query() call are not allowed (found a ';' followed by more "
+        "SQL). Run exactly one statement per call — a second statement can silently override this "
+        "run's read-only + timeout guarantees, and only the last result would come back. A trailing "
+        "';' is fine."
+    )
+
+
+def _server_version(conn) -> int:
+    """``conn.info.server_version`` (e.g. 170004) or ``0`` when unknown/faked. Gates GUCs that don't
+    exist on older servers — an unknown ``SET LOCAL`` ABORTS the transaction, so it can't be
+    try/excepted; it has to be asked about first."""
+    try:
+        return int(conn.info.server_version)
+    except Exception:  # noqa: BLE001 - test doubles and exotic drivers may not expose info
+        return 0
+
+
+def _timeout_sql(conn, timeout_ms: int) -> str:
+    """The SET LOCALs that bound this transaction, as ONE round trip.
+
+    ``statement_timeout`` kills a runaway query; ``idle_in_transaction_session_timeout`` kills a
+    transaction we somehow stop driving; ``transaction_timeout`` (PG 17+) bounds the whole thing
+    including the gaps — belt and suspenders, because each alone has a hole.
+
+    ``transaction_timeout`` gets a small slack on top: its clock starts at BEGIN (before these SETs),
+    so at an identical value it wins the race and TERMINATES the connection ("terminating connection
+    due to transaction timeout") instead of letting ``statement_timeout`` cancel the statement with
+    the actionable error. Slack keeps it the backstop it is meant to be."""
+    stmts = [
+        f"SET LOCAL statement_timeout = {timeout_ms}",
+        f"SET LOCAL idle_in_transaction_session_timeout = {timeout_ms}",
+    ]
+    if _server_version(conn) >= 170000:
+        stmts.append(f"SET LOCAL transaction_timeout = {timeout_ms + _TRANSACTION_TIMEOUT_SLACK_MS}")
+    return "; ".join(stmts)
+
+
 def query(
     sql: str,
     params: list | tuple | None = None,
@@ -501,7 +661,14 @@ def query(
     """Run a read-only SELECT and return rows as a list of dicts.
 
     Opens a fresh read-only connection per call (the container is disposable, so pooling buys
-    nothing). ``db`` selects the database (see module docstring); ``timeout_ms`` caps the statement.
+    nothing). ``db`` selects the database (see module docstring).
+
+    ONE statement per call: a second top-level statement raises (a trailing ``;`` is fine), because
+    the simple protocol would run it too and let it undo this transaction's guarantees.
+
+    ``timeout_ms`` caps the statement server-side, defaulting to 30s and **hard-capped at 120s**
+    (`MAX_TIMEOUT_MS`) — a bigger value is clamped with a warning, and ``0``/``None`` means "default",
+    not "unlimited". If your query needs more, make the query cheaper: it will be killed at the cap.
 
     Placeholders: bind UNTRUSTED INPUT as ``%s`` with ``params`` — never string-format input into
     ``sql`` (injection). But a literal ``%`` wildcard is fine inline: ``ILIKE 'avo%'`` with no
@@ -523,6 +690,8 @@ def query(
     """
     import psycopg
 
+    _reject_multi_statement(sql)
+    timeout_ms = _effective_timeout_ms(timeout_ms)
     dsn = _resolve_dsn(db)
     emap = _excluded_columns().get(_env_name_for_dsn(dsn) or "", {})
     sql, dropped = _strip_excluded(sql, emap)
@@ -537,6 +706,7 @@ def query(
             dsn,
             autocommit=False,
             connect_timeout=DEFAULT_CONNECT_TIMEOUT_SECONDS,
+            **_KEEPALIVE_KWARGS,
         )
     except Exception as e:  # noqa: BLE001 - psycopg connection errors vary by driver/libpq path.
         hint = (
@@ -562,8 +732,9 @@ def query(
         # Read-only transaction: a write attempt errors instead of mutating customer data.
         conn.read_only = True
         with conn.cursor() as cur:
-            if timeout_ms:
-                cur.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
+            # Always emitted, before anything else can run: the timeout is the run's only backstop
+            # against a query that never returns (the dbproxy rejects client-side CancelRequest).
+            cur.execute(_timeout_sql(conn, timeout_ms))
             try:
                 # Pass None (not []) when there are no params: psycopg only scans the SQL for
                 # placeholders when params is a sequence, and that scan rejects a literal `%` (the
@@ -861,7 +1032,11 @@ def _main(argv=None) -> int:
     p.add_argument("sql", nargs="?", help="SQL to run (read-only transaction).")
     p.add_argument("--db", help="Database: short name, env-var name, or raw DSN. Omit if only one.")
     p.add_argument("--format", choices=("csv", "json", "table"), default="csv")
-    p.add_argument("--timeout", default="30s", help="statement_timeout, e.g. 30s, 2min (default 30s).")
+    p.add_argument(
+        "--timeout",
+        default="30s",
+        help="statement_timeout, e.g. 30s, 2min (default 30s, hard cap 2min — larger is clamped).",
+    )
     p.add_argument("--list", action="store_true", help="List available databases and exit.")
     args = p.parse_args(argv)
 
