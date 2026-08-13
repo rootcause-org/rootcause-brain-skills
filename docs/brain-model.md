@@ -218,6 +218,16 @@ internal design notes, and local tooling. Keep them committed and runnable local
 from the run-visible view. Typical rules are `/tests/`, `/skills/**/tests/`, `/actions/**/tests/`, and
 `/conftest.py` (adapt to the repo rather than copying blindly).
 
+Agent skill trees in a source mirror (`.claude/skills/`, `.agents/skills/`) are domain knowledge, not
+harness config: keep each skill folder **whole**, including its progressive-disclosure margin files —
+a visible `SKILL.md` whose linked files are hidden is worse than either extreme. More generally, keep
+top-level markdown that gives a high-level view of a subsystem even when it is about implementation;
+"how this feature is built" routinely answers "why did the customer see X". Hide a skill or doc only
+when it would actively mislead the run agent because it documents tooling the run does not have —
+local control-plane guidance (e.g. the `rc` CLI skill), operator-only workflows wired to hidden
+scripts — or internal meta files (harness settings, slash-commands, agent memory, pentest state) that
+read as instructions rather than knowledge. When unsure, keep it visible.
+
 Do not expose a test suite merely because it demonstrates a script's inputs or outputs. Put the stable
 contract in the script docstring, its `SKILL.md`, or a concise reference/example instead; that is easier
 to retrieve and costs less context. Keep a test or fixture visible only when the production run has an
