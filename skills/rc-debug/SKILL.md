@@ -61,5 +61,30 @@ Default to evidence-first. A single run is signal, not permission to oversteer t
    - verification plan, usually `brain-ask` with `--brain-ref dev/<branch>`
    - publish path, usually `brain-publish` after the fix is committed
 
+## Run header (JSONL line 1)
+
+Line 1 is the `type=="run"` header — the run's inputs, not its steps. Every field is top-level (no
+`.run` wrapper); every other line is `type=="event"`.
+
+```bash
+F=.rootcause/debug/<file>.jsonl
+jq -r 'select(.type=="run").system_prompt' "$F"
+jq    'select(.type=="run").tenant_settings' "$F"          # settings as they were at run time
+jq    'select(.type=="run").tenant_settings_current' "$F"  # settings now — diff the two for drift
+jq    'select(.type=="run").tenant_settings_drift' "$F"    # host-computed {key,then,now}, when it differs
+jq -r 'select(.type=="run").brain_resolved' "$F"           # the exact brain ref/SHA the run read
+jq    'select(.type=="run").grounding_sources' "$F"        # per-source mounted/available/ref + .drift
+```
+
+Drift is the first thing to rule out: a run answered against the settings, brain SHA, and mirror
+state of *its* moment, not today's.
+
+The `system_prompt` is long (tens of thousands of chars) but is only plane 1 of the assembled
+context — the run also receives a
+bootstrap/brain-plane user turn and the thread itself, so never read it as the whole prompt.
+
+Full per-section provenance of the assembled prompt lives host-side (`rootcause` repo,
+`prompt-assembly-map.md`); operators with host access read it there.
+
 Only edit files when the user explicitly asks to implement the proposed fix. After edits, verify with
 Local Brain Work (`local-brain-work`)/`brain-ask`, then use `brain-publish` for the live/support step.
