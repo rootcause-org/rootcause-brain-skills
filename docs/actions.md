@@ -35,6 +35,7 @@ actions/<id>/
 ```
 
 - `manifest.yaml` describes the action, param schema, any hosted write connections, and its `autonomy`.
+  `description` is for the agent; `display_name` + `customer_description` are customer-facing.
 - `preflight.py`, when present, is read-only and blocks unsafe/mis-grounded params before proposal.
 - `policy.py`, when present, is read-only and decides per-invocation whether an `autonomy: policy` action
   auto-executes or escalates to a human (see [Autonomy](#autonomy-human--policy--auto)).
@@ -47,6 +48,20 @@ workflows unless the combined operation is atomic and idempotent.
 Action docs/runbooks should put exact safety guards and verification checks near the top: required
 evidence, disqualifying states, preflight expectations, post-execution proof, and when to refuse or
 escalate.
+
+## Customer-Facing Copy
+
+```yaml
+# actions/<id>/manifest.yaml
+description: "Agent-facing: when to propose this action and what it does."
+display_name: "Abonnement opzeggen"          # customer-facing, optional
+customer_description: "Zegt het abonnement op per einde van de lopende periode."
+```
+
+Both are optional (fallback: prettified id / `description`) and are shown to the **end customer**, so
+write them in the project's customer language. `display_name` becomes the mailbox confirm-button label
+(`▶️ <display_name>`); `customer_description` is the plain-language intent on the confirm page and in the
+action catalog.
 
 ## Param Types
 
