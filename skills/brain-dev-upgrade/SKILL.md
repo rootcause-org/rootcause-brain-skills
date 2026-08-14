@@ -61,9 +61,10 @@ brew install rootcause-org/tap/rc
 
 For Claude Code web, Codex cloud, CI, or another headless agent, follow the canonical
 [cloud-agent setup](https://github.com/rootcause-org/rootcause-cli#headless-cloud-agents). It includes
-the least-privilege project-token mint, `.rootcause.toml` marker, verification, and two installer forms:
-use the short installer normally; use the Git-tag resolver only when a repo-scoped proxy blocks GitHub
-release metadata. Never paste the token into a repo or command argument.
+the least-privilege project-token mint, `.rootcause.toml` marker, verification, and installer choices:
+use the short installer interactively, the Git-tag resolver only when a repo-scoped proxy blocks GitHub
+release metadata, and a reviewed version+digest pin in secret-bearing cached images. Never paste the
+token into a repo or command argument.
 
 Then update the local brain skills kit.
 
