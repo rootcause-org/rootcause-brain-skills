@@ -66,6 +66,10 @@ use the short installer interactively, the Git-tag resolver only when a repo-sco
 release metadata, and a reviewed version plus installer+asset digests in secret-bearing cached images.
 Never paste the token into a repo or command argument.
 
+For Claude cloud egress, set **Custom** to only the RootCause API host (`app.replypen.com`) and keep
+Claude's default-domain checkbox checked; its default version-control list already covers the GitHub
+installer and release hosts. Do not duplicate those hosts unless intentionally disabling the defaults.
+
 Then update the local brain skills kit.
 
 From the brain root, or any subdirectory inside a brain checkout:
