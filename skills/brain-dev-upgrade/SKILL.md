@@ -30,6 +30,9 @@ laptop.
   place with `rc self update`.
 - A client old enough to lack `rc self update` must run its legacy `rc upgrade` once (or upgrade through
   Homebrew) to reach the current command surface.
+- Headless cloud agents may commit `machine_token_env` beside `project` in `.rootcause.toml`; `rc`
+  then seeds that project profile from the named variable. One personal environment may carry several
+  project-named variables, but separate environments remain the security boundary.
 
 ## Human commands
 
@@ -55,6 +58,12 @@ If `rc` is missing:
 ```bash
 brew install rootcause-org/tap/rc
 ```
+
+For Claude Code web, Codex cloud, CI, or another headless agent, follow the canonical
+[cloud-agent setup](https://github.com/rootcause-org/rootcause-cli#headless-cloud-agents). It includes
+the least-privilege project-token mint, `.rootcause.toml` marker, verification, and two installer forms:
+use the short installer normally; use the Git-tag resolver only when a repo-scoped proxy blocks GitHub
+release metadata. Never paste the token into a repo or command argument.
 
 Then update the local brain skills kit.
 
