@@ -83,6 +83,22 @@ The `system_prompt` is long (tens of thousands of chars) but is only plane 1 of 
 context — the run also receives a
 bootstrap/brain-plane user turn and the thread itself, so never read it as the whole prompt.
 
+### Prompt context (rc >= 1.14.0)
+
+```bash
+jq -r 'select(.type=="run").context_schema_version' "$F"   # 0 = not captured (pre-1.14 run, or past the 7-day retention window)
+jq -r 'select(.type=="run").prompt_sections[]? | "\(.on) \(.id) \(.gate)"' "$F"                 # section map, ~44 rows
+jq -r 'select(.type=="run").prompt_sections[]? | select(.on|not) | .id + "  " + .gate' "$F"     # sections that were OFF
+jq -r 'select(.type=="run").prompt_sections[]? | select(.id=="preamble").text' "$F"             # one section verbatim (off sections carry no .text)
+jq -r 'select(.type=="run").bootstrap_turn, select(.type=="run").preselected_turn' "$F"         # the orientation user turns, verbatim
+jq -r 'select(.type=="run").manifest_blocks[]? | "\(.presence)\t\(.chars)\t\(.path)\t\(.gloss)"' "$F"  # what was pasted/mapped into context
+jq -r 'select(.seq>=4000000) | "\(.disp) \(.command)"' "$F"          # draft-cleanup polish passes (disp C1, C2, …)
+jq -r 'select(.disp=="C1").args | .before, .after, .rejected_diff' "$F"  # applied rewrite, or the refused one
+```
+
+For "why didn't the model know X", the `on:false` sections are the signal — a gate that stayed shut is
+context the run never received.
+
 Full per-section provenance of the assembled prompt lives host-side (`rootcause` repo,
 `prompt-assembly-map.md`); operators with host access read it there.
 
