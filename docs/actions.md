@@ -56,12 +56,24 @@ escalate.
 description: "Agent-facing: when to propose this action and what it does."
 display_name: "Abonnement opzeggen"          # customer-facing, optional
 customer_description: "Zegt het abonnement op per einde van de lopende periode."
+color: red                                    # confirm-button color, optional
 ```
 
 Both are optional (fallback: prettified id / `description`) and are shown to the **end customer**, so
-write them in the project's customer language. `display_name` becomes the mailbox confirm-button label
-(`▶️ <display_name>`); `customer_description` is the plain-language intent on the confirm page and in the
-action catalog.
+write them in the project's customer language. `display_name` becomes the mailbox confirm-button label;
+`customer_description` is the plain-language intent on the confirm page and in the action catalog.
+
+`color` tints the mailbox confirm button. Closed named set — pick by what the action *does*:
+
+- `green` — confirm / approve / positive outcome (the default when omitted)
+- `red` — destructive: cancel, delete, remove
+- `orange` — caution: modify existing state, transitions with side effects
+- `blue` — neutral: send, notify, informational
+- `gray` — secondary / low-stakes housekeeping
+- `teal` — lookup / verify / re-check
+- `purple` — special / uncommon operations
+
+Unknown or absent values fall back to green — a color can never fail an action.
 
 ## Param Types
 
