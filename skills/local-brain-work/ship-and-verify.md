@@ -10,11 +10,14 @@ Use public surfaces only:
    push, and prove both refs resolve to the same commit.
 2. Run best-effort local checks with Local Brain Work (`local-brain-work`).
 3. For production-infra confidence, push a `dev/*` ref and run `rc ask --brain-ref dev/<branch>`.
-4. Capture the exact verified `origin/main` SHA from Git sync and run `rc dev brain sync`.
-5. For a shared project brain using `stable` or `edge`, run `rc dev brain promote --channel <channel>
-   --sha <exact-sha>` with a project-maintainer login. Tenant brains use `main`; do not promote them.
-6. Run `rc dev brain status -o json`. Do not claim success until the intended channel resolves the
-   exact SHA, or a safe normal run without `--brain-ref` proves `channel:<channel> @ <sha>`.
+4. Capture the exact verified `origin/main` SHA from Git sync.
+5. For a shared project brain using `stable` or `edge`, run `rc dev brain preflight` then
+   `rc dev brain publish --project <p> --scope project --channel <channel> --sha <exact-sha>` with a
+   project-maintainer login (sync + promote + verify in one call). Tenant brains use `main`; do not
+   promote them.
+6. Run `rc dev brain status --project <p> --scope project -o json`. Do not claim success until the
+   intended channel resolves the exact SHA, or a safe normal run without `--brain-ref` proves
+   `channel:<channel> @ <sha>`.
 7. If tenant publish, action wiring, authorization, or manual reconcile remains, prepare a RootCause
    support request with project, tenant, ref, commit SHA, status output, verification run ids, and
    requested product outcome.

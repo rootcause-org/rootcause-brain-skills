@@ -367,12 +367,14 @@ artifacts stay on the laptop.
   in run trace as `brain_resolved`.
 - `rc ask --brain-ref dev/<branch>` tests a pushed dev ref on production infrastructure without moving
   `main` or promoting a channel.
-- `rc dev brain sync` refreshes the managed project-brain `main` cache. `rc dev brain promote
-  --channel stable|edge --sha <exact-full-40-character-sha>` moves a shared project channel after sync; only a
-  project-level maintainer may do this.
+- `rc dev brain publish --channel stable|edge --sha <exact-full-40-character-sha>` is the one-shot
+  path (sync + promote + verify); `rc dev brain sync` / `promote` are the same steps taken separately.
+  Only a project-level maintainer may move a shared project channel. `rc dev brain preflight` dry-runs
+  the promotion per tenant first. See [`brain-publish`](../skills/brain-publish/SKILL.md).
 - Tenant brains typically use their `main` HEAD; shared project brain promotion is separate.
 - A `main` status of `current` does not prove a channel is current. Verify the intended channel's
-  resolved SHA in `rc dev brain status -o json` or in a normal run's `brain_resolved` trace.
+  resolved SHA in `rc dev brain status --scope project -o json` (without `--scope project` a tenant
+  context answers about the tenant overlay brain) or in a normal run's `brain_resolved` trace.
 
 ## Local Engine Boundary
 

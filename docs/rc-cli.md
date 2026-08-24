@@ -44,9 +44,11 @@ rc project triage rules add effect=force_process match_kind=sender_domain patter
 rc project senders ls
 rc project senders block "spam.example.com" --reason "known spam sender"
 rc project senders allow "partner.example.com" --reason "trusted sender"
-rc dev brain status
-rc dev brain sync
-rc dev brain promote --channel stable --sha <exact-full-40-character-sha>
+rc dev brain status --project <project> --scope project
+rc dev brain sync --project <project>
+rc dev brain preflight --project <project> --scope project --sha <exact-full-40-character-sha>
+rc dev brain publish --project <project> --scope project --channel stable --sha <exact-full-40-character-sha>
+rc dev brain promote --project <project> --scope project --channel stable --sha <exact-full-40-character-sha>
 rc project env keys
 rc project env pull
 rc project env diff
@@ -272,10 +274,11 @@ For the full choose-the-store flow, tenant behavior, and action write-plane rule
 ## Brain Cache And Channels
 
 ```bash
-rc dev brain status
-rc dev brain sync
-rc dev brain promote --channel stable --sha <exact-full-40-character-sha> -o json
-rc dev brain status -o json
+rc dev brain status --project <project> --scope project -o json
+rc dev brain sync --project <project>
+rc dev brain preflight --project <project> --scope project --sha <exact-full-40-character-sha> [--channel stable|edge] -o json
+rc dev brain publish --project <project> --scope project --channel stable --sha <exact-full-40-character-sha> -o json
+rc dev brain promote --project <project> --scope project --channel stable --sha <exact-full-40-character-sha> -o json
 rc dev console bash list
 ```
 
@@ -283,6 +286,14 @@ Use after pushing a brain commit. `status` fetches `origin/main` and reports mou
 staleness, sync time, and resolved `stable`/`edge` channel SHAs with origin comparison/provenance.
 `sync` fast-forwards the managed `main` cache when safe and expires warm console workspaces; the next
 `rc dev console bash run` remounts the refreshed `/brain`.
+
+`publish` (rc >= 1.16.5) is the preferred one-shot: sync → promote → verify one exact SHA on one
+channel, non-zero exit on mismatch, `-o json` receipt. `preflight` dry-runs a promotion and reports
+which tenants' projections the candidate commit would break — run it before moving `stable`.
+
+Pass `--project <project>` explicitly (older clients mis-resolve an implicit project onto retired flat
+routes and 404), and `--scope project` for anything channel-related: in a tenant context these
+commands otherwise answer about the tenant overlay brain, not the project channels.
 
 For a shared project brain, `promote` moves only the named channel to the exact reachable SHA. It
 requires a project-level maintainer login; tenant-scoped tokens are denied because the channel is

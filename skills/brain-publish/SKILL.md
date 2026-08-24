@@ -10,9 +10,19 @@ Use this as the shared final step after local brain edits from `local-brain-work
 
 Public `rc` exposes the whole project-brain path: status shows the on-box `main` cache, origin
 comparison, and resolved channel SHAs; sync fetches `origin/main` and expires warm console workspaces;
-promote moves `stable` or `edge` to one exact tested SHA. A project-maintainer OAuth login is enough.
-Tenant-scoped logins cannot move a shared project channel, and tenant brains use `main` without
-channels.
+promote moves `stable` or `edge` to one exact tested SHA; `publish` does sync → promote → verify in one
+guarded call. A project-maintainer OAuth login is enough. Tenant-scoped logins cannot move a shared
+project channel, and tenant brains use `main` without channels.
+
+Requires **rc >= 1.16.5** (`publish`/`preflight`, and correct project resolution). Two flags decide
+whether a command answers about the right brain — get them wrong and you verify the wrong thing:
+
+- **`--project <project>`, always, explicitly** on every `rc dev brain` call. Older releases
+  mis-resolve an implicit project and hit retired flat routes (404); only rc >= 1.16.5 is safe bare.
+- **`--scope project` for anything about channels.** In a tenant context (tenant-bound login,
+  `--tenant`, or a tenant brain checkout) `rc --project <p> dev brain status` answers about the
+  *tenant overlay* brain, not the project channels. Channel verification MUST pass `--scope project`
+  and read `.status.channels[]`.
 
 ## Required Context
 
@@ -90,29 +100,50 @@ Also read [docs/actions.md](../../docs/actions.md) when publishing `actions/<id>
 
 7. Immediately before server sync, rerun step 4 with the same verification commands and replace
    `$SHA` from its fresh JSON. This absorbs production-authored journal/consolidation commits and
-   concurrent computer pushes. Then sync that already pushed, verified `origin/main` SHA:
+   concurrent computer pushes.
+
+8. Before moving `stable`, run the promote-time canary. It dry-runs the promotion and reports which
+   tenants' projections the candidate commit would break, without touching any channel:
    ```bash
-   rc dev brain sync
-   rc dev brain status -o json
+   rc dev brain preflight --project <project> --scope project --sha "$SHA" --channel stable -o json
+   ```
+   `--channel` defaults to `stable`. Fix or accept every reported degradation before promoting.
+
+9. **Preferred: one-shot publish.** `rc dev brain publish` does sync → promote → verify against one
+   exact SHA in a single guarded call, exits non-zero on any mismatch, and prints a receipt with
+   `-o json`:
+   ```bash
+   rc dev brain publish --project <project> --scope project --channel stable --sha "$SHA" -o json
+   ```
+   Substitute `edge` only when that is the intended project channel. When both channels are in use,
+   promote in order: **`edge` first** (canary tenants) → observe real runs → then `stable`. Never omit
+   `--sha`, derive it from ambient remote state, or publish a tenant brain. A non-zero exit is a failed
+   publish — do not report the change live.
+
+   <details>
+   <summary>Fallback: the manual sync + promote choreography (what <code>publish</code> automates)</summary>
+
+   Use this when `publish` is unavailable (older rc) or when a step needs to be diagnosed separately.
+
+   ```bash
+   rc dev brain sync --project <project>
+   rc dev brain status --project <project> --scope project -o json
    ```
    Confirm the status reports `origin/main` and the on-box `main` cache at `$SHA`. A `main` state of
    `current` does **not** prove a channel-backed project is live; always inspect the channel entries.
 
-8. For a shared project brain that runs from `stable` or `edge`, promote that exact SHA with a
-   project-level maintainer login:
+   Then promote that exact SHA with a project-level maintainer login:
    ```bash
-   rc dev brain promote --channel stable --sha "$SHA" -o json
-   rc dev brain status -o json
-   test "$(rc dev brain status -o json | jq -r '.status.channels[] | select(.channel == "stable") | .resolved_sha')" = "$SHA"
+   rc dev brain promote --project <project> --scope project --channel stable --sha "$SHA" -o json
+   test "$(rc dev brain status --project <project> --scope project -o json | jq -r '.status.channels[] | select(.channel == "stable") | .resolved_sha')" = "$SHA"
    ```
-   Substitute `edge` only when that is the intended project channel. Never omit `--sha`, derive it
-   from ambient remote state, or promote a tenant brain. The result reports `project`, `channel`,
-   `old_sha`, `new_sha`, `changed`, and `idempotent`; retrying the same request is safe. Treat an
-   unknown/unreachable SHA, unsafe channel, push failure, tenant-scoped denial, or wrong-project denial
-   as a failed publish.
+   The result reports `project`, `channel`, `old_sha`, `new_sha`, `changed`, and `idempotent`; retrying
+   the same request is safe. Treat an unknown/unreachable SHA, unsafe channel, push failure,
+   tenant-scoped denial, or wrong-project denial as a failed publish.
+   </details>
 
-9. Prove the intended ref, not merely a successful command:
-   - In `rc dev brain status -o json`, select `.status.channels[]` by `channel` and confirm
+10. Prove the intended ref, not merely a successful command:
+   - In `rc dev brain status --project <project> --scope project -o json`, select `.status.channels[]` by `channel` and confirm
      `resolved_sha` is exactly `$SHA`; inspect `origin_sha`, `main_sha`, `matches_origin`,
      `matches_main`, `state`, and `provenance` when diagnosing a mismatch.
    - When stronger end-to-end proof is warranted, run a safe `rc ask` **without** `--brain-ref`, then
@@ -123,7 +154,7 @@ Also read [docs/actions.md](../../docs/actions.md) when publishing `actions/<id>
    Do not report the brain change live until channel status or a normal no-`--brain-ref` run proves
    the intended SHA.
 
-10. If `rc dev brain sync/status` reports a diverged managed cache or requires manual reconcile even
+11. If `rc dev brain publish` fails, or `rc dev brain sync/status` reports a diverged managed cache or requires manual reconcile even
     though Git sync succeeded, stop before promotion and produce a RootCause support request. Also use
     support only for gaps the public surface cannot do:
    ```text
