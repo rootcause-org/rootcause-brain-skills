@@ -60,8 +60,23 @@ templates + projection.yaml + tenant profile record
 ```
 
 If a placeholder appears in markdown, it must be declared in `projection.yaml` and backed by either a
-tenant setting value or a projection default. If a branch selector is absent/null/`unset`, rootcause's
-compiler routes it through the branch `default`.
+tenant setting value or a projection default. A branch selector is matched as the exact string its value
+renders as (`true`/`false` for a bool, the decimal form for an integral number); an unmatched value goes
+through the branch `default`, and with no default the region is dropped.
+
+Two variant names are **reserved**:
+
+- `unset` — absent, null, or a **blank/whitespace-only** string.
+- `present` — the catch-all for "the tenant filled this in", so a free-text key (a hand-maintained
+  policy) can gate prose without enumerating values. `false` and `0` are values and count as present;
+  only emptiness is `unset`. Exact-value variants are matched first, so `when=mollie` beats
+  `when=present`. Pair `present` with an EMPTY `unset` body and the whole section — heading included —
+  disappears for a tenant that never configured it, instead of reading a "(not configured)" default
+  out loud.
+
+```yaml
+cancellation_policy: { select: cancellation_policy, variants: [present, unset], default: unset }
+```
 
 ## Local preview helper
 

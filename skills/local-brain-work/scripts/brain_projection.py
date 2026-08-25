@@ -83,20 +83,51 @@ def _fetch_settings(brain_dir: Path, tenant: str) -> dict[str, Any]:
     return data
 
 
-def _selected_variant(settings: dict[str, Any], branch: dict[str, Any]) -> tuple[str, str, str | None]:
+# Two reserved variant names, mirroring rootcause `internal/projection`: `unset` (absent, null or a
+# blank string) and `present` (any other value — the catch-all a free-text key branches on).
+SELECTOR_UNSET = "unset"
+VARIANT_PRESENT = "present"
+
+
+def _render_selector(raw: Any) -> str | None:
+    """The exact string a value is matched against `when=`, or None if it has no such form.
+
+    Mirrors `resolveSelector`: absent/null/blank -> `unset`, bool -> true/false, integral number ->
+    its decimal form. A fractional number, list or dict is a data fault with no writable variant name.
+    """
+    if raw is None:
+        return SELECTOR_UNSET
+    if isinstance(raw, str):
+        return raw if raw.strip() else SELECTOR_UNSET
+    if isinstance(raw, bool):
+        return "true" if raw else "false"
+    if isinstance(raw, int):
+        return str(raw)
+    if isinstance(raw, float) and raw.is_integer():
+        return str(int(raw))
+    return None
+
+
+def _selected_variant(settings: dict[str, Any], branch: dict[str, Any]) -> tuple[str, str, str, str | None]:
+    """(selector field, raw value as displayed, variant prod collapses to, note) — "" = region dropped."""
     field = str(branch.get("select") or "")
-    raw, present = _lookup(settings, field)
-    if not present or raw is None:
-        raw = "unset"
-    if not isinstance(raw, str):
-        return field, _as_inline(raw), "type-error: selector is not a string"
+    raw, found = _lookup(settings, field)
+    if not found:
+        raw = None
+    rendered = _render_selector(raw)
     variants = [str(v) for v in branch.get("variants") or []]
     default = str(branch.get("default") or "")
-    if raw in variants:
-        return field, raw, None
+    shown = _as_inline(raw) if rendered is None else rendered
+    if rendered is None:
+        note = f"type-error: selector is not a string, bool or int -> {default or 'region dropped'}"
+        return field, shown, default, note
+    if rendered in variants:
+        return field, shown, rendered, None
+    if rendered != SELECTOR_UNSET and VARIANT_PRESENT in variants:
+        return field, shown, VARIANT_PRESENT, f"value is set -> {VARIANT_PRESENT}"
     if default:
-        return field, raw, f"default -> {default}"
-    return field, raw, "error: no default for unmatched selector"
+        return field, shown, default, f"default -> {default}"
+    return field, shown, "", "error: no default for unmatched selector (region dropped)"
 
 
 def _parse_literal(s: str) -> Any:
@@ -162,11 +193,9 @@ def projection_summary(brain_dir: Path, tenant: str, spec: dict[str, Any], recor
     if branches:
         for name in sorted(branches):
             branch = branches[name] or {}
-            field, raw, note = _selected_variant(settings, branch)
-            variants = [str(v) for v in branch.get("variants") or []]
-            selected = raw if raw in variants else str(branch.get("default") or "?")
+            field, raw, selected, note = _selected_variant(settings, branch)
             suffix = f" ({note})" if note else ""
-            lines.append(f"- `{name}` via `{field}`: raw `{raw}` -> `{selected}`{suffix}")
+            lines.append(f"- `{name}` via `{field}`: raw `{raw}` -> `{selected or '(region dropped)'}`{suffix}")
     else:
         lines.append("_(no branches declared)_")
 
