@@ -114,7 +114,9 @@ rc dev brain render --project <project> --tenant <slug> --path AGENTS.md
 rc dev brain render --project <project> --tenant <slug> --all -o json
 ```
 
-Pin `--sha <40-hex>` or `--channel stable|edge` as needed. Template-editing flow: author → `render`
+Pin `--sha <40-hex>` or `--channel stable|edge` as needed. Output artifacts are keyed by TENANT
+(`.rootcause/output/brain-render-<tenant>/`): a second render of another sha/channel overwrites the
+first, so move it aside if you want to compare two versions. Template-editing flow: author → `render`
 for 1–2 tenants → `rc dev brain preflight` (pass/fail across all tenants) → publish. Requires a
 project-level login (`brain:promote` scope).
 
