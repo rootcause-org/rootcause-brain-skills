@@ -276,6 +276,7 @@ For the full choose-the-store flow, tenant behavior, and action write-plane rule
 ```bash
 rc dev brain status --project <project> --scope project -o json
 rc dev brain sync --project <project>
+rc dev brain render --project <project> --tenant <slug> [--path AGENTS.md]... [--all] [--sha <sha> | --channel stable|edge] [-o json]
 rc dev brain preflight --project <project> --scope project --sha <exact-full-40-character-sha> [--channel stable|edge] -o json
 rc dev brain publish --project <project> --scope project --channel stable --sha <exact-full-40-character-sha> -o json
 rc dev brain promote --project <project> --scope project --channel stable --sha <exact-full-40-character-sha> -o json
@@ -290,6 +291,12 @@ staleness, sync time, and resolved `stable`/`edge` channel SHAs with origin comp
 `publish` (rc >= 1.16.5) is the preferred one-shot: sync → promote → verify one exact SHA on one
 channel, non-zero exit on mismatch, `-o json` receipt. `preflight` dry-runs a promotion and reports
 which tenants' projections the candidate commit would break — run it before moving `stable`.
+
+`render` (rc >= 1.17.0) prints one tenant's **compiled** projection — placeholders filled, `rc:branch`
+regions collapsed — exactly as `/brain` mounts it, with a header (sha, channel, tenant,
+filled/branches/degraded counts and degradations); `-o json` returns the raw files. It is the way to
+eyeball a projection; `preflight` only says pass/fail. Requires a project-level login
+(`brain:promote` scope).
 
 Pass `--project <project>` explicitly (older clients mis-resolve an implicit project onto retired flat
 routes and 404), and `--scope project` for anything channel-related: in a tenant context these

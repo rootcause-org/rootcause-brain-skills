@@ -123,6 +123,9 @@ For templated shared project brains, production may compile a tenant-specific `/
 uv run "$SKILL/scripts/brain_projection.py" --tenant <slug>
 ```
 
+To see the server-compiled result exactly as `/brain` mounts it for a tenant, use
+`rc dev brain render --project <p> --tenant <slug>` — see [projection.md](projection.md).
+
 Tenant-enabled shared brains often run from a channel ref such as `stable`; pushing `main` is not the
 same as making a shared-brain change live. Use `brain-publish` after committing.
 

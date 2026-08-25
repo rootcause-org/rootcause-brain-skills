@@ -88,6 +88,21 @@ Bad behavior:
 - Committing tenant-specific values.
 - Teaching the model to choose variants itself.
 
+## Server-compiled view
+
+`rc dev brain render` (rc >= 1.17.0) returns the **compiled** projection from the server —
+placeholders filled, `rc:branch` regions collapsed — exactly as `/brain` mounts it for that tenant,
+with a header (sha, channel, filled/branches/degraded counts and degradations):
+
+```bash
+rc dev brain render --project <project> --tenant <slug> --path AGENTS.md
+rc dev brain render --project <project> --tenant <slug> --all -o json
+```
+
+Pin `--sha <40-hex>` or `--channel stable|edge` as needed. Template-editing flow: author → `render`
+for 1–2 tenants → `rc dev brain preflight` (pass/fail across all tenants) → publish. Requires a
+project-level login (`brain:promote` scope).
+
 For production confidence, use `rc ask --brain-ref dev/x ...` with an `rc auth login` bound to the target
 tenant and inspect the dump; that shows the actual loop and the exact settings snapshot the run rendered
 from.

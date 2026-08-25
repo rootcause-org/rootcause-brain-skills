@@ -358,7 +358,8 @@ artifacts stay on the laptop.
 - A tenant brain, when present, holds tenant-specific natural-language overlay. Tenant values may live
   in RootCause settings rather than committed files.
 - A templated project brain may compile a tenant-specific `/brain` view from `projection.yaml` plus
-  tenant profile values. Preview locally with `brain_projection.py` when present.
+  tenant profile values. Preview locally with `brain_projection.py` when present;
+  `rc dev brain render --tenant <slug>` prints the server-compiled view exactly as `/brain` mounts it.
 
 ## Channels And Refs
 

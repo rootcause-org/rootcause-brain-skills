@@ -102,7 +102,10 @@ Also read [docs/actions.md](../../docs/actions.md) when publishing `actions/<id>
    `$SHA` from its fresh JSON. This absorbs production-authored journal/consolidation commits and
    concurrent computer pushes.
 
-8. Before moving `stable`, run the promote-time canary. It dry-runs the promotion and reports which
+8. After template/projection edits, eyeball the compiled view for 1–2 representative tenants first —
+   `rc dev brain render --project <project> --tenant <slug> --sha "$SHA"` (rc >= 1.17.0) prints the
+   projection exactly as `/brain` mounts it; preflight below only says pass/fail. Then run the
+   promote-time canary. It dry-runs the promotion and reports which
    tenants' projections the candidate commit would break, without touching any channel:
    ```bash
    rc dev brain preflight --project <project> --scope project --sha "$SHA" --channel stable -o json
