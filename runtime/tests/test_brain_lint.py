@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import types
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -63,6 +64,14 @@ def _seed_brain(root: Path) -> None:
 def test_lint_brain_all_good(tmp_path: Path) -> None:
     _seed_brain(tmp_path)
     assert _fails(lint_brain(tmp_path)) == []
+
+
+def test_lint_brain_survives_brain_test_replacing_lib_module(tmp_path: Path, monkeypatch) -> None:
+    _seed_brain(tmp_path)
+    _write(tmp_path / "actions/refund/script.py", "_DEAD = 1\n")
+    monkeypatch.setitem(sys.modules, "lib", types.SimpleNamespace())
+
+    assert any("_DEAD" in f.message for f in lint_brain(tmp_path))
 
 
 def test_lint_brain_flags_missing_and_overlong(tmp_path: Path) -> None:

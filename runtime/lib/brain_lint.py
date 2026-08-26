@@ -32,6 +32,8 @@ from pathlib import Path
 
 import pytest
 
+from .action_lint import lint_actions
+
 # Mirror bootstrap.go's descMaxLen / descHeadBytes so the lint's verdict matches what the tree renders.
 DESC_MAX_LEN = 90
 DESC_HEAD_BYTES = 2048
@@ -167,9 +169,8 @@ def lint_brain(brain_root: str | Path) -> list[Finding]:
         findings += _check(manifest, _rel(root, manifest), _manifest_description(manifest),
                            "action manifest")
 
-    # Action-script hygiene (size budget, duplicate/drifted helpers, dead private names).
-    from lib.action_lint import lint_actions
-
+    # Bind the sibling lint when this plugin loads, before collected brain tests can replace the
+    # top-level ``lib`` module in ``sys.modules`` with a test double.
     findings += [Finding(f.path, f.level, f.message) for f in lint_actions(root)]
     return findings
 
