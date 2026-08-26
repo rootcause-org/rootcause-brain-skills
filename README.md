@@ -98,6 +98,23 @@ Details: [docs/side-effects.md](docs/side-effects.md).
   dry-runs it per tenant first. Channel questions need `--scope project`; always pass `--project`.
   Verify the resolved channel SHA in status or a normal run before claiming success.
 
+### `lib.db` query limits and diagnostics
+
+Hosted runs inject the project/tenant query limit as `RC_DB_QUERY_TIMEOUT_SECONDS`; `lib.db` uses it
+as both the default and maximum for every read-only transaction. Standalone use keeps the 30s default
+and 120s maximum. Postgres cancellation (`57014`) becomes a concise rewrite hint with best-effort
+catalog evidence for referenced tables; the CLI prints it without a traceback and exits 1.
+
+```python
+from lib import db
+
+db.table_stats("accounts", db="ruby")  # size, row estimate, scans, indexes, analyze + column stats
+db.explain("select * from accounts where email = %s", ["a@b.test"], db="ruby")  # no ANALYZE
+```
+
+CLI equivalents: `python -m lib.db --stats accounts --db ruby --format json` and
+`python -m lib.db --explain --db ruby "select * from accounts where email = 'a@b.test'"`.
+
 ## Docs
 
 | Path | What |

@@ -22,10 +22,13 @@ Array columns hydrate to real Python lists (``enum[]`` included — see `query`)
 Read-only by provisioning; this module adds a belt-and-suspenders ``READ ONLY``
 transaction plus server-side timeouts so a stray write fails loudly and a runaway query can't hang
 the run. The timeout is a HARD CAP, not a suggestion: every query runs under ``statement_timeout``
-(+ ``idle_in_transaction_session_timeout``, + ``transaction_timeout`` on PG 17+), defaulting to 30s
-and never exceeding **120s** — ``timeout_ms=0``/``None`` means "default", never "unlimited", and a
-larger request is clamped with a warning. One SQL statement per `query` call (a second top-level
+(+ ``idle_in_transaction_session_timeout``, + ``transaction_timeout`` on PG 17+). The host injects
+the project's resolved limit through ``RC_DB_QUERY_TIMEOUT_SECONDS``; that value is both default and
+maximum. Outside a hosted run, the legacy 30s default / 120s maximum remain. ``timeout_ms=0``/``None``
+means "default", never "unlimited". One SQL statement per `query` call (a second top-level
 statement raises), so a query can't smuggle a ``SET statement_timeout = 0`` past the cap.
+Use ``table_stats()`` for catalog-only size/scan/index/column evidence and ``explain()`` for a safe
+planner view (never ``ANALYZE``).
 ``psycopg`` is imported lazily, so the module — its DSN resolution, and the CLI's ``--list`` —
 loads even where the driver isn't installed.
 
@@ -34,18 +37,29 @@ CLI (token-efficient one-offs from bash):
     python -m lib.db --list
     python -m lib.db --db powertools "select count(*) from accounts"
     python -m lib.db --format table "select id, email from accounts limit 20"
+    python -m lib.db --stats accounts --db powertools --format json
+    python -m lib.db --explain --db powertools "select * from accounts where email = 'a@b.test'"
 """
 
 import os
 import re
 import warnings
 
-DEFAULT_TIMEOUT_MS = 30_000
-# Hard ceiling on any caller-supplied timeout. A grounding read that needs >2 minutes is a query
-# to rewrite, not to wait for: the run has a budget, and the dbproxy in front of the database
-# refuses CancelRequest, so the ONLY thing that stops a runaway query is the server-side timeout we
-# set here. Nothing a caller passes can raise or disable it.
-MAX_TIMEOUT_MS = 120_000
+
+def _configured_timeout_limits() -> tuple[int, int]:
+    """Return (default, maximum) milliseconds from the host limit, with standalone compatibility."""
+    raw = os.environ.get("RC_DB_QUERY_TIMEOUT_SECONDS", "").strip()
+    if raw:
+        try:
+            configured = int(raw) * 1000
+        except ValueError:
+            configured = 0
+        if configured > 0:
+            return configured, configured
+    return 30_000, 120_000
+
+
+DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS = _configured_timeout_limits()
 # How much longer than statement_timeout the PG17 transaction_timeout backstop runs (see `_timeout_sql`).
 _TRANSACTION_TIMEOUT_SLACK_MS = 2_000
 DEFAULT_CONNECT_TIMEOUT_SECONDS = 15
@@ -356,7 +370,43 @@ def _enum_labels(conn, timeout_ms: int, enum_type: str) -> list | None:
         return None
 
 
-def _mistake_hint(exc, conn, timeout_ms: int) -> str | None:
+_TABLE_REFERENCE_RE = re.compile(
+    r'(?is)\b(?:from|join)\s+((?:"[^"]+"|[A-Za-z_][A-Za-z0-9_$]*)(?:\.(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_$]*))?)'
+)
+
+
+def _referenced_tables(sql: str | None) -> list[tuple[str | None, str]]:
+    """Best-effort FROM/JOIN identifiers, excluding subqueries and duplicate references."""
+    out = []
+    seen = set()
+    for match in _TABLE_REFERENCE_RE.finditer(sql or ""):
+        parts = [p.strip('"') for p in match.group(1).split(".")]
+        item = (parts[0], parts[1]) if len(parts) == 2 else (None, parts[0])
+        if item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def _timeout_table_evidence(sql: str | None, db: str | None) -> str:
+    """Compact catalog evidence for referenced tables; failures never obscure the cancellation."""
+    evidence = []
+    for schema_name, table in _referenced_tables(sql)[:3]:
+        try:
+            info = table_stats(table, schema=schema_name, db=db)
+        except Exception:  # noqa: BLE001 - timeout guidance is best-effort after the real failure.
+            continue
+        indexes = ",".join(i["name"] for i in info["indexes"][:4]) or "none"
+        evidence.append(
+            f"{info['schema']}.{table}: ~{info['estimated_rows']} rows, {info['total_size']}, "
+            f"seq_scan={info['seq_scan']}, idx_scan={info['idx_scan']}, indexes={indexes}"
+        )
+    return " Referenced table stats: " + "; ".join(evidence) + "." if evidence else ""
+
+
+def _mistake_hint(
+    exc, conn, timeout_ms: int, sql: str | None = None, db: str | None = None
+) -> str | None:
     """One corrective hint for the SQL mistakes agents actually make, or None to re-raise untouched.
 
     Consolidates the generic Postgres mistake classes that project brains kept hand-rolling (kampadmin
@@ -371,6 +421,19 @@ def _mistake_hint(exc, conn, timeout_ms: int) -> str | None:
     import difflib
 
     msg = str(exc)
+
+    sqlstate = getattr(exc, "sqlstate", None)
+    if sqlstate is None:
+        sqlstate = getattr(getattr(exc, "diag", None), "sqlstate", None)
+    if sqlstate == "57014":
+        seconds = timeout_ms / 1000
+        limit = str(int(seconds)) if seconds.is_integer() else f"{seconds:g}"
+        return (
+            f"Query exceeded this project's {limit}s limit and was killed on Postgres. Rewrite for "
+            "performance: filter on indexed columns, add LIMIT, pre-aggregate, avoid count(*)/full "
+            "scans on large tables."
+            + _timeout_table_evidence(sql, db)
+        )
 
     # Invented enum label (InvalidTextRepresentation / 22P02). No hardcoded label maps: show the
     # database's OWN labels, which makes hyphen-vs-underscore and singular-vs-plural self-evident.
@@ -623,8 +686,8 @@ def _effective_timeout_ms(timeout_ms) -> int:
     """The timeout we will actually SET: caller's value, defaulted and clamped to `MAX_TIMEOUT_MS`.
 
     ``0``/``None``/negative mean "use the default" — NEVER "no timeout" (the old meaning, which let a
-    caller disable the only backstop there is). A larger-than-cap request is honoured up to the cap
-    and warned about, so the caller learns why its 10-minute query died at 2 minutes."""
+    caller disable the backstop). In hosted runs the injected project limit is both default and cap;
+    standalone callers retain the legacy 30s default / 120s cap."""
     try:
         ms = int(timeout_ms or DEFAULT_TIMEOUT_MS)
     except (TypeError, ValueError):
@@ -762,6 +825,8 @@ def query(
     params: list | tuple | None = None,
     db: str | None = None,
     timeout_ms: int = DEFAULT_TIMEOUT_MS,
+    *,
+    _timeout_hint_stats: bool = True,
 ) -> list[dict]:
     """Run a read-only SELECT and return rows as a list of dicts.
 
@@ -771,9 +836,9 @@ def query(
     ONE statement per call: a second top-level statement raises (a trailing ``;`` is fine), because
     the simple protocol would run it too and let it undo this transaction's guarantees.
 
-    ``timeout_ms`` caps the statement server-side, defaulting to 30s and **hard-capped at 120s**
-    (`MAX_TIMEOUT_MS`) — a bigger value is clamped with a warning, and ``0``/``None`` means "default",
-    not "unlimited". If your query needs more, make the query cheaper: it will be killed at the cap.
+    ``timeout_ms`` caps the statement server-side. In hosted runs the project's resolved
+    ``RC_DB_QUERY_TIMEOUT_SECONDS`` is both default and hard cap; standalone use retains the legacy
+    30s default / 120s cap. A bigger value is clamped and ``0``/``None`` means "default".
 
     Placeholders: bind UNTRUSTED INPUT as ``%s`` with ``params`` — never string-format input into
     ``sql`` (injection). But a literal ``%`` wildcard is fine inline: ``ILIKE 'avo%'`` with no
@@ -874,7 +939,13 @@ def query(
                 # undefined table/column clauses above are narrower and must win. The client-side
                 # placeholder ProgrammingError is also a psycopg.Error, so this one clause covers
                 # both server- and client-side shapes. No hint ⇒ re-raise untouched.
-                hint = _mistake_hint(e, conn, timeout_ms)
+                hint = _mistake_hint(
+                    e,
+                    conn,
+                    timeout_ms,
+                    sql=sql if _timeout_hint_stats else None,
+                    db=db,
+                )
                 if hint is None:
                     raise
                 raise RuntimeError(f"{e}\n\n{hint}") from e
@@ -1113,6 +1184,73 @@ def tables_with_column(name_like: str, schema: str | None = None, db: str | None
     )
 
 
+def table_stats(table: str, schema: str | None = None, db: str | None = None) -> dict:
+    """Catalog-only planner evidence for one table in the effective schema.
+
+    Returns row estimate + pretty total size, scan/analyze counters, index definitions, and the
+    planner's per-column ``n_distinct``/``null_frac``. It never scans the target table.
+    """
+    relations = query(
+        """select n.nspname as schema, c.relname as table,
+                  c.reltuples::bigint as estimated_rows,
+                  case when c.relkind in ('r','p','m','i','I','t')
+                       then pg_size_pretty(pg_total_relation_size(c.oid)) else '0 bytes' end as total_size,
+                  coalesce(s.seq_scan, 0)::bigint as seq_scan,
+                  coalesce(s.idx_scan, 0)::bigint as idx_scan,
+                  s.last_analyze, s.last_autoanalyze
+           from pg_class c
+           join pg_namespace n on n.oid = c.relnamespace
+           left join pg_stat_user_tables s on s.relid = c.oid
+           where n.nspname = coalesce(%s::text, current_schema())
+             and c.relname = %s and c.relkind in ('r','p','v','m','f')
+           limit 1""",
+        [schema, table],
+        db=db,
+        _timeout_hint_stats=False,
+    )
+    if not relations:
+        raise RuntimeError(
+            f"table {table!r} not found in {schema or 'the effective schema'}; "
+            "use lib.db.tables() to list queryable tables"
+        )
+    base = relations[0]
+    resolved_schema = base["schema"]
+    index_rows = query(
+        """select indexname as name, indexdef as definition
+           from pg_indexes where schemaname = %s and tablename = %s order by indexname""",
+        [resolved_schema, table],
+        db=db,
+        _timeout_hint_stats=False,
+    )
+    column_rows = query(
+        """select attname as column, n_distinct, null_frac
+           from pg_stats where schemaname = %s and tablename = %s order by attname""",
+        [resolved_schema, table],
+        db=db,
+        _timeout_hint_stats=False,
+    )
+    return {
+        "schema": resolved_schema,
+        "table": base["table"],
+        "estimated_rows": base["estimated_rows"],
+        "total_size": base["total_size"],
+        "seq_scan": base["seq_scan"],
+        "idx_scan": base["idx_scan"],
+        "last_analyze": base["last_analyze"],
+        "last_autoanalyze": base["last_autoanalyze"],
+        "indexes": index_rows,
+        "columns": column_rows,
+    }
+
+
+def explain(sql: str, params: list | tuple | None = None, db: str | None = None) -> str:
+    """Return ``EXPLAIN (FORMAT TEXT)`` output without executing ``ANALYZE``."""
+    if re.match(r"(?is)^\s*(?:analyze\b|explain\b[^;]*\banalyze\b)", sql):
+        raise RuntimeError("lib.db.explain() never runs ANALYZE; pass the underlying SELECT only")
+    rows = query("EXPLAIN (FORMAT TEXT) " + sql, params, db=db)
+    return "\n".join(str(next(iter(row.values()))) for row in rows)
+
+
 # Affordance aliases for common model guesses. Keep these thin so the canonical helpers stay the
 # contract while muscle-memory names still land on the read-only path.
 sql = query
@@ -1128,6 +1266,8 @@ describe_table = columns
 table_info = columns
 find_columns = tables_with_column
 tables_by_column = tables_with_column
+stats = table_stats
+indexes = table_stats
 
 
 def _parse_duration_ms(s: str) -> int:
@@ -1150,20 +1290,44 @@ def _main(argv=None) -> int:
     p.add_argument("--format", choices=("csv", "json", "table"), default="csv")
     p.add_argument(
         "--timeout",
-        default="30s",
-        help="statement_timeout, e.g. 30s, 2min (default 30s, hard cap 2min — larger is clamped).",
+        help=(
+            "statement_timeout, e.g. 30s, 2min "
+            f"(default {DEFAULT_TIMEOUT_MS / 1000:g}s, hard cap {MAX_TIMEOUT_MS / 1000:g}s)."
+        ),
     )
     p.add_argument("--list", action="store_true", help="List available databases and exit.")
+    p.add_argument("--stats", metavar="TABLE", help="Show catalog-only size/scan/index/column stats.")
+    p.add_argument(
+        "--explain", action="store_true", help="Print EXPLAIN (FORMAT TEXT) for the positional SQL."
+    )
     args = p.parse_args(argv)
 
     if args.list:
         print(_format_catalog())
         return 0
-    if not args.sql:
-        p.error("provide SQL, or --list")
-    rows = query(args.sql, db=args.db, timeout_ms=_parse_duration_ms(args.timeout))
-    _output.emit_rows(rows, args.format, label="db")
-    return 0
+    try:
+        if args.stats:
+            if args.sql or args.explain:
+                p.error("--stats cannot be combined with SQL or --explain")
+            schema_name, table = (args.stats.rsplit(".", 1) if "." in args.stats else (None, args.stats))
+            _output.emit_rows(
+                [table_stats(table, schema=schema_name, db=args.db)], args.format, label="db stats"
+            )
+            return 0
+        if not args.sql:
+            p.error("provide SQL, --stats TABLE, or --list")
+        if args.explain:
+            print(explain(args.sql, db=args.db))
+            return 0
+        timeout_ms = _parse_duration_ms(args.timeout) if args.timeout else DEFAULT_TIMEOUT_MS
+        rows = query(args.sql, db=args.db, timeout_ms=timeout_ms)
+        _output.emit_rows(rows, args.format, label="db")
+        return 0
+    except RuntimeError as exc:
+        import sys
+
+        print(str(exc), file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

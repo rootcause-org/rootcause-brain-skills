@@ -70,6 +70,13 @@ def test_local_connect_failure_points_to_rc_primitives(monkeypatch):
     assert "rc dev console bash run" in msg
 
 
+def test_host_timeout_is_both_default_and_maximum(monkeypatch):
+    monkeypatch.setenv("RC_DB_QUERY_TIMEOUT_SECONDS", "90")
+    assert db._configured_timeout_limits() == (90_000, 90_000)
+    monkeypatch.delenv("RC_DB_QUERY_TIMEOUT_SECONDS")
+    assert db._configured_timeout_limits() == (30_000, 120_000)
+
+
 # --- Postgres array literals -------------------------------------------------------------------
 #
 # psycopg hydrates arrays of element types it knows; enum arrays (per-database OIDs) arrive as the
@@ -294,6 +301,109 @@ def test_belt_and_suspenders_gucs(monkeypatch):
 
     pg17, _ = _executed(monkeypatch, server_version=170004)
     assert "transaction_timeout = 32000" in pg17[0]  # +slack: statement_timeout must win the race
+
+
+def test_query_canceled_hint_names_limit_and_referenced_table_stats(monkeypatch):
+    exc = Exception("canceling statement due to statement timeout")
+    exc.sqlstate = "57014"
+    monkeypatch.setattr(
+        db,
+        "table_stats",
+        lambda table, schema=None, db=None: {
+            "schema": schema or "public",
+            "table": table,
+            "estimated_rows": 123456,
+            "total_size": "42 MB",
+            "seq_scan": 9,
+            "idx_scan": 1,
+            "indexes": [{"name": "users_email_idx", "definition": "CREATE INDEX ..."}],
+        },
+    )
+    hint = db._mistake_hint(
+        exc,
+        None,
+        10_000,
+        sql="select * from public.users join accounts on accounts.user_id = users.id",
+        db="app",
+    )
+    assert hint.startswith(
+        "Query exceeded this project's 10s limit and was killed on Postgres. Rewrite for performance: "
+        "filter on indexed columns, add LIMIT, pre-aggregate, avoid count(*)/full scans on large tables."
+    )
+    assert "public.users: ~123456 rows, 42 MB" in hint
+    assert "users_email_idx" in hint
+
+
+def test_table_stats_uses_catalog_queries_only(monkeypatch):
+    calls = []
+
+    def fake_query(sql, params=None, db=None, **kwargs):
+        calls.append((sql, params, db, kwargs))
+        if "from pg_class" in sql:
+            return [{
+                "schema": "public", "table": "users", "estimated_rows": 1000,
+                "total_size": "128 kB", "seq_scan": 3, "idx_scan": 20,
+                "last_analyze": None, "last_autoanalyze": "now",
+            }]
+        if "from pg_indexes" in sql:
+            return [{"name": "users_pkey", "definition": "CREATE UNIQUE INDEX users_pkey ..."}]
+        if "from pg_stats" in sql:
+            return [{"column": "email", "n_distinct": -0.8, "null_frac": 0.0}]
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(db, "query", fake_query)
+    got = db.table_stats("users", db="app")
+    assert got["estimated_rows"] == 1000
+    assert got["indexes"][0]["name"] == "users_pkey"
+    assert got["columns"][0]["n_distinct"] == -0.8
+    assert all(call[3]["_timeout_hint_stats"] is False for call in calls)
+    assert all("select * from users" not in call[0].lower() for call in calls)
+
+
+def test_explain_never_analyzes(monkeypatch):
+    seen = {}
+
+    def fake_query(sql, params=None, db=None, **_kwargs):
+        seen.update(sql=sql, params=params, db=db)
+        return [{"QUERY PLAN": "Seq Scan on users"}, {"QUERY PLAN": "  Filter: active"}]
+
+    monkeypatch.setattr(db, "query", fake_query)
+    assert db.explain("select * from users where active = %s", [True], db="app") == (
+        "Seq Scan on users\n  Filter: active"
+    )
+    assert seen["sql"] == "EXPLAIN (FORMAT TEXT) select * from users where active = %s"
+    with pytest.raises(RuntimeError, match="never runs ANALYZE"):
+        db.explain("EXPLAIN ANALYZE select * from users")
+
+
+def test_cli_timeout_error_has_no_traceback(monkeypatch, capsys):
+    monkeypatch.setattr(
+        db,
+        "query",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("Query exceeded this project's 10s limit and was killed on Postgres.")
+        ),
+    )
+    assert db._main(["select pg_sleep(20)"]) == 1
+    captured = capsys.readouterr()
+    assert "Query exceeded this project's 10s limit" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_cli_stats_and_explain(monkeypatch, capsys):
+    monkeypatch.setattr(
+        db,
+        "table_stats",
+        lambda table, schema=None, db=None: {
+            "schema": schema or "public", "table": table, "estimated_rows": 12,
+        },
+    )
+    assert db._main(["--stats", "analytics.users", "--format", "json"]) == 0
+    assert '"schema": "analytics"' in capsys.readouterr().out
+
+    monkeypatch.setattr(db, "explain", lambda sql, params=None, db=None: "Index Scan using users_pkey")
+    assert db._main(["--explain", "select * from users"]) == 0
+    assert capsys.readouterr().out.strip() == "Index Scan using users_pkey"
 
 
 def test_connect_passes_tcp_keepalives(monkeypatch):

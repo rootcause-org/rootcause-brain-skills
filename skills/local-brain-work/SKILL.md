@@ -61,6 +61,8 @@ present, otherwise from the tag-pinned `rootcause-runtime` git spec.
    uv run "$SKILL/scripts/brain_run.py" skills/databases/scripts/lookup_customer.py --email a@b.com
    uv run "$SKILL/scripts/brain_run.py" -m lib.db --list
    uv run "$SKILL/scripts/brain_run.py" -m lib.db "select count(*) from accounts"
+   uv run "$SKILL/scripts/brain_run.py" -m lib.db --stats accounts --format json
+   uv run "$SKILL/scripts/brain_run.py" -m lib.db --explain "select * from accounts where id = 42"
    ```
 
 3. Run test tiers:
