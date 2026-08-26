@@ -49,6 +49,29 @@ Action docs/runbooks should put exact safety guards and verification checks near
 evidence, disqualifying states, preflight expectations, post-execution proof, and when to refuse or
 escalate.
 
+## Script Hygiene
+
+`script.py` / `preflight.py` are single files by construction — only `sha256(script.py)` is pinned and
+shipped — so the natural failure mode is copy-paste growth. The offline test tier (`brain_test.py`,
+via `lib.action_lint`) guards it:
+
+| Check | Verdict | Rule |
+|---|---|---|
+| Size budget | WARN ≥ 64 KiB, FAIL ≥ 96 KiB | The executor ships the file inline (argv ~128 KiB after base64). Override in `actions/lint.yaml`: `script_size: {warn_kb, fail_kb}`. |
+| Duplicate helpers | WARN | A `_private` def identical in ≥ 3 scripts → hoist. Same name, different bodies in ≥ 3 scripts → drifted copies (this has produced a real cross-tenant bug). |
+| Dead private names | WARN | Module-level `_name` never referenced in its own file → delete. |
+
+Conventions:
+
+- **Script = one business outcome's orchestration.** Param reads, the specific mutation, verify-after-
+  mutate, the reviewer-facing result. Nothing generic lives here twice.
+- **Generic → `lib.action`** (params, results, HTTP retries, credential lookup, write connectors).
+  **Project-generic → a shared project module** (API client/login, tenant scoping, date/label
+  formatting, notify tail). Copy-pasting a helper into a third script is the signal to hoist it.
+- **Split when a script exceeds the soft budget** or serves two outcomes with different guards; keep
+  each action reviewer-legible in one sitting.
+- **Delete, don't park.** Unused `_constants`/helpers left "for later" are the growth curve.
+
 ## Customer-Facing Copy
 
 ```yaml

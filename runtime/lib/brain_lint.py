@@ -167,6 +167,10 @@ def lint_brain(brain_root: str | Path) -> list[Finding]:
         findings += _check(manifest, _rel(root, manifest), _manifest_description(manifest),
                            "action manifest")
 
+    # Action-script hygiene (size budget, duplicate/drifted helpers, dead private names).
+    from lib.action_lint import lint_actions
+
+    findings += [Finding(f.path, f.level, f.message) for f in lint_actions(root)]
     return findings
 
 
@@ -205,7 +209,7 @@ class BrainDescriptionLintItem(pytest.Item):
         fails = [f for f in findings if f.level == "FAIL"]
         if fails:
             raise BrainLintError(
-                f"{len(fails)} brain description lint failure(s):\n{format_report(fails)}"
+                f"{len(fails)} brain lint failure(s):\n{format_report(fails)}"
             )
 
     def repr_failure(self, excinfo, style=None):  # noqa: ANN001 — pytest signature

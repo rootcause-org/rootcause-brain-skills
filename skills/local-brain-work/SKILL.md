@@ -94,6 +94,10 @@ uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>'
 uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --commit
 ```
 
+The offline tier (`brain_test.py`) also lints action scripts: size budget (FAIL ≥ 96 KiB — the
+transport's argv limit), helpers copy-pasted/drifted across ≥ 3 scripts, dead `_private` names. See
+"Script Hygiene" in [docs/actions.md](../../docs/actions.md) for the conventions behind it.
+
 `--commit` writes for real to whatever `.env.action` targets. Use safe local/staging targets unless the
 user intentionally asked for a real write. Read [docs/actions.md](../../docs/actions.md) and
 [action-run-triage.md](action-run-triage.md) for the hosted harness (including required versus optional
