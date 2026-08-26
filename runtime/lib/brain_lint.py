@@ -9,9 +9,10 @@ that contract:
     frontmatter, or one whose whitespace-collapsed length exceeds 90 chars (the tree truncates
     there, so the tail never reaches the model; nothing else consumes a long md description);
     an `actions/*/manifest.yaml` with no top-level `description:`.
-  * **WARN** — an overlong action-manifest description (the SAME field is injected full-length into
-    the per-run action catalog prompt, so rich copy is load-bearing there — the rule is "front-load
-    the first 90 chars", not "shorten"); "what this file contains"-style phrasing (`This file…`,
+  * **WARN** — an overlong action-manifest description whose first complete sentence does not fit in
+    the 90-character tree gloss (the SAME field is injected full-length into the per-run action
+    catalog prompt, so rich copy is load-bearing there — lead with a short routing sentence, never
+    shorten the catalog detail merely for lint); "what this file contains"-style phrasing (`This file…`,
     `Contains…`, `Dit bestand…`). Deterministic, best-effort; never fails a run.
 
 It mirrors `rootcause/internal/brain/bootstrap.go` so lint and tree **agree**: the same bounded
@@ -45,6 +46,7 @@ _CONTAINS_STYLE = re.compile(
     r"|dit\s+(bestand|document)|deze\s+(pagina|file))",
     re.IGNORECASE,
 )
+_SENTENCE_BOUNDARY = re.compile(r"[.!?](?=\s|$)")
 
 
 @dataclass(frozen=True)
@@ -131,12 +133,15 @@ def _check(path: Path, rel: str, desc: str | None, kind: str) -> list[Finding]:
     if len(desc) > DESC_MAX_LEN:
         if kind == "action manifest":
             # Manifest descriptions double as the full-length action-catalog prompt entry, so
-            # length is legitimate — only the first 90 chars reach the tree gloss.
-            out.append(Finding(rel, "WARN",
-                               f"description is {len(desc)} chars; the tree gloss truncates at "
-                               f"{DESC_MAX_LEN} — front-load the when-to-use signal in the first "
-                               f"{DESC_MAX_LEN} chars (do NOT shorten the catalog copy)",
-                               "description-length"))
+            # length is legitimate. A complete opening sentence within the tree budget is the
+            # deterministic proof that its routing signal was intentionally front-loaded.
+            first_end = next((m.end() for m in _SENTENCE_BOUNDARY.finditer(desc)), None)
+            if first_end is None or first_end > DESC_MAX_LEN:
+                out.append(Finding(rel, "WARN",
+                                   f"description is {len(desc)} chars and its first complete sentence "
+                                   f"exceeds the {DESC_MAX_LEN}-char tree gloss — lead with a short "
+                                   "when-to-use sentence; keep the rich catalog detail after it",
+                                   "description-length"))
         else:
             out.append(Finding(rel, "FAIL",
                                f"description is {len(desc)} chars (>{DESC_MAX_LEN}); the tree truncates "

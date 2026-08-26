@@ -20,6 +20,14 @@ def _script(root: Path, action: str, body: str, name: str = "script.py") -> Path
     return p
 
 
+def _generated_script(root: Path, action: str, artifact_body: str, source_body: str) -> Path:
+    source_rel = f"actions/{action}/script.src.py"
+    _script(root, action, source_body, name="script.src.py")
+    banner = ("# GENERATED FILE — DO NOT EDIT.  Run: uv run scripts/bundle_actions.py\n"
+              f"# Source: {source_rel}\n")
+    return _script(root, action, banner + artifact_body)
+
+
 def _msgs(findings, level=None):
     return [f.message for f in findings if level is None or f.level == level]
 
@@ -56,6 +64,29 @@ def test_duplicate_helpers_identical_vs_drifted(tmp_path: Path) -> None:
     _script(tmp_path, "a", "def _cid():\n    return 1\ndef main():\n    _cid()\n")
     msgs = _msgs(lint_actions(tmp_path), "WARN")
     assert any("`_cid` exists in 3 scripts" in m and "2 different bodies" in m for m in msgs)
+
+
+def test_generated_bundle_helpers_are_linted_in_authoritative_sources(tmp_path: Path) -> None:
+    # Repeated transport copies are unavoidable and ignored only when a strict generated banner
+    # resolves to the exact adjacent source. Real duplication in those sources remains actionable.
+    for action in ("a", "b", "c"):
+        _generated_script(tmp_path, action, HELPER, "def run():\n    return 1\n")
+    assert not any("_url" in m for m in _msgs(lint_actions(tmp_path)))
+
+    for action in ("a", "b", "c"):
+        _script(tmp_path, action, HELPER + "def run():\n    return _url('h', '/')\n",
+                name="script.src.py")
+    findings = lint_actions(tmp_path)
+    assert any("`_url` is identical in 3 scripts" in m for m in _msgs(findings))
+    assert sum(f.rule == "helper-duplicate" for f in findings) == 1
+
+
+def test_generated_marker_without_exact_adjacent_source_is_not_trusted(tmp_path: Path) -> None:
+    banner = ("# GENERATED FILE — DO NOT EDIT.\n"
+              "# Source: actions/somewhere_else/script.src.py\n")
+    for action in ("a", "b", "c"):
+        _script(tmp_path, action, banner + HELPER + "def main():\n    return _url('h', '/')\n")
+    assert any("`_url` is identical in 3 scripts" in m for m in _msgs(lint_actions(tmp_path)))
 
 
 def test_dead_private_names(tmp_path: Path) -> None:

@@ -297,8 +297,9 @@ its selection into the model's opening turn. Every upfront line is a router hook
 an irrelevant one is an active distractor. Checklist:
 
 - `description:` frontmatter on every `skills/*/SKILL.md`, `skills/cases/*.md` runbook, and
-  `actions/*/manifest.yaml` — "when to open this" in customer vocabulary, ≤90 chars; it renders
-  inline on the file's tree line and the offline lint fails missing/overlong ones.
+  `actions/*/manifest.yaml` — "when to open this" in customer vocabulary, ≤90 chars for Markdown.
+  Action descriptions also feed the full catalog and may stay rich; lead those with one complete
+  routing sentence that fits within 90 chars. The offline lint preserves this distinction.
 - Python scripts: first docstring line = **usage + purpose** — e.g. `backup_status.py <backup-id> —
   why-isn't-this-backup-running triage.` It is the script's tree gloss and the only line an agent sees
   before calling, so teach the invocation, not just the topic.

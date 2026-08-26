@@ -8,9 +8,10 @@ MAX_ARG_STRLEN, 128 KiB after base64) → action dead in prod. Three cheap, cons
   * **size budget** — `actions/*/script.py` and `preflight.py` raw bytes: WARN ≥ 64 KiB, FAIL ≥ 96 KiB.
     Per-brain override: `actions/lint.yaml` with `script_size: {warn_kb: N, fail_kb: N}`.
   * **duplicate helpers** — a module-level `_private` `def` whose AST-normalised body is identical across ≥ 3
-    action scripts → WARN "hoist"; same name in ≥ 3 scripts with ≥ 2 distinct bodies → WARN "drifted"
-    (this shape produced a real cross-tenant guard bug). Public names (`main`, `run`) are per-script
-    entrypoints and skipped. One finding per helper, never FAIL.
+    action sources → WARN "hoist"; same name in ≥ 3 sources with ≥ 2 distinct bodies → WARN "drifted"
+    (this shape produced a real cross-tenant guard bug). A generated single-file artifact is analysed
+    through the exact adjacent `.src.py` named in its banner; its shipped byte size is still checked.
+    Public names (`main`, `run`) are per-script entrypoints and skipped. One finding per helper, never FAIL.
   * **dead private names** — module-level `_private` functions / constants never referenced in their
     own file → WARN. Only `_`-prefixed names, so public API and harness entrypoints never trip it.
 
@@ -21,6 +22,7 @@ surface syntax errors elsewhere).
 from __future__ import annotations
 
 import ast
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +34,8 @@ OVERRIDE_FILE = "actions/lint.yaml"
 
 _ARGV_HINT = ("the executor ships the whole file inline through the host's transport (argv limit "
               "~128 KiB after base64); hoist shared helpers to a project lib or split the action")
+_GENERATED_MARKER = "# GENERATED FILE — DO NOT EDIT."
+_SOURCE_LINE = re.compile(r"^# Source: (actions/[^/]+/(?:script|preflight)\.src\.py)$", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -63,6 +67,32 @@ def _action_py_files(root: Path) -> list[Path]:
     for name in ("script.py", "preflight.py"):
         out += sorted(root.glob(f"actions/*/{name}"))
     return out
+
+
+def _analysis_path(root: Path, artifact: Path, raw: bytes) -> Path:
+    """Return a generated artifact's exact adjacent source, else the artifact itself.
+
+    Hosted actions must ship one self-contained file, so a project bundler necessarily repeats its
+    shared helpers in every generated artifact. Counting those transport copies as hand-maintained
+    duplication is noise. This redirect is deliberately fail-closed: the standard generated marker,
+    an exact root-relative source line, the expected adjacent `.src.py` path, and that source file must
+    all agree. Hand-written scripts and vague/generated-looking comments remain fully linted.
+    """
+    head = raw[:16 * 1024].decode("utf-8", "replace")
+    if _GENERATED_MARKER not in head:
+        return artifact
+    match = _SOURCE_LINE.search(head)
+    if match is None:
+        return artifact
+    expected = artifact.with_name(f"{artifact.stem}.src.py")
+    try:
+        declared = root / Path(match.group(1))
+        if declared.resolve() != expected.resolve() or not expected.is_file():
+            return artifact
+        expected.resolve().relative_to(root.resolve())
+    except (OSError, ValueError):
+        return artifact
+    return expected
 
 
 def _body_key(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
@@ -125,20 +155,23 @@ def lint_actions(brain_root: str | Path) -> list[Finding]:
             findings.append(Finding(rel, "WARN", f"{size // 1024} KiB ≥ {warn_b // 1024} KiB soft budget — {_ARGV_HINT}",
                                     "script-size"))
 
+        analysis_path = _analysis_path(root, path, raw)
+        analysis_rel = analysis_path.relative_to(root).as_posix()
         try:
-            tree = ast.parse(raw, filename=rel)
+            analysis_raw = analysis_path.read_bytes() if analysis_path != path else raw
+            tree = ast.parse(analysis_raw, filename=analysis_rel)
         except SyntaxError:
             continue
 
         if path.name == "script.py":
             for node in tree.body:
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("_"):
-                    helpers[node.name][_body_key(node)].append(rel)
+                    helpers[node.name][_body_key(node)].append(analysis_rel)
 
         used = _referenced_names(tree)
         for name, line in sorted(_module_privates(tree).items(), key=lambda kv: kv[1]):
             if name not in used:
-                findings.append(Finding(f"{rel}:{line}", "WARN",
+                findings.append(Finding(f"{analysis_rel}:{line}", "WARN",
                                         f"`{name}` is defined but never referenced in this file — delete it",
                                         "private-dead"))
 

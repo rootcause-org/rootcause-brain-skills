@@ -100,8 +100,17 @@ def test_lint_brain_overlong_manifest_warns_not_fails(tmp_path: Path) -> None:
 
     findings = lint_brain(tmp_path)
     assert all(f.path != "actions/verbose/manifest.yaml" for f in _fails(findings))
-    assert any(f.path == "actions/verbose/manifest.yaml" and "front-load" in f.message
+    assert any(f.path == "actions/verbose/manifest.yaml" and "short when-to-use sentence" in f.message
                for f in _warns(findings))
+
+
+def test_lint_brain_accepts_rich_manifest_with_frontloaded_sentence(tmp_path: Path) -> None:
+    _seed_brain(tmp_path)
+    rich = "Refund a settled duplicate charge. " + ("Detailed safety and verification copy. " * 8)
+    _write(tmp_path / "actions/verbose/manifest.yaml", f"id: verbose\ndescription: {rich.strip()}\n")
+
+    findings = lint_brain(tmp_path)
+    assert all(f.path != "actions/verbose/manifest.yaml" for f in findings)
 
 
 def test_lint_brain_warns_on_contains_style(tmp_path: Path) -> None:

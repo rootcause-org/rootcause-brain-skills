@@ -58,7 +58,7 @@ via `lib.action_lint`) guards it:
 | Check | Verdict | Rule |
 |---|---|---|
 | Size budget | WARN ≥ 64 KiB, FAIL ≥ 96 KiB | The executor ships the file inline (argv ~128 KiB after base64). Override in `actions/lint.yaml`: `script_size: {warn_kb, fail_kb}`. |
-| Duplicate helpers | WARN | A `_private` def identical in ≥ 3 scripts → hoist. Same name, different bodies in ≥ 3 scripts → drifted copies (this has produced a real cross-tenant bug). |
+| Duplicate helpers | WARN | A `_private` def identical in ≥ 3 maintained sources → hoist. Same name, different bodies in ≥ 3 sources → drifted copies (this has produced a real cross-tenant bug). Generated artifacts are analysed through the exact adjacent `.src.py` declared by their standard banner; vague markers are not trusted. |
 | Dead private names | WARN | Module-level `_name` never referenced in its own file → delete. |
 
 Conventions:
@@ -70,6 +70,9 @@ Conventions:
   formatting, notify tail). Copy-pasting a helper into a third script is the signal to hoist it.
 - **Split when a script exceeds the soft budget** or serves two outcomes with different guards; keep
   each action reviewer-legible in one sitting.
+- A project bundler may keep readable shared/`.src.py` code while emitting one digest-pinned hosted
+  artifact. The lint still checks the shipped artifact's raw size, but checks helper drift in the
+  declared source so unavoidable single-file transport copies do not masquerade as maintained drift.
 - **Delete, don't park.** Unused `_constants`/helpers left "for later" are the growth curve.
 
 ## Customer-Facing Copy

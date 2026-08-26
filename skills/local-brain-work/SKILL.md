@@ -104,8 +104,9 @@ uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --commit
 ```
 
 The offline tier (`brain_test.py`) repeats the same lint and prints one compact hygiene block at the
-end: size budget (FAIL ≥ 96 KiB — the transport's argv limit), helpers copy-pasted/drifted across
-≥ 3 scripts, and dead `_private` names. See "Script Hygiene" in
+end: shipped size budget (FAIL ≥ 96 KiB — the transport's argv limit), helpers copy-pasted/drifted
+across ≥ 3 maintained sources, and dead `_private` names. Strictly banner-linked generated artifacts
+are analysed through their adjacent `.src.py`; their shipped byte size is still checked. See "Script Hygiene" in
 [docs/actions.md](../../docs/actions.md) for the conventions behind it.
 
 `--commit` writes for real to whatever `.env.action` targets. Use safe local/staging targets unless the
