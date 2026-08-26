@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import sys
 import types
+import os
+import subprocess
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -13,6 +15,7 @@ from lib.brain_lint import (
     Finding,
     _md_description,
     _manifest_description,
+    format_report,
     lint_brain,
 )
 
@@ -107,3 +110,42 @@ def test_lint_brain_warns_on_contains_style(tmp_path: Path) -> None:
     findings = lint_brain(tmp_path)
     assert _fails(findings) == []  # style is WARN, not FAIL
     assert any("x/SKILL.md" in w.path for w in _warns(findings))
+
+
+def test_format_report_groups_fail_before_warn_by_rule() -> None:
+    report = format_report([
+        Finding("actions/b/script.py:2", "WARN", "dead b", "private-dead"),
+        Finding("skills/x/SKILL.md", "FAIL", "missing", "description-missing"),
+        Finding("actions/a/script.py:1", "WARN", "dead a", "private-dead"),
+        Finding("actions/", "WARN", "duplicate", "helper-duplicate"),
+    ])
+
+    assert report.splitlines() == [
+        "brain lint: 1 FAIL, 3 WARN",
+        "FAIL missing descriptions (1)",
+        "  skills/x/SKILL.md — missing",
+        "WARN dead private names (2)",
+        "  actions/a/script.py:1 — dead a",
+        "  actions/b/script.py:2 — dead b",
+        "WARN duplicate helpers (1)",
+        "  actions/ — duplicate",
+    ]
+
+
+def test_pytest_adapter_prints_one_compact_block_without_warning_summary(tmp_path: Path) -> None:
+    _seed_brain(tmp_path)
+    _write(tmp_path / "actions/refund/script.py", "_DEAD = 1\n")
+    _write(tmp_path / "skills/test_sample.py", "def test_ok():\n    assert True\n")
+    runtime = Path(__file__).resolve().parents[1]
+    env = {**os.environ, "PYTHONPATH": str(runtime)}
+
+    run = subprocess.run(
+        [sys.executable, "-m", "pytest", str(tmp_path / "skills"), "-q", "-p", "no:cacheprovider",
+         "-p", "lib.brain_lint_pytest"],
+        text=True, capture_output=True, check=False, env=env,
+    )
+
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert run.stdout.count("brain lint: 0 FAIL, 1 WARN") == 1
+    assert "WARN dead private names (1)" in run.stdout
+    assert "warnings summary" not in run.stdout

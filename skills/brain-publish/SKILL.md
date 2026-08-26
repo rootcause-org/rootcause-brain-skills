@@ -51,6 +51,8 @@ Also read [docs/actions.md](../../docs/actions.md) when publishing `actions/<id>
    `--verify-command` arguments so any merge tree is retested before push:
    ```bash
    VERIFY_ARGS=()
+   python3 "$LOCAL_SKILL/scripts/brain_lint.py"
+   VERIFY_ARGS+=(--verify-command "python3 \"$LOCAL_SKILL/scripts/brain_lint.py\"")
    uv run "$LOCAL_SKILL/scripts/brain_test.py"
    VERIFY_ARGS+=(--verify-command "uv run \"$LOCAL_SKILL/scripts/brain_test.py\"")
    uv run --no-project python "$LOCAL_SKILL/scripts/brain_structure.py"   # structural validation (links, frontmatter, routing; privacy lint scoped to files changed vs origin/main)

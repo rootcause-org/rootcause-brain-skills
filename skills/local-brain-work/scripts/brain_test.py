@@ -7,7 +7,7 @@ Brain-dir-relative: `cd` into a `rootcause-brain-<project>` checkout and invoke;
 on `./skills`. Tiers (from `lib.livecheck`):
 
   * **offline (default)** — `-m "not live"`: hermetic L1 fixture tests + the brain description lint + action-script hygiene lint
-                            (`lib.brain_lint` + `lib.action_lint`, injected — no per-brain test file). No DSN, no network.
+                            (`lib.brain_lint_pytest`, injected — no per-brain test file). No DSN, no network.
   * **live** (`--live`)   — `-m live`: L2 schema canary + L3 render-smoke, read-only against the
                             project's real prod DSN (the brain's `./.env`).
   * **gated** (`--require-live`) — `--live` plus fail-if-no-live-test-ran (CI/cron drift alarm).
@@ -56,8 +56,8 @@ def main(argv: list[str] | None = None) -> int:
 
     live = args.live or args.require_live
     marker = "live" if live else "not live"
-    # lib.brain_lint injects the offline description lint (self-skips on the live tier); no per-brain file.
-    pytest_args = ["-p", "lib.livecheck", "-p", "lib.brain_lint", "-m", marker, "-q", *args.pytest_args]
+    # The adapter injects one offline lint item and prints one compact end-of-tier report.
+    pytest_args = ["-p", "lib.livecheck", "-p", "lib.brain_lint_pytest", "-m", marker, "-q", *args.pytest_args]
     if args.require_live:
         pytest_args.append("--require-live")
 
