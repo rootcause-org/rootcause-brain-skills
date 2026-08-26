@@ -44,7 +44,7 @@ Set `SKILL` to the directory containing this `SKILL.md`:
 SKILL=<absolute path to skills/local-brain-work>
 ```
 
-The engine files are `brain_env.py`, `brain_run.py`, `brain_test.py`, `brain_action.py`,
+The engine files are `brain_env.py`, `brain_run.py`, `brain_lint.py`, `brain_test.py`, `brain_action.py`,
 `brain_projection.py`, and `brain_dump.py`. They resolve `lib` from the sibling `runtime/` package when
 present, otherwise from the tag-pinned `rootcause-runtime` git spec.
 
@@ -87,6 +87,13 @@ present, otherwise from the tag-pinned `rootcause-runtime` git spec.
 `brain_action.py` is the local state-changing exception. It reproduces hosted-Python action validation,
 preflight, and body execution using `./.env.action`; dry-run rolls back by default.
 
+After every `actions/*/script.py` or `preflight.py` edit, run the dependency-light lint before the
+slower test tier. It starts no uv environment and exits non-zero on FAIL; `--strict` also gates WARN:
+
+```bash
+python3 "$SKILL/scripts/brain_lint.py"
+```
+
 ```bash
 uv run "$SKILL/scripts/brain_action.py" --list
 uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --preflight-only
@@ -94,9 +101,10 @@ uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>'
 uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --commit
 ```
 
-The offline tier (`brain_test.py`) also lints action scripts: size budget (FAIL ≥ 96 KiB — the
-transport's argv limit), helpers copy-pasted/drifted across ≥ 3 scripts, dead `_private` names. See
-"Script Hygiene" in [docs/actions.md](../../docs/actions.md) for the conventions behind it.
+The offline tier (`brain_test.py`) repeats the same lint and prints one compact hygiene block at the
+end: size budget (FAIL ≥ 96 KiB — the transport's argv limit), helpers copy-pasted/drifted across
+≥ 3 scripts, and dead `_private` names. See "Script Hygiene" in
+[docs/actions.md](../../docs/actions.md) for the conventions behind it.
 
 `--commit` writes for real to whatever `.env.action` targets. Use safe local/staging targets unless the
 user intentionally asked for a real write. Read [docs/actions.md](../../docs/actions.md) and

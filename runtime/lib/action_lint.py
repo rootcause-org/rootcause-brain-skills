@@ -39,6 +39,7 @@ class Finding:
     path: str
     level: str  # "FAIL" | "WARN"
     message: str
+    rule: str = "other"
 
 
 def _size_limits(root: Path) -> tuple[int, int]:
@@ -118,9 +119,11 @@ def lint_actions(brain_root: str | Path) -> list[Finding]:
         raw = path.read_bytes()
         size = len(raw)
         if size >= fail_b:
-            findings.append(Finding(rel, "FAIL", f"{size // 1024} KiB ≥ {fail_b // 1024} KiB budget — {_ARGV_HINT}"))
+            findings.append(Finding(rel, "FAIL", f"{size // 1024} KiB ≥ {fail_b // 1024} KiB budget — {_ARGV_HINT}",
+                                    "script-size"))
         elif size >= warn_b:
-            findings.append(Finding(rel, "WARN", f"{size // 1024} KiB ≥ {warn_b // 1024} KiB soft budget — {_ARGV_HINT}"))
+            findings.append(Finding(rel, "WARN", f"{size // 1024} KiB ≥ {warn_b // 1024} KiB soft budget — {_ARGV_HINT}",
+                                    "script-size"))
 
         try:
             tree = ast.parse(raw, filename=rel)
@@ -136,7 +139,8 @@ def lint_actions(brain_root: str | Path) -> list[Finding]:
         for name, line in sorted(_module_privates(tree).items(), key=lambda kv: kv[1]):
             if name not in used:
                 findings.append(Finding(f"{rel}:{line}", "WARN",
-                                        f"`{name}` is defined but never referenced in this file — delete it"))
+                                        f"`{name}` is defined but never referenced in this file — delete it",
+                                        "private-dead"))
 
     for name, variants in sorted(helpers.items()):
         scripts = sorted({p for paths in variants.values() for p in paths})
@@ -146,10 +150,11 @@ def lint_actions(brain_root: str | Path) -> list[Finding]:
         if len(variants) == 1:
             findings.append(Finding("actions/", "WARN",
                                     f"`{name}` is identical in {len(scripts)} scripts ({actions}) — "
-                                    "hoist it to a shared project module instead of copy-pasting"))
+                                    "hoist it to a shared project module instead of copy-pasting",
+                                    "helper-duplicate"))
         else:
             findings.append(Finding("actions/", "WARN",
                                     f"`{name}` exists in {len(scripts)} scripts ({actions}) with "
                                     f"{len(variants)} different bodies — drifted copies hide bugs; "
-                                    "diff them and hoist one version"))
+                                    "diff them and hoist one version", "helper-drift"))
     return findings

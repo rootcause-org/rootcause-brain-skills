@@ -1,4 +1,4 @@
-"""Offline brain **description lint** — pytest plugin + pure linter.
+"""Offline brain description + action hygiene lint.
 
 Every routable brain file must carry a `description:` the bootstrap tree can render on its line, or
 it is **invisible to the grounding pre-step**: retrieval is `rg`-driven and lexical, so a file whose
@@ -19,9 +19,8 @@ head-read frontmatter parse for markdown (block scalars / multi-line values are 
 they count as missing here), real YAML for action manifests, and the same `tidyDesc` whitespace
 collapse before the 90-char measure.
 
-Wiring: `scripts/brain_test.py` loads this as a pytest plugin (`-p lib.brain_lint`) for the offline
-tier, so **every brain gets the lint with no per-brain test file**. The plugin injects one synthetic
-offline test that lints the whole brain (its root is the parent of the `skills/` collection arg).
+This module stays stdlib + PyYAML only so the standalone developer entrypoint and the production
+publish gate can import it without pytest. `lib.brain_lint_pytest` owns the optional pytest wiring.
 """
 
 from __future__ import annotations
@@ -30,7 +29,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-import pytest
+import yaml
 
 from .action_lint import lint_actions
 
@@ -55,6 +54,7 @@ class Finding:
     path: str  # brain-relative path, e.g. "skills/backups/SKILL.md"
     level: str
     message: str
+    rule: str = "other"
 
 
 def _tidy(val: str) -> str:
@@ -109,10 +109,6 @@ def _manifest_description(path: Path) -> str | None:
     scalars, which a line scan would drop; here they are legitimately present, so parse them properly.
     """
     try:
-        import yaml
-    except ImportError:  # pragma: no cover — pyyaml is a runtime dep
-        return None
-    try:
         data = yaml.safe_load(path.read_text("utf-8"))
     except (OSError, yaml.YAMLError):
         return None
@@ -129,7 +125,8 @@ def _check(path: Path, rel: str, desc: str | None, kind: str) -> list[Finding]:
     if desc is None:
         return [Finding(rel, "FAIL",
                         f"missing renderable `description:` in {kind} "
-                        "(absent, empty, or a block-scalar/multi-line value the tree drops)")]
+                        "(absent, empty, or a block-scalar/multi-line value the tree drops)",
+                        "description-missing")]
     out: list[Finding] = []
     if len(desc) > DESC_MAX_LEN:
         if kind == "action manifest":
@@ -138,15 +135,17 @@ def _check(path: Path, rel: str, desc: str | None, kind: str) -> list[Finding]:
             out.append(Finding(rel, "WARN",
                                f"description is {len(desc)} chars; the tree gloss truncates at "
                                f"{DESC_MAX_LEN} — front-load the when-to-use signal in the first "
-                               f"{DESC_MAX_LEN} chars (do NOT shorten the catalog copy)"))
+                               f"{DESC_MAX_LEN} chars (do NOT shorten the catalog copy)",
+                               "description-length"))
         else:
             out.append(Finding(rel, "FAIL",
                                f"description is {len(desc)} chars (>{DESC_MAX_LEN}); the tree truncates "
-                               f"at {DESC_MAX_LEN}, so the tail is invisible to the model"))
+                               f"at {DESC_MAX_LEN}, so the tail is invisible to the model",
+                               "description-length"))
     if _CONTAINS_STYLE.match(desc):
         out.append(Finding(rel, "WARN",
                            "description reads as \"what this contains\"; prefer \"when to open this\" "
-                           "phrasing in the customer's own words"))
+                           "phrasing in the customer's own words", "description-style"))
     return out
 
 
@@ -171,7 +170,7 @@ def lint_brain(brain_root: str | Path) -> list[Finding]:
 
     # Bind the sibling lint when this plugin loads, before collected brain tests can replace the
     # top-level ``lib`` module in ``sys.modules`` with a test double.
-    findings += [Finding(f.path, f.level, f.message) for f in lint_actions(root)]
+    findings += [Finding(f.path, f.level, f.message, f.rule) for f in lint_actions(root)]
     return findings
 
 
@@ -182,75 +181,32 @@ def _rel(root: Path, p: Path) -> str:
         return p.as_posix()
 
 
+_RULE_LABELS = {
+    "description-missing": "missing descriptions",
+    "description-length": "description length",
+    "description-style": "description style",
+    "script-size": "script size",
+    "helper-duplicate": "duplicate helpers",
+    "helper-drift": "drifted helpers",
+    "private-dead": "dead private names",
+    "other": "other",
+}
+
+
 def format_report(findings: list[Finding]) -> str:
-    """One line per finding, FAILs first, for an assertion / terminal message."""
-    order = {"FAIL": 0, "WARN": 1}
-    rows = sorted(findings, key=lambda f: (order.get(f.level, 9), f.path))
-    return "\n".join(f"  {f.level}  {f.path}: {f.message}" for f in rows)
+    """Render one deterministic compact block: FAIL groups first, then WARN groups by rule."""
+    fails = sum(f.level == "FAIL" for f in findings)
+    warns = sum(f.level == "WARN" for f in findings)
+    if not findings:
+        return "brain lint: clean"
 
-
-# ---- pytest plugin -----------------------------------------------------------------------------
-#
-# Loaded by scripts/brain_test.py via `-p lib.brain_lint` for the OFFLINE tier only. Injects one
-# synthetic test (no per-brain test file) that lints the whole brain. WARNs surface as pytest
-# warnings; any FAIL fails the item.
-
-
-class BrainDescriptionLintItem(pytest.Item):
-    """A file-less pytest item that runs `lint_brain` over the collected brain root."""
-
-    def __init__(self, name: str, parent: pytest.Session, brain_root: Path) -> None:
-        super().__init__(name, parent)
-        self.brain_root = brain_root
-
-    def runtest(self) -> None:
-        findings = lint_brain(self.brain_root)
-        for w in (f for f in findings if f.level == "WARN"):
-            self.warn(pytest.PytestWarning(f"{w.path}: {w.message}"))
-        fails = [f for f in findings if f.level == "FAIL"]
-        if fails:
-            raise BrainLintError(
-                f"{len(fails)} brain lint failure(s):\n{format_report(fails)}"
-            )
-
-    def repr_failure(self, excinfo, style=None):  # noqa: ANN001 — pytest signature
-        if isinstance(excinfo.value, BrainLintError):
-            return str(excinfo.value)
-        return super().repr_failure(excinfo, style=style)
-
-    def reportinfo(self):
-        return self.brain_root, 0, "brain description lint"
-
-
-class BrainLintError(Exception):
-    """Raised by the lint item so its message prints clean (no traceback noise)."""
-
-
-def _brain_root(config: pytest.Config) -> Path | None:
-    """The brain root = parent of the `skills/` collection arg (brain_test.py always points there).
-
-    Works in both runner modes: uv passes an absolute `<brain>/skills`, docker passes `/brain/skills`.
-    """
-    for arg in config.args:
-        p = Path(arg)
-        if p.name == "skills":
-            return p.parent
-    return None
-
-
-def _is_live_tier(config: pytest.Config) -> bool:
-    """True when this run is the live tier (`-m live`) — the description lint is offline-only."""
-    return (config.getoption("markexpr", "") or "").strip() == "live"
-
-
-def pytest_collection_modifyitems(session: pytest.Session, config: pytest.Config,
-                                  items: list[pytest.Item]) -> None:
-    # Offline tier only, and only when we can locate the brain root. Appended after pytest's own
-    # marker filtering so the synthetic item always runs in the offline tier without a marker of its own.
-    if _is_live_tier(config):
-        return
-    root = _brain_root(config)
-    if root is None:
-        return
-    items.append(BrainDescriptionLintItem.from_parent(
-        session, name="brain_description_lint", brain_root=root))
+    lines = [f"brain lint: {fails} FAIL, {warns} WARN"]
+    for level in ("FAIL", "WARN"):
+        rules = sorted({f.rule for f in findings if f.level == level},
+                       key=lambda rule: (_RULE_LABELS.get(rule, rule), rule))
+        for rule in rules:
+            rows = sorted((f for f in findings if f.level == level and f.rule == rule),
+                          key=lambda f: (f.path, f.message))
+            lines.append(f"{level} {_RULE_LABELS.get(rule, rule)} ({len(rows)})")
+            lines.extend(f"  {f.path} — {f.message}" for f in rows)
+    return "\n".join(lines)
