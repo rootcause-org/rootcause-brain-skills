@@ -128,6 +128,20 @@ server-side eviction window, ~48h) and lands raw mail on local disk. Download wi
 `rc` hard-rejects v2 in its splitter, so `--out` + local parse is the working path. If you already have
 a `--split` directory from an older export, point `prepare` at that directory instead.
 
+For Gmail, acquire canned responses as a **second export** after the sent corpus:
+
+```bash
+mkdir -p "$SCRATCH/templates"
+rc project mailbox templates <mailbox-id>
+rc project corpus get <templates-export-id>
+rc project corpus download <templates-export-id> --out "$SCRATCH/templates/export.json"
+```
+
+Gmail has no templates API: the host reads the backing drafts and emits `templates/v1` JSON. This is
+authored, high-signal voice and stock-phrasing reference material. It never enters the v3 sent corpus
+and never satisfies thread coverage, occurrence, era, skip, or durable-rule evidence gates. Non-Gmail
+harvests omit this step.
+
 **Intercom dialect.** Harvest remains a read-only hosted export; it neither enables production inbox
 processing nor writes to Intercom. The server searches `first_admin_reply_at` in configurable bounded,
 half-open date bands, paginates each band, deduplicates boundary overlap, hydrates candidates, and keeps
@@ -205,14 +219,18 @@ read/write scopes, tenant context, and the checkout root; raw command output is 
 
 ```bash
 uv run --no-project python "$SKILL/scripts/prepare_harvest.py" prepare \
-  --corpus "$SCRATCH/corpus/" --scratch "$SCRATCH" --export-id "$EXPORT_ID"
+  --corpus "$SCRATCH/corpus/" --templates "$SCRATCH/templates/export.json" \
+  --scratch "$SCRATCH" --export-id "$EXPORT_ID"
 uv run --no-project python "$SKILL/scripts/prepare_harvest.py" verify --scratch "$SCRATCH"
 ```
+
+Omit `--templates` for non-Gmail mailboxes; preparation still emits an empty normalized
+`templates.json` so later stages have one stable path.
 
 `prepare` requires that verified artifact, binds its canonical digest and exact target into `run.json`,
 then parses the raw corpus into an opaque-ID manifest and writes synthesis-only `threads/`, `manifest.jsonl`,
 `clusters.json`, `ledger.json`, `holdout.json`, `replay-cases.json`, `diagnostics.json`,
-`diagnostics.md`, and `run.json` atomically
+`diagnostics.md`, normalized `templates.json`, and `run.json` atomically
 (re-running replaces them; it is deterministic and idempotent over the same corpus bytes). It:
 
 - assigns each thread a content-derived opaque `H<32-hex>` ID that remains stable across full/delta
@@ -262,6 +280,8 @@ against the existing brain (never a from-scratch rewrite). Each subagent must:
   current-source verification needs, and coverage counts;
 - emit **no** raw quotes, names, addresses, identifiers, counterparties, links, raw filenames, or opaque
   IDs into the proposal prose — opaque IDs live only in the report JSON;
+- read `$SCRATCH/templates.json` in full when `template_count > 0`, treating it as authoritative for
+  persona and reusable response structure but never as thread evidence or durable-fact authority;
 - self-lint the proposal before marking the cluster complete (load-bearing; names leaked into proposals
   in run 1):
   ```bash
@@ -309,6 +329,8 @@ reduction**. Reducing first would hide the raw cross-cluster picture the critic 
 and flags only (it never edits proposals): brain-contract home correctness, the §5 skip/`force_process`
 evidence gate, §5a era flags, the §6 scope matrix on every settings change, cross-cluster contradictions,
 and privacy leaks. It writes advisory notes to `$SCRATCH/critic/critic.md`.
+When templates exist, the critic also reads `$SCRATCH/templates.json` in full and flags persona or
+stock-phrasing proposals that contradict the authored reference, without treating templates as evidence.
 
 (This resolves the v1 skill's self-contradiction: the critic runs on the first draft, **before**
 reduction, not after polishing.)
@@ -323,6 +345,9 @@ supersessions (prefer recent evidence, record what was superseded), collapse per
 into one delta per fact/rule, and keep the brain/persona/triage home split clean. Output is
 `$SCRATCH/critic/reduced.md` plus the strict machine-readable `$SCRATCH/critic/reduced.json` contract
 in the template; nothing tracked is written yet.
+When present, `$SCRATCH/templates.json` is a required full read during reduction: prefer its authored
+voice and reusable structures for persona/template-fingerprint synthesis, while factual and policy
+claims still require harvested-thread or current-source support.
 The JSON carries scratch-only `evidence_ids`: skip counts must equal summed manifest occurrences from
 non-holdout `prose_reply=false` rows; durable-rule strength must equal distinct, semantically read IDs.
 

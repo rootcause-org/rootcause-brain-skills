@@ -13,7 +13,8 @@ the prepare config**, not constants.
 ## Prompt
 
 You are the critic for a sent-mail harvest. Read the **whole** first-draft proposal set plus the
-existing brain; do **not** edit proposals, resolve contradictions, or reduce anything — you only judge
+existing brain and `{{SCRATCH_ROOT}}/templates.json` in full when its `template_count > 0`; do **not**
+edit proposals, resolve contradictions, or reduce anything — you only judge
 and flag. Check every proposal on these axes and record findings per cluster and cross-cluster.
 
 ### 1. Brain contract (home correctness)
@@ -55,6 +56,11 @@ asserting conflicting facts/handling). Name the clusters and topic; leave resolu
 Scan proposals for raw quotes, names, addresses, identifiers, counterparties, links, raw filenames, or
 opaque IDs bleeding into proposal prose. Anything found is a hard finding to fix before reduction.
 
+### 7. Authored template alignment
+Treat templates as authoritative for voice, stock phrasing, and reusable response structure. Flag
+persona/template-fingerprint proposals that contradict them. Templates are not interaction evidence:
+reject their use for occurrence counts, era, skip rules, durable facts, or policies.
+
 ---
 
 ## Output — `{{SCRATCH_ROOT}}/critic/critic.md`
@@ -70,6 +76,7 @@ One document, grouped by axis, each finding tagged with the cluster(s) and sever
 ## Scope violations (§6)              — <cluster>: <must become pending recommendation>
 ## Cross-cluster contradictions       — <clusters>: <topic + conflict>
 ## Privacy leaks                      — <cluster>: <what must be scrubbed>
+## Template alignment                 — <cluster>: <voice/structure mismatch or evidence misuse>
 ## Verdict per cluster                — pass | fix-then-reduce | drop
 ```
 

@@ -11,8 +11,8 @@ Era bands and other numeric knobs are **tunable defaults from the prepare config
 ## Prompt
 
 You reduce the harvested proposals topic by topic into final brain deltas. Read the induced taxonomy,
-every `drafts/<cluster>.md`, the critic report `critic/critic.md`, and the existing brain. For each
-topic:
+every `drafts/<cluster>.md`, the critic report `critic/critic.md`, and the existing brain. Also read
+`{{SCRATCH_ROOT}}/templates.json` in full when `template_count > 0`. For each topic:
 
 1. **Apply the critic.** Drop anything the critic rejected that cannot be cleanly fixed. Fix what it
    flagged as fixable (misfiled home, missing era tag, scope violation → pending recommendation). Do not
@@ -33,6 +33,10 @@ topic:
 5. **Keep the home split.** Brain facts stay brain prose; persona signals go to the persona surface;
    triage decisions to triage — never mixed. Triage/hard-rule widening beyond mailbox scope stays a
    **pending recommendation** unless explicit scope authority exists (§6).
+
+6. **Apply the authored template fingerprint.** Prefer templates for voice, stock phrasing, and reusable
+   answer structure. Never use them as interaction counts, era evidence, skip evidence, or factual/policy
+   authority; those claims still need harvested threads or current-source verification.
 
 Privacy is unchanged: distilled deltas only — no raw quotes, names, addresses, identifiers,
 counterparties, links, filenames, or opaque IDs in anything destined for tracked files.

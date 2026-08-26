@@ -26,6 +26,9 @@ given; you have no network and no `rc` access.
    `deep_read_ids`. One pass. No incremental batch rounds, no reading beyond your plan.
 2. The relevant tracked brain files (routing index, terminology, playbooks, case files, notes) so your
    output is a **delta against what already exists**, never a from-scratch rewrite.
+3. `{{SCRATCH_ROOT}}/templates.json` in full when `template_count > 0`. These are authored,
+   high-signal voice and reusable-response references. Use them for persona and stock phrasing/structure;
+   they are not sent-thread evidence and cannot support counts, eras, skip rules, durable facts, or policies.
 
 You may also read the per-thread `manifest.jsonl` rows for your ids to get machine facts (era,
 `prose_reply`, `prose_reply_count`, `occurrences`, direction, counts). Never read another cluster's
@@ -37,7 +40,8 @@ home (see [`../../../docs/brain-model.md`](../../../docs/brain-model.md) prompt 
 - **Brain-fact candidates** — product/business facts, terminology, routing, playbooks, escalation
   criteria. Deltas: add / revise / retire, phrased against the existing file.
 - **Persona candidates** — voice, warmth, formality, signature, language. Never write these as brain
-  prose; name them for the persona surface.
+  prose; name them for the persona surface. Prefer authored template wording when it conflicts with
+  incidental sent-thread phrasing, and call out reusable response structures as template fingerprint.
 - **Triage candidates** — draft / skip / escalate decisions and deterministic sender/subject rules.
 
 Tag **every durable rule** (fact, price, address, product name, policy) with the **era of its supporting

@@ -60,7 +60,7 @@ DEFAULTS: dict[str, Any] = {
 }
 
 OUTPUT_NAMES = ("threads", "manifest.jsonl", "clusters.json", "ledger.json", "holdout.json",
-                "replay-cases.json", "run.json", "diagnostics.json", "diagnostics.md")
+                "replay-cases.json", "run.json", "templates.json", "diagnostics.json", "diagnostics.md")
 PRIMARY_STATUSES = ("assigned", "holdout", "excluded_noise")
 READ_STATES = ("none", "sampled", "deep")
 # 128-bit truncated SHA-256. It is opaque, stable across corpus ordering/subsets, and leaves enough
@@ -1023,8 +1023,46 @@ def corpus_digest(sources: list[Path]) -> str:
     return digest.hexdigest()
 
 
+def load_templates(path: Path | None) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Validate the host artifact and strip source draft IDs from synthesis input."""
+    empty = {"templates_format": "v1", "template_count": 0, "templates": []}
+    metadata = {"format": "", "count": 0, "sha256": ""}
+    if path is None:
+        return empty, metadata
+    if not path.is_file():
+        raise HarvestError(f"templates artifact not found: {path}")
+    raw = path.read_bytes()
+    if len(raw) > 4 * 1024 * 1024:
+        raise HarvestError("templates artifact exceeds the 4 MiB safety limit")
+    try:
+        document = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HarvestError(f"templates artifact is not valid JSON: {exc}") from exc
+    if not isinstance(document, dict) or document.get("templates_format") != "v1":
+        raise HarvestError("templates artifact must declare templates_format v1")
+    rows = document.get("templates")
+    count = document.get("template_count")
+    if not isinstance(rows, list) or not isinstance(count, int) or isinstance(count, bool) or count != len(rows):
+        raise HarvestError("templates artifact template_count must match templates")
+    seen: set[str] = set()
+    normalized: list[dict[str, str]] = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise HarvestError(f"templates[{index}] must be an object")
+        source_id, subject, body = row.get("id"), row.get("subject", ""), row.get("body", "")
+        if not isinstance(source_id, str) or not source_id or source_id in seen:
+            raise HarvestError(f"templates[{index}].id must be nonempty and unique")
+        if not isinstance(subject, str) or not isinstance(body, str) or (not subject.strip() and not body.strip()):
+            raise HarvestError(f"templates[{index}] must contain a nonblank string subject or body")
+        seen.add(source_id)
+        normalized.append({"subject": subject.strip(), "body": body.strip()})
+    prepared = {"templates_format": "v1", "template_count": len(normalized), "templates": normalized}
+    return prepared, {"format": "v1", "count": len(normalized), "sha256": hashlib.sha256(raw).hexdigest()}
+
+
 def prepare_scratch(corpus: Path, scratch: Path, cfg: dict[str, Any], export_id: str = "",
-                    *, preflight: dict[str, Any] | None = None) -> dict[str, Any]:
+                    *, preflight: dict[str, Any] | None = None,
+                    templates: Path | None = None) -> dict[str, Any]:
     validate_config(cfg)
     if export_id and not SAFE_EXPORT_ID_RE.fullmatch(export_id):
         raise HarvestError("export_id must be 1-128 safe handle characters (letters/digits/._:-)")
@@ -1057,6 +1095,7 @@ def prepare_scratch(corpus: Path, scratch: Path, cfg: dict[str, Any], export_id:
     finalize(threads, holdout)
     plans = build_cluster_plans(clusters, cfg)
     outputs = build_outputs(threads, plans, harvested_at, formats[0], cfg, diagnostics)
+    prepared_templates, templates_meta = load_templates(templates)
     run_doc = {
         "schema_version": 1,
         "generated_at": harvested_at,
@@ -1068,6 +1107,9 @@ def prepare_scratch(corpus: Path, scratch: Path, cfg: dict[str, Any], export_id:
             "corpus_files": len(sources),
             "corpus_sha256": corpus_digest(sources),
             "format": formats[0],
+            "templates_format": templates_meta["format"],
+            "templates_count": templates_meta["count"],
+            "templates_sha256": templates_meta["sha256"],
         },
     }
 
@@ -1084,6 +1126,8 @@ def prepare_scratch(corpus: Path, scratch: Path, cfg: dict[str, Any], export_id:
             (stage / name).write_text(outputs[name], encoding="utf-8")
         (stage / "run.json").write_text(json.dumps(run_doc, indent=2, ensure_ascii=False) + "\n",
                                         encoding="utf-8")
+        (stage / "templates.json").write_text(json.dumps(prepared_templates, indent=2, ensure_ascii=False) + "\n",
+                                               encoding="utf-8")
         publish_stage(stage, scratch, OUTPUT_NAMES)
         atomic_write_text(scratch / "preflight.json",
                           json.dumps(preflight, indent=2, ensure_ascii=False) + "\n")
@@ -1106,7 +1150,8 @@ def cmd_prepare(args: argparse.Namespace) -> int:
     if Path(preflight.get("repo_root", "")).resolve() != repo_root:
         raise HarvestError("preflight belongs to a different brain checkout")
     summary = prepare_scratch(Path(args.corpus), scratch, cfg, export_id=export_id,
-                              preflight=preflight)
+                              preflight=preflight,
+                              templates=Path(args.templates) if getattr(args, "templates", None) else None)
     violations = verify_scratch(scratch)
     if violations:
         raise HarvestError("prepared ledger failed self-verification:\n  " + "\n  ".join(violations))
@@ -1824,10 +1869,15 @@ def build_review_brief(ledger: dict[str, Any], run: dict[str, Any], coverage_row
         f"- Export: `{md_cell(run['export_id'])}`",
         f"- Corpus digest: `{run['inputs']['corpus_sha256']}` ({run['inputs']['format']}, "
         f"{run['inputs']['corpus_files']} file(s))",
+    ]
+    if run["inputs"]["templates_count"]:
+        lines.append(f"- Templates digest: `{run['inputs']['templates_sha256']}` "
+                     f"({run['inputs']['templates_format']}, {run['inputs']['templates_count']} template(s))")
+    lines.extend([
         f"- Effective config: `{json.dumps(run['config'], sort_keys=True, separators=(',', ':'))}`",
         "", "## Pre-synthesis source diagnostics [local+ephemeral]", "",
         f"Accepted: {diagnostics['accepted_count']} · Deduplicated: {diagnostics['deduplicated']}", "",
-    ]
+    ])
     for heading, key in (("Rejections", "rejection_reasons"), ("Actors", "actor_types"),
                          ("Initiation", "initiation_types")):
         rendered = ", ".join(f"{category}={count}"
@@ -2056,13 +2106,19 @@ def cmd_review(args: argparse.Namespace,
     if not SAFE_EXPORT_ID_RE.fullmatch(export_id):
         raise HarvestError("run.json.export_id contains unsafe characters")
     validate_config(run["config"], "run.json.config")
-    inputs = require_object(run["inputs"], "run.json.inputs", {"corpus_files", "corpus_sha256", "format"})
+    inputs = require_object(run["inputs"], "run.json.inputs", {"corpus_files", "corpus_sha256", "format",
+                            "templates_format", "templates_count", "templates_sha256"})
     require_int(inputs["corpus_files"], "run.json.inputs.corpus_files", minimum=1)
     if not re.fullmatch(r"[0-9a-f]{64}", str(inputs["corpus_sha256"])):
         raise HarvestError("run.json.inputs.corpus_sha256 must be a lowercase SHA-256")
     formats = inputs["format"].split("+")
     if not formats or len(formats) != len(set(formats)) or not set(formats) <= {"v1", "v2", "v3"}:
         raise HarvestError("run.json.inputs.format must be a sorted combination of v1, v2, and v3")
+    if inputs["templates_format"] not in ("", "v1"):
+        raise HarvestError("run.json.inputs.templates_format must be blank or v1")
+    require_int(inputs["templates_count"], "run.json.inputs.templates_count", minimum=0)
+    if inputs["templates_sha256"] and not re.fullmatch(r"[0-9a-f]{64}", str(inputs["templates_sha256"])):
+        raise HarvestError("run.json.inputs.templates_sha256 must be blank or a lowercase SHA-256")
     preflight = validate_review_preflight(scratch, run)
     if ledger.get("risk", {}).get("over_cap") is not False:
         raise HarvestError("risk.over_cap is true; prune marker rules and rerun prepare before fan-out")
@@ -2823,6 +2879,7 @@ def parser() -> argparse.ArgumentParser:
 
     prep = sub.add_parser("prepare", help="parse corpus into the opaque manifest/ledger scratch root")
     prep.add_argument("--corpus", required=True, help="raw corpus file or directory of files")
+    prep.add_argument("--templates", help="separate Gmail templates/v1 JSON artifact")
     prep.add_argument("--scratch", required=True)
     prep.add_argument("--config", help="JSON file overriding DEFAULTS knobs")
     prep.add_argument("--holdout", type=int, help="override holdout_count")

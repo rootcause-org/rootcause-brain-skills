@@ -285,10 +285,49 @@ class PrepareTests(unittest.TestCase):
             first = prepare(Path(a), V2_CORPUS, holdout_count=1)
             second = prepare(Path(b), V2_CORPUS, holdout_count=1)
             for name in ("manifest.jsonl", "clusters.json", "ledger.json", "holdout.json",
-                         "replay-cases.json", "run.json", "diagnostics.json", "diagnostics.md"):
+                         "replay-cases.json", "run.json", "templates.json", "diagnostics.json", "diagnostics.md"):
                 self.assertEqual((first / name).read_bytes(), (second / name).read_bytes(), name)
             self.assertEqual(sorted(p.name for p in (first / "threads").iterdir()),
                              sorted(p.name for p in (second / "threads").iterdir()))
+
+    def test_templates_are_validated_normalized_and_source_ids_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "templates-export.json"
+            raw = {"templates_format": "v1", "template_count": 2, "templates": [
+                {"id": "gmail-draft-1", "subject": " Refund ", "body": " Use this phrasing. "},
+                {"id": "gmail-draft-2", "body": "Second response"},
+            ]}
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            normalized, metadata = ph.load_templates(path)
+            self.assertEqual(metadata["format"], "v1")
+            self.assertEqual(metadata["count"], 2)
+            self.assertRegex(metadata["sha256"], r"^[0-9a-f]{64}$")
+            self.assertNotIn("id", normalized["templates"][0])
+            self.assertEqual(normalized["templates"][0],
+                             {"subject": "Refund", "body": "Use this phrasing."})
+
+            raw["template_count"] = 1
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            with self.assertRaisesRegex(ph.HarvestError, "template_count"):
+                ph.load_templates(path)
+
+    def test_prepare_keeps_templates_out_of_thread_ledger(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            corpus = write_corpus(root, V2_CORPUS)
+            template_export = write_json(root / "templates-export.json", {
+                "templates_format": "v1", "template_count": 1,
+                "templates": [{"id": "gmail-draft-1", "subject": "Refund", "body": "Stock response"}],
+            })
+            scratch = root / "scratch"
+            ph.prepare_scratch(corpus, scratch, dict(ph.DEFAULTS, holdout_count=1),
+                               export_id="exp-test", preflight=ph.synthetic_preflight("exp-test"),
+                               templates=template_export)
+            prepared = json.loads((scratch / "templates.json").read_text(encoding="utf-8"))
+            run = json.loads((scratch / "run.json").read_text(encoding="utf-8"))
+            self.assertEqual(prepared["template_count"], 1)
+            self.assertEqual(run["inputs"]["templates_count"], 1)
+            self.assertEqual(len(read_manifest(scratch)), 8, "templates must not enter the thread ledger")
 
     def test_idempotent_rerun_replaces_stale_outputs(self):
         with tempfile.TemporaryDirectory() as tmp:
