@@ -327,6 +327,111 @@ def _undefined_hint(exc) -> str:
     return " ".join(parts)
 
 
+# An (optionally schema-qualified) SQL identifier. The enum type name we interpolate into the
+# introspection SELECT comes out of a Postgres *error message*, so it is untrusted input by the time
+# it reaches us — anything that isn't a plain identifier is refused rather than quoted.
+_IDENT_RE = re.compile(r"(?:[A-Za-z_][A-Za-z0-9_$]*\.)?[A-Za-z_][A-Za-z0-9_$]*")
+
+
+def _enum_labels(conn, timeout_ms: int, enum_type: str) -> list | None:
+    """Valid labels of a PG enum, fetched at error time on the SAME connection. None if unavailable.
+
+    The failed statement left the transaction ABORTED ("current transaction is aborted"), so nothing
+    else can run until we ``rollback()``. Reusing the connection is safe precisely because `query`
+    opens a fresh one per call: rolling back throws away only our own read-only transaction, and
+    ``conn.read_only`` still applies to the next one. The timeout has to be re-emitted, though — the
+    ``SET LOCAL``s died with the transaction that carried them.
+
+    Best-effort by construction: any failure degrades to None and the caller falls back to telling
+    the agent which query to run itself."""
+    if not _IDENT_RE.fullmatch(enum_type or ""):
+        return None
+    try:
+        conn.rollback()
+        with conn.cursor() as cur:
+            cur.execute(_timeout_sql(conn, timeout_ms))
+            cur.execute(f"SELECT unnest(enum_range(NULL::{enum_type}))")
+            return [r[0] for r in cur.fetchall()]
+    except Exception:  # noqa: BLE001 - introspection is a nicety; never let it mask the real error.
+        return None
+
+
+def _mistake_hint(exc, conn, timeout_ms: int) -> str | None:
+    """One corrective hint for the SQL mistakes agents actually make, or None to re-raise untouched.
+
+    Consolidates the generic Postgres mistake classes that project brains kept hand-rolling (kampadmin
+    ``ka.py``'s ``explain_db_error`` and the support brains' per-project ``db.py`` engines) into the
+    shipped runtime, so every brain gets the same correction without copy-paste drift.
+
+    Matching is on the **message shape** (``str(exc)``), not on driver exception classes: it keeps the
+    whole thing mock-testable, tolerates psycopg version differences, and catches the one class that
+    has no sqlstate at all (the client-side placeholder error, raised before anything reaches the
+    server). Hint texts are stable, project-agnostic primitives — project pedagogy ("roles are
+    hyphenated in this schema") stays in brain scripts."""
+    import difflib
+
+    msg = str(exc)
+
+    # Invented enum label (InvalidTextRepresentation / 22P02). No hardcoded label maps: show the
+    # database's OWN labels, which makes hyphen-vs-underscore and singular-vs-plural self-evident.
+    m = re.search(r'invalid input value for enum ((?:\w+\.)?\w+): "([^"]*)"', msg)
+    if m:
+        enum_type, bad = m.group(1), m.group(2)
+        labels = _enum_labels(conn, timeout_ms, enum_type)
+        if labels:
+            hint = f"{bad!r} is not a {enum_type} label. Valid: {', '.join(labels)}."
+            close = difflib.get_close_matches(bad, labels, n=1)
+            if close:
+                hint += f" Closest: {close[0]!r}."
+            return hint
+        return (
+            f"{bad!r} is not a {enum_type} label. List them: "
+            f"SELECT unnest(enum_range(NULL::{enum_type}))"
+        )
+
+    if "malformed array literal" in msg:
+        return (
+            "A scalar was compared/assigned where Postgres expected an ARRAY. For membership in an "
+            "array column use `%s = ANY(col)` (bind the single value); to pass a real array, bind a "
+            "Python list as one param."
+        )
+
+    if "operator does not exist:" in msg:
+        if "[]" in msg:
+            return (
+                "Enum (and other user-defined) arrays don't support the text-array operators. Test "
+                "membership with `%s = ANY(col)` instead — e.g. `WHERE %s = ANY(role)` with "
+                "['child']."
+            )
+        if "json" in msg:
+            return (
+                "JSON/JSONB comparison: use `col->>'key'` (returns text) instead of `col->'key'` "
+                "(returns jsonb) when comparing to a string, or cast the whole document with "
+                "`col::text ILIKE %s` to text-match it."
+            )
+        return (
+            "The two sides have incompatible types. Check them with lib.db.columns('<table>') and "
+            "cast one side, e.g. `col::text = %s` or `%s::uuid`."
+        )
+
+    if "is ambiguous" in msg and "column reference" in msg:
+        return (
+            "That column name exists in more than one table in this query — qualify it as "
+            "`table.column` (or `alias.column`)."
+        )
+
+    # Client-side, sqlstate None: psycopg only scans the SQL for placeholders when params are bound,
+    # and that scan rejects a literal `%`. `query` already sends params=None when there are none, so
+    # this fires only on a genuine mix of an inline wildcard AND %s params.
+    if re.search(r"only '%s', '%b', '%t' are allowed as placeholders", msg):
+        return (
+            "A literal % (LIKE/ILIKE wildcard) cannot be mixed with %s params. Pass the whole "
+            "pattern as a param instead: `... ILIKE %s` with ['%term%'] — or escape it as %%."
+        )
+
+    return None
+
+
 def _defaulted_to_standard(db: str | None) -> str | None:
     """Short name of the STANDARD database iff THIS call defaulted to it — i.e. ``db`` was omitted and a
     multi-DB run resolved via ``RC_DB_DEFAULT`` (not PG_DSN, not a lone DB). ``None`` otherwise. Lets
@@ -762,6 +867,17 @@ def query(
                 # ORDER BY (which we don't rewrite), or a shape we couldn't parse. Enrich so the agent
                 # fixes the one bad name instead of rewriting. `from e` keeps the original traceback.
                 raise RuntimeError(f"{e}\n\n{_undefined_hint(e)}") from e
+            except psycopg.Error as e:
+                # Everything else Postgres (or psycopg itself) rejected: attach one corrective hint
+                # for the mistake classes agents repeat — invented enum labels, scalar-vs-array,
+                # type mismatches, ambiguous columns, mixed `%` wildcards. Order matters: the
+                # undefined table/column clauses above are narrower and must win. The client-side
+                # placeholder ProgrammingError is also a psycopg.Error, so this one clause covers
+                # both server- and client-side shapes. No hint ⇒ re-raise untouched.
+                hint = _mistake_hint(e, conn, timeout_ms)
+                if hint is None:
+                    raise
+                raise RuntimeError(f"{e}\n\n{hint}") from e
             if cur.description is None:
                 return []
             cols = cur.description

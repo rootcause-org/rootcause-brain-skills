@@ -610,6 +610,159 @@ class TableNotFoundMessage(unittest.TestCase):
         self.assertIn("lib.db.columns", msg)  # the generic undefined hint
 
 
+class MistakeHintRouting(unittest.TestCase):
+    """`_mistake_hint` maps a Postgres message shape to ONE corrective hint. Message-shape matching (not
+    exception classes) is what keeps these unit-testable without a driver — so test them that way."""
+
+    def _hint(self, msg):
+        # conn=None: these classes never introspect (the enum class is covered through query()).
+        return db._mistake_hint(Exception(msg), None, 30_000)
+
+    def test_enum_array_operator_points_at_any(self):
+        hint = self._hint("operator does not exist: enum_role[] && text[]")
+        self.assertIn("= ANY(col)", hint)
+        self.assertIn("['child']", hint)
+
+    def test_json_operator_points_at_text_extraction(self):
+        hint = self._hint("operator does not exist: jsonb = text")
+        self.assertIn("col->>'key'", hint)
+        self.assertIn("col::text ILIKE %s", hint)
+
+    def test_plain_type_mismatch_points_at_a_cast(self):
+        hint = self._hint("operator does not exist: character varying = uuid")
+        self.assertIn("lib.db.columns('<table>')", hint)
+        self.assertIn("%s::uuid", hint)
+        self.assertNotIn("ANY(col)", hint)  # not the array branch
+
+    def test_malformed_array_literal_points_at_any_or_a_list(self):
+        hint = self._hint('malformed array literal: "child"')
+        self.assertIn("= ANY(col)", hint)
+        self.assertIn("Python list", hint)
+
+    def test_ambiguous_column_says_qualify(self):
+        hint = self._hint('column reference "id" is ambiguous')
+        self.assertIn("table.column", hint)
+
+    def test_placeholder_mix_explains_the_percent(self):
+        hint = self._hint("only '%s', '%b', '%t' are allowed as placeholders, got 'a'")
+        self.assertIn("ILIKE %s", hint)
+        self.assertIn("%%", hint)
+
+    def test_unknown_error_gets_no_hint(self):
+        self.assertIsNone(self._hint("deadlock detected"))
+
+    def test_enum_type_name_must_be_an_identifier(self):
+        # The type name arrives from a PG error message ⇒ untrusted. A non-identifier is refused
+        # BEFORE anything is interpolated into SQL; the connection is never touched.
+        conn = mock.MagicMock()
+        self.assertIsNone(db._enum_labels(conn, 30_000, "role'; drop table x --"))
+        conn.rollback.assert_not_called()
+        conn.cursor.assert_not_called()
+
+
+class EnumLabelHint(unittest.TestCase):
+    """An invented enum label is the single most common agent SQL mistake, so `query` answers it with the
+    database's OWN labels — fetched on the same connection after rolling back the aborted transaction."""
+
+    def _fake_psycopg(self, labels=None, introspect_raises=False, events=None):
+        """psycopg double: SET LOCALs pass, the user query raises a real 22P02-shaped error, and the
+        follow-up enum_range introspection either returns `labels` or blows up."""
+        events = events if events is not None else []
+
+        class _Error(Exception):
+            pass
+
+        class _UndefinedTable(_Error):
+            diag = mock.Mock(message_hint=None)
+
+        class _UndefinedColumn(_Error):
+            diag = mock.Mock(message_hint=None)
+
+        state = {"rows": []}
+
+        def execute(sql, *_a, **_k):
+            events.append(sql)
+            if sql.lstrip().upper().startswith("SET"):
+                return None
+            if "enum_range" in sql:
+                if introspect_raises:
+                    raise _Error("current transaction is aborted")
+                state["rows"] = [(lbl,) for lbl in labels or []]
+                return None
+            raise _Error('invalid input value for enum enum_role: "child_care"')
+
+        cur = mock.MagicMock()
+        cur.execute.side_effect = execute
+        cur.fetchall.side_effect = lambda: state["rows"]
+        cur.__enter__ = lambda s: cur
+        cur.__exit__ = lambda *a: False
+        conn = mock.MagicMock()
+        conn.cursor.return_value = cur
+        conn.rollback.side_effect = lambda: events.append("ROLLBACK")
+        conn.__enter__ = lambda s: conn
+        conn.__exit__ = lambda *a: False
+        fake = mock.MagicMock()
+        fake.connect.return_value = conn
+        fake.Error = _Error
+        fake.errors.UndefinedTable = _UndefinedTable
+        fake.errors.UndefinedColumn = _UndefinedColumn
+        return fake
+
+    def _run(self, fake):
+        with mock.patch.dict(os.environ, {"PG_DSN": "postgres://x/y"}), mock.patch.dict(
+            sys.modules, {"psycopg": fake}
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                db.query("select * from people where role = 'child_care'")
+        return str(ctx.exception)
+
+    def test_lists_real_labels_and_the_closest_match(self):
+        events = []
+        msg = self._run(self._fake_psycopg(labels=["parent", "child-care", "admin"], events=events))
+        self.assertIn('invalid input value for enum enum_role: "child_care"', msg)  # original kept
+        self.assertIn("\n\n", msg)  # original + blank line + hint, same shape as the other hints
+        self.assertIn("Valid: parent, child-care, admin", msg)
+        self.assertIn("Closest: 'child-care'", msg)
+        # The failed statement aborted the txn: rollback MUST precede the introspection round trip.
+        introspect = next(i for i, e in enumerate(events) if "enum_range" in e)
+        self.assertIn("ROLLBACK", events[:introspect])
+        self.assertTrue(events[introspect - 1].lstrip().upper().startswith("SET"))  # timeout re-emitted
+
+    def test_failed_introspection_degrades_to_the_query_to_run(self):
+        msg = self._run(self._fake_psycopg(introspect_raises=True))
+        self.assertIn("SELECT unnest(enum_range(NULL::enum_role))", msg)
+        self.assertNotIn("Valid:", msg)
+
+    def test_placeholder_mix_is_wrapped_through_query(self):
+        # Client-side ProgrammingError (no sqlstate) — still a psycopg.Error, so one clause covers it.
+        fake = self._fake_psycopg()
+        fake.connect.return_value.cursor.return_value.execute.side_effect = (
+            lambda sql, *a, **k: None
+            if sql.lstrip().upper().startswith("SET")
+            else (_ for _ in ()).throw(fake.Error("only '%s', '%b', '%t' are allowed as placeholders"))
+        )
+        with mock.patch.dict(os.environ, {"PG_DSN": "postgres://x/y"}), mock.patch.dict(
+            sys.modules, {"psycopg": fake}
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                db.query("select 1 where x ilike 'a%' and y = %s", ["z"])
+        self.assertIn("cannot be mixed with %s params", str(ctx.exception))
+
+    def test_unrecognised_error_re_raises_unchanged(self):
+        fake = self._fake_psycopg()
+        fake.connect.return_value.cursor.return_value.execute.side_effect = (
+            lambda sql, *a, **k: None
+            if sql.lstrip().upper().startswith("SET")
+            else (_ for _ in ()).throw(fake.Error("deadlock detected"))
+        )
+        with mock.patch.dict(os.environ, {"PG_DSN": "postgres://x/y"}), mock.patch.dict(
+            sys.modules, {"psycopg": fake}
+        ):
+            with self.assertRaises(fake.Error) as ctx:  # NOT wrapped in RuntimeError
+                db.query("select 1")
+        self.assertEqual(str(ctx.exception), "deadlock detected")
+
+
 class ExcludedColumnHeal(unittest.TestCase):
     """_strip_excluded auto-drops manifest-hidden SELECT columns on the simple shape, leaves typos and
     non-simple queries alone, and never empties the SELECT."""

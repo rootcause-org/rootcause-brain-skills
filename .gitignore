@@ -36,3 +36,4 @@ build/
 /.claude/skills/rc-run
 /.agents/skills/rc-thread
 /.claude/skills/rc-thread
+_internal/
