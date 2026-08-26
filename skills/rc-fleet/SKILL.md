@@ -61,7 +61,13 @@ Read:
    - `executing` is non-terminal.
    - `succeeded`, `failed`, and `canceled` are terminal execution outcomes.
 
-   There is no action-detail command. For result/error/preflight context, use the row's `run_id` with
+   A `failed` row also carries its settled failure: the `CLASS` column plus an `Error:` detail line
+   (message clamped to one line; `-o json` keeps `error_class` + `error_message` whole). Classify before
+   drilling in — `executor_predispatch` (provably nothing ran, retry-safe), `executor_error`,
+   `no_executor`, `no_runner_url` and `attachment_fetch` are RootCause infrastructure, anything else is
+   the action's own domain refusal. See [docs/actions.md](../../docs/actions.md#failure-classes-infra-vs-domain).
+
+   There is no action-detail command. For result/preflight context, use the row's `run_id` with
    `rc-debug` or open `run_url`; a null `run_id` means no originating run trace.
 
 3. Interpret run flags:

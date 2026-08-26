@@ -204,6 +204,33 @@ branching. `approved_by` on the settled row records exactly which rule authorize
 - **Write the draft factually for executed actions.** When an action auto-executes, the run already has the
   real result — an `ok:false` outcome means adapt the draft or escalate, not claim success.
 
+## Failure Classes (infra vs domain)
+
+A settled `failed` action carries an error class. It answers the first triage question — was this OUR
+machinery or the action's own refusal — before anyone reads a trace:
+
+| Class | Meaning | Who fixes it |
+|---|---|---|
+| `executor_predispatch` | Provably nothing ran (unbound tenant, missing grant, oversized argv, unresolvable script). Retry-safe: no side effect. | RootCause / wiring |
+| `executor_error` | The executor failed and may have reached the interpreter — side effect uncertain. | RootCause |
+| `no_executor`, `no_runner_url` | Hosted mode with no executor, or Embassy mode with no `action_runner_url`. | Project config |
+| `attachment_fetch` | An attachment param could not be materialized before execution. | RootCause / params |
+| anything else | Stamped by the action script itself (e.g. `ActionError`) — a domain refusal, i.e. the guard worked. | The brain / the action |
+
+Where to read it:
+
+```bash
+rc fleet actions --days 7 --status failed          # CLASS column + Error: detail line (message clamped)
+rc fleet actions --days 7 --status failed -o json |
+  jq '.items[] | select(.error_class) | {action_id, error_class, error_message}'   # untruncated message
+rc run actions <run-uuid>                          # per-run CLASS column
+```
+
+`rc run actions` is the customer-safe projection: its class is narrowed to the host vocabulary above and
+every action-authored class collapses to `action_error`; the message is not exposed there at all. Read
+the raw pair on `rc fleet actions` (operator-only). Repeated infra classes across runs are an outage
+signal, not a brain bug — do not "fix" the brain for them.
+
 ## Inspect Access
 
 Before depending on a connector or write plane, check the project from the same login/profile that will

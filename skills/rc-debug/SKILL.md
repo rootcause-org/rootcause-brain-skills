@@ -26,6 +26,10 @@ Default to evidence-first. A single run is signal, not permission to oversteer t
    - Run UUID: continue with `rc run debug <uuid>`.
    - `rc fleet actions` row: use its `run_id`, not the action-run `id`; the tokenized `run_url` opens
      the same originating run in the UI. A null `run_id` is a direct operator action with no run trace.
+     Read `error_class` first (`rc run actions <uuid>` shows it per run too): an infra class
+     (`executor_predispatch`, `executor_error`, `no_executor`, `no_runner_url`, `attachment_fetch`) means
+     RootCause's machinery failed — report it, do not edit the brain. See
+     [docs/actions.md](../../docs/actions.md#failure-classes-infra-vs-domain).
    - Thread/session id: run `rc run thread <id>`. If it prints a run UUID, continue with that run. If
      there is no run, explain the public channel/support boundary.
    - Question/prompt: use `brain-ask` unless the user explicitly asked to trigger and inspect a fresh
