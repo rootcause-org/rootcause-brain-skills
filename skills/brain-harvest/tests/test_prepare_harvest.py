@@ -1215,6 +1215,16 @@ class Step10ReviewAndRecordTests(unittest.TestCase):
 
 
 class SafetyAndCLITests(unittest.TestCase):
+    def test_export_identity_allows_omitted_context_but_rejects_conflicts(self):
+        expected = {"export_id": "exp-safe", "project": "project-safe",
+                    "tenant": "tenant-safe", "mailbox": "mb-safe", "provider": "google"}
+        self.assertIsNotNone(ph.find_object_with_identity('{"id":"EXP-SAFE"}', expected))
+        self.assertIsNone(ph.find_object_with_identity('{"mailbox":"mb-safe"}', expected))
+        for field, value in (("project", "other-project"), ("tenant", "other-tenant"),
+                             ("mailbox", "other-mailbox"), ("provider", "microsoft")):
+            raw = json.dumps({"id": "exp-safe", field: value})
+            self.assertIsNone(ph.find_object_with_identity(raw, expected), field)
+
     def test_capability_normalization_and_record_destination_safety(self):
         self.assertEqual(ph.normalize_capabilities('{"grants":["CONFIG:WRITE","admin:*"]}'),
                          ["admin:*", "config:write"])

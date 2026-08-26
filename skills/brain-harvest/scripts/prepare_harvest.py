@@ -2502,7 +2502,14 @@ def find_object_with_identity(raw: str, expected: dict[str, str]) -> dict[str, A
                 continue
             actual = next((item.get(key) for key in aliases[field_name]
                            if isinstance(item.get(key), str)), None)
-            if actual is None or actual.casefold() != wanted.casefold():
+            if actual is None:
+                # The server omits some identity keys (e.g. corpus get lacks project/provider);
+                # an absent key cannot contradict the target. Only a present, differing value fails.
+                if field_name == "export_id":
+                    matches = False
+                    break
+                continue
+            if actual.casefold() != wanted.casefold():
                 matches = False
                 break
         if matches:
