@@ -279,6 +279,17 @@ omits optional params, so do not index them with `p["name"]`.
 `p.file("attachment")` returns a required `FileParam` with `path`, `filename`, `mime_type`,
 `size_bytes`, `attachment_id`, `sha256` when provided, plus `open()` and `read_bytes()`.
 
+Preflight scripts can reuse the matching small primitives: `preflight.params()` loads the host or
+local JSON object, while `preflight.result()` builds the verdict envelope. Keep the project's checks
+and failure wording in the script.
+
+```python
+from lib.action import preflight
+
+params = preflight.params()
+verdict = preflight.result(params.get("status") == "open", "Order checked")
+```
+
 `action.ok(summary, data)` writes the success Result to `$RC_ACTION_RESULT`, prints it, and exits.
 `action.fail(summary, data)` is a handled negative: the executor worked, but the reviewer should not
 send the optimistic draft. `raise action.ActionError("message")` is a hard handled failure without a
