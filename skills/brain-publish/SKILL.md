@@ -114,16 +114,31 @@ Also read [docs/actions.md](../../docs/actions.md) when publishing `actions/<id>
    ```
    `--channel` defaults to `stable`. Fix or accept every reported degradation before promoting.
 
-9. **Preferred: one-shot publish.** `rc dev brain publish` does sync → promote → verify against one
+9. **Before every `stable` publish, reconcile an actively used `edge`.** This is a consistency gate,
+   not a reason to invent a canary pause after stable was already authorized:
+   - Read project-channel status and run the candidate's `edge` preflight. A positive
+     `canary.checked` means at least one tenant currently consumes `edge`; zero means no edge consumer
+     needs alignment.
+   - If active `edge` already resolves to `$SHA`, continue to `stable`.
+   - If active `edge` is an ancestor of `$SHA`, publish the exact candidate to `edge` first. Observe it
+     before `stable` when the change risk warrants a canary interval; when an immediate stable release
+     was explicitly requested, the same verified SHA may follow immediately.
+   - If `edge` is ahead of `$SHA`, do not downgrade it. If the histories diverge or ancestry cannot be
+     proved, do not overwrite it. Continue only as authorized and report the exact channel SHAs and
+     the human decision still needed.
+   - After publishing `stable`, read status again. Never finish while stable is ahead of an actively
+     used, safely fast-forwardable edge: align edge to the stable SHA and verify both channels. A
+     concurrent/divergent edge remains untouched and must be called out as the next action.
+
+10. **Preferred: one-shot publish.** `rc dev brain publish` does sync → promote → verify against one
    exact SHA in a single guarded call, exits non-zero on any mismatch, and prints a receipt with
    `-o json`:
    ```bash
    rc dev brain publish --project <project> --scope project --channel stable --sha "$SHA" -o json
    ```
-   Substitute `edge` only when that is the intended project channel. When both channels are in use,
-   promote in order: **`edge` first** (canary tenants) → observe real runs → then `stable`. Never omit
-   `--sha`, derive it from ambient remote state, or publish a tenant brain. A non-zero exit is a failed
-   publish — do not report the change live.
+   Substitute `edge` only when that is the intended project channel. Apply the stable consistency gate
+   above whenever both channels are in use. Never omit `--sha`, derive it from ambient remote state,
+   or publish a tenant brain. A non-zero exit is a failed publish — do not report the change live.
 
    <details>
    <summary>Fallback: the manual sync + promote choreography (what <code>publish</code> automates)</summary>
@@ -147,7 +162,7 @@ Also read [docs/actions.md](../../docs/actions.md) when publishing `actions/<id>
    tenant-scoped denial, or wrong-project denial as a failed publish.
    </details>
 
-10. Prove the intended ref, not merely a successful command:
+11. Prove the intended ref, not merely a successful command:
    - In `rc dev brain status --project <project> --scope project -o json`, select `.status.channels[]` by `channel` and confirm
      `resolved_sha` is exactly `$SHA`; inspect `origin_sha`, `main_sha`, `matches_origin`,
      `matches_main`, `state`, and `provenance` when diagnosing a mismatch.
@@ -159,7 +174,7 @@ Also read [docs/actions.md](../../docs/actions.md) when publishing `actions/<id>
    Do not report the brain change live until channel status or a normal no-`--brain-ref` run proves
    the intended SHA.
 
-11. If `rc dev brain publish` fails, or `rc dev brain sync/status` reports a diverged managed cache or requires manual reconcile even
+12. If `rc dev brain publish` fails, or `rc dev brain sync/status` reports a diverged managed cache or requires manual reconcile even
     though Git sync succeeded, stop before promotion and produce a RootCause support request. Also use
     support only for gaps the public surface cannot do:
    ```text
