@@ -91,6 +91,8 @@ Only these are first-class:
 - `rc-fleet` — recent fleet and recurring failure patterns.
 - `prod-console` — direct guarded production primitives through `rc dev console capabilities`,
   `rc dev console database`, `rc dev console bash`, and `rc dev console action`.
+- `rc-script-wrapper` — deterministic local Python/shell wrappers around `rc`, including complete
+  exports, typed failures, parameters, and remote artifact fetches.
 - `brain-dev-upgrade` — update kit and `rc`.
 - `brain-git-sync` — safely reconcile local brain work with cross-computer `origin/main` and push.
 - `brain-publish` — post-edit publish/support-request step.

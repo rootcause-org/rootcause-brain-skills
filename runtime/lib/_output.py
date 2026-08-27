@@ -126,7 +126,8 @@ def _structural_preview(rows: list[dict], fmt: str, path: str, byte_count: int) 
     cols = list(rows[0].keys()) if rows else []
     col_text = _truncate_bytes(", ".join(cols), 900)
     meta = [
-        f"{row_count} rows × {len(cols)} cols — full result saved to {path} ({byte_count} bytes)",
+        f"{row_count} rows × {len(cols)} cols — full result saved to remote workspace file {path} ({byte_count} bytes)",
+        f"fetch locally: rc dev console file get {path} --out ./result{_SPILL_EXT.get(fmt, '.txt')}",
         f"columns: {col_text}" if cols else "columns: (none)",
     ]
     hint = _query_hint(fmt, path)
@@ -153,4 +154,7 @@ def emit(text: str, label: str = "out") -> None:
         print(text)
         return
     path, byte_count = _spill(text, label=label, ext=".txt")
-    print(f"[result {byte_count} bytes — spilled to {path}; read it with the fs tools or `sed -n`]")
+    print(
+        f"[result {byte_count} bytes — spilled to remote workspace file {path}; "
+        f"fetch locally: rc dev console file get {path} --out ./result.txt; read it with the fs tools or `sed -n`]"
+    )

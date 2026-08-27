@@ -1,0 +1,73 @@
+---
+name: rc-script-wrapper
+description: Wrap the public `rc` CLI safely from deterministic local Python or shell scripts. Use for repeatable production-console queries, workspace commands, full exports, typed failures, or fetching a console artifact; not for code that runs inside a production brain container.
+---
+
+# rc-script-wrapper - deterministic local wrappers
+
+Use this skill only from a developer's machine/brain checkout. Production brain scripts do not have
+`rc`; use their injected `lib.db`, `lib.fs`, and other runtime helpers instead.
+
+## Preferred Python API
+
+`rootcause-runtime` ships `lib.rc_client`, which preserves the CLI's JSON contract and maps its exit
+codes to exceptions. Default database resolution is `RC_CONSOLE_DATABASE`, then `RC_DB_DEFAULT`, then
+`prod`; pass `database=` when the script needs a specific connection.
+
+```python
+from lib import rc_client
+
+result = rc_client.query(
+    "select id, state from jobs where created_at >= @since",
+    {"since": "2026-08-01"},
+    all=True,
+    database="billing",
+)
+for row in result.rows:  # values align with result.columns; duplicate columns are retained
+    print(dict(zip(result.columns, row)))
+
+rc_client.query_to_csv("select id, state from jobs", "./jobs.csv", all=True)
+code, stdout, stderr = rc_client.bash("python /brain/skills/reconcile/scripts/check.py", timeout=120)
+rc_client.file_get("/tmp/rootcause-out/jobs-abc123.csv", "./jobs.csv")
+```
+
+Catch only the recovery you can actually perform: `AuthenticationError` means login/scope,
+`TruncatedError` means use `all=True` or intentionally opt into `allow_truncated=True`,
+`RemoteCommandError` means the guarded workspace command failed/timed out, and `TransportError` means
+server/network trouble. Do not parse table output, spill manifests, or shell-quoted JSON.
+
+## CLI contract for non-Python scripts
+
+Use the machine envelope and force direct stdout when a program parses it:
+
+```bash
+rc -o json dev console database query billing 'select id from jobs where state = @state' \
+  --param state=queued --all --format json --out - > jobs.json
+rc -o json dev console bash run 'python /brain/skills/reconcile/scripts/check.py' --out -
+```
+
+Exit codes are stable: 0 success; 1 local usage/input; 2 OAuth/authz; 3 truncated query; 4 remote bash
+non-zero or timeout; 5 server/network. With `-o json`, an error is a JSON `{error:{code,message,status,fields}}`
+envelope on stdout. Branch on the exit code/envelope; never treat a partial response as success.
+
+Use `--all` for a complete export. The ordinary inline limit is deliberately small; no `--all` result
+may be consumed after `truncated:true` unless the script explicitly allows partial data. Stream a large
+result to a local file with `--out ./rows.csv --format csv`; use `--out auto` only for a human-readable
+local artifact manifest. `--out -` is for a parser that needs stdout.
+
+Pass SQL and workspace text directly as one argument, from stdin (`-`), or with `@file`; never invent
+base64/character-substitution quoting. Use `@key` placeholders and repeat `--param key=value` for values;
+parameterization is the only supported way to interpolate data into SQL.
+
+## Remote artifacts
+
+The production runtime's `emit_rows` previews name a fetchable `/tmp/rootcause-out/...` file. Fetch it
+without reprinting the whole artifact:
+
+```bash
+rc dev console file get /tmp/rootcause-out/report-abc123.csv --out ./report.csv
+```
+
+Use files for complete machine processing; use the preview for shape/orientation. The console only
+permits its session workspace and `/tmp`, so a rejected path is a boundary, not a reason to fall back to
+base64 over bash output.

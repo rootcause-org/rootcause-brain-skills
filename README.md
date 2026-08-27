@@ -53,6 +53,7 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 | `rc-debug` | One run/thread/session to trace/debug/index/JSONL drilldown; analysis-first before edits. |
 | `rc-health` | Stale mirrors plus dead-lettered runs. |
 | `rc-fleet` | Recent fleet digest plus recurring failure patterns. |
+| [`rc-script-wrapper`](skills/rc-script-wrapper/SKILL.md) | Deterministic local Python/shell wrappers for `rc` console queries, exports, typed failures, and remote artifacts. |
 | `brain-dev-upgrade` | Update local kit and `rc` CLI. |
 | [`brain-git-sync`](skills/brain-git-sync/SKILL.md) | Safely inventory, merge, and push local plus cross-computer work to `origin/main`. |
 | `brain-publish` | Exact-SHA project-brain sync/promotion/verification using public `rc`, plus support handoff for remaining gaps. |
