@@ -11,8 +11,8 @@ Use this skill only from a developer's machine/brain checkout. Production brain 
 ## Preferred Python API
 
 Install a published, pinned `rootcause-runtime` tag into the script environment; do not copy its
-wrapper or float `main`. The next patch release of this kit is `v0.3.29`; use that tag after it is
-published (or the current published tag shown in the kit README):
+wrapper or float `main`. `v0.3.29` is the first release with this wrapper; use that tag or the newer
+published tag shown in the kit README:
 
 ```bash
 uv run --with "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.3.29#subdirectory=runtime" script.py
@@ -37,7 +37,7 @@ the script needs a specific connection.
 from lib import rc_client
 
 result = rc_client.query(
-    "select id, state from jobs where created_at >= @since",
+    "select id, state from jobs where created_at >= @since order by id",
     {"since": "2026-08-01"},
     all=True,
     database="billing",
@@ -45,7 +45,7 @@ result = rc_client.query(
 for row in result.rows:  # values align with result.columns; duplicate columns are retained
     print(dict(zip(result.columns, row)))
 
-rc_client.query_to_csv("select id, state from jobs", "./jobs.csv", all=True)
+rc_client.query_to_csv("select id, state from jobs order by id", "./jobs.csv", all=True)
 code, stdout, stderr = rc_client.bash("python /brain/skills/reconcile/scripts/check.py", timeout=120)
 rc_client.file_get("/tmp/rootcause-out/jobs-abc123.csv", "./jobs.csv")
 ```
@@ -63,7 +63,7 @@ manifests, or shell-quoted JSON.
 Use the machine envelope and force direct stdout when a program parses it:
 
 ```bash
-rc -o json dev console database query billing 'select id from jobs where state = @state' \
+rc -o json dev console database query billing 'select id from jobs where state = @state order by id' \
   --param state=queued --all --format json --out - > jobs.json
 rc -o json dev console bash run 'python /brain/skills/reconcile/scripts/check.py' --out -
 ```
@@ -74,8 +74,10 @@ non-zero or timeout; 5 server/network. With `-o json`, regular errors are a JSON
 result payload on exit 4 so callers can read `exit_code`, `stderr`, and `timed_out`. Branch on the exit
 code; never treat a partial response as success.
 
-Use `--all` for a complete export. The ordinary inline limit is deliberately small; no `--all` result
-may be consumed after `truncated:true` unless the script explicitly allows partial data. Stream a large
+Use `--all` for a complete export only when the SQL ends in an `ORDER BY` that totally orders rows;
+include a unique tiebreaker so offset pages cannot overlap or skip due to equal sort keys. The ordinary
+inline limit is deliberately small; no `--all` result may be consumed after `truncated:true` unless the
+script explicitly allows partial data. Stream a large
 result to a local file with `--out ./rows.csv --format csv`; use `--out auto` only for a human-readable
 local artifact manifest. `--out -` is for a parser that needs stdout.
 
