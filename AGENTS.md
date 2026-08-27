@@ -69,8 +69,9 @@ Read these before changing product-facing docs/skills:
 - [docs/mirrors.md](docs/mirrors.md) — source mirror freshness and local/prod gaps.
 - [docs/secrets.md](docs/secrets.md) — public `rc` flow for adding/rotating grounding env and action
   credentials, and for [registering a new grounding
-  database](docs/secrets.md#register-a-new-grounding-database) (sealing the `<PROJECT>_<DBKEY>_DSN` key
-  *is* the registration; there is no `rc project database add`).
+  database](docs/secrets.md#register-a-new-grounding-database) (there is no `rc project database add`:
+  sealing the `<PROJECT>_<DBKEY>_DSN` key creates it, `rc project database set … description=…` surfaces
+  it in `ls`).
 
 ## Canonical Skills
 

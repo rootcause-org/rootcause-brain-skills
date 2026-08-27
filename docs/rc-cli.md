@@ -272,9 +272,12 @@ are not printed. `rc project env set` adds or rotates one grounding secret, read
 by default and never echoing it. `rc project env reveal` is the deliberate exception: it prints one live value for copy/pipe use
 and is audited. The file is gitignored and contains real secrets.
 
-There is no `rc project database add`: sealing a `<PROJECT>_<DBKEY>_DSN` grounding key registers the
-database, after which `rc project database ls` lists it and `set`/`controls` manage its metadata and
-access controls. Recipe: [docs/secrets.md](secrets.md#register-a-new-grounding-database).
+There is no `rc project database add` (rc >= 1.18.1 documents this in `rc project database --help`): a
+database exists because a sealed `<PROJECT>_<DBKEY>_DSN` grounding key exists. `rc project database ls`
+lists the DSNs the project has *configured* (description, scope manifest, or PII columns), so a freshly
+sealed DSN appears there only after `rc project database set <DSN_ENV> description=…`. Use `rc dev
+console database list` to check whether a DSN actually exists and connects. Recipe:
+[docs/secrets.md](secrets.md#register-a-new-grounding-database).
 
 For the full choose-the-store flow, tenant behavior, and action write-plane rules, read
 [docs/secrets.md](secrets.md).

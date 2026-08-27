@@ -57,8 +57,10 @@ Read:
    rc dev console database schema <db> --table <table>
    rc dev console database query <db> "SELECT ..."
    ```
-   If the database you need is not in `list`, it is not registered yet: seal its
-   `<PROJECT>_<DBKEY>_DSN` grounding key — see
+   This `list` is the authoritative view of which DSNs actually exist and connect (`rc project database
+   ls` only shows the ones annotated with a description/scope/PII config). If the database you need is
+   missing here, it is not registered yet: seal its `<PROJECT>_<DBKEY>_DSN` grounding key, then annotate
+   it with `rc project database set` — see
    [docs/secrets.md](../../docs/secrets.md#register-a-new-grounding-database).
    Queries run host-side through RootCause's database proxy and project scoping. Prefer narrow SELECTs
    and explicit columns. Large or repeated analysis belongs in local `jq`/scripts over JSON output:

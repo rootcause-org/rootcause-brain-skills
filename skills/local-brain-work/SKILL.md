@@ -188,22 +188,26 @@ normal grounding.
 Symptom: a script needs tables that no registered database has, or `rc dev console database list` does
 not show the database at all.
 
-There is no `rc project database add` — sealing the DSN key **is** the registration. Name it
-`<PROJECT>_<DBKEY>_DSN`; `<DBKEY>` lowercased is the `lib.db` short name (`ACME_BILLING_DSN` ->
-`db="billing"`). The DSN must use a read-only role and the DB host must allow the RootCause box
-(network/SG allowlist). `*_WRITE_DSN` is the action plane, not a grounding database.
+There is no `rc project database add`. Sealing the DSN key **creates** the database; `rc project
+database set … description=…` is what makes it **visible** in `rc project database ls` (that list is the
+project's *configured* DSNs, not the sealed env keys). `rc project database --help` (rc >= 1.18.1) states
+the convention. Name it `<PROJECT>_<DBKEY>_DSN`; `<DBKEY>` lowercased is the `lib.db` short name
+(`ACME_BILLING_DSN` -> `db="billing"`). The DSN must use a read-only role and the DB host must allow the
+RootCause box (network/SG allowlist). `*_WRITE_DSN` is the action plane, not a grounding database.
 
 ```bash
-rc project database ls
-printf %s "$DSN" | rc project env set key=ACME_BILLING_DSN
-rc project database set ACME_BILLING_DSN description="Invoices, subscriptions, payment state."
+printf %s "$DSN" | rc project env set key=ACME_BILLING_DSN            # 1. create
+rc dev console database list                                          # 2. verify from the box
+rc dev console database query billing "select 1 as ok"
+rc project database set ACME_BILLING_DSN description="Invoices, subscriptions, payment state."  # 3. surface in ls
 rc project database controls get ACME_BILLING_DSN
-rc dev console database query billing "select 1 as ok"   # verify from the box, not the laptop
-rc project env pull                                      # for local live checks
+rc project env pull                                                   # for local live checks
 ```
 
-Then document it in the brain's `skills/databases/` map and ship with `brain-publish`. Full recipe,
-prerequisites, and PII/scoping notes: [docs/secrets.md](../../docs/secrets.md#register-a-new-grounding-database).
+`rc dev console database list` is the authoritative "does this DSN exist and connect" view; `rc project
+database ls` only shows annotated ones. Then document it in the brain's `skills/databases/` map and ship
+with `brain-publish`. Full recipe and prerequisites:
+[docs/secrets.md](../../docs/secrets.md#register-a-new-grounding-database).
 
 ## Finish
 

@@ -11,10 +11,10 @@ private operator scripts.
   `lib.oauth` by connector key.
 - Custom read-only API key or cloud token needed by grounding scripts: use the grounding env with
   `rc project env set`. Normal runs receive this plane.
-- New read-only database DSN: use the grounding env — sealing the key *is* the registration. See
-  [Register A New Grounding Database](#register-a-new-grounding-database). Keep the raw env var name out
-  of brain prose unless a script must reference it directly; the host-injected DB roster carries the
-  database names and purposes.
+- New read-only database DSN: use the grounding env — sealing the key creates the database, annotating
+  it surfaces it. See [Register A New Grounding Database](#register-a-new-grounding-database). Keep the
+  raw env var name out of brain prose unless a script must reference it directly; the host-injected DB
+  roster carries the database names and purposes.
 - Hosted action write credential: use `rc project env set --plane action` only when you are an operator
   with the required access. This writes `.env.action`; normal diagnosis runs never receive it.
 
@@ -41,8 +41,11 @@ needed.
 
 ## Register A New Grounding Database
 
-There is no `rc project database add`. A grounding database is registered **by sealing its DSN into the
-grounding env**; `rc project database ls` is a derived view of the sealed `*_DSN` keys.
+There is no `rc project database add`. A database **exists** because a sealed grounding env key
+`<PROJECT>_<DBKEY>_DSN` exists; it becomes **visible** in `rc project database ls` once you annotate it.
+Those are two different steps — `ls` lists the DSNs the project has *configured* (description, scope
+manifest, or PII columns), not the sealed env keys. `rc project database --help` (rc >= 1.18.1) states
+the same convention.
 
 Naming is load-bearing: `<PROJECT>_<DBKEY>_DSN`. `<DBKEY>` lowercased is the short name brain scripts
 pass to `lib.db` (`ACME_BILLING_DSN` -> `lib.db.query(..., db="billing")`) and the `name` column of
@@ -59,31 +62,37 @@ enters a run container. See [Tenant And Action Planes](#tenant-and-action-planes
 
 ```bash
 rc auth status
-rc project database ls                                  # what is already registered
+rc project database ls                                  # what is already configured
+
+# 1. seal the DSN — this is what creates the database
 printf %s "$DSN" | rc project env set key=ACME_BILLING_DSN
-rc project database ls                                  # now includes ACME_BILLING_DSN
-rc project database set ACME_BILLING_DSN description="Invoices, subscriptions, payment state."
-rc project database controls get ACME_BILLING_DSN       # pii + scope_manifest (operator-owned rules)
-```
 
-The description is what the production model reads in its DB roster: one line naming the tables and
-purpose. `controls get` shows PII masking and tenant/principal scoping; those rules are operator-owned —
-propose changes through a RootCause support request ([support-boundary.md](support-boundary.md)).
-
-Verify from production, not the laptop — grounding DSNs are usually IP-allowlisted to the box:
-
-```bash
-rc dev console database list                   # expect name=billing
+# 2. verify it physically resolves and holds the tables you expect (authoritative view)
+rc dev console database list                            # expect name=billing
 rc dev console database schema billing
 rc dev console database query billing "select 1 as ok"
+
+# 3. annotate it — this is what surfaces it in `rc project database ls`
+rc project database set ACME_BILLING_DSN description="Invoices, subscriptions, payment state."
+rc project database ls                                  # now includes ACME_BILLING_DSN
+rc project database controls get ACME_BILLING_DSN       # pii + scope_manifest
 ```
 
-See [`prod-console`](../skills/prod-console/SKILL.md). Then document the database in the brain's
-`skills/databases/` map (what it holds, which tables matter, which script reads it) so the production
-model knows when to reach for it, and ship with `brain-publish`.
+`rc dev console database list` is the authoritative view of which DSNs actually exist and connect —
+check there first when a database seems missing, not in `rc project database ls`. Verify from
+production, not the laptop: grounding DSNs are usually IP-allowlisted to the box. See
+[`prod-console`](../skills/prod-console/SKILL.md).
 
-For local live checks, `rc project env pull` after sealing. `rc project env rm ACME_BILLING_DSN`
-deregisters the database again.
+`description` is the only field `rc project database set` accepts, and it is what the production model
+reads in its DB roster: one line naming the tables and purpose. Scope manifest and PII columns go
+through `rc project database controls set`; those rules are operator-owned, so propose changes through a
+RootCause support request ([support-boundary.md](support-boundary.md)).
+
+4. Document the database in the brain's `skills/databases/` map (what it holds, which tables matter,
+which script reads it) so the production model knows when to reach for it, and ship with `brain-publish`.
+
+For local live checks, `rc project env pull` after sealing. `rc project env rm ACME_BILLING_DSN` removes
+the DSN again.
 
 ## Delete Or Inspect
 
