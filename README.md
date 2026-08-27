@@ -59,6 +59,14 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 
 Older duplicate entrypoints are not shipped; use the canonical skills above.
 
+## Common Recipes
+
+| Need | Where |
+|---|---|
+| Register a new grounding database ("the tables are missing", add a database, new DSN) | [docs/secrets.md](docs/secrets.md#register-a-new-grounding-database) |
+| Add or rotate a grounding / action credential | [docs/secrets.md](docs/secrets.md) |
+| Understand a run trace | [docs/run-trace-model.md](docs/run-trace-model.md) |
+
 ## Side Effects
 
 Diagnosis is read-only by default. Test-run creation and action execution are explicit exceptions.

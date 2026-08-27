@@ -56,7 +56,10 @@ Default to evidence-first. A single run is signal, not permission to oversteer t
    ```
 
 5. If evidence points to a brain bug, inspect likely brain files read by the run plus focused `rg`
-   searches. Do not edit yet.
+   searches. Do not edit yet. If the trace shows missing tables or an unknown database short name, the
+   database may simply not be registered — check `rc project database ls` and
+   [docs/secrets.md](../../docs/secrets.md#register-a-new-grounding-database) before touching brain
+   files.
 
 6. Stop with:
    - root cause or best hypothesis

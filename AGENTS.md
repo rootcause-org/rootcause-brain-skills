@@ -68,7 +68,9 @@ Read these before changing product-facing docs/skills:
 - [docs/support-boundary.md](docs/support-boundary.md) — brain fix vs support escalation.
 - [docs/mirrors.md](docs/mirrors.md) — source mirror freshness and local/prod gaps.
 - [docs/secrets.md](docs/secrets.md) — public `rc` flow for adding/rotating grounding env and action
-  credentials.
+  credentials, and for [registering a new grounding
+  database](docs/secrets.md#register-a-new-grounding-database) (sealing the `<PROJECT>_<DBKEY>_DSN` key
+  *is* the registration; there is no `rc project database add`).
 
 ## Canonical Skills
 

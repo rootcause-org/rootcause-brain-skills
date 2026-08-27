@@ -55,6 +55,10 @@ rc project env diff
 printf %s "$SECRET_VALUE" | rc project env set key=FOO_API_TOKEN
 rc project env rm FOO_API_TOKEN
 rc project env reveal FOO_API_TOKEN
+rc project database ls
+rc project database get <DSN_ENV>
+rc project database set <DSN_ENV> description="..."
+rc project database controls get <DSN_ENV>
 rc auth login
 rc auth status
 rc self update
@@ -267,6 +271,10 @@ rc project env reveal FOO_API_TOKEN
 are not printed. `rc project env set` adds or rotates one grounding secret, reading the value from STDIN
 by default and never echoing it. `rc project env reveal` is the deliberate exception: it prints one live value for copy/pipe use
 and is audited. The file is gitignored and contains real secrets.
+
+There is no `rc project database add`: sealing a `<PROJECT>_<DBKEY>_DSN` grounding key registers the
+database, after which `rc project database ls` lists it and `set`/`controls` manage its metadata and
+access controls. Recipe: [docs/secrets.md](secrets.md#register-a-new-grounding-database).
 
 For the full choose-the-store flow, tenant behavior, and action write-plane rules, read
 [docs/secrets.md](secrets.md).

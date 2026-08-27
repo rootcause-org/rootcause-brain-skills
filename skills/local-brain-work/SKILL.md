@@ -1,6 +1,6 @@
 ---
 name: local-brain-work
-description: "Local Brain Work for a rootcause project's BRAIN: map a brain checkout, run grounding scripts, run offline/live/docker test tiers, preview tenant projection, test hosted Python actions locally, route broad did-it-work/is-anything-broken prompts to focused rc skills, and check a brain change before pushing. Use inside a rootcause-brain checkout before production-loop validation; no private RootCause source required."
+description: "Local Brain Work for a rootcause project's BRAIN: map a brain checkout, run grounding scripts, run offline/live/docker test tiers, preview tenant projection, test hosted Python actions locally, register a new grounding database (missing tables, add a database, new DSN), route broad did-it-work/is-anything-broken prompts to focused rc skills, and check a brain change before pushing. Use inside a rootcause-brain checkout before production-loop validation; no private RootCause source required."
 ---
 
 # Local Brain Work (`local-brain-work`)
@@ -28,6 +28,7 @@ Do not use `exclude_in` frontmatter: it has no run-visibility effect.
 | User intent | Use |
 |---|---|
 | Run a grounding script, local/live/docker tests, projection preview, mirror-dependent check, or hosted-Python action dry-run | Local Brain Work (`local-brain-work`) |
+| "The tables are missing", register a database, add a new DSN to rootcause | [Register A New Grounding Database](#register-a-new-grounding-database) below |
 | "Does this change work on prod infra?" or "simulate this customer email" | Brain Ask (`brain-ask`) |
 | Debug one run/thread/session, read full trace, or explain why a draft/action happened | `rc-debug` |
 | "Is anything broken?" stale mirrors or dead letters | `rc-health` |
@@ -181,6 +182,28 @@ If a brain edit introduces a new read-only credential, follow `docs/secrets.md`:
 name only, set it with `printf %s "$SECRET_VALUE" | rc project env set key=NAME`, then `rc project env
 pull` before live local checks. Use `--plane action` only for hosted action credentials, never for
 normal grounding.
+
+## Register A New Grounding Database
+
+Symptom: a script needs tables that no registered database has, or `rc dev console database list` does
+not show the database at all.
+
+There is no `rc project database add` — sealing the DSN key **is** the registration. Name it
+`<PROJECT>_<DBKEY>_DSN`; `<DBKEY>` lowercased is the `lib.db` short name (`ACME_BILLING_DSN` ->
+`db="billing"`). The DSN must use a read-only role and the DB host must allow the RootCause box
+(network/SG allowlist). `*_WRITE_DSN` is the action plane, not a grounding database.
+
+```bash
+rc project database ls
+printf %s "$DSN" | rc project env set key=ACME_BILLING_DSN
+rc project database set ACME_BILLING_DSN description="Invoices, subscriptions, payment state."
+rc project database controls get ACME_BILLING_DSN
+rc dev console database query billing "select 1 as ok"   # verify from the box, not the laptop
+rc project env pull                                      # for local live checks
+```
+
+Then document it in the brain's `skills/databases/` map and ship with `brain-publish`. Full recipe,
+prerequisites, and PII/scoping notes: [docs/secrets.md](../../docs/secrets.md#register-a-new-grounding-database).
 
 ## Finish
 
