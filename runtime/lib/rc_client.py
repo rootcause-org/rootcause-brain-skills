@@ -83,6 +83,7 @@ class Result:
     rows: list[list[Any]]
     truncated: bool = False
 
+
 @dataclass(frozen=True)
 class BashResult:
     """Output from the guarded workspace bash plane."""

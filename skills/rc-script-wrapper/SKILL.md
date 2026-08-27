@@ -11,11 +11,10 @@ Use this skill only from a developer's machine/brain checkout. Production brain 
 ## Preferred Python API
 
 Install a published, pinned `rootcause-runtime` tag into the script environment; do not copy its
-wrapper or float `main`. `v0.3.29` is the first release with this wrapper; use that tag or the newer
-published tag shown in the kit README:
+wrapper or float `main`. Use the current published kit tag:
 
 ```bash
-uv run --with "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.3.29#subdirectory=runtime" script.py
+uv run --with "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.3.31#subdirectory=runtime" script.py
 ```
 
 For a standalone script, pin the same dependency in its PEP 723 header:
@@ -23,7 +22,7 @@ For a standalone script, pin the same dependency in its PEP 723 header:
 ```python
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.3.29#subdirectory=runtime"]
+# dependencies = ["rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.3.31#subdirectory=runtime"]
 # ///
 from lib import rc_client
 ```
@@ -58,6 +57,10 @@ or times out; inspect `exit_code`, `stderr`, and `timed_out`. `query_to_csv()` s
 to its destination and returns that `Path`, rather than buffering rows. Do not parse table output, spill
 manifests, or shell-quoted JSON.
 
+`bash()` assumes the server's standard 120-second remote default when `timeout` is omitted and gives the
+local CLI another 30 seconds for setup/transport. Pass `timeout=` explicitly if a project's advertised
+console capability uses another limit.
+
 ## CLI contract for non-Python scripts
 
 Use the machine envelope and force direct stdout when a program parses it:
@@ -74,10 +77,10 @@ non-zero or timeout; 5 server/network. With `-o json`, regular errors are a JSON
 result payload on exit 4 so callers can read `exit_code`, `stderr`, and `timed_out`. Branch on the exit
 code; never treat a partial response as success.
 
-Use `--all` for a complete export only when the SQL ends in an `ORDER BY` that totally orders rows;
-include a unique tiebreaker so offset pages cannot overlap or skip due to equal sort keys. The ordinary
-inline limit is deliberately small; no `--all` result may be consumed after `truncated:true` unless the
-script explicitly allows partial data. Stream a large
+Use `--all` for a complete export: it is one streaming request over a server-side cursor in a single
+repeatable-read transaction, so concurrent changes cannot duplicate or omit rows. `ORDER BY` is optional
+for completeness; use it when deterministic output order matters. The ordinary inline limit is deliberately
+small; no partial result may be consumed after `truncated:true` unless the script explicitly allows it. Stream a large
 result to a local file with `--out ./rows.csv --format csv`; use `--out auto` only for a human-readable
 local artifact manifest. `--out -` is for a parser that needs stdout.
 

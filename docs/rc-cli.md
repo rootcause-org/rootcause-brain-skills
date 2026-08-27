@@ -349,7 +349,9 @@ rc dev console database query <db> "update <table> set <col>=<val> where id=<id>
 
 If a query fails with an unknown column, go back to `rc dev console database schema`; do not keep guessing names.
 Use repeated `--param key=value` instead of quoting values into SQL. `--all` is required for a complete
-result beyond the inline cap; a truncated result exits 3 unless explicitly allowed. For a deterministic
+result beyond the inline cap and streams one server-side cursor from a single repeatable-read transaction;
+it does not require `ORDER BY` for completeness, though ordered output still needs one. A truncated inline
+result exits 3 unless explicitly allowed. For a deterministic
 script, use [`rc-script-wrapper`](../skills/rc-script-wrapper/SKILL.md): its `lib.rc_client` wrapper
 keeps column order/duplicates and turns CLI exit codes into typed exceptions. Fetch a previewed remote
 workspace artifact with `rc dev console file get <remote-path> --out <local-path>`.

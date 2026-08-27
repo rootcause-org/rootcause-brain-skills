@@ -162,7 +162,7 @@ Use the smallest checks that cover the change:
 uv run --no-project python -m py_compile skills/local-brain-work/scripts/*.py
 # PYTHONPATH is load-bearing here and in uv-mode children: `--with .` can serve a CACHED wheel of an
 # unchanged version, so local runtime source must precede site-packages while iterating on runtime/lib.
-cd runtime && PYTHONPATH=$(pwd) uv run --with . --with pytest --no-project pytest tests -q
+cd runtime && PYTHONPATH=$(pwd) uv run --with '.[test]' --no-project pytest tests -q
 ./check-release-coherence.sh
 ```
 
