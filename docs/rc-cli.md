@@ -322,8 +322,9 @@ channels, wrong-project authorization, or push failure.
 Never infer channel freshness from `main` being current. Confirm the intended channel resolves the
 exact SHA at `.status.channels[] | select(.channel == "stable") | .resolved_sha` (substitute `edge` as
 needed), or create a safe normal `rc ask` without `--brain-ref` and confirm its `brain_resolved` trace.
-Each channel entry also reports `origin_sha`, `main_sha`, `matches_origin`, `matches_main`, `state`, and
-`provenance`. If sync reports manual reconcile, use `brain-publish` with the status output.
+Each channel entry also reports `origin_sha` (= `origin/<channel>`, not `origin/main`), `main_sha`
+(= `origin/main`), `matches_origin` (channel ref equals its pushed branch), `matches_main` (channel at the
+`main` tip), `state`, and `provenance`. If sync reports manual reconcile, use `brain-publish` with the status output.
 
 ## DB And Bash Examples
 

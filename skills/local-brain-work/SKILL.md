@@ -68,7 +68,7 @@ present, otherwise from the tag-pinned `rootcause-runtime` git spec.
 
 3. Run test tiers:
    ```bash
-   uv run "$SKILL/scripts/brain_test.py"
+   uv run "$SKILL/scripts/brain_test.py"           # modules importing the prod-only /mirrors mount skip with reason
    uv run "$SKILL/scripts/brain_test.py" --live
    uv run "$SKILL/scripts/brain_test.py" --require-live
    uv run "$SKILL/scripts/brain_test.py" --live --tenant 103
@@ -94,8 +94,10 @@ After every `actions/*/script.py` or `preflight.py` edit, run the dependency-lig
 slower test tier. It starts no uv environment and exits non-zero on FAIL; `--strict` also gates WARN:
 
 ```bash
-python3 "$SKILL/scripts/brain_lint.py"
+uv run --no-project --with pyyaml python "$SKILL/scripts/brain_lint.py"
 ```
+
+(A bare `python3` works only if it has PyYAML; without it the script re-execs itself through `uv`.)
 
 ```bash
 uv run "$SKILL/scripts/brain_action.py" --list

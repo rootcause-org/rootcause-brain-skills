@@ -385,13 +385,29 @@ def _clear_transaction(git: Git) -> None:
         raise SyncError(f"sync succeeded but recovery state could not be cleared: {error}") from error
 
 
+def _verify_env() -> dict[str, str]:
+    """Verify commands must not inherit the ephemeral venv this script may itself run under
+    (`uv run --no-project python brain_git_sync.py`): a bare `python3` in a verify command would
+    otherwise resolve to that dependency-less interpreter and fail on imports like PyYAML."""
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"}
+    venv = env.pop("VIRTUAL_ENV", None)
+    drop = {os.path.join(venv, "bin")} if venv else set()
+    # `uv run --no-project` sets no VIRTUAL_ENV but prepends its managed interpreter's bin dir
+    # (…/uv/python/cpython-3.x…/bin) — a bare `python3` there has no third-party packages.
+    env["PATH"] = os.pathsep.join(
+        p for p in env.get("PATH", "").split(os.pathsep)
+        if p and p not in drop and f"{os.sep}uv{os.sep}python{os.sep}" not in p
+    )
+    return env
+
+
 def _verify(repo: Path, commands: Sequence[str], reporter: Reporter) -> None:
     for command in commands:
         reporter.note(f"Verify merged tree: {command}")
         process = subprocess.run(
             command,
             cwd=repo,
-            env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"},
+            env=_verify_env(),
             shell=True,
             capture_output=True,
             text=True,

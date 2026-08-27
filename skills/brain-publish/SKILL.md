@@ -26,7 +26,8 @@ whether a command answers about the right brain — get them wrong and you verif
 
 ## Required Context
 
-Read:
+Read (paths are relative to this installed skill; in a brain checkout they resolve to `.agents/docs/`,
+in the kit to `docs/`):
 
 - [docs/brain-model.md](../../docs/brain-model.md)
 - [docs/side-effects.md](../../docs/side-effects.md)
@@ -51,10 +52,10 @@ Also read [docs/actions.md](../../docs/actions.md) when publishing `actions/<id>
    `--verify-command` arguments so any merge tree is retested before push:
    ```bash
    VERIFY_ARGS=()
-   python3 "$LOCAL_SKILL/scripts/brain_lint.py"
-   VERIFY_ARGS+=(--verify-command "python3 \"$LOCAL_SKILL/scripts/brain_lint.py\"")
-   uv run "$LOCAL_SKILL/scripts/brain_test.py"
-   VERIFY_ARGS+=(--verify-command "uv run \"$LOCAL_SKILL/scripts/brain_test.py\"")
+   uv run --no-project --with pyyaml python "$LOCAL_SKILL/scripts/brain_lint.py"
+   VERIFY_ARGS+=(--verify-command "uv run --no-project --with pyyaml python \"$LOCAL_SKILL/scripts/brain_lint.py\"")
+   uv run --no-project "$LOCAL_SKILL/scripts/brain_test.py"
+   VERIFY_ARGS+=(--verify-command "uv run --no-project \"$LOCAL_SKILL/scripts/brain_test.py\"")
    uv run --no-project python "$LOCAL_SKILL/scripts/brain_structure.py"   # structural validation (links, frontmatter, routing; privacy lint scoped to files changed vs origin/main)
    VERIFY_ARGS+=(--verify-command "uv run --no-project python \"$LOCAL_SKILL/scripts/brain_structure.py\"")
    ```
@@ -62,6 +63,13 @@ Also read [docs/actions.md](../../docs/actions.md) when publishing `actions/<id>
    `--verify-command 'SKIP_IMAGE=1 SKIP_PROD=1 ./check-release-coherence.sh'`. Add live, projection,
    or action preflight checks only when appropriate. Missing laptop DB/network setup is not a
    mysterious failure; name what was skipped and use production validation later.
+
+   Laptop limits: always spell interpreters as `uv run --no-project … python`, never bare `python3`
+   — inside `brain_git_sync.py` a verify command runs after `uv run`, where `python3` resolves to
+   a dependency-less venv (the sync then aborts *after* commit+merge). Test modules whose imports
+   hardcode the prod mount `/mirrors/<repo>/…` cannot be collected on a laptop; `brain_test.py`
+   reports them as skipped-with-reason (`needs the prod source-mirror mount`), not as errors. Cover
+   those scripts through `--mode docker --mirrors-root …` or the `rc ask` step below.
 
 3. For `rootcause-brain-skills`, run `./refresh-brains.sh --release patch` and stop. The release
    creates the version commit, reuses `brain_git_sync.py` with coherence verification, proves that
@@ -164,8 +172,12 @@ Also read [docs/actions.md](../../docs/actions.md) when publishing `actions/<id>
 
 11. Prove the intended ref, not merely a successful command:
    - In `rc dev brain status --project <project> --scope project -o json`, select `.status.channels[]` by `channel` and confirm
-     `resolved_sha` is exactly `$SHA`; inspect `origin_sha`, `main_sha`, `matches_origin`,
-     `matches_main`, `state`, and `provenance` when diagnosing a mismatch.
+     `resolved_sha` is exactly `$SHA`. When diagnosing a mismatch, read the other fields for what
+     they are: `origin_sha` is `origin/<channel>` (the channel branch on GitHub, **not**
+     `origin/main`), `main_sha` is `origin/main`; `matches_origin` only says the box's channel ref
+     equals the pushed channel branch, `matches_main` says the channel sits at the `main` tip. So
+     `matches_origin: true` next to an old `origin_sha` and a newer `main_sha` is the normal
+     "not promoted yet" picture (`state: behind_main`), not a backwards reading.
    - When stronger end-to-end proof is warranted, run a safe `rc ask` **without** `--brain-ref`, then
      inspect `rc run debug <id>` and confirm `brain_resolved` is `channel:<channel> @ <SHA>`.
    - For direct-`main` projects, confirm the on-box and origin `main` SHAs, then use `rc dev console

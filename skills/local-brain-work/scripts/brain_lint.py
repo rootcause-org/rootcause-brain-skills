@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -11,12 +14,28 @@ RUNTIME = (Path(__file__).resolve().parents[3] / "runtime").resolve()
 if RUNTIME.is_dir():
     sys.path.insert(0, str(RUNTIME))
 
+_BOOTSTRAP_FLAG = "RC_BRAIN_LINT_BOOTSTRAPPED"
+
+
+def _reexec_with_pyyaml() -> int:
+    """The interpreter that picked us up lacks PyYAML (typical when `python3` resolves to an
+    ephemeral `uv run` venv, e.g. as a `brain_git_sync.py --verify-command`). Re-exec once under
+    `uv run --no-project --with pyyaml` instead of failing with an exit that aborts a sync."""
+    uv = shutil.which("uv")
+    if uv is None or os.environ.get(_BOOTSTRAP_FLAG):
+        raise SystemExit(
+            "error: PyYAML is required; run via `uv run --no-project --with pyyaml python brain_lint.py`"
+        )
+    cmd = [uv, "run", "--no-project", "--with", "pyyaml", "python", str(Path(__file__).resolve()), *sys.argv[1:]]
+    return subprocess.run(cmd, env={**os.environ, _BOOTSTRAP_FLAG: "1"}).returncode
+
+
 try:
     from lib.brain_lint import format_report, lint_brain
 except ModuleNotFoundError as exc:
-    if exc.name == "yaml":
-        raise SystemExit("error: PyYAML is required; use a Python installation that provides `yaml`") from exc
-    raise
+    if exc.name != "yaml":
+        raise
+    raise SystemExit(_reexec_with_pyyaml()) from None
 
 
 def main(argv: list[str] | None = None) -> int:

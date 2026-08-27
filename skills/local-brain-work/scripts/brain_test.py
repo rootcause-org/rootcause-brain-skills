@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     live = args.live or args.require_live
     marker = "live" if live else "not live"
     # The adapter injects one offline lint item and prints one compact end-of-tier report.
-    pytest_args = ["-p", "lib.livecheck", "-p", "lib.brain_lint_pytest", "-m", marker, "-q", *args.pytest_args]
+    pytest_args = ["-p", "lib.livecheck", "-p", "lib.brain_lint_pytest", "-p", "lib.mirror_skip", "-m", marker, "-q", *args.pytest_args]
     if args.require_live:
         pytest_args.append("--require-live")
 
