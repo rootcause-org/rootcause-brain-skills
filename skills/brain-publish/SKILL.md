@@ -56,6 +56,14 @@ Also read [docs/actions.md](../../docs/actions.md) when publishing `actions/<id>
    VERIFY_ARGS+=(--verify-command "uv run --no-project --with pyyaml python \"$LOCAL_SKILL/scripts/brain_lint.py\"")
    uv run --no-project "$LOCAL_SKILL/scripts/brain_test.py"
    VERIFY_ARGS+=(--verify-command "uv run --no-project \"$LOCAL_SKILL/scripts/brain_test.py\"")
+   if docker info >/dev/null 2>&1; then
+     SMOKE_MODE=docker
+   else
+     SMOKE_MODE=uv
+     echo "WARNING: Docker unavailable; import smoke is using lower-fidelity uv mode" >&2
+   fi
+   uv run --no-project "$LOCAL_SKILL/scripts/brain_smoke.py" --mode "$SMOKE_MODE"
+   VERIFY_ARGS+=(--verify-command "uv run --no-project \"$LOCAL_SKILL/scripts/brain_smoke.py\" --mode $SMOKE_MODE")
    uv run --no-project python "$LOCAL_SKILL/scripts/brain_structure.py"   # structural validation (links, frontmatter, routing; privacy lint scoped to files changed vs origin/main)
    VERIFY_ARGS+=(--verify-command "uv run --no-project python \"$LOCAL_SKILL/scripts/brain_structure.py\"")
    ```
@@ -66,10 +74,10 @@ Also read [docs/actions.md](../../docs/actions.md) when publishing `actions/<id>
 
    Laptop limits: always spell interpreters as `uv run --no-project … python`, never bare `python3`
    — inside `brain_git_sync.py` a verify command runs after `uv run`, where `python3` resolves to
-   a dependency-less venv (the sync then aborts *after* commit+merge). Test modules whose imports
-   hardcode the prod mount `/mirrors/<repo>/…` cannot be collected on a laptop; `brain_test.py`
-   reports them as skipped-with-reason (`needs the prod source-mirror mount`), not as errors. Cover
-   those scripts through `--mode docker --mirrors-root …` or the `rc ask` step below.
+   a dependency-less venv (the sync then aborts *after* commit+merge). Import smoke is mandatory and
+   runs in Docker when `docker info` succeeds. Its explicit warning records the lower-fidelity uv
+   fallback. Declare local source checkouts in `.rootcause.toml [mirrors]`; a declared-but-missing
+   mirror fails loudly instead of becoming a collection skip.
 
 3. For `rootcause-brain-skills`, run `./refresh-brains.sh --release patch` and stop. The release
    creates the version commit, reuses `brain_git_sync.py` with coherence verification, proves that

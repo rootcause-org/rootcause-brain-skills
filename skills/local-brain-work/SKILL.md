@@ -45,7 +45,7 @@ Set `SKILL` to the directory containing this `SKILL.md`:
 SKILL=<absolute path to skills/local-brain-work>
 ```
 
-The engine files are `brain_env.py`, `brain_run.py`, `brain_lint.py`, `brain_test.py`, `brain_action.py`,
+The engine files are `brain_env.py`, `brain_run.py`, `brain_smoke.py`, `brain_lint.py`, `brain_test.py`, `brain_action.py`,
 `brain_projection.py`, and `brain_dump.py`. They resolve `lib` from the sibling `runtime/` package when
 present, otherwise from the tag-pinned `rootcause-runtime` git spec. In a kit checkout or symlink
 install, uv children load `runtime/` directly ahead of uv's cached wheel, so unreleased local `lib`
@@ -70,7 +70,7 @@ edits are visible immediately while dependencies remain lock-pinned.
 
 3. Run test tiers:
    ```bash
-   uv run "$SKILL/scripts/brain_test.py"           # modules importing the prod-only /mirrors mount skip with reason
+   uv run "$SKILL/scripts/brain_test.py"           # import smoke, then offline pytest
    uv run "$SKILL/scripts/brain_test.py" --live
    uv run "$SKILL/scripts/brain_test.py" --require-live
    uv run "$SKILL/scripts/brain_test.py" --live --tenant 103
@@ -80,10 +80,15 @@ edits are visible immediately while dependencies remain lock-pinned.
    ```bash
    uv run "$SKILL/scripts/brain_run.py"  --mode docker skills/databases/scripts/lookup_customer.py --email a@b.com
    uv run "$SKILL/scripts/brain_test.py" --mode docker --live
+   uv run "$SKILL/scripts/brain_smoke.py" --mode docker
    ```
    Docker mode uses the published workspace image, `/brain:ro`, `/mirrors:ro`, container user/rootfs/env
    isolation, and the same runtime dependency surface. It does **not** prove the production egress
    allowlist; use `rc ask --brain-ref` for that.
+
+   Publish verification runs `brain_smoke.py` in Docker whenever `docker info` succeeds, otherwise
+   uv mode with a loud fidelity warning. A script may opt out only with `# rc: no-import-smoke` in
+   its header.
 
 5. Report result, mode, and fidelity caveat. A green `uv` run is not a guaranteed-green production run.
 

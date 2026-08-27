@@ -73,10 +73,11 @@ def _brief(brain_dir: Path, mirrors: dict[str, Path]) -> int:
     print(f"\ndatabases ({len(dbs)}):")
     for d in dbs:
         print(f"  {d}")
-    print(f"\nmirrors visible to runner ({len(mirrors)}):" if mirrors
-          else "\nmirrors visible to runner: none (fs helpers will report which is missing)")
+    resolved = sum(path.is_dir() for path in mirrors.values())
+    missing = len(mirrors) - resolved
+    print(f"\nmirrors configured/resolved/missing: {len(mirrors)}/{resolved}/{missing}")
     for name, path in mirrors.items():
-        print(f"  {name} -> {path}")
+        print(f"  {name} -> {path} ({'resolved' if path.is_dir() else 'MISSING'})")
     skills_dir = brain_dir / "skills"
     print("\nskills:")
     if skills_dir.is_dir():
@@ -105,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--image", default=E.DEFAULT_IMAGE, help="workspace image for docker mode")
     p.add_argument("--mirrors-root", help="dir whose immediate subdirs are source mirrors (uv: RC_MIRRORS_ROOT)")
     p.add_argument("--mirror", action="append", default=[], metavar="name=path",
-                   help="mount one mirror — docker mode only (repeatable)")
+                   help="override one declared mirror (repeatable; uv env or docker mount)")
     p.add_argument("--brief", action="store_true", help="map the brain and exit (no run)")
     args = p.parse_args(kit_argv)
 
@@ -114,7 +115,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: brain dir not found: {brain_dir}", file=sys.stderr)
         return 1
 
-    mirrors = E.discover_mirrors(args.mirrors_root, args.mirror)
+    try:
+        mirrors = E.discover_mirrors(brain_dir, args.mirrors_root, args.mirror)
+    except (OSError, ValueError) as exc:
+        print(f"error: cannot resolve mirrors: {exc}", file=sys.stderr)
+        return 1
     if args.brief:
         return _brief(brain_dir, mirrors)
 
@@ -124,6 +129,8 @@ def main(argv: list[str] | None = None) -> int:
     if module == "":
         print("error: -m needs a module name", file=sys.stderr)
         return 2
+    if not E.require_mirrors(mirrors):
+        return 1
 
     if args.mode == "uv":
         return _run_uv(brain_dir, mirrors, args, module, target, rest)
@@ -132,9 +139,6 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run_uv(brain_dir: Path, mirrors: dict[str, Path], args, module, target, rest) -> int:
     secrets = E.brain_secrets(brain_dir, required=False)  # script sees ONLY the brain's .env, like prod
-    if args.mirror:
-        print("warning: --mirror is docker-only; uv mode reads mirrors via --mirrors-root "
-              "(RC_MIRRORS_ROOT). Ignoring the explicit --mirror entries.", file=sys.stderr)
     if module is not None:
         invocation, script_dir = ["-m", module, *rest], None
     else:
@@ -144,7 +148,9 @@ def _run_uv(brain_dir: Path, mirrors: dict[str, Path], args, module, target, res
             print(f"error: {e}", file=sys.stderr)
             return 1
         invocation, script_dir = [str(script), *rest], script.parent
-    child = E.uv_child_env(secrets, [script_dir] if script_dir else [], args.mirrors_root)
+    child = E.uv_child_env(
+        secrets, [script_dir] if script_dir else [], args.mirrors_root, mirrors
+    )
     child["RC_LOCAL_BRAIN_RUN"] = "1"
     if not E.preflight_lib_db(child):
         return 1

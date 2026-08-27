@@ -7,19 +7,69 @@ inside the workspace over the read-only mounts. The v2 mount layout: customer so
 read the mirrors. The host's ``internal/mirror`` package is the canonical Go implementation; this
 mirrors its behaviour for convenience inside grounding code.
 
-Containment: a repo name is a single path component and every resolved path must stay under
-``/mirrors/<repo>``, so a crafted name or ``..`` can't read outside the mount. The :ro mount
-and the container boundary are the real isolation; this is defense-in-depth.
+Containment: a repo name is a single path component and every relative path must stay under its
+resolved mirror, so a crafted name or ``..`` can't escape it. The :ro mount and the container
+boundary are the real production isolation; this is defense-in-depth.
 """
 
 import os
+import re
 import subprocess
+import sys
+from pathlib import Path
 
 # Prod (and faithful docker mode) mount the source mirrors at ``/mirrors/<repo>``. In fast ``uv``
 # mode there is no such mount, so the runner can point this at a local mirror farm via
 # ``RC_MIRRORS_ROOT`` (the kit sets it from ``--mirrors-root``). Unset ⇒ ``/mirrors`` exactly as the
 # container sees it, so a docker-mode run stays byte-identical to prod. A trailing slash is tolerated.
 MIRRORS_ROOT = os.environ.get("RC_MIRRORS_ROOT", "/mirrors").rstrip("/") or "/mirrors"
+
+
+class MirrorMissing(FileNotFoundError):
+    """A declared or production source mirror could not be resolved."""
+
+
+def _mirror_env_name(name: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name):
+        raise ValueError(f"invalid mirror name: {name!r} (want a Docker-safe repository slug)")
+    return "RC_MIRROR_" + name.upper().replace("-", "_")
+
+
+def mirror_path(name: str) -> Path:
+    """Resolve one source mirror in local or production layout.
+
+    A per-mirror override is authoritative, followed by ``RC_MIRRORS_ROOT``. With neither set,
+    production's ``/mirrors/<name>`` layout is used. Missing mirrors fail loudly instead of letting
+    import-time path setup degrade into a later ``ModuleNotFoundError``.
+    """
+    env_name = _mirror_env_name(name)
+    explicit = os.environ.get(env_name)
+    mirrors_root = os.environ.get("RC_MIRRORS_ROOT")
+    candidates = [
+        Path(explicit).expanduser() if explicit else None,
+        Path(mirrors_root).expanduser() / name if mirrors_root else None,
+        Path("/mirrors") / name,
+    ]
+    selected = candidates[0] if explicit else candidates[1] if mirrors_root else candidates[2]
+    assert selected is not None
+    if selected.is_dir():
+        return selected.resolve()
+    rendered = ", ".join(str(path) for path in candidates if path is not None)
+    raise MirrorMissing(f"mirror {name!r} is missing; candidates: {rendered}")
+
+
+def mirror_scripts(name: str, rel: str) -> Path:
+    """Resolve a directory inside a mirror and prepend it to ``sys.path`` once."""
+    root = mirror_path(name)
+    scripts = Path(_safe_join(str(root), rel))
+    if not scripts.is_dir():
+        raise MirrorMissing(
+            f"mirror {name!r} scripts path is missing: {scripts} (relative path: {rel!r})"
+        )
+    value = str(scripts)
+    if value not in sys.path:
+        sys.path.insert(0, value)
+    return scripts
 
 
 def _repo_root(repo: str) -> str:

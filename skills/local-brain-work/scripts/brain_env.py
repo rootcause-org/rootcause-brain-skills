@@ -18,8 +18,10 @@ Two run modes:
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 # ── version line ────────────────────────────────────────────────────────────────────────────────
@@ -155,13 +157,53 @@ def resolve_brain_script(brain_dir: Path, target: str) -> Path:
 
 
 # ── mirrors (source repos the brain's fs helpers read) ────────────────────────────────────────────
-def discover_mirrors(mirrors_root: str | None, explicit: list[str]) -> dict[str, Path]:
-    """Map mirror-name -> local path, from `--mirrors-root DIR` (each immediate subdir is a mirror)
-    and/or repeated `--mirror name=path`. Explicit wins on a name clash. Missing paths are dropped by
-    the caller with a spoken reason (mirrors may be absent locally — degrade gracefully)."""
+def mirror_env_name(name: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name):
+        raise ValueError(f"invalid mirror name: {name!r} (want a Docker-safe repository slug)")
+    return "RC_MIRROR_" + name.upper().replace("-", "_")
+
+
+def _validate_mirror_names(mirrors: dict[str, Path]) -> None:
+    env_names: dict[str, str] = {}
+    for name in mirrors:
+        env_name = mirror_env_name(name)
+        if env_name in env_names:
+            raise ValueError(
+                f"mirror names {env_names[env_name]!r} and {name!r} both map to {env_name}"
+            )
+        env_names[env_name] = name
+
+
+def declared_mirrors(brain_dir: Path) -> dict[str, Path]:
+    """Read committed laptop paths from ``.rootcause.toml [mirrors]``."""
+    marker = brain_dir / ".rootcause.toml"
+    if not marker.is_file():
+        return {}
+    with marker.open("rb") as fh:
+        raw = tomllib.load(fh).get("mirrors", {})
+    if not isinstance(raw, dict):
+        raise ValueError(f"{marker} [mirrors] must be a TOML table")
     out: dict[str, Path] = {}
+    for name, value in raw.items():
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{marker} [mirrors].{name!r} must be a non-empty path string")
+        path = Path(value).expanduser()
+        if path.is_absolute():
+            raise ValueError(f"{marker} [mirrors].{name!r} must be relative to the brain root")
+        out[name] = (brain_dir / path).resolve()
+    _validate_mirror_names(out)
+    return out
+
+
+def discover_mirrors(
+    brain_dir: Path, mirrors_root: str | None, explicit: list[str]
+) -> dict[str, Path]:
+    """Resolve declared mirrors, then apply ``--mirrors-root`` and ``--mirror`` overrides."""
+    out = declared_mirrors(brain_dir)
     if mirrors_root:
         root = Path(mirrors_root).expanduser().resolve()
+        for name in out:
+            out[name] = root / name
         if root.is_dir():
             for child in sorted(root.iterdir()):
                 if child.is_dir() and not child.name.startswith("."):
@@ -172,7 +214,19 @@ def discover_mirrors(mirrors_root: str | None, explicit: list[str]) -> dict[str,
             continue
         name, _, path = spec.partition("=")
         out[name.strip()] = Path(path.strip()).expanduser().resolve()
+    _validate_mirror_names(out)
     return out
+
+
+def require_mirrors(mirrors: dict[str, Path]) -> bool:
+    """Fail loudly before a run can turn a declared missing mirror into a skip or empty mount."""
+    missing = [(name, path) for name, path in mirrors.items() if not path.is_dir()]
+    for name, path in missing:
+        print(
+            f"MirrorMissing: mirror {name!r} is missing; candidates: {path}",
+            file=sys.stderr,
+        )
+    return not missing
 
 
 # ── uv mode ───────────────────────────────────────────────────────────────────────────────────────
@@ -195,13 +249,14 @@ def _host_base() -> dict[str, str]:
 
 
 def uv_child_env(
-    brain_env: dict[str, str], extra_pythonpath: list[Path], mirrors_root: str | None
+    brain_env: dict[str, str], extra_pythonpath: list[Path], mirrors_root: str | None,
+    mirrors: dict[str, Path] | None = None,
 ) -> dict[str, str]:
     """The child env for a uv-mode invocation: the launcher essentials (`_host_base`) + the brain's
     `./.env` (the env source of truth, so it wins), the script's own dir(s) on PYTHONPATH (for
     siblings like `from ka import …`), the canonical local runtime source when present (so it wins
-    over uv's cached wheel during development), and `RC_MIRRORS_ROOT` so lib.fs reads a local mirror
-    farm instead of the absent `/mirrors`. An explicit `RC_RUNTIME_SPEC` remains authoritative."""
+    over uv's cached wheel during development), and resolved `RC_MIRROR_*`/`RC_MIRRORS_ROOT` values
+    so lib.fs reads local checkouts instead of the absent `/mirrors`."""
     child = _host_base()
     child.update(brain_env)  # the brain's .env wins over any passed-through host var
     local_runtime = [RUNTIME] if not os.environ.get("RC_RUNTIME_SPEC") and RUNTIME.is_dir() else []
@@ -211,6 +266,8 @@ def uv_child_env(
         child["PYTHONPATH"] = os.pathsep.join(paths)
     if mirrors_root:
         child["RC_MIRRORS_ROOT"] = str(Path(mirrors_root).expanduser().resolve())
+    for name, path in (mirrors or {}).items():
+        child[mirror_env_name(name)] = str(path)
     return child
 
 
@@ -292,6 +349,6 @@ def run_docker(args: list[str], env_values: dict[str, str]) -> int:
 
 def docker_available() -> bool:
     try:
-        return subprocess.run(["docker", "version"], capture_output=True).returncode == 0
+        return subprocess.run(["docker", "info"], capture_output=True).returncode == 0
     except FileNotFoundError:
         return False

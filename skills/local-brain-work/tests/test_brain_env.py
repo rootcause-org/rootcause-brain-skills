@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "brain_env.py"
 SPEC = importlib.util.spec_from_file_location("brain_env", SCRIPT)
@@ -64,3 +66,60 @@ def test_uv_child_does_not_shadow_explicit_runtime_override(tmp_path: Path, monk
     child = E.uv_child_env({}, [], mirrors_root=None)
 
     assert str(runtime) not in child.get("PYTHONPATH", "").split(os.pathsep)
+
+
+def test_declared_mirrors_are_relative_and_cli_overrides(tmp_path: Path) -> None:
+    brain = tmp_path / "org" / "brain"
+    brain.mkdir(parents=True)
+    (brain / ".rootcause.toml").write_text(
+        'project = "demo"\n\n[mirrors]\napp = "../../app"\n', encoding="utf-8"
+    )
+    override = tmp_path / "override"
+
+    mirrors = E.discover_mirrors(brain, None, [f"app={override}"])
+
+    assert mirrors == {"app": override.resolve()}
+    child = E.uv_child_env({}, [], None, mirrors)
+    assert child["RC_MIRROR_APP"] == str(override.resolve())
+
+
+def test_mirrors_root_overrides_declared_name_even_when_missing(tmp_path: Path) -> None:
+    brain = tmp_path / "brain"
+    brain.mkdir()
+    (brain / ".rootcause.toml").write_text(
+        'project = "demo"\n\n[mirrors]\napp = "../usual-app"\n', encoding="utf-8"
+    )
+    root = tmp_path / "farm"
+    root.mkdir()
+
+    assert E.discover_mirrors(brain, str(root), []) == {"app": root / "app"}
+
+
+def test_require_mirrors_fails_loud(tmp_path: Path, capsys) -> None:
+    missing = tmp_path / "missing"
+
+    assert not E.require_mirrors({"app": missing})
+    assert f"MirrorMissing: mirror 'app' is missing; candidates: {missing}" in capsys.readouterr().err
+
+
+def test_invalid_cli_mirror_name_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="Docker-safe repository slug"):
+        E.discover_mirrors(tmp_path, None, [f"../escape={tmp_path}"])
+    with pytest.raises(ValueError, match="Docker-safe repository slug"):
+        E.discover_mirrors(tmp_path, None, [f"foo:rw={tmp_path}"])
+
+
+def test_cli_and_config_env_name_collision_is_rejected(tmp_path: Path) -> None:
+    (tmp_path / ".rootcause.toml").write_text(
+        'project = "demo"\n\n[mirrors]\na-b = "../one"\n', encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="both map to RC_MIRROR_A_B"):
+        E.discover_mirrors(tmp_path, None, [f"a_b={tmp_path}"])
+
+
+def test_declared_mirror_path_must_be_relative(tmp_path: Path) -> None:
+    (tmp_path / ".rootcause.toml").write_text(
+        f'project = "demo"\n\n[mirrors]\napp = "{tmp_path}"\n', encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="must be relative to the brain root"):
+        E.declared_mirrors(tmp_path)

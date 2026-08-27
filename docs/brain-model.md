@@ -8,12 +8,12 @@ is required to work on it.
 
 | Path | Purpose |
 |---|---|
-| `.rootcause.toml` | Committed non-secret project binding, with optional tenant metadata. `rc` uses it to scope commands; legacy `base_url` values do not steer the current CLI. |
+| `.rootcause.toml` | Committed non-secret project binding, optional tenant metadata, and optional `[mirrors]` local checkout paths relative to the brain root. `rc` uses the binding and ignores unknown tables. |
 | `.env` | Gitignored grounding secrets for Local Brain Work live checks. Pull with `rc project env pull`. |
 | `.env.action` | Gitignored sealed write credentials for local hosted-Python action tests. Only `brain_action.py` uses it. |
 | `AGENTS.md` | Local instructions for agents working in that brain repo. |
 | `skills/` / `playbooks/` / notes | Durable knowledge and project-specific scripts a run may read. |
-| `skills/*/scripts/*.py` | Grounding scripts; import `from lib import db/fs/http/...` from `rootcause-runtime`. |
+| `skills/*/scripts/*.py` | Grounding scripts; import `from lib import db/fs/http/...` from `rootcause-runtime`. Resolve source checkouts with `lib.fs.mirror_path()` / `mirror_scripts()`. |
 | `tests/`, fixtures | Brain-local test fixtures; safe to commit when project-specific. |
 | `actions/<id>/` | Optional action catalog: manifest plus script/preflight. Proposal is in-loop; execution is gated later. |
 | `.replypenignore` | Canonical root run-visibility rules for committed maintainer-only content. |

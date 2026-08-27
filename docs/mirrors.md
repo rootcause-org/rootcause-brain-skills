@@ -1,8 +1,8 @@
 # Mirrors
 
 A source mirror is a read-only snapshot of an external source repo or knowledge source mounted at
-`/mirrors/<name>` during a run. Brain scripts should read mirrors through `lib.fs` or explicit
-`/mirrors/<name>` paths; they should never write them.
+`/mirrors/<name>` during a run. Brain scripts should resolve mirrors with `lib.fs.mirror_path()` or
+`lib.fs.mirror_scripts()`; they should never write them or hardcode the production mount.
 
 ## Mental Model
 
@@ -17,21 +17,31 @@ rc dev mirror refresh --repo <name> --expect-sha "$(git rev-parse HEAD)"
 
   The command waits for the existing refresh worker, verifies the mirror worktree reached that full
   SHA, and expires warm console workspaces. It does not restart RootCause or Docker images.
-- Locally, pass mirrors explicitly:
+- Declare each required local checkout once in committed `.rootcause.toml`; values are relative to
+  the brain root and ignored by `rc`:
+
+```toml
+[mirrors]
+"customer-app" = "../../customer/customer-app"
+```
+
+  Local uv mode exports `RC_MIRROR_CUSTOMER_APP`; Docker mode bind-mounts the path at
+  `/mirrors/customer-app`. A missing declared path raises `lib.fs.MirrorMissing`. For temporary
+  overrides, pass mirrors explicitly; CLI flags win over the committed table:
 
 ```bash
 uv run "$SKILL/scripts/brain_run.py" --mirrors-root ~/mirrors ...
 uv run "$SKILL/scripts/brain_run.py" --mirror app=~/code/customer-app ...
 ```
 
-- `brain_run.py --brief` shows which local mirrors are visible.
+- `brain_run.py --brief` shows resolved and missing declared mirrors.
 - `rc fleet health` reports stale/failed mirrors and dead-lettered runs from the public API.
 
 ## Triage
 
 | Evidence | Interpretation |
 |---|---|
-| Local script fails because `/mirrors/<name>` is absent | Add `--mirrors-root`/`--mirror`, or skip local mirror-dependent checks. |
+| `MirrorMissing` locally | Fix the `[mirrors]` path or override it with `--mirror name=path`; declared mirrors never skip silently. |
 | `rc fleet health` reports a stale/failed mirror | Retry `rc dev mirror refresh` with the pushed SHA; if it fails, escalate with the command error and mirror name. |
 | A prod run read old source content | Check run trace "Files the run read" and `rc fleet health`; mirror freshness may lag brain deploy. |
 | A dev-ref run still sees old source content | Expected if only the brain changed. Dev refs do not change mirror snapshots. |

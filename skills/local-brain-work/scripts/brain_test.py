@@ -61,7 +61,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.require_live:
         pytest_args.append("--require-live")
 
-    mirrors = E.discover_mirrors(args.mirrors_root, args.mirror)
+    try:
+        mirrors = E.discover_mirrors(brain_dir, args.mirrors_root, args.mirror)
+    except (OSError, ValueError) as exc:
+        print(f"error: cannot resolve mirrors: {exc}", file=sys.stderr)
+        return 1
+    if not E.require_mirrors(mirrors):
+        return 1
 
     # --tenant pins the live tier's canary tenant via RC_LIVE_TENANT (read by lib.livecheck.pick_tenant);
     # inert offline. Only meaningful with --live, so warn if it'd be a no-op.
@@ -70,26 +76,32 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
 
     if args.mode == "uv":
-        if args.mirror:
-            print("warning: --mirror is docker-only; uv mode reads mirrors via --mirrors-root "
-                  "(RC_MIRRORS_ROOT). Ignoring the explicit --mirror entries.", file=sys.stderr)
-        return _run_uv(brain_dir, skills_dir, live, pytest_args, args.mirrors_root, args.tenant)
+        return _run_uv(
+            brain_dir, skills_dir, mirrors, live, pytest_args, args.mirrors_root, args.tenant
+        )
     return _run_docker(brain_dir, mirrors, live, pytest_args, args)
 
 
-def _run_uv(brain_dir: Path, skills_dir: Path, live: bool, pytest_args: list[str],
+def _run_uv(brain_dir: Path, skills_dir: Path, mirrors: dict[str, Path], live: bool,
+            pytest_args: list[str],
             mirrors_root: str | None, tenant: str | None) -> int:
     # The live tier needs the DSN; the offline tier runs without a .env. Script sees ONLY the
     # brain's .env (+ launcher essentials), like prod — never the operator's whole environment.
     secrets = E.brain_secrets(brain_dir, required=live)
     if secrets is None:
         return 1
-    child = E.uv_child_env(secrets, [], mirrors_root)
+    child = E.uv_child_env(secrets, [], mirrors_root, mirrors)
     if tenant:
         child["RC_LIVE_TENANT"] = tenant
     if not E.preflight_lib_db(child, extra_with=["pytest"]):
         return 1
     print(f"[uv mode] {E.UV_MODE_CAVEATS}", file=sys.stderr)
+    smoke = subprocess.run(
+        [*E.uv_base_cmd(extra_with=["pytest"]), "python", "-m", "lib.import_smoke", str(brain_dir)],
+        env=child,
+    )
+    if smoke.returncode:
+        return smoke.returncode
     cmd = [*E.uv_base_cmd(extra_with=["pytest"]), "pytest", str(skills_dir), *pytest_args]
     return subprocess.run(cmd, env=child).returncode
 
@@ -110,6 +122,13 @@ def _run_docker(brain_dir: Path, mirrors: dict[str, Path], live: bool, pytest_ar
             print(f"warning: mirror {name!r} path missing: {path}", file=sys.stderr)
     print(f"[docker mode] image={args.image} — egress is OPEN (default bridge), not the prod "
           "default-deny firewall.", file=sys.stderr)
+    smoke_args = E.docker_run_args(
+        image=args.image, brain_dir=brain_dir, mirrors=mirrors,
+        env_names=list(secrets), command=["python", "-m", "lib.import_smoke", E.BRAIN_MOUNT],
+    )
+    smoke_code = E.run_docker(smoke_args, secrets)
+    if smoke_code:
+        return smoke_code
     # pytest over the read-only /brain/skills; lib + the livecheck plugin are baked into the image.
     # `-p no:cacheprovider`: /brain is :ro (EROFS), and the cache is useless for a one-shot --rm run.
     command = ["pytest", "-p", "no:cacheprovider", f"{E.BRAIN_MOUNT}/skills", *pytest_args]
