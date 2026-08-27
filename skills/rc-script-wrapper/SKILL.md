@@ -10,9 +10,28 @@ Use this skill only from a developer's machine/brain checkout. Production brain 
 
 ## Preferred Python API
 
-`rootcause-runtime` ships `lib.rc_client`, which preserves the CLI's JSON contract and maps its exit
-codes to exceptions. Default database resolution is `RC_CONSOLE_DATABASE`, then `RC_DB_DEFAULT`, then
-`prod`; pass `database=` when the script needs a specific connection.
+Install a published, pinned `rootcause-runtime` tag into the script environment; do not copy its
+wrapper or float `main`. The next patch release of this kit is `v0.3.29`; use that tag after it is
+published (or the current published tag shown in the kit README):
+
+```bash
+uv run --with "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.3.29#subdirectory=runtime" script.py
+```
+
+For a standalone script, pin the same dependency in its PEP 723 header:
+
+```python
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.3.29#subdirectory=runtime"]
+# ///
+from lib import rc_client
+```
+
+See [the migration runbook](../../docs/migration-rootcause.md) when moving an existing wrapper.
+`rootcause-runtime` preserves the CLI's JSON contract and maps its exit codes to exceptions. Default
+database resolution is `RC_CONSOLE_DATABASE`, then `RC_DB_DEFAULT`, then `prod`; pass `database=` when
+the script needs a specific connection.
 
 ```python
 from lib import rc_client
@@ -33,8 +52,11 @@ rc_client.file_get("/tmp/rootcause-out/jobs-abc123.csv", "./jobs.csv")
 
 Catch only the recovery you can actually perform: `AuthenticationError` means login/scope,
 `TruncatedError` means use `all=True` or intentionally opt into `allow_truncated=True`,
-`RemoteCommandError` means the guarded workspace command failed/timed out, and `TransportError` means
-server/network trouble. Do not parse table output, spill manifests, or shell-quoted JSON.
+`RemoteCommandError` means the guarded workspace command could not be started, and `TransportError`
+means server/network trouble. `bash()` returns `BashResult` even when the remote command exits non-zero
+or times out; inspect `exit_code`, `stderr`, and `timed_out`. `query_to_csv()` streams CLI-rendered CSV
+to its destination and returns that `Path`, rather than buffering rows. Do not parse table output, spill
+manifests, or shell-quoted JSON.
 
 ## CLI contract for non-Python scripts
 
@@ -47,8 +69,10 @@ rc -o json dev console bash run 'python /brain/skills/reconcile/scripts/check.py
 ```
 
 Exit codes are stable: 0 success; 1 local usage/input; 2 OAuth/authz; 3 truncated query; 4 remote bash
-non-zero or timeout; 5 server/network. With `-o json`, an error is a JSON `{error:{code,message,status,fields}}`
-envelope on stdout. Branch on the exit code/envelope; never treat a partial response as success.
+non-zero or timeout; 5 server/network. With `-o json`, regular errors are a JSON
+`{error:{code,message,status,fields}}` envelope on stdout. `bash run` instead retains its structured
+result payload on exit 4 so callers can read `exit_code`, `stderr`, and `timed_out`. Branch on the exit
+code; never treat a partial response as success.
 
 Use `--all` for a complete export. The ordinary inline limit is deliberately small; no `--all` result
 may be consumed after `truncated:true` unless the script explicitly allows partial data. Stream a large

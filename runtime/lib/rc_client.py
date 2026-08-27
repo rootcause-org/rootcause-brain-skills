@@ -11,7 +11,6 @@ truncated query is unsafe to accidentally consume, so it raises by default; pass
 
 from __future__ import annotations
 
-import csv
 import builtins
 import json
 import os
@@ -22,6 +21,8 @@ from typing import Any, Callable, Iterable, Sequence
 
 
 DEFAULT_DATABASE = "prod"
+_DEFAULT_BASH_TIMEOUT_S = 120
+_LOCAL_TIMEOUT_GRACE_S = 30
 
 
 class RCClientError(RuntimeError):
@@ -82,16 +83,6 @@ class Result:
     rows: list[list[Any]]
     truncated: bool = False
 
-    def query_to_csv(self, path: str | Path) -> Path:
-        """Write this result to ``path`` while preserving duplicate column names and order."""
-        destination = Path(path)
-        with destination.open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.writer(handle)
-            writer.writerow(self.columns)
-            writer.writerows(self.rows)
-        return destination
-
-
 @dataclass(frozen=True)
 class BashResult:
     """Output from the guarded workspace bash plane."""
@@ -126,10 +117,12 @@ def _decode_error(stdout: str, stderr: str, returncode: int) -> RCClientError:
     try:
         envelope = json.loads(stdout)
         error = envelope.get("error", {}) if isinstance(envelope, dict) else {}
-        if isinstance(error, dict):
+        if isinstance(error, dict) and error:
             message = str(error.get("message") or message)
             status = error.get("status")
             fields = error.get("fields")
+        elif isinstance(envelope, dict) and returncode == 3 and envelope.get("truncated") is True:
+            message = "query result was truncated; rerun with all=True or allow_truncated=True"
     except json.JSONDecodeError:
         pass
     error_type = _ERROR_TYPES.get(returncode, TransportError)
@@ -150,7 +143,13 @@ class Client:
         self.database = database
         self._runner = runner or _default_runner
 
-    def _run(self, args: Iterable[str], *, timeout: float | None = None) -> dict[str, Any]:
+    def _run(
+        self,
+        args: Iterable[str],
+        *,
+        timeout: float | None = None,
+        allowed_exit_codes: Iterable[int] = (),
+    ) -> dict[str, Any]:
         command = [self.executable, "-o", "json", *args]
         try:
             completed = self._runner(command, timeout)
@@ -158,7 +157,7 @@ class Client:
             raise TransportError(f"rc executable not found: {self.executable}") from exc
         except subprocess.TimeoutExpired as exc:
             raise RemoteCommandError(f"rc command timed out after {timeout}s") from exc
-        if completed.returncode:
+        if completed.returncode and completed.returncode not in set(allowed_exit_codes):
             raise _decode_error(completed.stdout, completed.stderr, completed.returncode)
         try:
             payload = json.loads(completed.stdout)
@@ -166,6 +165,8 @@ class Client:
             raise TransportError("rc returned invalid JSON") from exc
         if not isinstance(payload, dict):
             raise TransportError("rc returned a non-object JSON response")
+        if "error" in payload:
+            raise _decode_error(completed.stdout, completed.stderr, completed.returncode)
         return payload
 
     def query(
@@ -185,11 +186,13 @@ class Client:
         args = ["dev", "console", "database", "query", _default_database(database or self.database), sql]
         if all:
             args.append("--all")
+        if allow_truncated:
+            args.append("--allow-truncated")
         args.extend(["--format", "json", "--out", "-"])
         pairs = params.items() if isinstance(params, dict) else (params or ())
         for key, value in pairs:
             args.extend(["--param", f"{key}={value}"])
-        payload = self._run(args)
+        payload = self._run(args, allowed_exit_codes=(3,) if allow_truncated else ())
         columns = payload.get("columns")
         rows = payload.get("rows")
         truncated = payload.get("truncated", False)
@@ -204,22 +207,45 @@ class Client:
             raise TruncatedError("query result was truncated; rerun with all=True or allow_truncated=True")
         return result
 
-    def query_to_csv(self, sql: str, path: str | Path, **kwargs: Any) -> Result:
-        """Run ``query`` then write an exact CSV representation to ``path``."""
-        result = self.query(sql, **kwargs)
-        result.query_to_csv(path)
-        return result
+    def query_to_csv(
+        self,
+        sql: str,
+        path: str | Path,
+        params: dict[str, str] | Iterable[tuple[str, str]] | None = None,
+        all: bool = False,
+        *,
+        database: str | None = None,
+        allow_truncated: bool = False,
+    ) -> Path:
+        """Stream a query as CLI-rendered CSV to ``path`` without materializing its rows."""
+        destination = Path(path)
+        args = ["dev", "console", "database", "query", _default_database(database or self.database), sql]
+        if all:
+            args.append("--all")
+        if allow_truncated:
+            args.append("--allow-truncated")
+        args.extend(["--format", "csv", "--out", str(destination)])
+        pairs = params.items() if isinstance(params, dict) else (params or ())
+        for key, value in pairs:
+            args.extend(["--param", f"{key}={value}"])
+        self._run(args, allowed_exit_codes=(3,) if allow_truncated else ())
+        return destination
 
     def bash(self, cmd: str, timeout: int | None = None) -> BashResult:
         """Run one workspace command and return its decoded result.
 
-        A remote non-zero exit or timeout is represented by ``RemoteCommandError`` by the CLI and
-        is raised here; successful results retain the server's exit metadata.
+        A remote non-zero exit or timeout returns its decoded ``BashResult``. The local process
+        timeout is the requested remote timeout plus 30 seconds for request/setup overhead.
         """
         args = ["dev", "console", "bash", "run", cmd, "--out", "-"]
         if timeout is not None:
             args.extend(["--timeout", str(timeout)])
-        payload = self._run(args, timeout=timeout)
+        remote_timeout = timeout if timeout is not None else _DEFAULT_BASH_TIMEOUT_S
+        payload = self._run(
+            args,
+            timeout=remote_timeout + _LOCAL_TIMEOUT_GRACE_S,
+            allowed_exit_codes=(4,),
+        )
         exit_code = payload.get("exit_code", 0)
         stdout = payload.get("stdout", "")
         stderr = payload.get("stderr", "")
@@ -240,7 +266,7 @@ def query(sql: str, params: dict[str, str] | Iterable[tuple[str, str]] | None = 
     return Client().query(sql, params=params, all=all, **kwargs)
 
 
-def query_to_csv(sql: str, path: str | Path, **kwargs: Any) -> Result:
+def query_to_csv(sql: str, path: str | Path, **kwargs: Any) -> Path:
     return Client().query_to_csv(sql, path, **kwargs)
 
 
