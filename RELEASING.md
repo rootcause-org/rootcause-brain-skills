@@ -72,8 +72,8 @@ Then re-point prod and follow [docs/migration-rootcause.md](docs/migration-rootc
 canonical bytes), else `rootcause-runtime @ git+…@vX.Y.Z`. Both must be the same bytes prod's image
 bakes. Never float `main` — a push would silently change `lib` under a green local test.
 
-**Why the lockfile:** the `==` pins in `pyproject.toml` only fix the *direct* deps; their transitive
-tail (botocore, urllib3, certifi, …) would otherwise float as PyPI moves, so two installs days apart
+**Why the lockfile:** the constraints in `pyproject.toml` bound the *direct* deps but intentionally allow
+compatible upgrades; their transitive tail (botocore, urllib3, certifi, …) would otherwise float as PyPI moves, so two installs days apart
 could differ. `runtime/requirements.lock` (universal, Python 3.12) freezes the **full** closure. uv
 mode installs from it (`--with-requirements`) and the workspace image constrains to it
 (`docker/Dockerfile`, `-c …/requirements.lock`) — same closure both ends. Regenerate it whenever you
