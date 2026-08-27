@@ -6,8 +6,8 @@
 `brain_run.py` and `brain_test.py` are thin front-ends over this module. Everything here is
 **brain-dir-relative and `accounts.yml`-free**: the brain is just the cwd (or an explicit path), its
 env is the gitignored plaintext `./.env`, and `lib` comes from `rootcause-runtime` — the exact bytes
-the prod workspace image installs (see `runtime_spec`). So a green uv-mode run is provably the same
-`lib` prod runs, with the fidelity gaps called out in `UV_MODE_CAVEATS`.
+the prod workspace image installs at a clean release tag. A sibling `runtime/` source tree takes
+precedence during development so unreleased edits are testable; see `UV_MODE_CAVEATS`.
 
 Two run modes:
   * **uv**     — fast inner loop: `uv run` with `rootcause-runtime` + its pinned deps, env from `./.env`.
@@ -60,7 +60,8 @@ UV_MODE_CAVEATS = (
     ":ro mounts (no EROFS), no container isolation, and it runs on THIS host's OS (e.g. macOS), not "
     "the image's Linux — same arm64 arch, but macOS wheels ≠ the manylinux wheels prod installs, so "
     "native deps and OS behaviour can still differ. Deps (lockfile) and the Python 3.12 interpreter "
-    "ARE pinned, so the import surface matches prod; the box does not. A green uv run is NOT a "
+    "ARE pinned. In a kit checkout, current runtime/ source wins over the installed wheel, so "
+    "unreleased lib edits intentionally differ from prod until released. A green uv run is NOT a "
     "guaranteed-green prod run — gate with `--mode docker` before pushing."
 )
 
@@ -69,8 +70,9 @@ def runtime_spec() -> str:
     """What `uv run --with` installs to provide `lib`. ONE pinned source of truth, resolved in order:
 
       1. `RC_RUNTIME_SPEC` env override — for testing an unreleased runtime/ or a fork.
-      2. The sibling `runtime/` dir, if present — offline, the canonical bytes (kit checkout, the CC
-         plugin bundle, a local symlink install). What prod's image installs, byte-for-byte.
+      2. The sibling `runtime/` dir, if present — offline, the canonical local bytes (kit checkout,
+         the CC plugin bundle, a local symlink install). Matches prod at a clean release tag while
+         exposing unreleased source edits during development.
       3. Else the tag-pinned git spec — for a skill shipped without the kit alongside it. Needs network
          + repo read access. Pin the TAG, never float main (a push would silently change `lib`).
     """
@@ -197,11 +199,14 @@ def uv_child_env(
 ) -> dict[str, str]:
     """The child env for a uv-mode invocation: the launcher essentials (`_host_base`) + the brain's
     `./.env` (the env source of truth, so it wins), the script's own dir(s) on PYTHONPATH (for
-    siblings like `from ka import …`; `lib` itself arrives via `uv run` — see `uv_base_cmd`), and
-    `RC_MIRRORS_ROOT` so lib.fs reads a local mirror farm instead of the absent `/mirrors`."""
+    siblings like `from ka import …`), the canonical local runtime source when present (so it wins
+    over uv's cached wheel during development), and `RC_MIRRORS_ROOT` so lib.fs reads a local mirror
+    farm instead of the absent `/mirrors`. An explicit `RC_RUNTIME_SPEC` remains authoritative."""
     child = _host_base()
     child.update(brain_env)  # the brain's .env wins over any passed-through host var
-    paths = [str(p) for p in extra_pythonpath] + ([child["PYTHONPATH"]] if child.get("PYTHONPATH") else [])
+    local_runtime = [RUNTIME] if not os.environ.get("RC_RUNTIME_SPEC") and RUNTIME.is_dir() else []
+    paths = [str(p) for p in [*extra_pythonpath, *local_runtime]]
+    paths += [child["PYTHONPATH"]] if child.get("PYTHONPATH") else []
     if paths:
         child["PYTHONPATH"] = os.pathsep.join(paths)
     if mirrors_root:
