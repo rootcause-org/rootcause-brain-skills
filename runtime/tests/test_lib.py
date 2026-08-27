@@ -841,7 +841,7 @@ class Rendering(unittest.TestCase):
         return buf.getvalue()
 
     def _spilled_path(self, preview: str) -> Path:
-        m = re.search(r"saved to (\S+) \(", preview)
+        m = re.search(r"saved to (?:remote workspace file )?(\S+) \(", preview)
         self.assertIsNotNone(m, preview)
         return Path(m.group(1))
 
@@ -879,6 +879,8 @@ class Rendering(unittest.TestCase):
 
         self.assertIn("30 rows × 3 cols", preview)
         self.assertIn("columns: id, email, payload", preview)
+        self.assertIn("remote workspace file", preview)
+        self.assertIn("rc dev console file get", preview)
         self.assertIn("query it:", preview)
         self.assertIn("awk -F','", preview)
         self.assertLess(len(preview.encode()), 6000)

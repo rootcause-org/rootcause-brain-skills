@@ -341,13 +341,17 @@ Then run narrow SQL. Queries are read-only by default; `--write` uses the action
 `<X>_WRITE_DSN` is sealed (scope `console:db:write`) and COMMITs, returning `rows_affected`:
 
 ```bash
-rc dev console database query <db> "select count(*) as row_count from <table>" -o json | jq '.rows[0]'
-rc dev console database query <db> "select id::text, created_at from <table> order by created_at desc limit 5" -o json
+rc -o json dev console database query <db> "select count(*) as row_count from <table>" --format json --out - | jq '.rows[0]'
+rc dev console database query <db> "select id::text, created_at from <table> order by created_at desc" --all --format csv --out ./rows.csv
 rc dev console database query <db> "update <table> set <col>=<val> where id=<id> returning id" --write -o json | jq '.rows_affected'
 ```
 
-If a query fails with an unknown column, go back to `rc dev console database schema`; do not keep guessing names. For
-large result handling, keep SQL narrow and post-process JSON locally with `jq`.
+If a query fails with an unknown column, go back to `rc dev console database schema`; do not keep guessing names.
+Use repeated `--param key=value` instead of quoting values into SQL. `--all` is required for a complete
+result beyond the inline cap; a truncated result exits 3 unless explicitly allowed. For a deterministic
+script, use [`rc-script-wrapper`](../skills/rc-script-wrapper/SKILL.md): its `lib.rc_client` wrapper
+keeps column order/duplicates and turns CLI exit codes into typed exceptions. Fetch a previewed remote
+workspace artifact with `rc dev console file get <remote-path> --out <local-path>`.
 
 Use `rc dev console bash run` for workspace files and mounted context:
 

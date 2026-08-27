@@ -31,7 +31,7 @@ Typical use from a `bash` Python script:
 
 # Submodules are imported on demand (`from lib import db`), not eagerly here: eager imports make
 # `python -m lib.db` double-import the module it's running and emit a RuntimeWarning on every call.
-__all__ = ["db", "api", "stripe", "cloudwatch", "fs", "http", "html", "oauth", "action", "telemetry"]
+__all__ = ["db", "api", "stripe", "cloudwatch", "fs", "http", "html", "oauth", "action", "rc_client", "telemetry"]
 
 # Auto-wire best-effort PostHog error tracking (no-op without POSTHOG_PROJECT_API_KEY). Swallow any
 # failure here — importing `lib` must never fail because telemetry couldn't initialize.

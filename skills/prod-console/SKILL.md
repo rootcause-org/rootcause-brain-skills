@@ -63,10 +63,16 @@ Read:
    it with `rc project database set` — see
    [docs/secrets.md](../../docs/secrets.md#register-a-new-grounding-database).
    Queries run host-side through RootCause's database proxy and project scoping. Prefer narrow SELECTs
-   and explicit columns. Large or repeated analysis belongs in local `jq`/scripts over JSON output:
+   and explicit columns. Large/repeated analysis belongs in local scripts over a complete export: use
+   `--all` (a partial result exits 3), an explicit `--format`, and `--out` rather than parsing a preview.
+   The [`rc-script-wrapper`](../rc-script-wrapper/SKILL.md) skill owns deterministic Python/shell wrappers.
    ```bash
-   rc dev console database query <db> "SELECT ..." -o json | jq '.rows[]'
+   rc dev console database query <db> "SELECT ..." --all --format csv --out ./rows.csv
+   rc -o json dev console database query <db> "SELECT ..." --all --format json --out - | jq '.rows[]'
    ```
+   Use repeated `--param key=value` for values, not SQL string interpolation. SQL/bash text can come
+   from stdin (`-`) or `@file`. Remote workspace artifacts named in a production preview are fetched
+   with `rc dev console file get <remote-path> --out <local-path>`.
    If a query fails on a column name, stop and inspect schema:
    ```bash
    rc dev console database schema <db> --table <table> -o json |
