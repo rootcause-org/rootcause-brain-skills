@@ -31,15 +31,13 @@ oauth:
   token_url: https://oauth2.googleapis.com/token
   default_scopes:
     - https://www.googleapis.com/auth/calendar.readonly
-    - https://www.googleapis.com/auth/calendar.events.readonly
 help_md: |
   Reads Google Calendar events, calendar metadata, and calendar lists for support diagnosis
   ("what events exist, who's invited, when are they scheduled, what calendars does a user have").
   Read-only — only ever issues GETs against the Calendar v3 REST API.
 
-  **Auth:** bearer OAuth access token injected as RC_CONN_GOOGLECALENDAR. Use
-  `calendar.readonly` for broad access (all calendars + events visible to the account) or the
-  narrower `calendar.events.readonly` for events only.
+  **Auth:** bearer OAuth access token injected as RC_CONN_GOOGLECALENDAR. The
+  `calendar.readonly` scope covers all calendars and events visible to the account.
 
   **Pagination:** cursor-based via `nextPageToken` / `pageToken`. Use `--paginate` to auto-collect
   all pages. Default page size is 250; maximum for events is 2500.
