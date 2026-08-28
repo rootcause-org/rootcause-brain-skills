@@ -74,6 +74,15 @@ rc self update --check    # report only
 brew update && brew upgrade rc  # Homebrew install
 ```
 
+Cloud sandboxes (Claude Code cloud, Codex cloud) cannot reach GitHub release assets of unattached repos
+(403 behind the GitHub proxy). Install there with the hosted bootstrap and let each session self-update:
+
+```bash
+curl -fsSL https://app.replypen.com/install/cloud.sh | bash   # rc (latest) + uv + pnpm; RC_CLOUD_SKIP_UV/PNPM=1 opt out
+rc self update                                                 # falls back to the release mirror when GitHub is blocked
+```
+`RC_RELEASE_MIRROR=<url>` forces the mirror; `rc self update --check` prints `source: github|mirror`.
+
 The current CLI no longer has the top-level `rc upgrade` command. If an older installed client does not
 recognize `rc self update`, run its legacy `rc upgrade` once (or use Homebrew) to reach the current
 command surface.

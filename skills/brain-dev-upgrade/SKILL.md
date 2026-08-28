@@ -28,6 +28,9 @@ laptop.
 - On macOS, `rc self update --migrate` explicitly and idempotently upgrades/installs Homebrew and
   removes only verified legacy Go-installed copies. Linux/WSL/Windows standalone installs update in
   place with `rc self update`.
+- In cloud sandboxes (Claude Code / Codex cloud) GitHub release assets 403; `rc self update` then uses the
+  release mirror automatically (`RC_RELEASE_MIRROR` to force). Fresh sandboxes bootstrap with
+  `curl -fsSL https://app.replypen.com/install/cloud.sh | bash` (see docs/rc-cli.md § Upgrade).
 - A client old enough to lack `rc self update` must run its legacy `rc upgrade` once (or upgrade through
   Homebrew) to reach the current command surface.
 - Headless cloud agents may commit `machine_token_env` beside `project` in `.rootcause.toml`; `rc`
