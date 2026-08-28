@@ -42,6 +42,8 @@ help_md: |
   a customer-submitted configuration sheet, pricing table, or data export the team works in.
   Read-only: only ever issues GETs, never writes to any sheet.
 
+  Read a Sheet by id or URL that the connected account can open.
+
   The spreadsheetId is part of the URL (the long alphanumeric string in a Sheets URL after /d/).
 
   Key endpoints:
@@ -75,3 +77,7 @@ help_md: |
   5. **Search developer metadata**:
          python -m lib.api post googlesheets spreadsheets/SPREADSHEET_ID/developerMetadata:search \
            --json '{"dataFilters":[{"developerMetadataLookup":{"metadataKey":"customer_id"}}]}'
+onboarding_md: |
+  Ask which Sheets future support work should consult and when. Capture each spreadsheet's stable ID
+  or URL, exact tab names, header columns, lookup keys, and date or amount conventions. If a workflow
+  should append or change cells, record it as a write requiring a live action; this connector only reads.

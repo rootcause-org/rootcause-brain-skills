@@ -24,6 +24,8 @@ help_md: |
   Reads native Google Docs document structure and text runs for support grounding. Read-only:
   only ever issues GETs, never writes to a document.
 
+  Read a Doc by id or URL that the connected account can open.
+
   The documentId is the long string in a Google Docs URL after `/document/d/`.
 
   Common paths and examples:
@@ -36,5 +38,8 @@ help_md: |
       python -m lib.api get googledocs documents/DOCUMENT_ID \
         --pick documentId,title,revisionId,namedRanges,body.content.*.paragraph.elements.*.textRun.content
 
-  The raw Docs API response is structural, not Markdown. For a folder-wide search/read workflow,
-  start with `googledrive files` to find document ids, then fetch the few relevant docs here.
+  The raw Docs API response is structural, not Markdown.
+onboarding_md: |
+  Ask which Docs future support work should consult and when. Capture each document's stable ID or URL,
+  its purpose, and the relevant sections or headings. If a workflow should edit a document, record it as
+  a write requiring a live action; this connector only reads.
