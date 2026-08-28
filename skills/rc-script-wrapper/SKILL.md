@@ -27,6 +27,10 @@ For a standalone script, pin the same dependency in its PEP 723 header:
 from lib import rc_client
 ```
 
+Run `uv lock --script script.py` once and commit the resulting `script.py.lock`: it freezes the tag
+to a commit sha plus the whole transitive closure, so every later `uv run` resolves from cache
+instead of re-fetching the git tag over the network (re-run it after bumping the tag).
+
 See [the migration runbook](../../docs/migration-rootcause.md) when moving an existing wrapper.
 `rootcause-runtime` preserves the CLI's JSON contract and maps its exit codes to exceptions. Default
 database resolution is `RC_CONSOLE_DATABASE`, then `RC_DB_DEFAULT`, then `prod`; pass `database=` when
