@@ -13,7 +13,7 @@ is required to work on it.
 | `.env.action` | Gitignored sealed write credentials for local hosted-Python action tests. Only `brain_action.py` uses it. |
 | `AGENTS.md` | Local instructions for agents working in that brain repo. |
 | `skills/` / `playbooks/` / notes | Durable knowledge and project-specific scripts a run may read. |
-| `skills/*/scripts/*.py` | Grounding scripts; import `from lib import db/fs/http/...` from `rootcause-runtime`. Resolve source checkouts with `lib.fs.mirror_path()` / `mirror_scripts()`. |
+| `skills/<topic>/scripts/*.py` | Grounding scripts; import `from lib import db/fs/http/...` from `rootcause-runtime`. The offline lint rejects Python outside `skills/`, `actions/`, and `tests/` (root `conftest.py` is allowed), ensuring import smoke's intentional `skills/**` scope covers every grounding script. Resolve source checkouts with `lib.fs.mirror_path()` / `mirror_scripts()`. |
 | `tests/`, fixtures | Brain-local test fixtures; safe to commit when project-specific. |
 | `actions/<id>/` | Optional action catalog: manifest plus script/preflight. Proposal is in-loop; execution is gated later. |
 | `.replypenignore` | Canonical root run-visibility rules for committed maintainer-only content. |

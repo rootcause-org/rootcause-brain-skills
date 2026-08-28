@@ -88,7 +88,8 @@ edits are visible immediately while dependencies remain lock-pinned.
 
    Publish verification runs `brain_smoke.py` in Docker whenever `docker info` succeeds, otherwise
    uv mode with a loud fidelity warning. A script may opt out only with `# rc: no-import-smoke` in
-   its header.
+   its header. Import smoke intentionally discovers only `skills/**`; lint rejects grounding Python
+   elsewhere so every script remains covered (while allowing action, test, and root `conftest.py` code).
 
 5. Report result, mode, and fidelity caveat. A green `uv` run is not a guaranteed-green production run.
 

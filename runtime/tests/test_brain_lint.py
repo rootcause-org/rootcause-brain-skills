@@ -69,6 +69,39 @@ def test_lint_brain_all_good(tmp_path: Path) -> None:
     assert _fails(lint_brain(tmp_path)) == []
 
 
+def test_lint_brain_flags_python_outside_supported_roots(tmp_path: Path) -> None:
+    _seed_brain(tmp_path)
+    _write(tmp_path / "notes/faq/scripts/generate_index.py", "print('index')\n")
+    _write(tmp_path / "helper.py", "print('helper')\n")
+
+    findings = [f for f in _fails(lint_brain(tmp_path)) if f.rule == "script-outside-skills"]
+
+    assert [f.path for f in findings] == ["helper.py", "notes/faq/scripts/generate_index.py"]
+    assert all("skills/<topic>/scripts/" in f.message for f in findings)
+    assert all("import smoke" in f.message for f in findings)
+
+
+def test_lint_brain_allows_python_in_supported_and_ignored_dirs(tmp_path: Path) -> None:
+    _seed_brain(tmp_path)
+    allowed = [
+        "conftest.py",
+        "skills/faq/scripts/generate_index.py",
+        "actions/refund/script.py",
+        "tests/test_faq.py",
+        ".agents/skills/local/scripts/helper.py",
+        ".claude/skills/local/scripts/helper.py",
+        ".rootcause/cache/helper.py",
+        ".git/hooks/helper.py",
+        ".venv/lib/helper.py",
+        "_internal/tools/helper.py",
+        "node_modules/package/helper.py",
+    ]
+    for rel in allowed:
+        _write(tmp_path / rel, "# allowed\n")
+
+    assert not any(f.rule == "script-outside-skills" for f in lint_brain(tmp_path))
+
+
 def test_lint_brain_survives_brain_test_replacing_lib_module(tmp_path: Path, monkeypatch) -> None:
     _seed_brain(tmp_path)
     _write(tmp_path / "actions/refund/script.py", "_DEAD = 1\n")
@@ -158,3 +191,21 @@ def test_pytest_adapter_prints_one_compact_block_without_warning_summary(tmp_pat
     assert run.stdout.count("brain lint: 0 FAIL, 1 WARN") == 1
     assert "WARN dead private names (1)" in run.stdout
     assert "warnings summary" not in run.stdout
+
+
+def test_pytest_adapter_surfaces_script_outside_skills(tmp_path: Path) -> None:
+    _seed_brain(tmp_path)
+    _write(tmp_path / "notes/faq/scripts/generate_index.py", "print('index')\n")
+    _write(tmp_path / "skills/test_sample.py", "def test_ok():\n    assert True\n")
+    runtime = Path(__file__).resolve().parents[1]
+    env = {**os.environ, "PYTHONPATH": str(runtime)}
+
+    run = subprocess.run(
+        [sys.executable, "-m", "pytest", str(tmp_path / "skills"), "-q", "-p", "no:cacheprovider",
+         "-p", "lib.brain_lint_pytest"],
+        text=True, capture_output=True, check=False, env=env,
+    )
+
+    assert run.returncode == 1
+    assert "FAIL scripts outside skills (1)" in run.stdout
+    assert "notes/faq/scripts/generate_index.py" in run.stdout

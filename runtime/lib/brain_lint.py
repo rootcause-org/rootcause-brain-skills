@@ -9,6 +9,9 @@ that contract:
     frontmatter, or one whose whitespace-collapsed length exceeds 90 chars (the tree truncates
     there, so the tail never reaches the model; nothing else consumes a long md description);
     an `actions/*/manifest.yaml` with no top-level `description:`.
+  * **FAIL** — a Python script outside `skills/`, `actions/`, or `tests/` (except root
+    `conftest.py`). Import smoke intentionally discovers only `skills/**`, so grounding scripts must
+    live under `skills/<topic>/scripts/` rather than beside notes or at the brain root.
   * **WARN** — an overlong action-manifest description whose first complete sentence does not fit in
     the 90-character tree gloss (the SAME field is injected full-length into the per-run action
     catalog prompt, so rich copy is load-bearing there — lead with a short routing sentence, never
@@ -26,6 +29,7 @@ publish gate can import it without pytest. `lib.brain_lint_pytest` owns the opti
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,6 +51,17 @@ _CONTAINS_STYLE = re.compile(
     re.IGNORECASE,
 )
 _SENTENCE_BOUNDARY = re.compile(r"[.!?](?=\s|$)")
+
+_SCRIPT_ALLOWED_ROOTS = frozenset({"skills", "actions", "tests"})
+_SCRIPT_IGNORED_DIRS = frozenset({
+    ".agents",
+    ".claude",
+    ".rootcause",
+    ".git",
+    ".venv",
+    "_internal",
+    "node_modules",
+})
 
 
 @dataclass(frozen=True)
@@ -163,6 +178,22 @@ def lint_brain(brain_root: str | Path) -> list[Finding]:
     root = Path(brain_root)
     findings: list[Finding] = []
 
+    for dirpath, dirnames, filenames in os.walk(root, topdown=True):
+        rel_dir = Path(dirpath).relative_to(root)
+        skipped = _SCRIPT_IGNORED_DIRS | (_SCRIPT_ALLOWED_ROOTS if not rel_dir.parts else frozenset())
+        dirnames[:] = sorted(name for name in dirnames if name not in skipped)
+        for filename in sorted(filenames):
+            if not filename.endswith(".py") or (not rel_dir.parts and filename == "conftest.py"):
+                continue
+            rel_path = rel_dir / filename
+            findings.append(Finding(
+                rel_path.as_posix(),
+                "FAIL",
+                "Python scripts belong in `skills/<topic>/scripts/`; import smoke intentionally "
+                "covers only `skills/**`",
+                "script-outside-skills",
+            ))
+
     for skill_md in sorted(root.glob("skills/*/SKILL.md")):
         findings += _check(skill_md, _rel(root, skill_md), _md_description(skill_md), "SKILL.md")
 
@@ -191,6 +222,7 @@ _RULE_LABELS = {
     "description-length": "description length",
     "description-style": "description style",
     "script-size": "script size",
+    "script-outside-skills": "scripts outside skills",
     "helper-duplicate": "duplicate helpers",
     "helper-drift": "drifted helpers",
     "private-dead": "dead private names",
