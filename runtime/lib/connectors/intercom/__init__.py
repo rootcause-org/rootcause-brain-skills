@@ -11,15 +11,15 @@ Required header: ``Intercom-Version: 2.11`` (declared in manifest default_header
 
 Read-only: only GETs are issued. We never write to customer Intercom workspaces.
 
-CLI:
-    python -m lib.connectors.intercom list conversations [--query k=v] [--max-pages N]
-    python -m lib.connectors.intercom list contacts [--query k=v] [--max-pages N]
-    python -m lib.connectors.intercom list companies [--query k=v] [--max-pages N]
-    python -m lib.connectors.intercom list articles [--query k=v] [--max-pages N]
-    python -m lib.connectors.intercom get conversation <id>
-    python -m lib.connectors.intercom get contact <id>
-    python -m lib.connectors.intercom get company <id>
-    python -m lib.connectors.intercom get article <id>
+CLI (``list`` auto-pages; there is no ``--limit`` per page — ``--limit`` caps TOTAL items):
+    python -m lib.connectors.intercom list {conversations|contacts|companies|articles|tags|admins}
+        [--query K=V ...] [--limit N] [--max-pages N] [--page-size N] [--pick PATHS] [--no-pick]
+    python -m lib.connectors.intercom get {conversation|contact|company|article} <id>
+        [--pick PATHS] [--no-pick]
+
+Identity recipe: inbox-sourced threads carry an Intercom CONTACT ID as the sender, so
+``get contact <sender>`` resolves it to email/name/company. Going the other way (email → contact)
+needs the search endpoint: ``python -m lib.api post intercom /contacts/search --json '{...}'``.
 """
 
 from __future__ import annotations
@@ -138,8 +138,12 @@ def list_resource(
     query: dict[str, Any] | None = None,
     max_pages: int = 20,
     page_size: int = 50,
+    max_items: int | None = None,
 ) -> dict:
     """Auto-page a list endpoint, dynamically extracting the items array from each page envelope.
+
+    ``max_items`` caps the TOTAL items returned across pages (Intercom has no per-request item
+    limit; ``page_size`` only sizes one page).
 
     Returns ``{"items": [...], "incomplete": bool, "reason": str}`` — the same shape as
     ``api.Client.collect`` so callers are interchangeable.
@@ -159,6 +163,12 @@ def list_resource(
             items.extend(page_items)
             pages_fetched += 1
             cursor = _next_cursor(page.body)
+            if max_items is not None and len(items) >= max_items:
+                incomplete = len(items) > max_items or cursor is not None
+                if incomplete:
+                    reason = f"reached limit={max_items}"
+                items = items[:max_items]
+                break
             if cursor is None:
                 break
             q = dict(q, starting_after=cursor)
@@ -182,15 +192,46 @@ def get_resource(path: str) -> Any:
 # ---------------------------------------------------------------------------
 
 
+_FLAG_HINT = (
+    "valid list flags: --query K=V (repeatable), --limit N (total items), --max-pages N, "
+    "--page-size N (max 150), --pick PATHS, --no-pick"
+)
+
+
+class _HintingParser(argparse.ArgumentParser):
+    """argparse that names the real flags on error -- a wrong guess costs the agent a whole turn."""
+
+    def error(self, message: str):  # noqa: D102 - argparse hook
+        super().error(f"{message}\n{_FLAG_HINT}")
+
+
+_EPILOG = """\
+Flags: --query K=V (repeatable)  --limit N (TOTAL items)  --max-pages N  --page-size N (max 150)
+       --pick PATHS  --no-pick.   `list` ALWAYS auto-pages; there is no per-request row limit.
+
+Find a customer -- inbox-sourced threads carry an Intercom CONTACT ID as the sender:
+  python -m lib.connectors.intercom get contact 6a9041bd893cd2e7016b6627
+Email -> contact (search POST, allowlisted):
+  python -m lib.api post intercom /contacts/search --pick data.*.id,data.*.email,data.*.name --json '{"query":{"field":"email","operator":"=","value":"user@example.com"}}'
+Their tickets:
+  python -m lib.api post intercom /conversations/search --pick conversations.*.id,conversations.*.title,conversations.*.state --json '{"query":{"field":"contact_ids","operator":"=","value":"<contact_id>"},"sort":{"field":"updated_at","order":"desc"}}'
+
+Shape JSON with --pick or python, not jq.
+"""
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
+    parser = _HintingParser(
         prog="python -m lib.connectors.intercom",
         description="Read-only Intercom grounding: conversations, contacts, companies, articles.",
+        epilog=_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    sub = parser.add_subparsers(dest="cmd", required=True)
+    sub = parser.add_subparsers(dest="cmd", required=True, parser_class=_HintingParser)
 
     # -- list subcommand --
-    ls = sub.add_parser("list", help="list a resource (auto-paginated, pre-selected fields)")
+    ls = sub.add_parser("list", help="list a resource (auto-paginated, pre-selected fields)",
+                        epilog=_EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
     ls.add_argument(
         "resource",
         choices=["conversations", "contacts", "companies", "articles", "tags", "admins"],
@@ -198,19 +239,27 @@ def main(argv: list[str] | None = None) -> int:
     )
     ls.add_argument("--query", action="append", default=[], metavar="K=V",
                     help="query param (repeatable, e.g. --query state=open)")
+    ls.add_argument("--limit", type=int, default=None, metavar="N",
+                    help="cap TOTAL items across pages (default: no cap, bounded by --max-pages)")
     ls.add_argument("--max-pages", type=int, default=10,
                     help="hard page cap (default 10)")
     ls.add_argument("--page-size", type=int, default=50,
                     help="items per page (default 50, max 150)")
+    ls.add_argument("--pick", metavar="PATHS",
+                    help="comma-separated dotted paths to keep instead of the default field set "
+                         "(e.g. --pick id,state,source.subject)")
     ls.add_argument("--no-pick", action="store_true",
                     help="return full objects instead of pre-selected support fields")
 
     # -- get subcommand --
-    gt = sub.add_parser("get", help="fetch one resource by id")
+    gt = sub.add_parser("get", help="fetch one resource by id",
+                        epilog=_EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
     gt.add_argument("resource",
                     choices=["conversation", "contact", "company", "article"],
                     help="resource type")
     gt.add_argument("id", help="resource id")
+    gt.add_argument("--pick", metavar="PATHS",
+                    help="comma-separated dotted paths to keep instead of the default field set")
     gt.add_argument("--no-pick", action="store_true",
                     help="return full object instead of pre-selected support fields")
 
@@ -220,11 +269,13 @@ def main(argv: list[str] | None = None) -> int:
         path = f"/{args.resource}"
         query = dict(kv.split("=", 1) for kv in args.query if "=" in kv)
         result = list_resource(
-            path, query=query, max_pages=args.max_pages, page_size=args.page_size
+            path, query=query, max_pages=args.max_pages, page_size=args.page_size,
+            max_items=args.limit,
         )
         pick_key = args.resource  # "conversations" → pick key
-        if not args.no_pick and pick_key in _PICK_FIELDS:
-            result["items"] = [api.pick(it, _PICK_FIELDS[pick_key]) for it in result["items"]]
+        fields = args.pick or _PICK_FIELDS.get(pick_key)
+        if not args.no_pick and fields:
+            result["items"] = [api.pick(it, fields) for it in result["items"]]
         print(json.dumps(result, indent=2, default=str))
         return 0
 
@@ -234,8 +285,9 @@ def main(argv: list[str] | None = None) -> int:
         path = f"/{path_prefix}/{args.id}"
         body = get_resource(path)
         pick_key = path_prefix  # match _PICK_FIELDS keys
-        if not args.no_pick and pick_key in _PICK_FIELDS:
-            body = api.pick(body, _PICK_FIELDS[pick_key])
+        fields = args.pick or _PICK_FIELDS.get(pick_key)
+        if not args.no_pick and fields:
+            body = api.pick(body, fields)
         print(json.dumps(body, indent=2, default=str))
         return 0
 

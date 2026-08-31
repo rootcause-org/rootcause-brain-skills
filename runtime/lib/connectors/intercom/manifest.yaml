@@ -48,32 +48,54 @@ oauth:
 help_md: |
   Reads Intercom conversations, contacts (users/leads), companies, and articles for support
   diagnosis ("what did this customer report / what is their plan / have they seen the article").
-  Token or OAuth, both read-only — only GETs.
+  Token or OAuth, both read-only — only GETs plus the allowlisted search POSTs.
 
   Intercom routes `api.intercom.io` to your workspace's region automatically; explicit regional
   base URLs (api.eu.intercom.io, api.au.intercom.io) are also listed as egress hosts.
 
-  ## Usage
+  ## Script connector CLI
 
-  Single-page GET (most grounding queries):
+  `list` auto-pages (cursor `pages.next.starting_after`) and pre-selects support-relevant fields.
+  There is **no per-request row limit** — bound it with the flags below:
 
-      python -m lib.connectors.intercom list conversations --query display_as=plaintext
+      --query K=V     query param, repeatable (e.g. --query state=open --query display_as=plaintext)
+      --limit N       cap on TOTAL items across pages
+      --max-pages N   hard page cap (default 10)
+      --page-size N   items per page (default 50, Intercom max 150)
+      --pick PATHS    comma-separated dotted paths to keep (e.g. id,state,source.subject)
+      --no-pick       return full objects instead of the pre-selected support fields
+
+      python -m lib.connectors.intercom list conversations --query state=open --limit 20
       python -m lib.connectors.intercom list contacts --query email=user@example.com
       python -m lib.connectors.intercom list companies --query company_id=acme
       python -m lib.connectors.intercom get conversation <id>
-      python -m lib.connectors.intercom get contact <id>
+      python -m lib.connectors.intercom get contact <id> --pick id,email,name
 
-  The script connector auto-pages and pre-selects support-relevant fields. For raw access the
-  generic CLI also works (single-page only — items_field varies per resource):
+  `get` takes `--pick` / `--no-pick` too. Shape JSON with `--pick` or python — `jq` is not
+  guaranteed in the workspace image.
+
+  For raw access the generic CLI also works, but single-page only (items_field varies per
+  resource, so `--paginate` cannot stitch pages):
 
       python -m lib.api get intercom /conversations --query per_page=20
 
-  POST search endpoints are explicitly allowlisted for one-shot filtered lookups. Do not pass
-  --paginate; Intercom's search cursor lives in the next request body.
+  ## Find a customer
+
+  Inbox-sourced threads identify the sender by **Intercom contact id**, not email — resolve it
+  first, then pivot on the email:
+
+      python -m lib.connectors.intercom get contact 6a9041bd893cd2e7016b6627
+
+  Email → contact needs the search POST (allowlisted, non-mutating). Do not pass `--paginate`;
+  Intercom's search cursor lives in the next request body.
 
       python -m lib.api post intercom /contacts/search \
         --json '{"query":{"operator":"AND","value":[{"field":"email","operator":"=","value":"user@example.com"}]},"pagination":{"per_page":10}}' \
         --pick data.*.id,data.*.email,data.*.name
+
+      python -m lib.api post intercom /conversations/search \
+        --json '{"query":{"field":"contact_ids","operator":"=","value":"<contact_id>"},"sort":{"field":"updated_at","order":"desc"},"pagination":{"per_page":10}}' \
+        --pick conversations.*.id,conversations.*.title,conversations.*.state
 
       python -m lib.api post intercom /conversations/search \
         --json '{"query":{"field":"source.author.email","operator":"=","value":"user@example.com"},"pagination":{"per_page":10}}' \
@@ -82,8 +104,10 @@ help_md: |
   ## Key endpoints
   - `GET /conversations` — list conversations (filtered by assignee, state, date range)
   - `GET /conversations/{id}` — one conversation with full message history
-  - `GET /contacts` — search contacts by email/phone/name
-  - `GET /contacts/{id}` — one contact with lifecycle/segment/plan info
+  - `GET /contacts` — list contacts
+  - `GET /contacts/{id}` — one contact with email, company, lifecycle/plan info
+  - `POST /contacts/search` — find a contact by email (or any attribute)
+  - `POST /conversations/search` — find conversations by `contact_ids` / `source.author.email`
   - `GET /companies` — list companies (filter by company_id, name, tag)
   - `GET /companies/{id}` — one company with plan, user count, MRR
   - `GET /articles` — list help-centre articles

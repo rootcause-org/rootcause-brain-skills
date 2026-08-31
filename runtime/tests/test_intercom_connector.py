@@ -482,6 +482,32 @@ class IntercomCLITest(unittest.TestCase):
         self.assertIn("/contacts/contact_abc", called_url)
 
     @responses_lib.activate
+    def test_cli_limit_caps_total_items_across_pages(self):
+        """--limit caps TOTAL items (Intercom has no per-request row limit) and stops paging."""
+        responses_lib.add(
+            responses_lib.GET, f"{BASE}/conversations",
+            json=_CONV_PAGE_1, status=200,
+        )
+
+        result = intercom.list_resource("/conversations", page_size=1, max_items=1)
+
+        self.assertEqual(len(result["items"]), 1)
+        self.assertEqual(len(responses_lib.calls), 1)  # did not fetch page 2
+        self.assertTrue(result["incomplete"])
+        self.assertIn("limit=1", result["reason"])
+
+    @responses_lib.activate
+    def test_cli_pick_overrides_default_fields(self):
+        """--pick replaces the pre-selected support field set."""
+        responses_lib.add(
+            responses_lib.GET, f"{BASE}/conversations",
+            json=_CONV_PAGE_2, status=200,
+        )
+
+        rc = intercom.main(["list", "conversations", "--pick", "id,state"])
+        self.assertEqual(rc, 0)
+
+    @responses_lib.activate
     def test_cli_list_two_pages_via_main(self):
         """CLI paginates through 2 pages and returns both in the JSON output."""
         responses_lib.add(
