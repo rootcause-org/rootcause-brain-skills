@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
+import io
+import json
 import re
 import sys
+import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "sent_delta_report.py"
 SPEC = importlib.util.spec_from_file_location("sent_delta_report", SCRIPT)
@@ -12,6 +19,7 @@ assert SPEC and SPEC.loader
 sdr = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = sdr  # @dataclass resolves annotations through sys.modules
 SPEC.loader.exec_module(sdr)
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
 def text_of(html_fragment: str) -> str:
@@ -246,6 +254,109 @@ class ServerCleanedBodyTest(unittest.TestCase):
                 "sent_body_clean": "Bedankt voor je bericht.\n\nWe zien je donderdag."}
         diff = sdr.diff_for(item, keep_quotes=True)
         self.assertIn("Verzonden", "".join(t for r in diff.rows for _, t in r.inline))
+
+
+class ShadowReportTest(unittest.TestCase):
+    def fixture(self, name: str) -> list[dict]:
+        return json.loads((FIXTURES / name).read_text("utf-8"))["deltas"]
+
+    def test_shadow_detection_uses_only_the_wire_boolean(self):
+        self.assertTrue(sdr.is_shadow({"shadow": True}))
+        self.assertFalse(sdr.is_shadow({"shadow": False}))
+        self.assertFalse(sdr.is_shadow({"shadow": "true"}))
+        self.assertFalse(sdr.is_shadow({"similarity": 0.0,
+                                        "delta_description": "blind shadow comparison"}))
+
+    def test_shadow_fetch_requests_the_verdict_neutral_plane(self):
+        args = type("Args", (), {"from_json": "", "shadow": True, "limit": 25,
+                                  "project": "", "tenant": ""})()
+        result = type("Result", (), {"returncode": 0, "stdout": "{}", "stderr": ""})()
+        with patch.object(sdr.subprocess, "run", return_value=result) as run:
+            self.assertEqual(sdr.load_evidence(args), {})
+        command = run.call_args.args[0]
+        self.assertEqual(command[command.index("--plane") + 1], "shadow")
+
+    def test_shadow_outputs_are_verdict_first_and_show_readiness_context(self):
+        items = sorted(self.fixture("shadow.json"), key=sdr.shadow_sort_key)
+        diffs = [sdr.diff_for(item) if item.get("proposed_body") and item.get("sent_body")
+                 else sdr.Diff([], 0, 0, 0) for item in items]
+        md = sdr.render_shadow_markdown(items, diffs, {}, "example / tenant", "", "report.html")
+        page = sdr.render_shadow(items, diffs, {}, "example / tenant", "")
+
+        for output in (md, page):
+            self.assertIn("50%", output)
+            self.assertIn("2/4", output)
+            self.assertIn("served score 5/5", output.lower())
+            self.assertIn("Synthetic two-part question", output)
+            self.assertIn("Is lunch included", output)
+            self.assertNotIn("removed by human", output.lower())
+            self.assertNotIn("added by human", output.lower())
+        self.assertIn("Our blind proposal", page)
+        self.assertIn("Human's independent answer", page)
+        self.assertIn("only in ours", md)
+        self.assertIn("only in human answer", md)
+        self.assertLess(md.index("### Divergent facts"), md.index("### Missed content"))
+        self.assertLess(md.index("### Missed content"), md.index("### Equivalent"))
+        self.assertIn("Bodies unavailable; use the verdict and description only.", md)
+
+    def test_mixed_payload_partitions_shadow_from_live_aggregates(self):
+        fixture = FIXTURES / "mixed.json"
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "report.html"
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                self.assertEqual(sdr.main(["--from-json", str(fixture), "--out", str(out)]), 0)
+            page = out.read_text("utf-8")
+            md = out.with_suffix(".md").read_text("utf-8")
+
+        self.assertIn("Shadow readiness", page)
+        self.assertIn("Sent vs proposed — live edits", page)
+        self.assertIn("Our blind proposal", page)
+        self.assertIn("1 aged out", page)
+        self.assertIn("Missing live bodies (1)", page)
+        self.assertIn("Synthetic live metadata arrived without requested bodies.", page)
+        shadow_md, live_md = md.split("# Sent vs proposed", 1)
+        self.assertIn("mixed-shadow", shadow_md)
+        self.assertNotIn("mixed-live", shadow_md)
+        self.assertIn("mixed-live", live_md)
+        self.assertNotIn("mixed-shadow", live_md)
+        self.assertIn("1 deltas, most-rewritten first", live_md)
+        self.assertIn("aged0003", live_md)
+        self.assertIn("The live synthetic edit added a sample policy detail.", live_md)
+        self.assertIn("## Missing live bodies", live_md)
+        self.assertIn("hollow0004", live_md)
+
+    def test_pure_live_main_keeps_the_existing_renderers_byte_identical(self):
+        live = self.fixture("mixed.json")[1]
+        payload = {"deltas": [live]}
+
+        class FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 8, 31, 10, 30, tzinfo=timezone.utc)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "live.json"
+            source.write_text(json.dumps(payload), "utf-8")
+            out = Path(tmp) / "live.html"
+            diff = sdr.diff_for(live)
+            with patch.object(sdr, "datetime", FixedDateTime):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    self.assertEqual(sdr.main(["--from-json", str(source), "--project", "example",
+                                               "--out", str(out)]), 0)
+                expected_html = sdr.render([live], [diff], {}, "example", "", 0)
+                expected_md = sdr.render_markdown([live], [diff], {}, "example", "", str(out), [])
+            self.assertEqual(out.read_text("utf-8"), expected_html)
+            self.assertEqual(out.with_suffix(".md").read_text("utf-8"), expected_md)
+
+            with patch.object(sdr, "datetime", FixedDateTime):
+                baseline_html = sdr.render([live], [diff], {}, "example", "", 0)
+                baseline_md = sdr.render_markdown(
+                    [live], [diff], {}, "example", "", "/tmp/example-live.html", [])
+            # Captured from the untouched main renderer before shadow dispatch was added.
+            self.assertEqual(hashlib.sha256(baseline_html.encode()).hexdigest(),
+                             "932af26746645cac966c2f152c155b33d8a4d8df7b83063a549e7a8bde81bb45")
+            self.assertEqual(hashlib.sha256(baseline_md.encode()).hexdigest(),
+                             "6cbbc6148d230c02b0bf5b8b923de1a6222dabbcca53b3f03da19309b3c986c1")
 
 
 if __name__ == "__main__":

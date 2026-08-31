@@ -74,8 +74,8 @@ Read:
    - `ERRxn`: bash failures.
    - `EGRxn`: blocked egress.
    - `GD`: grounding discarded.
-   - `LRN:<signals>`: dream-cycle learning candidate — human feedback, a sent-vs-proposed edit, or a
-     triage skip/correction on that run.
+   - `LRN:<signals>`: dream-cycle learning candidate — human feedback, a live sent edit, a blind
+     shadow comparison, or a triage skip/correction on that run.
 
    Heaviness is not a flag: judge it from the run's turn count and wall-clock duration. Unusually
    many turns or a long duration against the fleet's norm marks a run worth drilling.
@@ -83,10 +83,11 @@ Read:
 4. Drill two to five flagged runs with the `rc-debug` skill. The worst-offenders section gives full
    UUIDs.
 
-   `LRN:sent_delta` says only *that* a human rewrote the draft. Fleet never carries the two bodies.
-   For what the brain proposed against what was actually sent, switch to
+   `LRN:sent_delta` marks a live human edit. `LRN:sent_delta/<verdict>` marks a blind shadow
+   comparison (`/unjudged` when no verdict exists); `equivalent` is positive evidence, not a failure.
+   Fleet never carries the two bodies. For the proposal and human answer, switch to
    [`brain-dream-cycle`](../brain-dream-cycle/SKILL.md), which reads them from
-   `rc dev learning evidence` and renders a word-level diff report.
+   `rc dev learning evidence` and renders live edits or a verdict-first shadow report.
 
 5. Close out feedback you acted on, so the next review starts from the unprocessed remainder:
    ```bash

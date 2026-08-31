@@ -1,14 +1,16 @@
 # /// script
 # requires-python = ">=3.11"
 # ///
-"""Render sent-vs-proposed delta evidence as a reviewable, word-level-diff HTML report.
+"""Render sent-vs-proposed evidence as live-edit or shadow-readiness reports.
 
 `rc dev learning evidence --plane deltas --include-bodies` returns the two bodies that matter for a
 dream cycle: what the brain proposed and what the human actually sent. JSON is unreadable for a
 human reviewer and a line diff is wrong for prose — humans rewrite *inside* sentences, so a
 line-granular diff paints a whole paragraph red/green and hides the actual edit.
 
-This script produces one self-contained HTML file that shows, per delta:
+Live rows retain the edit report. Rows carrying the evidence wire's ``shadow: true`` field use a
+verdict-first blind-comparison report instead; no similarity or prose heuristic guesses shadow mode.
+The script produces one self-contained HTML file that shows, per delta:
 
   * the run/thread identifiers needed to drill further (`rc run debug <id>`);
   * a paragraph alignment (fuzzy, so a rewritten paragraph stays paired with its original);
@@ -71,7 +73,8 @@ def load_evidence(args: argparse.Namespace) -> dict:
     if args.from_json:
         raw = sys.stdin.read() if args.from_json == "-" else Path(args.from_json).read_text("utf-8")
         return json.loads(raw)
-    cmd = ["rc", "dev", "learning", "evidence", "--plane", "deltas", "--include-bodies",
+    plane = "shadow" if getattr(args, "shadow", False) else "deltas"
+    cmd = ["rc", "dev", "learning", "evidence", "--plane", plane, "--include-bodies",
            "--limit", str(args.limit), "-o", "json"]
     if args.project:
         cmd = ["rc", "--project", args.project, *cmd[1:]]
@@ -323,6 +326,26 @@ SIGNAL_LABELS = {
     "human_wrote_less": "human cut the draft down",
 }
 
+SHADOW_VERDICTS = (
+    "divergent_facts",
+    "missed_content",
+    "same_outcome_details_differ",
+    "equivalent",
+    "not_answerable",
+    "unjudged",
+)
+SHADOW_VERDICT_LABELS = {
+    "divergent_facts": "Divergent facts",
+    "missed_content": "Missed content",
+    "same_outcome_details_differ": "Same outcome, details differ",
+    "equivalent": "Equivalent",
+    "not_answerable": "Not answerable",
+    "unjudged": "Unjudged",
+}
+ANSWERABLE_SHADOW_VERDICTS = {
+    "divergent_facts", "missed_content", "same_outcome_details_differ", "equivalent"
+}
+
 
 def signals(diff: Diff) -> list[str]:
     gone = " ".join(t for row in diff.rows for op, t in row.left if op == "del")
@@ -355,6 +378,40 @@ def _flat(ops: list[tuple[str, str]]) -> str:
 def short(value: object) -> str:
     """First uuid segment — enough to name a delta in prose, cheap in tokens."""
     return str(value or "").split("-")[0] or "?"
+
+
+def is_shadow(item: dict) -> bool:
+    """Use only the pinned evidence-wire identity; textual similarity cannot identify shadow."""
+    return item.get("shadow") is True
+
+
+def shadow_verdict(item: dict) -> str:
+    value = str(item.get("shadow_verdict") or "").strip()
+    return value if value in SHADOW_VERDICTS[:-1] else "unjudged"
+
+
+def served_score(item: dict) -> int | None:
+    value = item.get("served_score")
+    return value if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 5 else None
+
+
+def _time_sort_value(value: object) -> float:
+    try:
+        return -datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError):
+        return float("inf")
+
+
+def shadow_sort_key(item: dict) -> tuple[int, float, str]:
+    verdict = shadow_verdict(item)
+    return SHADOW_VERDICTS.index(verdict), _time_sort_value(item.get("sent_at")), str(item.get("id") or "")
+
+
+def shadow_readiness(items: list[dict]) -> tuple[int, int]:
+    verdicts = [shadow_verdict(item) for item in items]
+    close = sum(v in {"equivalent", "same_outcome_details_differ"} for v in verdicts)
+    answerable = sum(v in ANSWERABLE_SHADOW_VERDICTS for v in verdicts)
+    return close, answerable
 
 
 # ---------------------------------------------------------------------------- markdown (agent)
@@ -482,6 +539,135 @@ def render_markdown(items: list[dict], diffs: list[Diff], notes: dict[str, str],
     return "\n".join(out)
 
 
+def _score_distribution(items: list[dict]) -> str:
+    counts = {score: 0 for score in range(1, 6)}
+    unscored = 0
+    for item in items:
+        score = served_score(item)
+        if score is None:
+            unscored += 1
+        else:
+            counts[score] += 1
+    parts = [f"{score}/5: {counts[score]}" for score in range(5, 0, -1)]
+    if unscored:
+        parts.append(f"unscored: {unscored}")
+    return " · ".join(parts)
+
+
+def _shadow_groups(items: list[dict], diffs: list[Diff]) -> list[tuple[str, list[tuple[dict, Diff]]]]:
+    grouped: dict[str, list[tuple[dict, Diff]]] = {verdict: [] for verdict in SHADOW_VERDICTS}
+    for item, diff in zip(items, diffs, strict=True):
+        grouped[shadow_verdict(item)].append((item, diff))
+    return [(verdict, grouped[verdict]) for verdict in SHADOW_VERDICTS if grouped[verdict]]
+
+
+def render_shadow_markdown(items: list[dict], diffs: list[Diff], notes: dict[str, str], scope: str,
+                           conclusion: str, html_path: str) -> str:
+    close, answerable = shadow_readiness(items)
+    readiness = f"{100 * close / answerable:.0f}%" if answerable else "—"
+    verdict_counts = {verdict: 0 for verdict in SHADOW_VERDICTS}
+    themes: dict[str, list[dict]] = {}
+    for item in items:
+        verdict_counts[shadow_verdict(item)] += 1
+        themes.setdefault(category_of(item) or "uncategorized", []).append(item)
+
+    out = [f"# Shadow readiness — {scope}", "",
+           f"{len(items)} blind comparisons · readiness **{readiness}** ({close}/{answerable} "
+           "close/answerable; `not_answerable` and unjudged excluded)",
+           f"Served scores: {_score_distribution(items)}",
+           f"Human-facing shadow report: `{html_path}`"]
+    if conclusion:
+        out += ["", "## Conclusion so far", "", conclusion]
+
+    out += ["", "## Verdicts", "", "| n | verdict | readiness role |", "|--:|---|---|"]
+    for verdict in SHADOW_VERDICTS:
+        count = verdict_counts[verdict]
+        if not count:
+            continue
+        role = ("close" if verdict in {"equivalent", "same_outcome_details_differ"}
+                else "answerable miss" if verdict in {"divergent_facts", "missed_content"}
+                else "excluded")
+        out.append(f"| {count} | {SHADOW_VERDICT_LABELS[verdict]} | {role} |")
+
+    out += ["", "## Themes", "",
+            "The server category is a first-pass theme, not a root-cause attribution. Read a verdict "
+            "group first, then drill one representative run before routing a lesson.", "",
+            "| n | theme | verdicts | deltas |", "|--:|---|---|---|"]
+    for theme, members in sorted(themes.items(), key=lambda pair: (-len(pair[1]), pair[0])):
+        member_verdicts = sorted({shadow_verdict(item) for item in members},
+                                 key=SHADOW_VERDICTS.index)
+        out.append(f"| {len(members)} | {theme} | "
+                   f"{', '.join(SHADOW_VERDICT_LABELS[v] for v in member_verdicts)} | "
+                   f"{', '.join(short(item.get('id')) for item in members)} |")
+
+    out += ["", "## Comparisons by verdict", "",
+            "`[-…-]` only in ours · `{+…+}` only in human answer · unchanged paragraphs omitted."]
+    for verdict, members in _shadow_groups(items, diffs):
+        out += ["", f"### {SHADOW_VERDICT_LABELS[verdict]} ({len(members)})"]
+        for item, diff in members:
+            topic = str(item.get("topic") or "").strip()
+            title = f"#### {short(item.get('id'))}"
+            if topic:
+                title += f" · {topic}"
+            out += ["", title, ""]
+            meta = []
+            if run_id := item.get("related_run_id"):
+                meta.append(f"run `{run_id}`")
+            if url := item.get("run_url"):
+                meta.append(f"[trace]({url})")
+            score = served_score(item)
+            meta.append(f"served score {score}/5" if score is not None else "served score —")
+            if theme := category_of(item):
+                meta.append(f"theme {theme}")
+            if isinstance(item.get("similarity"), (int, float)):
+                meta.append(f"server similarity {item['similarity']:.0%}")
+            out.append(" · ".join(meta))
+            if question := str(item.get("question_excerpt") or "").strip():
+                out += ["", f"**Question:** {_clip(question)}"]
+            if item.get("delta_description"):
+                out += ["", f"**Server comparison:** {str(item['delta_description']).strip()}"]
+            if notes.get(str(item.get("id"))):
+                out += ["", f"**Conclusion:** {notes[str(item['id'])]}"]
+            if not item.get("proposed_body") or not item.get("sent_body"):
+                out += ["", "Bodies unavailable; use the verdict and description only."]
+                continue
+            out.append("")
+            skipped = 0
+            for row in diff.rows:
+                if row.kind == "equal":
+                    skipped += 1
+                elif row.kind == "delete":
+                    out.append(f"- only in ours: {_clip(_flat(row.left))}")
+                elif row.kind == "insert":
+                    out.append(f"+ only in human answer: {_clip(_flat(row.right))}")
+                else:
+                    out.append(f"~ {md_ops(row.inline)}")
+            if skipped:
+                out.append(f"({skipped} unchanged paragraph{'s' if skipped > 1 else ''} omitted)")
+
+    out += ["", "## Next", "",
+            "1. Start with verdict and recurring themes; low word overlap alone is not a lesson.",
+            "2. Drill one representative miss: `rc run debug <run-id>`.",
+            "3. Route the evidenced cause with the Shadow mode table in the skill.",
+            "4. Treat unpaired runs as awaiting a human answer unless thread evidence says otherwise.", ""]
+    return "\n".join(out)
+
+
+def render_missing_live_markdown(items: list[dict]) -> str:
+    out = ["## Missing live bodies", "",
+           "These live rows were returned without bodies and cannot be diffed. Re-fetch with "
+           "`--include-bodies`; do not infer a lesson from the description alone.", ""]
+    for item in items:
+        bits = [f"`{short(item.get('id'))}`"]
+        if category := category_of(item):
+            bits.append(category)
+        if url := item.get("run_url"):
+            bits.append(f"[trace]({url})")
+        description = str(item.get("delta_description") or "").strip() or "no description"
+        out.append(f"- {' · '.join(bits)} — {description}")
+    return "\n".join(out)
+
+
 # ---------------------------------------------------------------------------- rendering (human)
 
 CSS = """
@@ -534,6 +720,22 @@ body.hide-equal tr.equal{display:none}
 color:var(--muted);font-size:12px}
 """
 
+SHADOW_CSS = """
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:16px 0}
+.metric{border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:var(--card)}
+.metric b{display:block;font-size:22px}.metric span{color:var(--muted);font-size:12px}
+.verdict-summary,.themes{width:100%;margin:12px 0 20px;border:1px solid var(--line)}
+.verdict-summary th,.themes th{text-align:left;background:var(--sub)}
+.verdict-summary th,.verdict-summary td,.themes th,.themes td{padding:7px 10px;border-bottom:1px solid var(--line)}
+.verdict-group{margin:28px 0}.verdict-group>h2{font-size:18px;margin-bottom:10px}
+.shadow-card summary{padding:12px 14px;background:var(--sub);cursor:pointer;font-weight:650}
+.shadow-card[open] summary{border-bottom:1px solid var(--line)}
+.question{margin:0;padding:10px 14px;border-bottom:1px solid var(--line)}
+.question b{color:var(--accent)}.score{font-weight:650;color:var(--accent)}
+.section-intro{margin:24px 0 8px}.section-intro h2{font-size:18px;margin-bottom:4px}
+.live-section{border-top:3px solid var(--line);margin-top:40px;padding-top:20px}
+"""
+
 JS = """
 const b=document.body;
 function set(view){b.classList.toggle('inline',view==='inline');
@@ -565,6 +767,19 @@ def spans(ops: list[tuple[str, str]]) -> str:
 def render_rows(diff: Diff) -> str:
     side = ['<table class="side"><tr class="colhead"><td class="l">Proposed draft (brain)</td>'
             "<td>Actually sent (human)</td></tr>"]
+    inline = ['<table class="inlineview">']
+    for row in diff.rows:
+        side.append(f'<tr class="{row.kind}"><td class="l">{spans(row.left)}</td>'
+                    f"<td>{spans(row.right)}</td></tr>")
+        inline.append(f'<tr class="{row.kind}"><td>{spans(row.inline)}</td></tr>')
+    side.append("</table>")
+    inline.append("</table>")
+    return "".join(side) + "".join(inline)
+
+
+def render_shadow_rows(diff: Diff) -> str:
+    side = ['<table class="side"><tr class="colhead"><td class="l">Our blind proposal</td>'
+            "<td>Human's independent answer</td></tr>"]
     inline = ['<table class="inlineview">']
     for row in diff.rows:
         side.append(f'<tr class="{row.kind}"><td class="l">{spans(row.left)}</td>'
@@ -613,6 +828,132 @@ def render_card(index: int, item: dict, diff: Diff, note: str) -> str:
     return f'<div class="card">{"".join(blocks)}</div>'
 
 
+def render_shadow_card(index: int, item: dict, diff: Diff, note: str) -> str:
+    verdict = shadow_verdict(item)
+    topic = str(item.get("topic") or "").strip()
+    title = topic or f"Comparison #{index}"
+    score = served_score(item)
+    tags = [f'<span class="tag shape">{esc(SHADOW_VERDICT_LABELS[verdict])}</span>',
+            f'<span class="tag score">served score {score}/5</span>' if score is not None
+            else '<span class="tag">served score —</span>']
+    if theme := category_of(item):
+        tags.append(f'<span class="tag">{esc(theme)}</span>')
+    blocks = [
+        f'<summary>{esc(title)}<div class="tags">{"".join(tags)}</div></summary>'
+    ]
+    if question := str(item.get("question_excerpt") or "").strip():
+        blocks.append(f'<p class="question"><b>Question</b><br>{esc(question)}</p>')
+    if item.get("delta_description"):
+        blocks.append(f'<p class="note"><b>Server comparison:</b> '
+                      f'{esc(str(item["delta_description"]))}</p>')
+    if note:
+        blocks.append(f'<p class="note"><b>Conclusion:</b> {esc(note)}</p>')
+    if item.get("proposed_body") and item.get("sent_body"):
+        blocks.append(f'<div class="body">{render_shadow_rows(diff)}</div>')
+        if diff.quoted:
+            blocks.append(f'<details class="quoted"><summary>Quoted history on the human answer '
+                          f'({len(diff.quoted.splitlines())} lines, excluded from the comparison)'
+                          f'</summary><pre>{esc(diff.quoted)}</pre></details>')
+    else:
+        blocks.append('<p class="note">Bodies unavailable; use the verdict and description only.</p>')
+    if url := item.get("run_url"):
+        blocks.append(f'<div class="foot"><a href="{esc(str(url))}">Drill into this run ↗</a></div>')
+    elif run_id := item.get("related_run_id"):
+        blocks.append(f'<div class="foot">run <span class="mono">{esc(short(run_id))}</span></div>')
+    return f'<details class="card shadow-card"{" open" if index == 1 else ""}>{"".join(blocks)}</details>'
+
+
+def render_shadow(items: list[dict], diffs: list[Diff], notes: dict[str, str], scope: str,
+                  conclusion: str, live_items: list[dict] | None = None,
+                  live_diffs: list[Diff] | None = None, live_aged_out: int = 0,
+                  live_unavailable: list[dict] | None = None) -> str:
+    live_items = live_items or []
+    live_diffs = live_diffs or []
+    live_unavailable = live_unavailable or []
+    close, answerable = shadow_readiness(items)
+    readiness = f"{100 * close / answerable:.0f}%" if answerable else "—"
+    verdict_counts = {verdict: 0 for verdict in SHADOW_VERDICTS}
+    themes: dict[str, list[dict]] = {}
+    for item in items:
+        verdict_counts[shadow_verdict(item)] += 1
+        themes.setdefault(category_of(item) or "uncategorized", []).append(item)
+
+    verdict_rows = []
+    for verdict in SHADOW_VERDICTS:
+        count = verdict_counts[verdict]
+        if count:
+            verdict_rows.append(f'<tr><td>{esc(SHADOW_VERDICT_LABELS[verdict])}</td><td>{count}</td></tr>')
+    theme_rows = []
+    for theme, members in sorted(themes.items(), key=lambda pair: (-len(pair[1]), pair[0])):
+        member_verdicts = sorted({shadow_verdict(item) for item in members}, key=SHADOW_VERDICTS.index)
+        theme_rows.append(f'<tr><td>{esc(theme)}</td><td>{len(members)}</td><td>'
+                          f'{esc(", ".join(SHADOW_VERDICT_LABELS[v] for v in member_verdicts))}</td></tr>')
+
+    groups = []
+    for verdict, members in _shadow_groups(items, diffs):
+        cards = "".join(render_shadow_card(i + 1, item, diff,
+                                            notes.get(str(item.get("id")), ""))
+                        for i, (item, diff) in enumerate(members))
+        groups.append(f'<section class="verdict-group"><h2>{esc(SHADOW_VERDICT_LABELS[verdict])} '
+                      f'({len(members)})</h2>{cards}</section>')
+
+    generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    head = (f"<h1>Shadow readiness — {esc(scope)}</h1>"
+            f'<div class="meta">{len(items)} blind comparisons · generated {generated}</div>')
+    if conclusion:
+        head += (f'<div class="card"><p class="note" style="border:0"><b>Conclusion</b>\n'
+                 f'{esc(conclusion)}</p></div>')
+    controls = ('<div class="controls"><span class="meta">View</span>'
+                '<button data-view="side">Side by side</button>'
+                '<button data-view="inline">Inline</button>'
+                '<button id="eq" aria-pressed="false">Hide unchanged paragraphs</button>'
+                '<span class="meta"><del>only in ours</del> · <ins>only in human answer</ins></span></div>')
+    metrics = (f'<section class="metrics"><div class="metric"><span>Readiness</span><b>{readiness}</b>'
+               f'<span>{close}/{answerable} close/answerable; not-answerable and unjudged excluded</span></div>'
+               f'<div class="metric"><span>Served scores</span><b>{sum(served_score(i) is not None for i in items)}/{len(items)}</b>'
+               f'<span>{esc(_score_distribution(items))}</span></div></section>')
+    overview = ('<div class="section-intro"><h2>Verdict</h2><div class="meta">Quality first; wording overlap is supporting evidence.</div></div>'
+                '<table class="verdict-summary"><thead><tr><th>Verdict</th><th>Rows</th></tr></thead>'
+                f'<tbody>{"".join(verdict_rows)}</tbody></table>'
+                '<div class="section-intro"><h2>Themes</h2><div class="meta">Server categories are a first-pass theme; drill before routing a lesson.</div></div>'
+                '<table class="themes"><thead><tr><th>Theme</th><th>Rows</th><th>Verdicts</th></tr></thead>'
+                f'<tbody>{"".join(theme_rows)}</tbody></table>'
+                '<div class="section-intro"><h2>Drill one run</h2><div class="meta">Grouped by verdict, then newest first.</div></div>')
+
+    live = ""
+    if live_items or live_aged_out or live_unavailable:
+        shapes: dict[str, int] = {}
+        for diff in live_diffs:
+            shapes[diff.shape] = shapes.get(diff.shape, 0) + 1
+        summary = " · ".join(f"{count}× {shape}" for shape, count in sorted(
+            shapes.items(), key=lambda pair: -pair[1]))
+        cards = "".join(render_card(i + 1, item, diff, notes.get(str(item.get("id")), ""))
+                        for i, (item, diff) in enumerate(zip(live_items, live_diffs, strict=True)))
+        aged = (f" · {live_aged_out} aged out (older than 14 days, wording no longer kept)"
+                if live_aged_out else "")
+        unavailable = ""
+        if live_unavailable:
+            rows = []
+            for item in live_unavailable:
+                description = str(item.get("delta_description") or "").strip() or "no description"
+                rows.append(f'<li><code>{esc(short(item.get("id")))}</code> — '
+                            f'{esc(description)}</li>')
+            unavailable = ('<div class="card"><div class="head"><h2>Missing live bodies '
+                           f'({len(live_unavailable)})</h2></div><p class="note">Re-fetch with '
+                           '<code>--include-bodies</code>; do not infer a lesson from the description '
+                           f'alone.</p><ul>{"".join(rows)}</ul></div>')
+        live = (f'<section class="live-section"><h1>Sent vs proposed — live edits</h1>'
+                f'<div class="meta">{len(live_items)} deltas · {esc(summary or "—")}{esc(aged)}</div>'
+                '<p class="meta"><del>removed by human</del> · <ins>added by human</ins></p>'
+                f'{cards}{unavailable}</section>')
+
+    return ("<!doctype html><html><head><meta charset=\"utf-8\">"
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            f"<title>Shadow readiness — {esc(scope)}</title><style>{CSS}{SHADOW_CSS}</style></head>"
+            f'<body class="inline-off"><div class="wrap">{head}{metrics}{controls}{overview}'
+            f'{"".join(groups)}{live}</div><script>{JS}</script></body></html>')
+
+
 def render(items: list[dict], diffs: list[Diff], notes: dict[str, str], scope: str,
            conclusion: str, aged_out: int = 0) -> str:
     shapes: dict[str, int] = {}
@@ -646,6 +987,8 @@ def render(items: list[dict], diffs: list[Diff], notes: dict[str, str], scope: s
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--limit", type=int, default=20, help="deltas to fetch (server cap 100)")
+    parser.add_argument("--shadow", action="store_true",
+                        help="fetch a recent, verdict-neutral shadow sample instead of live deltas")
     parser.add_argument("--project", default="", help="explicit project slug (all-projects token)")
     parser.add_argument("--tenant", default="", help="explicit tenant slug")
     parser.add_argument("--from-json", default="",
@@ -663,37 +1006,86 @@ def main(argv: list[str] | None = None) -> int:
     if not items:
         print("no sent-vs-proposed deltas in this scope/window", file=sys.stderr)
         return 1
-    # Three ways a delta can lack bodies, and they mean different things. AGED OUT: the server scrubbed
-    # them at its 14-day email TTL and flags bodies_scrubbed — the LLM-authored description survives and
-    # is still real signal, so those rows get their own section instead of being silently dropped. NOT
-    # REQUESTED: the caller passed a payload fetched without --include-bodies. HOLLOW: neither, which is
-    # a genuine data problem. Telling the human to "re-run with --include-bodies" is only right for the
-    # middle case.
-    aged_out = [i for i in items if i.get("bodies_scrubbed") and not i.get("sent_body")]
-    items = [i for i in items if i.get("proposed_body") and i.get("sent_body")]
-    hollow = len(payload.get("deltas") or []) - len(items) - len(aged_out)
-    if not items:
-        if aged_out and not hollow:
-            print(f"every delta in this window has aged out ({len(aged_out)} scrubbed at the 14-day "
-                  "retention TTL); their descriptions are still in the payload — widen with --limit or "
-                  "run the cycle closer to the sends", file=sys.stderr)
-        else:
-            print("deltas carry no bodies — re-run with --include-bodies", file=sys.stderr)
-        return 1
+    has_shadow = any(is_shadow(item) for item in items)
 
-    notes: dict[str, str] = {}
+    # This is intentionally the pre-shadow live path with the same inputs, ordering, renderers, and
+    # messages. A pure live payload must remain byte-identical apart from its existing UTC timestamp.
+    if not has_shadow:
+        aged_out = [i for i in items if i.get("bodies_scrubbed") and not i.get("sent_body")]
+        items = [i for i in items if i.get("proposed_body") and i.get("sent_body")]
+        hollow = len(payload.get("deltas") or []) - len(items) - len(aged_out)
+        if not items:
+            if aged_out and not hollow:
+                print(f"every delta in this window has aged out ({len(aged_out)} scrubbed at the 14-day "
+                      "retention TTL); their descriptions are still in the payload — widen with --limit or "
+                      "run the cycle closer to the sends", file=sys.stderr)
+            else:
+                print("deltas carry no bodies — re-run with --include-bodies", file=sys.stderr)
+            return 1
+
+        notes: dict[str, str] = {}
+        if args.annotations:
+            notes = json.loads(Path(args.annotations).read_text("utf-8"))
+            unknown = set(notes) - {str(i.get("id")) for i in items}
+            if unknown:
+                print(f"warning: annotations for unknown delta ids: {', '.join(sorted(unknown))}",
+                      file=sys.stderr)
+        conclusion = Path(args.conclusion).read_text("utf-8").strip() if args.conclusion else ""
+
+        diffs = [diff_for(i, args.keep_quotes) for i in items]
+        order = sorted(range(len(items)), key=lambda k: diffs[k].similarity)
+        items = [items[k] for k in order]
+        diffs = [diffs[k] for k in order]
+
+        project, tenant = args.project, args.tenant
+        if not project:
+            project, tenant_local = local_scope(Path.cwd())
+            tenant = tenant or tenant_local
+        scope = " / ".join(p for p in (project or "unknown project", tenant) if p)
+
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M")
+        out = Path(args.out) if args.out else Path(".rootcause/dream") / f"{stamp}-sent-deltas.html"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(render(items, diffs, notes, scope, conclusion, len(aged_out)), "utf-8")
+        md = out.with_suffix(".md")
+        md.write_text(render_markdown(items, diffs, notes, scope, conclusion, str(out), aged_out), "utf-8")
+        if ".rootcause" not in out.resolve().parts:
+            print(f"warning: {out} is outside .rootcause/ and holds raw customer mail — do not commit",
+                  file=sys.stderr)
+        if aged_out:
+            print(f"note: {len(aged_out)} delta(s) aged out (bodies scrubbed at 14 days); their "
+                  "descriptions are in the markdown report", file=sys.stderr)
+        if hollow:
+            print(f"note: {hollow} delta(s) skipped for missing bodies — re-fetch with --include-bodies",
+                  file=sys.stderr)
+        print(f"{md}\n{out}")
+        return 0
+
+    shadow_items = sorted((item for item in items if is_shadow(item)), key=shadow_sort_key)
+    shadow_diffs = [diff_for(item, args.keep_quotes)
+                    if item.get("proposed_body") and item.get("sent_body") else Diff([], 0, 0, 0)
+                    for item in shadow_items]
+    live_all = [item for item in items if not is_shadow(item)]
+    live_aged_out = [item for item in live_all
+                     if item.get("bodies_scrubbed") and not item.get("sent_body")]
+    live_items = [item for item in live_all if item.get("proposed_body") and item.get("sent_body")]
+    live_hollow = [item for item in live_all
+                   if not (item.get("proposed_body") and item.get("sent_body"))
+                   and not (item.get("bodies_scrubbed") and not item.get("sent_body"))]
+
+    notes = {}
     if args.annotations:
         notes = json.loads(Path(args.annotations).read_text("utf-8"))
-        unknown = set(notes) - {str(i.get("id")) for i in items}
+        unknown = set(notes) - {str(item.get("id")) for item in items}
         if unknown:
             print(f"warning: annotations for unknown delta ids: {', '.join(sorted(unknown))}",
                   file=sys.stderr)
     conclusion = Path(args.conclusion).read_text("utf-8").strip() if args.conclusion else ""
 
-    diffs = [diff_for(i, args.keep_quotes) for i in items]
-    order = sorted(range(len(items)), key=lambda k: diffs[k].similarity)
-    items = [items[k] for k in order]
-    diffs = [diffs[k] for k in order]
+    live_diffs = [diff_for(item, args.keep_quotes) for item in live_items]
+    live_order = sorted(range(len(live_items)), key=lambda k: live_diffs[k].similarity)
+    live_items = [live_items[k] for k in live_order]
+    live_diffs = [live_diffs[k] for k in live_order]
 
     project, tenant = args.project, args.tenant
     if not project:
@@ -704,21 +1096,32 @@ def main(argv: list[str] | None = None) -> int:
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M")
     out = Path(args.out) if args.out else Path(".rootcause/dream") / f"{stamp}-sent-deltas.html"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render(items, diffs, notes, scope, conclusion, len(aged_out)), "utf-8")
+    out.write_text(render_shadow(shadow_items, shadow_diffs, notes, scope, conclusion,
+                                 live_items, live_diffs, len(live_aged_out), live_hollow), "utf-8")
     md = out.with_suffix(".md")
-    md.write_text(render_markdown(items, diffs, notes, scope, conclusion, str(out), aged_out), "utf-8")
+    markdown = render_shadow_markdown(shadow_items, shadow_diffs, notes, scope, conclusion, str(out))
+    live_markdown = ""
+    if live_items or live_aged_out:
+        live_markdown = render_markdown(
+            live_items, live_diffs, notes, scope, conclusion, str(out), live_aged_out)
+    elif live_hollow:
+        live_markdown = f"# Sent vs proposed — {scope}"
+    if live_hollow:
+        live_markdown += "\n\n" + render_missing_live_markdown(live_hollow)
+    if live_markdown:
+        markdown += "\n\n---\n\n" + live_markdown
+    md.write_text(markdown, "utf-8")
     if ".rootcause" not in out.resolve().parts:
         print(f"warning: {out} is outside .rootcause/ and holds raw customer mail — do not commit",
               file=sys.stderr)
-    if aged_out:
-        print(f"note: {len(aged_out)} delta(s) aged out (bodies scrubbed at 14 days); their "
-              "descriptions are in the markdown report", file=sys.stderr)
-    if hollow:
-        print(f"note: {hollow} delta(s) skipped for missing bodies — re-fetch with --include-bodies",
-              file=sys.stderr)
-    print(f"{md}\n{out}")  # agent reads the markdown; the HTML is for the human
+    if live_aged_out:
+        print(f"note: {len(live_aged_out)} live delta(s) aged out (bodies scrubbed at 14 days); "
+              "their descriptions are in the markdown report", file=sys.stderr)
+    if live_hollow:
+        print(f"note: {len(live_hollow)} live delta(s) skipped for missing bodies — re-fetch with "
+              "--include-bodies", file=sys.stderr)
+    print(f"{md}\n{out}")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

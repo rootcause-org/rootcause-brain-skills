@@ -1,0 +1,75 @@
+{
+  "deltas": [
+    {
+      "id": "shadow-equivalent-0001",
+      "shadow": true,
+      "shadow_verdict": "equivalent",
+      "served_score": 5,
+      "sent_at": "2026-08-31T10:00:00Z",
+      "related_run_id": "run-equivalent-0001",
+      "topic": "Synthetic schedule answer",
+      "question_excerpt": "Is the synthetic session still scheduled for Tuesday?",
+      "delta_category": "factual",
+      "delta_description": "Both answers confirm the same schedule.",
+      "similarity": 0.12,
+      "proposed_body": "Yes, the synthetic session remains on Tuesday.",
+      "sent_body": "The session is still planned for Tuesday."
+    },
+    {
+      "id": "shadow-same-0002",
+      "shadow": true,
+      "shadow_verdict": "same_outcome_details_differ",
+      "served_score": 4,
+      "sent_at": "2026-08-31T09:00:00Z",
+      "related_run_id": "run-same-0002",
+      "topic": "Synthetic registration",
+      "question_excerpt": "Can a sample registration move to group B?",
+      "delta_category": "policy",
+      "delta_description": "Both answers allow the move; the human supplied an extra detail.",
+      "similarity": 0.18,
+      "proposed_body": "We can move the sample registration to group B.",
+      "sent_body": "We can move it to group B and will send a confirmation."
+    },
+    {
+      "id": "shadow-divergent-0003",
+      "shadow": true,
+      "shadow_verdict": "divergent_facts",
+      "served_score": 2,
+      "sent_at": "2026-08-31T08:00:00Z",
+      "related_run_id": "run-divergent-0003",
+      "topic": "Synthetic opening date",
+      "question_excerpt": "When does the fictional enrolment open?",
+      "delta_category": "factual",
+      "delta_description": "The proposed and human dates differ.",
+      "similarity": 0.72,
+      "proposed_body": "Fictional enrolment opens on 10 October.",
+      "sent_body": "Fictional enrolment opens on 15 November."
+    },
+    {
+      "id": "shadow-missed-0004",
+      "shadow": true,
+      "shadow_verdict": "missed_content",
+      "served_score": 3,
+      "sent_at": "2026-08-31T07:00:00Z",
+      "related_run_id": "run-missed-0004",
+      "topic": "Synthetic two-part question",
+      "question_excerpt": "Is lunch included, and where is the sample venue?",
+      "delta_category": "omission",
+      "delta_description": "The proposal answered lunch but omitted the venue.",
+      "similarity": 0.44,
+      "proposed_body": "Lunch is included.",
+      "sent_body": "Lunch is included. The sample venue is Example Hall."
+    },
+    {
+      "id": "shadow-na-0005",
+      "shadow": true,
+      "shadow_verdict": "not_answerable",
+      "sent_at": "2026-08-31T06:00:00Z",
+      "related_run_id": "run-na-0005",
+      "topic": "Synthetic internal follow-up",
+      "delta_category": "other",
+      "delta_description": "The human message records an internal-only outcome.",
+      "bodies_scrubbed": true
+    }
+  ]
+}

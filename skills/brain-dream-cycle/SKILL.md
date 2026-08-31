@@ -47,16 +47,71 @@ Read when relevant:
    rc fleet runs --kind email --days 14 --learning
    rc fleet patterns --days 30
    ```
-   Weight evidence in this order: explicit feedback, sent-vs-proposed deltas, repeated run patterns,
-   then journal/debug traces. Use `rc dev learning evidence` instead of private DB queries; it already ranks
-   feedback by sharpest criticism and sent deltas by strongest human rewrite. `--plane
-   feedback|deltas|triage` narrows it; `rc fleet runs --learning` finds the same candidates from the
-   run side.
+   Weight evidence in this order: explicit feedback, sent-vs-proposed evidence, repeated run patterns,
+   then journal/debug traces. Use `rc dev learning evidence` instead of private DB queries; it ranks
+   feedback by sharpest criticism and live deltas by strongest human rewrite. Shadow evidence is a
+   recent, verdict-neutral sample instead. `--plane feedback|deltas|shadow|triage` narrows it; `rc
+   fleet runs --learning` finds the same candidates from the run side.
 
    Stop here if the corpus is empty or too weak. Report "no durable lesson" with the commands run
    rather than creating a speculative brain rule.
 
-3. Read the sent-vs-proposed deltas as diffs, not JSON:
+### Shadow mode
+
+Detect shadow per evidence row only from the wire field `shadow: true`. Never infer it from low
+similarity, a large diff, suppressed-looking prose, or the verdict. A mixed payload is normal: the
+report partitions rows and keeps each live row in the existing edit frame.
+
+Pull an unbiased readiness sample first, then narrow to misses only after reading its distribution:
+
+```bash
+rc dev learning evidence --plane shadow --limit 100 -o json
+rc dev learning evidence --plane shadow --verdict divergent_facts,missed_content \
+  --include-bodies --limit 100 -o json
+rc dev learning evidence --plane shadow --include-bodies --limit 100 -o json |
+  uv run --no-project python "$DREAM_SKILL/scripts/sent_delta_report.py" --from-json -
+uv run --no-project python "$DREAM_SKILL/scripts/sent_delta_report.py" --shadow --limit 100
+```
+
+The command still writes both audiences: verdict-first `.md` for the agent and `.html` for the human.
+
+Read in progressive-disclosure order: **verdict → recurring themes → one representative run**.
+`served_score` and the body comparison support the verdict; word overlap does not define it. Treat
+`equivalent` and `same_outcome_details_differ` as positive blind evidence—the human never saw the
+proposal, so a longer answer, different greeting, or different wording is not a correction. Readiness
+is `(equivalent + same_outcome_details_differ) / answerable shadow rows`: show both numerator and
+denominator, exclude `not_answerable` and unjudged rows, and report the served-score distribution
+beside it. Graduation is a human decision, never an automatic threshold.
+
+A lesson requires customer-impacting `divergent_facts` or `missed_content`, a representative debug
+drill, and recurrence or one high-impact/high-confidence failure. Positive rows validate current
+behavior; do not mine their prose into persona guidance. Route the evidenced cause, not the textual
+delta. Fix at the highest level that generalizes; tenant is the easiest level to oversteer.
+
+| Level / bucket | Route here when |
+|---|---|
+| RootCause host (always) | Product-agnostic system-prompt or loop behavior every project should have. |
+| Shared grounding mirror (when present) | Facts/helpers reused by variant projects such as `-support` / `-staff` siblings. |
+| Project brain (always) | Shared product facts, playbooks, terminology, or investigation rules. |
+| Tenant brain/overlay (always) | A policy, fact, or term is truly tenant-specific. |
+| Settings (always) | Persona owns voice/language/signature; triage owns process/skip policy and rules. |
+| Grounding-data gap (non-brain) | The required fact was unavailable from DB, KB, website, or mirrors. |
+| Action execution/wiring | The correct outcome needs a mutation or reviewer operation the workflow cannot represent. |
+| Human-only knowledge (non-brain) | A phone call, private decision, or other out-of-band fact decided the answer. |
+
+Host convention is **as-if-done**: `reply.actions` proposals and `👀` reviewer to-do lines are performed
+by the reviewer before sending. Judge them as executed. If the human performs the same mutation and our
+draft describes it as done with a backing proposed action or `👀` line, the shadow outcome is
+`equivalent`. A `proposed` action status in a shadow trace is expected—shadow suppresses the draft, so
+nothing executes—and is not evidence of a false claim. The real miss is asking the **customer** to
+confirm or authorize instead of proposing the action or giving the reviewer a `👀` task.
+
+Separate content quality from execution coverage. Keep raw bodies local and temporary. An unpaired
+shadow run usually means the human has not answered yet; check the thread before assigning any quality
+meaning.
+
+3. Read live sent-vs-proposed deltas as edits, not JSON. Shadow rows use the verdict-first frame above;
+   use `--shadow` or the piped `--plane shadow` command there so sampling stays verdict-neutral:
    ```bash
    uv run --no-project python "$DREAM_SKILL/scripts/sent_delta_report.py" --limit 20
    uv run --no-project python "$DREAM_SKILL/scripts/sent_delta_report.py" --limit 20 \
@@ -77,9 +132,11 @@ Read when relevant:
      word-level highlighting, a `polish → replaced` verdict and the category per delta. Do not read it
      yourself.
 
-   Both use a fuzzy paragraph alignment with a **word-level** diff inside each pair (a line diff would
+   Live rows use a fuzzy paragraph alignment with a **word-level** diff inside each pair (a line diff would
    paint every rewritten paragraph solid red/green and hide the actual edit), drop quoted reply
-   history from the diff, and order deltas most-rewritten first.
+   history from the diff, and order deltas most-rewritten first. Shadow rows are grouped by verdict and
+   ordered by verdict severity then recency; their diff is secondary and uses neutral “only in ours” /
+   “only in human answer” labels.
 
    **Two similarity numbers, never the same thing.** The report's `polish → replaced` verdict and its
    ordering come from the script's own word-level metric over display text. The payload's

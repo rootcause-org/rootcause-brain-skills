@@ -1,0 +1,47 @@
+{
+  "deltas": [
+    {
+      "id": "mixed-shadow-0001",
+      "shadow": true,
+      "shadow_verdict": "equivalent",
+      "served_score": 5,
+      "sent_at": "2026-08-31T10:00:00Z",
+      "related_run_id": "run-mixed-shadow-0001",
+      "topic": "Synthetic blind answer",
+      "question_excerpt": "Can the sample booking stay unchanged?",
+      "delta_category": "factual",
+      "delta_description": "Both independent answers keep the sample booking unchanged.",
+      "similarity": 0.1,
+      "proposed_body": "The sample booking can stay unchanged.",
+      "sent_body": "No change is needed for this sample booking."
+    },
+    {
+      "id": "mixed-live-0002",
+      "shadow": false,
+      "sent_at": "2026-08-31T09:00:00Z",
+      "related_run_id": "run-mixed-live-0002",
+      "delta_category": "tone",
+      "delta_description": "The human made the live draft shorter.",
+      "similarity": 0.7,
+      "proposed_body": "Thank you very much for your synthetic message.",
+      "sent_body": "Thanks for your message."
+    },
+    {
+      "id": "aged0003-0000-0000-0000-000000000003",
+      "shadow": false,
+      "sent_at": "2026-08-15T09:00:00Z",
+      "related_run_id": "run-mixed-live-aged-0003",
+      "delta_category": "omission",
+      "delta_description": "The live synthetic edit added a sample policy detail.",
+      "bodies_scrubbed": true
+    },
+    {
+      "id": "hollow0004-0000-0000-0000-000000000004",
+      "shadow": false,
+      "sent_at": "2026-08-31T08:00:00Z",
+      "related_run_id": "run-mixed-live-hollow-0004",
+      "delta_category": "other",
+      "delta_description": "Synthetic live metadata arrived without requested bodies."
+    }
+  ]
+}
