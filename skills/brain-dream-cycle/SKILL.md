@@ -110,6 +110,18 @@ Separate content quality from execution coverage. Keep raw bodies local and temp
 shadow run usually means the human has not answered yet; check the thread before assigning any quality
 meaning.
 
+Classification discipline:
+
+- **Rubric first, traces second.** Before classifying a delta, read the draft conventions the run was
+  actually given (`rc run debug` lists the prompt sections): proposed actions and `👀` reviewer to-do
+  lines count as executed, link and marker policies bind. A worker who reads only traces calls
+  convention-correct drafts "false claims".
+- **The human's send is strong evidence, not ground truth.** Check the trace's grounded records too;
+  when ours was right, say so — the verdict is about the customer outcome, not about matching the human.
+- **Splitting classification across workers:** fix the taxonomy and verdict rubric in the brief up
+  front, canonicalize theme slugs when merging, and reconcile with a mechanics trace of the host/brain
+  before presenting themes.
+
 3. Read live sent-vs-proposed deltas as edits, not JSON. Shadow rows use the verdict-first frame above;
    use `--shadow` or the piped `--plane shadow` command there so sampling stays verdict-neutral:
    ```bash
