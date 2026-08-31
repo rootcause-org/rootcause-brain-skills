@@ -18,9 +18,10 @@ FROM python:3.12-slim
 # ripgrep: `rg` — fast navigation over the read-only mirrors + brain.
 # iptables: NOT for the agent (cap-dropped, non-root). The host reuses THIS image for a short-lived
 #          privileged sidecar that installs the default-deny egress firewall; inert without NET_ADMIN.
+# jq     : shapes/filters connector JSON in the same pipe as curl; prod runs died on `jq: command not found`.
 # ffmpeg : general media tooling the agent calls ad-hoc.
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y git ripgrep iptables ffmpeg \
+    && apt-get install --no-install-recommends -y git ripgrep iptables jq ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Git refuses a repo owned by another uid; every /mirrors mount is host-owned while the agent runs as
