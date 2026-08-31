@@ -216,7 +216,7 @@ Email -> contact (search POST, allowlisted):
 Their tickets:
   python -m lib.api post intercom /conversations/search --pick conversations.*.id,conversations.*.title,conversations.*.state --json '{"query":{"field":"contact_ids","operator":"=","value":"<contact_id>"},"sort":{"field":"updated_at","order":"desc"}}'
 
-Shape JSON with --pick or python, not jq.
+Prefer --pick over piping through jq/python.
 """
 
 

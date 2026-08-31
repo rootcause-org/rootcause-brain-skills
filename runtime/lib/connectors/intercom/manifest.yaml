@@ -71,8 +71,8 @@ help_md: |
       python -m lib.connectors.intercom get conversation <id>
       python -m lib.connectors.intercom get contact <id> --pick id,email,name
 
-  `get` takes `--pick` / `--no-pick` too. Shape JSON with `--pick` or python — `jq` is not
-  guaranteed in the workspace image.
+  `get` takes `--pick` / `--no-pick` too. Prefer `--pick` over piping through `jq`/python —
+  it trims the payload before it reaches your context.
 
   For raw access the generic CLI also works, but single-page only (items_field varies per
   resource, so `--paginate` cannot stitch pages):
