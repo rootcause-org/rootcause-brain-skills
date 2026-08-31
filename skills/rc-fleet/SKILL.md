@@ -80,8 +80,8 @@ Read:
    Heaviness is not a flag: judge it from the run's turn count and wall-clock duration. Unusually
    many turns or a long duration against the fleet's norm marks a run worth drilling.
 
-4. Drill two to five flagged runs with the `rc-debug` skill. The worst-offenders section gives full
-   UUIDs.
+4. Drill two to five flagged runs with the `rc-debug` skill. Pass any listed run UUID directly to
+   `rc run thread <uuid>` for its thread/session lineage.
 
    `LRN:sent_delta` marks a live human edit. `LRN:sent_delta/<verdict>` marks a blind shadow
    comparison (`/unjudged` when no verdict exists); `equivalent` is positive evidence, not a failure.

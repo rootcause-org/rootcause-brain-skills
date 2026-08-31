@@ -2,6 +2,7 @@
 
 `rc run debug <id>` writes a markdown index plus JSONL event log for one production run. Read the
 markdown index first; use JSONL only for targeted drill-down.
+Use `rc run thread <run-id>` when you need that run's provider thread, session, and neighboring runs.
 
 | Trace concept | What it means | Where to look |
 |---|---|---|

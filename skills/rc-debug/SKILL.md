@@ -23,7 +23,7 @@ Also read [docs/actions.md](../../docs/actions.md) when the trace includes actio
 Default to evidence-first. A single run is signal, not permission to oversteer the brain.
 
 1. Resolve the input.
-   - Run UUID: continue with `rc run debug <uuid>`.
+   - Run UUID: use `rc run thread <uuid>` for thread/session lineage, then `rc run debug <uuid>` for the trace.
    - `rc fleet actions` row: use its `run_id`, not the action-run `id`; the tokenized `run_url` opens
      the same originating run in the UI. A null `run_id` is a direct operator action with no run trace.
      Read `error_class` first (`rc run actions <uuid>` shows it per run too): an infra class
