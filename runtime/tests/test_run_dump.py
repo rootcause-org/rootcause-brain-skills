@@ -114,6 +114,23 @@ class RenderIndex(unittest.TestCase):
                        "## Drill down"):
             self.assertIn(needle, md)
 
+    def test_reply_attachments_include_delivery_result(self):
+        bundle = _bundle()
+        bundle["events"][-1]["args"]["attachments"] = [
+            {"path": "/tmp/outbox/report.pdf", "filename": "report.pdf", "size_bytes": 439296,
+             "mime_type": "application/pdf", "status": "shipped"},
+            {"path": "/tmp/outbox/unsafe.bin", "filename": "unsafe.bin", "size_bytes": 12,
+             "status": "dropped", "drop_reason": "sniff_rejected"},
+        ]
+        md = render_index(bundle)
+        for needle in ("**Attachments:** 2 declared · 1 shipped · 1 dropped",
+                       "`report.pdf` · 439296 bytes · `application/pdf` · `/tmp/outbox/report.pdf` · shipped",
+                       "unsafe.bin", "dropped: sniff_rejected"):
+            self.assertIn(needle, md)
+
+        bundle["events"][-1]["args"].pop("attachments")
+        self.assertIn("**Attachments:** 0 declared · 0 shipped · 0 dropped", render_index(bundle))
+
     def test_duration_from_iso_timestamps(self):
         self.assertIn("· 42.0s", render_index(_bundle()))
 

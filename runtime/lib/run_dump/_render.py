@@ -280,7 +280,9 @@ def decorate(events: list[dict]) -> list[dict]:
             e["label"] = _label(e["command"])
         elif e["tool"] == "reply":
             e["command"] = " ".join(
-                f"{k}={'yes' if v else 'no'}" if isinstance(v, bool) else f"{k}={v}"
+                f"{k}={'yes' if v else 'no'}" if isinstance(v, bool)
+                else f"{k}={len(v)}" if isinstance(v, list)
+                else f"{k}={v}"
                 for k, v in args.items()
             )
             e["label"] = "reply"
@@ -428,6 +430,28 @@ def _jsonl_name(run: dict) -> str:
 # ---------------------------------------------------------------- index (the concise file)
 
 
+def _attachment_summary(events: list[dict]) -> str | None:
+    """Byte-free terminal reply attachment result; None means the run has no reply event."""
+    reply = next((e for e in reversed(events) if e.get("tool") == "reply"), None)
+    if reply is None:
+        return None
+    attachments = (reply.get("args") or {}).get("attachments") or []
+    shipped = sum(a.get("status") == "shipped" for a in attachments if isinstance(a, dict))
+    details = []
+    for a in attachments:
+        if not isinstance(a, dict):
+            continue
+        state = a.get("status") or "unknown"
+        if a.get("drop_reason"):
+            state += f": {a['drop_reason']}"
+        details.append(
+            f"`{a.get('filename') or '?'}` · {int(a.get('size_bytes') or 0)} bytes · "
+            f"`{a.get('mime_type') or 'unknown MIME'}` · `{a.get('path') or '?'}` · {state}"
+        )
+    summary = f"{len(attachments)} declared · {shipped} shipped · {len(attachments) - shipped} dropped"
+    return summary + (" — " + "; ".join(details) if details else "")
+
+
 def render_index(bundle: dict) -> str:
     """The markdown index for a run bundle. Calls `decorate` itself, so a bare bundle is enough."""
     run = bundle["run"]
@@ -464,10 +488,12 @@ def render_index(bundle: dict) -> str:
         f"- **Model:** `{model or '?'}`",
         f"- **Steps:** {len(main)} main" + (f" + {len(pre)} grounding" if pre else "")
         + f" · **Egress:** {len(egress)}" + (f" ({blocked} blocked)" if blocked else ""),
-        f"- **Events (full, queryable):** `{jsonl_name}` — one JSON object per event; "
-        f"jq it (see Drill down at the bottom).",
-        "",
     ]
+    attachments = _attachment_summary(events)
+    if attachments is not None:
+        L.append(f"- **Attachments:** {attachments}")
+    L += [f"- **Events (full, queryable):** `{jsonl_name}` — one JSON object per event; "
+          f"jq it (see Drill down at the bottom).", ""]
     if run.get("topic"):
         L += ["## Topic", "", run["topic"], ""]
     L += _projection_input_lines(run)

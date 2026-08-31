@@ -17,7 +17,7 @@ markdown index first; use JSONL only for targeted drill-down.
 | Mirrors/KB | External source/KB snapshots mounted read-only and refreshed independently. | Files read under `/mirrors`/`/kb`, egress, `rc fleet health`. |
 | Egress | Outbound HTTP goes through production allowlist. | Egress section, blocked-egress flags, command output. |
 | Actions/preflight | Run proposes actions only; schema/preflight can block proposals in-loop. | Outcome actions, action/preflight timeline labels. |
-| Terminal outcome | Reply/raw answer, decline, error, journal/action/PR proposals. | Outcome, flags, metadata. |
+| Terminal outcome | Reply/raw answer, decline, error, journal/action/PR proposals; byte-free attachment delivery/drop results. | Outcome, `Attachments` header line, reply event `args.attachments`, flags, metadata. |
 | Post-loop | Journal commit, action rows, source PRs, blocked-egress notes, callback delivery. | `rc run brain-diff <id>`, `rc run thread <id>`, `rc fleet health`. |
 
 ## Reading Order
