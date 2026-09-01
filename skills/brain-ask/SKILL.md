@@ -71,5 +71,38 @@ Read:
    Report the journal commit SHA, message, changed files, and meaningful diff summary. If nothing
    changed, say the run answered without persisting durable knowledge.
 
+## Follow-up turns (simulating a patient/customer reply)
+
+`rc ask --session <id>` does **not** replay the earlier email or draft. A reused session only
+warm-starts the new run with a compact digest of the prior turns' *command labels* ("ran:
+search_patient …; search_availability …; outcome: Draft+Note") — never the sender's words, the
+offered options, or the previous draft (rootcause `internal/warmstart`). Prompt-mode runs also never
+open the `thread_coherence` / `sender_history` sections (those need real `PriorMessages`, i.e. an
+ingested mailbox thread). Two consequences, both observed in prod (DentAI 869et84n6):
+
+- a bare follow-up like "Doe maar 21 september om 15u05" arrives with **no thread context**, and
+- the grounding pre-pass may fill that vacuum with a **journal file from an unrelated earlier run**
+  (same-evening test runs about the same patient are the classic trap), silently steering the
+  appointment type or intent.
+
+To simulate a reply, embed the whole prior conversation in the question — quoted, oldest first,
+exactly as a mail client would — and then the new reply on top:
+
+```bash
+rc ask "$(cat <<'MAIL'
+Doe maar 21 september 2026 om 15u05. Mvg, Thomas
+
+> Op ma 31 aug schreef Team De Kies:
+> Beste Thomas, voor een vulling bij Mia kan je kiezen uit: 1) ma 21 sep 15u05 …
+>> Op ma 31 aug schreef Thomas Bollen:
+>> Ik zou graag een vulling laten doen bij Mia …
+MAIL
+)" --subject "Re: Afspraak vulling"
+```
+
+Use `--session` only when you want the *investigation* continuity (which scripts already ran),
+not for thread history. If the run still picks up a stale journal note, mention it in the report:
+that is a grounding pre-pass artefact, not a brain bug.
+
 For the full reasoning/tool trail, use the `rc-debug` skill with the captured `run_id`. If this run
 validated a local brain change, finish through `brain-publish`.
