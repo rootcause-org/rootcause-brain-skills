@@ -1,0 +1,29 @@
+key: dentai_agenda_preview
+name: DentAI agenda preview
+kinds: [token]
+connector_module: ""
+env_var: RC_CONN_DENTAI_AGENDA_PREVIEW
+credential_exposure: broker
+tenant_required: true
+egress_hosts:
+  - app.dentai.be
+base_url: https://app.dentai.be
+auth:
+  strategy: bearer
+pagination:
+  style: none
+read_endpoints:
+  post:
+    - /internal/agenda/operations
+help_md: |
+  Previews tenant-bound DentAI practice-availability changes without applying them. Store this
+  connection on a tenant, never on the project. The trusted entry point is the project brain wrapper
+  `skills/agenda/scripts/agenda_preview.py`; real execution belongs only to the confirmed
+  `agenda_apply_operation` action.
+
+  The raw token remains inside rootcause's broker. Ordinary run environments receive only the broker
+  route and connector roster; call the wrapper rather than constructing a request directly.
+onboarding_md: |
+  Ask can the DentAI operator mint the preview credential for this tenant now?
+  Store the minted preview value on this tenant, never at project scope.
+  It can preview agenda operations but cannot execute them.
