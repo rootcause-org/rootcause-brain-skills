@@ -234,6 +234,16 @@ to retrieve and costs less context. Keep a test or fixture visible only when the
 explicit diagnostic workflow that reads or executes it and its contents are safe for the runtime
 audience. This is a relevance boundary, not a secrecy substitute: ignored files still live in Git.
 
+Never cite an ignored path from run-visible content. The run agent cannot open it, so a docstring,
+`AGENTS.md` row, or skill line such as "see `_internal/dump-decisions.md` (authoritative)" is a dangling
+reference that sends the model hunting for a file that is not in its filesystem. Keep operator-only
+cross-references inside the ignored area itself; in run-visible content either inline the conclusion the
+run needs or attribute it without a path ("an operator decision"). The structure lint reports
+run-visible references to ignored paths as notices.
+
+Do not list `.gitignore` or `.replypenignore` in `.replypenignore`: the host already removes both from
+the run-visible view.
+
 ### Feeding the triage gate (`include_in: [triage]`)
 
 Before the main loop runs, a cheap **triage** classifier decides process-vs-skip. Its prompt is built

@@ -21,7 +21,8 @@ Read [docs/mirrors.md](../../docs/mirrors.md) when a script uses `lib.fs`, `/mir
 mounts.
 
 For committed maintainer-only content, use root `.replypenignore` rules described in the brain model.
-Do not use `exclude_in` frontmatter: it has no run-visibility effect.
+Do not use `exclude_in` frontmatter: it has no run-visibility effect. Never cite an ignored path from
+run-visible content — the run agent cannot open it.
 
 ## Route Broad Prompts
 
