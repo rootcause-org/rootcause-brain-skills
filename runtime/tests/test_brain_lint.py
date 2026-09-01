@@ -69,6 +69,25 @@ def test_lint_brain_all_good(tmp_path: Path) -> None:
     assert _fails(lint_brain(tmp_path)) == []
 
 
+def test_lint_brain_validates_action_surfaces_in_live_and_draft_manifests(tmp_path: Path) -> None:
+    _seed_brain(tmp_path)
+    _write(tmp_path / "actions/refund/manifest.yaml",
+           "id: refund\ndescription: Refund a customer\nsurfaces: [gmail, dashboard_chat]\n")
+    _write(tmp_path / "actions-drafts/bad/manifest.yaml",
+           "id: bad\ndescription: Bad draft\nsurfaces: [email]\n")
+    _write(tmp_path / "actions/bad_shape/manifest.yaml",
+           "id: bad_shape\ndescription: Bad shape\nsurfaces: gmail\n")
+
+    findings = [f for f in _fails(lint_brain(tmp_path)) if f.rule == "action-surfaces"]
+
+    assert [f.path for f in findings] == [
+        "actions/bad_shape/manifest.yaml",
+        "actions-drafts/bad/manifest.yaml",
+    ]
+    assert "must be a list" in findings[0].message
+    assert "unknown action surface 'email'" in findings[1].message
+
+
 def test_lint_brain_flags_python_outside_supported_roots(tmp_path: Path) -> None:
     _seed_brain(tmp_path)
     _write(tmp_path / "notes/faq/scripts/generate_index.py", "print('index')\n")

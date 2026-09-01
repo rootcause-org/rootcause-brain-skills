@@ -36,6 +36,10 @@ actions/<id>/
 
 - `manifest.yaml` describes the action, param schema, any hosted write connections, and its `autonomy`.
   `description` is for the agent; `display_name` + `customer_description` are customer-facing.
+- Optional `surfaces:` limits host awareness, proposal, and execution to `chat`, `dashboard_chat`,
+  `gmail`, `outlook`, `intercom`, `whatsapp`, `compose`, `prompt_api`, `mcp`, `embassy`, or `console`.
+  Omission means all; unknown values fail lint and registry loading. Files remain mounted wholesale:
+  this gates action eligibility, not filesystem visibility.
 - `preflight.py`, when present, is read-only and blocks unsafe/mis-grounded params before proposal.
 - `policy.py`, when present, is read-only and decides per-invocation whether an `autonomy: policy` action
   auto-executes or escalates to a human (see [Autonomy](#autonomy-human--policy--auto)).
@@ -44,6 +48,10 @@ actions/<id>/
 
 Prefer single-purpose, reviewer-legible actions with one concrete business outcome. Split multi-system
 workflows unless the combined operation is atomic and idempotent.
+
+**Write-plane stance:** ReplyPen installs no RLS on customer tables. Tenant scope is host-stamped and
+tenant-selection params are rejected; deterministic, human-vetted, digest-pinned actions must scope
+every query with that binding. Project rule `actions-only-host-stamped-env` backs up review.
 
 Action docs/runbooks should put exact safety guards and verification checks near the top: required
 evidence, disqualifying states, preflight expectations, post-execution proof, and when to refuse or
