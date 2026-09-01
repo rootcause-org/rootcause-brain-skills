@@ -95,7 +95,7 @@ write them in the project's customer language. `display_name` becomes the mailbo
 - `red` — destructive: cancel, delete, remove
 - `orange` — caution: modify existing state, transitions with side effects
 - `blue` — neutral: send, notify, informational
-- `gray` — secondary / low-stakes housekeeping
+- `gray` — secondary / low-stakes housekeeping. The only non-cosmetic colour: a gray action that succeeded with an empty summary is omitted from the reviewer note's "Executed automatically in this run" ledger (it stays in the canonical executed-actions list); failures and summaries always show.
 - `teal` — lookup / verify / re-check
 - `purple` — special / uncommon operations
 
