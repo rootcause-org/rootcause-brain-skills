@@ -154,6 +154,9 @@ def _check_manifest_surfaces(path: Path, rel: str) -> list[Finding]:
     if not isinstance(surfaces, list):
         return [Finding(rel, "FAIL", f"`surfaces` must be a list (allowed: {allowed})",
                         "action-surfaces")]
+    if not surfaces:
+        return [Finding(rel, "FAIL", "`surfaces` must contain at least one value; omit it to allow all",
+                        "action-surfaces")]
     findings: list[Finding] = []
     seen: set[str] = set()
     for value in surfaces:

@@ -77,15 +77,23 @@ def test_lint_brain_validates_action_surfaces_in_live_and_draft_manifests(tmp_pa
            "id: bad\ndescription: Bad draft\nsurfaces: [email]\n")
     _write(tmp_path / "actions/bad_shape/manifest.yaml",
            "id: bad_shape\ndescription: Bad shape\nsurfaces: gmail\n")
+    _write(tmp_path / "actions/empty/manifest.yaml",
+           "id: empty\ndescription: Empty\nsurfaces: []\n")
+    _write(tmp_path / "actions/null/manifest.yaml",
+           "id: null\ndescription: Null\nsurfaces: null\n")
 
     findings = [f for f in _fails(lint_brain(tmp_path)) if f.rule == "action-surfaces"]
 
     assert [f.path for f in findings] == [
         "actions/bad_shape/manifest.yaml",
+        "actions/empty/manifest.yaml",
+        "actions/null/manifest.yaml",
         "actions-drafts/bad/manifest.yaml",
     ]
     assert "must be a list" in findings[0].message
-    assert "unknown action surface 'email'" in findings[1].message
+    assert "omit it to allow all" in findings[1].message
+    assert "must be a list" in findings[2].message
+    assert "unknown action surface 'email'" in findings[3].message
 
 
 def test_lint_brain_flags_python_outside_supported_roots(tmp_path: Path) -> None:
