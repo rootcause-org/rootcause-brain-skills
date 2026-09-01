@@ -132,9 +132,12 @@ Also read [docs/actions.md](../../docs/actions.md) when publishing `actions/<id>
 
 9. **Before every `stable` publish, reconcile an actively used `edge`.** This is a consistency gate,
    not a reason to invent a canary pause after stable was already authorized:
-   - Read project-channel status and run the candidate's `edge` preflight. A positive
-     `canary.checked` means at least one tenant currently consumes `edge`; zero means no edge consumer
-     needs alignment.
+   - Read project-channel status and run the candidate's `edge` preflight. `canary.consumers` is the
+     authoritative active edge-pin count; never infer use from `canary.checked` (an untemplated brain
+     has consumers but compiles none).
+   - When `canary.consumers == 0`, do not create, advance, or align edge. Project brain sync asks the
+     server to garbage-collect any stale local/origin edge ref; verify status no longer reports edge.
+     A direct edge promote is expected to fail with `BRAIN_EDGE_UNUSED`.
    - If active `edge` already resolves to `$SHA`, continue to `stable`.
    - If active `edge` is an ancestor of `$SHA`, publish the exact candidate to `edge` first. Observe it
      before `stable` when the change risk warrants a canary interval; when an immediate stable release
