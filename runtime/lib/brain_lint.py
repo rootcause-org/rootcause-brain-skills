@@ -41,6 +41,10 @@ from .action_lint import lint_actions
 # Mirror bootstrap.go's descMaxLen / descHeadBytes so the lint's verdict matches what the tree renders.
 DESC_MAX_LEN = 90
 DESC_HEAD_BYTES = 2048
+ACTION_SURFACES = (
+    "chat", "dashboard_chat", "gmail", "outlook", "intercom", "whatsapp",
+    "compose", "prompt_api", "mcp", "embassy", "console",
+)
 
 # Leading-phrase patterns that describe *contents* ("what this holds") instead of *when to open this*.
 # WARN-only and deliberately small — a few high-precision openers in English + Dutch, matched at the
@@ -137,6 +141,35 @@ def _manifest_description(path: Path) -> str | None:
     return _tidy(desc)
 
 
+def _check_manifest_surfaces(path: Path, rel: str) -> list[Finding]:
+    """Reject malformed or unknown manifest surface allowlists."""
+    try:
+        data = yaml.safe_load(path.read_text("utf-8"))
+    except (OSError, yaml.YAMLError):
+        return []  # Existing manifest parsing/description checks report malformed YAML.
+    if not isinstance(data, dict) or "surfaces" not in data:
+        return []
+    surfaces = data["surfaces"]
+    allowed = ", ".join(ACTION_SURFACES)
+    if not isinstance(surfaces, list):
+        return [Finding(rel, "FAIL", f"`surfaces` must be a list (allowed: {allowed})",
+                        "action-surfaces")]
+    findings: list[Finding] = []
+    seen: set[str] = set()
+    for value in surfaces:
+        if not isinstance(value, str) or value not in ACTION_SURFACES:
+            findings.append(Finding(
+                rel, "FAIL", f"unknown action surface {value!r} (allowed: {allowed})",
+                "action-surfaces",
+            ))
+            continue
+        if value in seen:
+            findings.append(Finding(rel, "FAIL", f"action surface {value!r} is repeated",
+                                    "action-surfaces"))
+        seen.add(value)
+    return findings
+
+
 def _check(path: Path, rel: str, desc: str | None, kind: str) -> list[Finding]:
     """Turn one file's extracted description into findings (missing/overlong + style WARN)."""
     if desc is None:
@@ -204,6 +237,11 @@ def lint_brain(brain_root: str | Path) -> list[Finding]:
         findings += _check(manifest, _rel(root, manifest), _manifest_description(manifest),
                            "action manifest")
 
+    surface_manifests = set(root.glob("actions/*/manifest.yaml"))
+    surface_manifests.update(root.glob("actions-drafts/*/manifest.yaml"))
+    for manifest in sorted(surface_manifests):
+        findings += _check_manifest_surfaces(manifest, _rel(root, manifest))
+
     # Bind the sibling lint when this plugin loads, before collected brain tests can replace the
     # top-level ``lib`` module in ``sys.modules`` with a test double.
     findings += [Finding(f.path, f.level, f.message, f.rule) for f in lint_actions(root)]
@@ -218,6 +256,7 @@ def _rel(root: Path, p: Path) -> str:
 
 
 _RULE_LABELS = {
+    "action-surfaces": "action surfaces",
     "description-missing": "missing descriptions",
     "description-length": "description length",
     "description-style": "description style",
