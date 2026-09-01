@@ -132,6 +132,72 @@ class BrainStructureTests(unittest.TestCase):
             # The linked note must not be reported as orphaned.
             self.assertNotIn("notes/intake.md: reachability", output)
 
+    def test_ignored_path_references_are_nonblocking_notices(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "brain"
+            init_repo(root)
+            good_brain(root)
+            write(root, ".replypenignore", "/tests/\n/_internal/\n")
+            write(root, "tests/fixture.json", "{}\n")
+            write(root, "_internal/operator.md",
+                  "Maintainer note may cite tests/fixture.json and _internal/operator.md.\n")
+            write(root, "skills/demo/scripts/check.py",
+                  '"""See tests/fixture.json and _internal/operator.md for details."""\n')
+            write(root, "AGENTS.md",
+                  "# Router\n\n[intake](notes/intake.md) [demo](skills/demo/SKILL.md)\n\n"
+                  "Open `.gitignore` before debugging.\n")
+            commit_all(root)
+
+            code, output = run_main(root, "--lint-script", str(lint_stub(Path(tmp))))
+
+            self.assertEqual(code, 0, output)
+            self.assertIn("NOTICE skills/demo/scripts/check.py:1: ignored-refs:", output)
+            self.assertIn("hidden path unavailable in runs: tests/fixture.json", output)
+            self.assertIn("hidden path unavailable in runs: _internal/", output)
+            self.assertIn("NOTICE AGENTS.md:5: ignored-refs:", output)
+            self.assertIn("hidden path unavailable in runs: .gitignore", output)
+            self.assertNotIn("NOTICE _internal/operator.md", output)
+            self.assertIn("failed=0", output)
+            self.assertIn("notices=3", output)
+
+    def test_control_mechanism_prose_and_control_files_do_not_notice(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "brain"
+            init_repo(root)
+            good_brain(root)
+            write(root, ".replypenignore", "/tests/\n.replypenignore\n")
+            write(root, "tests/fixture.json", "{}\n")
+            write(root, "notes/intake.md",
+                  "# Intake\n\nThe `.replypenignore` mechanism hides maintainer-only tests.\n")
+            commit_all(root)
+
+            code, output = run_main(root, "--lint-script", str(lint_stub(Path(tmp))))
+
+            self.assertEqual(code, 0, output)
+            self.assertIn("notices=0", output)
+            self.assertNotIn("NOTICE", output)
+
+    def test_root_ignored_target_and_union_of_ignore_controls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "brain"
+            init_repo(root)
+            good_brain(root)
+            write(root, ".replypenignore", "/operator-notes.md\n/shared.md\n!/shared.md\n")
+            write(root, ".rcignore", "/shared.md\n")
+            write(root, "operator-notes.md", "maintainer only\n")
+            write(root, "shared.md", "hidden by the other control\n")
+            write(root, "AGENTS.md",
+                  "# Router\n\n[intake](notes/intake.md) [demo](skills/demo/SKILL.md)\n\n"
+                  "Read `operator-notes.md` and [shared details](shared.md).\n")
+            commit_all(root)
+
+            code, output = run_main(root, "--lint-script", str(lint_stub(Path(tmp))))
+
+            self.assertEqual(code, 0, output)
+            self.assertIn("hidden path unavailable in runs: operator-notes.md", output)
+            self.assertIn("hidden path unavailable in runs: shared.md", output)
+            self.assertIn("notices=2", output)
+
     def test_table_router_with_backticked_paths_and_harvest_records_are_reachable(self):
         # The documented router convention is a symptom -> path table with backticked paths, not
         # markdown links; committed harvest records are audit artifacts needing no router path.
@@ -261,9 +327,9 @@ class BrainStructureTests(unittest.TestCase):
             self.assertTrue(lint_check["skipped"])
             summary = report["summary"]
             self.assertEqual(set(summary), {"checks", "ran", "passed", "failed", "findings",
-                                            "failed_checks"})
+                                            "notices", "baselined", "failed_checks"})
             self.assertIn("links", summary["failed_checks"])
-            self.assertTrue(all(set(f) == {"check", "path", "line", "message"}
+            self.assertTrue(all(set(f) == {"check", "path", "line", "message", "severity"}
                                 for f in report["findings"]))
             self.assertTrue(any(f["check"] == "links" for f in report["findings"]))
 

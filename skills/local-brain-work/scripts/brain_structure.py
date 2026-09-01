@@ -10,6 +10,8 @@ content is judged. Checks (each independently reported, skippable with `--skip <
   * links        — every relative Markdown link/route target in tracked *.md resolves to a tracked path.
   * frontmatter  — every tracked `skills/*/SKILL.md` has a valid front-matter block (name + description).
   * reachability — routed case/notes/playbook files are reachable from the project router (AGENTS.md).
+  * ignored-refs — NOTICE when run-visible text references a path hidden by `.replypenignore`,
+                   `.rcignore`, the conventional `_internal/` tree, `.gitignore`, or the controls.
   * lint         — `brain_lint.py` passes on staged files and on the tree scope (below).
   * raw-tracked  — no raw-harvest path is tracked now (`.rootcause/` fragments or split-file shapes).
   * raw-history  — no raw-harvest path appears in git history (deleted-but-still-in-history case).
@@ -36,8 +38,9 @@ absent:
     uv run --no-project python brain_structure.py --skip lint     # compose inside harvest/publish flows
     uv run --no-project python brain_structure.py --json          # machine-readable report
 
-Exit status: 1 if any active check produced a finding, else 0. Findings print grep-style:
-`path:line: <check>: <message>` (or `path: …` / `<check>: …` when no line/path applies), followed by a
+Exit status: 1 if any active check produced a blocking finding, else 0. NOTICE findings never affect
+the exit status. Findings print grep-style: `path:line: <check>: <message>` (or `path: …` /
+`<check>: …` when no line/path applies), with NOTICE prefixed explicitly, followed by a
 machine-readable `SUMMARY …` line.
 """
 
@@ -92,6 +95,13 @@ DEFAULT_LINT_SCRIPT = (Path(__file__).resolve().parent / ".." / ".." /
 # paths bypass the linter's own suffix filter, so filter here to keep parity with its `--all` set.
 LINT_SUFFIXES = {".md", ".py", ".rb", ".sh", ".toml", ".yaml", ".yml", ".json"}
 
+IGNORE_CONTROLS = (".replypenignore", ".rcignore")
+ALWAYS_HIDDEN_FILES = {".gitignore", ".replypenignore", ".rcignore"}
+CONTROL_REFERENCE_FILES = (".gitignore", ".replypenignore")
+NAVIGATION_HINTS = ("see ", "read ", "open ", "consult ", "refer to", "authoritative")
+BACKTICK_REF_RE = re.compile(r"`([^`\s]+)`")
+EXTERNAL_MOUNT_PREFIXES = ("/mirrors/", "/tenant/", "/kb/", "/skills/")
+
 
 class StructureError(RuntimeError):
     """The checkout cannot be validated at all (not a git repo, git unusable)."""
@@ -103,16 +113,19 @@ class Finding:
     message: str
     path: str | None = None
     line: int | None = None
+    severity: str = "ERROR"
 
     def render(self) -> str:
+        prefix = "NOTICE " if self.severity == "NOTICE" else ""
         if self.path and self.line:
-            return f"{self.path}:{self.line}: {self.check}: {self.message}"
+            return f"{prefix}{self.path}:{self.line}: {self.check}: {self.message}"
         if self.path:
-            return f"{self.path}: {self.check}: {self.message}"
-        return f"{self.check}: {self.message}"
+            return f"{prefix}{self.path}: {self.check}: {self.message}"
+        return f"{prefix}{self.check}: {self.message}"
 
     def as_dict(self) -> dict[str, object]:
-        return {"check": self.check, "path": self.path, "line": self.line, "message": self.message}
+        return {"check": self.check, "path": self.path, "line": self.line,
+                "message": self.message, "severity": self.severity}
 
 
 @dataclass
@@ -325,6 +338,91 @@ def _needs_reach(posix_path: str) -> bool:
     return any(p in ROUTED_DIRS for p in parts[:-1])
 
 
+def _ignored_tracked_paths(ctx: Ctx) -> set[str]:
+    """Return the union of tracked paths excluded by either run-visibility control."""
+    ignored: set[str] = set()
+    for control in IGNORE_CONTROLS:
+        if control not in ctx.tracked_set or not (ctx.root / control).is_file():
+            continue
+        proc = subprocess.run(
+            ["git", "-C", str(ctx.root), "ls-files", "-z", "-c", "-i",
+             f"--exclude-from={ctx.root / control}"],
+            capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise StructureError(f"git ls-files failed for {control}: {proc.stderr.strip()}")
+        ignored.update(p for p in proc.stdout.split("\0") if p)
+    ignored.update(p for p in ctx.tracked if p == "_internal" or p.startswith("_internal/"))
+    ignored.update(ALWAYS_HIDDEN_FILES & ctx.tracked_set)
+    return ignored
+
+
+def _is_control_navigation(line: str) -> bool:
+    """Distinguish a dangling instruction from prose that merely explains ignore mechanics."""
+    folded = line.casefold()
+    return any(hint in folded for hint in NAVIGATION_HINTS)
+
+
+def _line_resolved_targets(ctx: Ctx, rel: str, line: str) -> set[str]:
+    """Resolve Markdown/backtick path tokens relative to their file or the brain root."""
+    raw_targets = [target for _lineno, target in iter_links(line)]
+    raw_targets.extend(BACKTICK_REF_RE.findall(line))
+    resolved: set[str] = set()
+    for target in raw_targets:
+        if EXTERNAL_RE.match(target):
+            continue
+        for candidate in (resolve_target(ctx.root, rel, target),
+                          resolve_target(ctx.root, ROUTER, target)):
+            if candidate:
+                resolved.add(candidate)
+    return resolved
+
+
+def check_ignored_refs(ctx: Ctx) -> list[Finding]:
+    """Notice references from run-visible text to paths the production run cannot open."""
+    if ".rootcause.toml" not in ctx.tracked_set and not any(c in ctx.tracked_set for c in IGNORE_CONTROLS):
+        return []
+    hidden = _ignored_tracked_paths(ctx)
+    visible = [p for p in ctx.tracked if p not in hidden and (ctx.root / p).is_file()]
+    hidden_candidates = sorted(
+        (p for p in hidden if p not in ALWAYS_HIDDEN_FILES and not p.startswith("_internal/")),
+        key=lambda p: (-len(p), p),
+    )
+    findings: list[Finding] = []
+    for rel in visible:
+        raw = (ctx.root / rel).read_bytes()
+        if b"\0" in raw:
+            continue
+        lines = raw.decode("utf-8", errors="replace").splitlines()
+        for lineno, line in enumerate(lines, start=1):
+            references: list[str] = []
+            resolved_targets = _line_resolved_targets(ctx, rel, line)
+            linked_controls = set()
+            for _link_line, target in iter_links(line):
+                linked = target.split("#", 1)[0].split("?", 1)[0].strip("<>")
+                linked_controls.add(linked.removeprefix("./").lstrip("/"))
+            prior_context = lines[lineno - 2] if lineno > 1 else ""
+            external_mount_context = any(
+                prefix in f"{prior_context}\n{line}" for prefix in EXTERNAL_MOUNT_PREFIXES)
+            if "_internal/" in line or "/_internal" in line:
+                references.append("_internal/")
+            for control in CONTROL_REFERENCE_FILES:
+                if control in line and (_is_control_navigation(line) or control in linked_controls):
+                    references.append(control)
+            for candidate in hidden_candidates:
+                if (("/" in candidate and candidate in line)
+                        or (candidate in resolved_targets and not external_mount_context)):
+                    references.append(candidate)
+            for reference in dict.fromkeys(references):
+                findings.append(Finding(
+                    "ignored-refs",
+                    f"run-visible text references hidden path unavailable in runs: {reference}",
+                    path=rel,
+                    line=lineno,
+                    severity="NOTICE",
+                ))
+    return findings
+
+
 def check_lint(ctx: Ctx) -> list[Finding]:
     if not ctx.lint_script.is_file():
         return [Finding("lint",
@@ -388,6 +486,7 @@ CHECKS: list[tuple[str, Callable[[Ctx], list[Finding]]]] = [
     ("links", check_links),
     ("frontmatter", check_frontmatter),
     ("reachability", check_reachability),
+    ("ignored-refs", check_ignored_refs),
     ("lint", check_lint),
     ("raw-tracked", check_raw_tracked),
     ("raw-history", check_raw_history),
@@ -433,7 +532,8 @@ def run_checks(ctx: Ctx, *, expect_clean: bool, skip: set[str],
             fresh = [f for f in found if finding_key(f) not in baseline]
             baselined = len(found) - len(fresh)
             found = fresh
-        results.append({"name": name, "skipped": False, "ok": not found, "findings": found,
+        blocking = [f for f in found if f.severity != "NOTICE"]
+        results.append({"name": name, "skipped": False, "ok": not blocking, "findings": found,
                         "baselined": baselined})
     return results
 
@@ -442,6 +542,7 @@ def build_report(results: list[dict[str, object]], *, scope: str) -> dict[str, o
     ran = [r for r in results if not r["skipped"]]
     failed = [r for r in ran if not r["ok"]]
     findings = [f for r in results for f in r["findings"]]
+    notices = [f for f in findings if f.severity == "NOTICE"]
     baselined = sum(r["baselined"] for r in results)
     return {
         "ok": not failed,
@@ -454,7 +555,8 @@ def build_report(results: list[dict[str, object]], *, scope: str) -> dict[str, o
         ],
         "findings": [f.as_dict() for f in findings],
         "summary": {"checks": len(results), "ran": len(ran), "passed": len(ran) - len(failed),
-                    "failed": len(failed), "findings": len(findings), "baselined": baselined,
+                    "failed": len(failed), "findings": len(findings), "notices": len(notices),
+                    "baselined": baselined,
                     "failed_checks": [r["name"] for r in failed]},
     }
 
@@ -517,6 +619,7 @@ def main(argv: list[str] | None = None) -> int:
         failed = summary["failed_checks"]
         print(f"SUMMARY checks={summary['checks']} ran={summary['ran']} passed={summary['passed']} "
               f"failed={summary['failed']} findings={summary['findings']} "
+              f"notices={summary['notices']} "
               f"baselined={summary['baselined']} "
               f"failed_checks={','.join(failed) if failed else '-'}")
 
