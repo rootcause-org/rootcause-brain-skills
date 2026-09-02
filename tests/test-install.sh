@@ -29,17 +29,27 @@ run_install() {
   RC_BRAIN_KIT="$KIT" "$ROOT/install.sh" "$BRAIN"
 }
 
+# The kit itself stays ignored, but the `.claude/skills` alias is meant to be COMMITTED: Claude Code
+# discovers only that path and a git worktree carries tracked files only. So it must NOT be ignored,
+# and it is the single expected untracked entry after a fresh install.
 assert_clean_local_install() {
-  test -z "$(git -C "$BRAIN" status --short)"
+  test "$(git -C "$BRAIN" status --short --untracked-files=all)" = '?? .claude/skills'
   test "$(cat "$BRAIN/.gitignore")" = "# tracked rules stay unchanged"
   local exclude
   exclude="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path info/exclude)"
   grep -qxF '/.rootcause/' "$exclude"
   grep -qxF '/.agents/skills/alpha' "$exclude"
   grep -qxF '/.agents/skills/beta' "$exclude"
-  grep -qxF '/.claude/skills' "$exclude"
   grep -qxF '/.agents/docs' "$exclude"
   grep -qxF '/.claude/docs' "$exclude"
+  if grep -qxF '/.claude/skills' "$exclude"; then
+    echo "error: committable .claude/skills alias was ignored" >&2
+    exit 1
+  fi
+  if git -C "$BRAIN" check-ignore -q .claude/skills; then
+    echo "error: .claude/skills is ignored; it cannot be committed for worktrees" >&2
+    exit 1
+  fi
 }
 
 # A skill's `../../docs/x.md` cross-reference resolves LOGICALLY (as a markdown reader walks it), so
@@ -57,8 +67,21 @@ run_install >"$TMP/clean.out"
 test "$(readlink "$BRAIN/.agents/skills/alpha")" = "$KIT/skills/alpha"
 test "$(readlink "$BRAIN/.agents/skills/beta")" = "$KIT/skills/beta"
 test "$(readlink "$BRAIN/.claude/skills")" = '../.agents/skills'
+grep -q 'git add .claude/skills' "$TMP/clean.out"
 assert_clean_local_install
 assert_docs_links_resolve
+
+# Once the alias is committed, the installer stops nagging about it.
+git -C "$BRAIN" add .claude/skills
+git -C "$BRAIN" commit -q -m 'commit claude alias'
+run_install >"$TMP/committed.out"
+if grep -q 'git add .claude/skills' "$TMP/committed.out"; then
+  echo "error: installer still asked to add an already-tracked alias" >&2
+  exit 1
+fi
+test -z "$(git -C "$BRAIN" status --short)"
+git -C "$BRAIN" rm -q --cached .claude/skills
+git -C "$BRAIN" commit -q -m 'uncommit claude alias'
 
 # Idempotence keeps the same topology and does not duplicate local excludes.
 run_install >"$TMP/idempotent.out"
@@ -176,9 +199,8 @@ git -C "$REPO" commit -q -m initial
 run_install >"$TMP/nested.out"
 exclude="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path info/exclude)"
 grep -qxF '/tenant/.agents/skills/alpha' "$exclude"
-grep -qxF '/tenant/.claude/skills' "$exclude"
 grep -qxF '/tenant/.agents/docs' "$exclude"
-test -z "$(git -C "$REPO" status --short)"
+test "$(git -C "$REPO" status --short --untracked-files=all)" = '?? tenant/.claude/skills'
 
 # A second nested brain keeps the first brain's independently managed excludes.
 FIRST_BRAIN="$BRAIN"
@@ -191,12 +213,11 @@ BRAIN="$REPO/other"
 run_install >"$TMP/nested-other.out"
 exclude="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path info/exclude)"
 grep -qxF '/tenant/.agents/skills/alpha' "$exclude"
-grep -qxF '/tenant/.claude/skills' "$exclude"
 grep -qxF '/other/.agents/skills/alpha' "$exclude"
-grep -qxF '/other/.claude/skills' "$exclude"
 git -C "$REPO" check-ignore -q tenant/.rootcause/dump
 git -C "$REPO" check-ignore -q tenant/.agents/skills/alpha
 git -C "$REPO" check-ignore -q other/.agents/skills/alpha
-test -z "$(git -C "$REPO" status --short)"
+test "$(git -C "$REPO" status --short --untracked-files=all)" = '?? other/.claude/skills
+?? tenant/.claude/skills'
 
 echo "install tests passed"

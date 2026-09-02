@@ -35,9 +35,15 @@ brain-repo-relative: install them from inside each `rootcause-brain-*` checkout 
 exactly one repo-local copy, scoped to that brain. User/global installs make the same skills appear in
 unrelated projects and can drift from the pinned brain checkout.
 
-The installer makes `.agents/skills/` the canonical Codex discovery tree. On clean checkouts,
-`.claude/skills` is only a compatibility alias. All install paths are ignored locally through
-`.git/info/exclude`, so setup does not modify the brain's tracked `.gitignore`.
+The installer makes `.agents/skills/` the canonical Codex discovery tree. `.claude/skills` is a
+**committed** relative symlink to it (`.claude/skills -> ../.agents/skills`): Claude Code only
+discovers `.claude/skills`, and a `git worktree` carries tracked files only, so an uncommitted alias
+means "Unknown command" for every brain skill inside worktrees. Run `git add .claude/skills` once per
+brain. The kit-installed skills the alias exposes stay ignored locally through `.git/info/exclude`, so
+setup never modifies the brain's tracked `.gitignore`.
+
+Because those skills are ignored symlinks into `~/.rootcause-brain-skills`, a fresh git worktree has
+the alias but no skill content — re-run `install.sh <worktree-dir>` inside it if you need them there.
 
 Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 

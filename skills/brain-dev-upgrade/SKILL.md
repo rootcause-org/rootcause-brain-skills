@@ -18,9 +18,12 @@ laptop.
   `https://api.github.com/repos/rootcause-org/rootcause-brain-skills/git/matching-refs/tags/v`
 - `install.sh` pins the shared kit clone to a released tag; it does not leave the kit floating on
   `main`.
-- `.agents/skills/` is the canonical repo-local discovery tree. `.claude/skills` is only a
-  compatibility alias when no user content prevents it. Installer paths live in `.git/info/exclude`,
-  not tracked `.gitignore`.
+- `.agents/skills/` is the canonical repo-local discovery tree. `.claude/skills` is a relative alias
+  to it (created when no user content prevents it) and is meant to be **committed** — Claude Code
+  discovers only `.claude/skills`, and a git worktree carries tracked files only, so an uncommitted
+  alias makes brain skills "Unknown command" there. The kit skills behind it stay in
+  `.git/info/exclude`, not tracked `.gitignore`; a fresh worktree therefore needs `install.sh
+  <worktree-dir>` re-run to get skill content.
 - macOS has one canonical `rc`: `brew install rootcause-org/tap/rc`. Do not use `go install` as an
   end-user upgrade path there.
 - `rc self doctor` reports the executing binary, PATH selection, install kind, duplicates, and

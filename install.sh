@@ -8,7 +8,11 @@
 #   - Committing the kit into each brain re-creates the multi-copy skill-drift this repo kills.
 #
 # Model: ONE pinned clone on disk, SYMLINKED into each brain's locally ignored `.agents/skills/`
-# discovery tree. Claude Code gets a compatibility alias at `.claude/skills`; Codex is canonical.
+# discovery tree. Codex is canonical. Claude Code only discovers `.claude/skills`, so the brain keeps a
+# COMMITTED relative symlink `.claude/skills -> ../.agents/skills`: it is the one kit-related path that
+# belongs in Git, because a `git worktree` (Claude Desktop, `claude --worktree`) contains tracked files
+# only — without the committed alias, brain skills are "Unknown command" in every worktree. The alias
+# points at an ignored tree, so it costs nothing in prod: it dangles harmlessly in /brain.
 # Do not also install this kit as a user/global Claude Code or Codex plugin; that creates a second,
 # project-agnostic discovery path and makes Brain Dev appear in unrelated repos.
 #
@@ -217,8 +221,10 @@ do
 done
 
 # 3. Codex-first discovery. `.agents/skills/` is the one canonical per-brain tree. Claude Code uses
-#    `.claude/skills -> ../.agents/skills` when possible. An existing compatibility directory is
-#    collapsed to the alias only when it contains installer-owned links and nothing user-owned.
+#    `.claude/skills -> ../.agents/skills` when possible; that relative alias is meant to be COMMITTED
+#    (worktrees only carry tracked files), while the kit skills it exposes stay locally ignored. An
+#    existing compatibility directory is collapsed to the alias only when it contains installer-owned
+#    links and nothing user-owned.
 if [ -L "$BRAIN/.agents/skills" ]; then
   echo "error: $BRAIN/.agents/skills is a symlink; refusing to replace the canonical Codex tree" >&2
   exit 1
@@ -361,9 +367,6 @@ mv "$EXCLUDE_TMP" "$EXCLUDE"
       echo "${IGNORE_ROOT}.claude/skills/$name"
     fi
   done
-  if [ "$CLAUDE_MODE" = "alias" ]; then
-    echo "${IGNORE_ROOT}.claude/skills"
-  fi
   if [ -d "$DOCS_SRC" ]; then
     echo "${IGNORE_ROOT}.agents/docs"
     echo "${IGNORE_ROOT}.claude/docs"
@@ -385,6 +388,9 @@ echo "  uv run \"\$SKILL/scripts/brain_test.py\" --live"
 echo "Codex auto-discovers the canonical .agents/skills tree."
 if [ "$CLAUDE_MODE" = "alias" ]; then
   echo "Claude Code compatibility: .claude/skills -> ../.agents/skills"
+  if ! git -C "$BRAIN" ls-files --error-unmatch .claude/skills >/dev/null 2>&1; then
+    echo "  commit that alias so git worktrees see the skills: git add .claude/skills"
+  fi
 else
   echo "Claude Code compatibility: preserved user-owned .claude/skills directory"
 fi
