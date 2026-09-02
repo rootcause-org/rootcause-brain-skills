@@ -1,0 +1,28 @@
+key: dentai_booking_preview
+name: DentAI booking preview
+kinds: [token]
+connector_module: ""
+env_var: RC_CONN_DENTAI_BOOKING_PREVIEW
+credential_exposure: broker
+tenant_required: true
+egress_hosts:
+  - app.dentai.be
+base_url: https://app.dentai.be
+auth:
+  strategy: bearer
+pagination:
+  style: none
+read_endpoints:
+  post:
+    - /internal/booking/slots
+    - /internal/booking/book
+help_md: |
+  Tenant-bound read plane of DentAI's single availability/booking engine: slot search and dry-run
+  booking verdicts. The raw token stays in rootcause's broker; ordinary runs only see the broker
+  route. The project-brain wrapper is `skills/scheduling/scripts/search_availability.py`. DentAI
+  enforces the token scope server-side: this credential can search and dry-run, never write.
+onboarding_md: |
+  Ask can the DentAI operator mint the booking preview credential for this tenant now.
+  Mint it with `TENANT=<slug> make agenda-tokens` in dentai; store the minted preview value on this
+  tenant, never at project scope.
+  It can search availability and dry-run bookings but cannot write them.

@@ -748,6 +748,22 @@ class ReadMethodPolicy(unittest.TestCase):
         self.assertTrue(client.manifest.brokered)
         self.assertEqual(client.credential, "")
 
+    def test_dentai_booking_preview_manifest_is_brokered_at_runtime(self):
+        mani = api.load_manifests(force=True)["dentai_booking_preview"]
+        self.assertEqual(mani.base_url, "https://app.dentai.be")
+        self.assertEqual(mani.auth.strategy, "bearer")
+        self.assertEqual(
+            mani.allowed_post_paths, ("/internal/booking/slots", "/internal/booking/book")
+        )
+
+        with mock.patch.dict(
+            os.environ, {"RC_API_BROKERED_KEYS": "dentai_booking_preview"}, clear=False
+        ), mock.patch.object(api.oauth, "token") as token:
+            client = api.client(mani)
+        token.assert_not_called()
+        self.assertTrue(client.manifest.brokered)
+        self.assertEqual(client.credential, "")
+
     def test_post_next_url_pagination_refused(self):
         m = _manifest(
             allowed_post_paths=("/search",),
