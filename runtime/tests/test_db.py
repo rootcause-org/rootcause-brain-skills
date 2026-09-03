@@ -449,3 +449,217 @@ def test_multi_statement_sql_is_rejected(monkeypatch, sql):
 )
 def test_single_statement_sql_is_allowed(monkeypatch, sql):
     db._reject_multi_statement(sql)  # must not raise
+
+
+# --- MySQL branch ------------------------------------------------------------------------------
+#
+# A `mysql://` DSN switches lib.db to PyMySQL. The proxy in front of a customer MySQL speaks only
+# the text protocol and holds its own query ceiling, so what these lock down is that we still emit
+# the read-only + max_execution_time guards, still refuse a second statement client-side, and still
+# heal/hint exactly like the Postgres path.
+
+_MYSQL_DSN = "mysql://run:tok%40n@proxy.internal:8083/vdb"
+
+
+class _MySQLError(Exception):
+    """PyMySQL puts the server errno in args[0]; that is all lib.db reads."""
+
+
+class _MySQLCursor:
+    def __init__(self, conn):
+        self.conn = conn
+        self.description = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, sql, params=None):
+        self.conn.executed.append(sql)
+        self.conn.params.append(params)
+        if self.conn.raise_on_query and not sql.lstrip().upper().startswith(("SET", "START")):
+            raise self.conn.raise_on_query
+        if sql.lstrip().upper().startswith(("SET", "START")):
+            return
+        self.description = self.conn.description
+        self._rows = self.conn.rows
+
+    def fetchall(self):
+        return self._rows
+
+
+class _MySQLConnection:
+    def __init__(self, description=None, rows=(), raise_on_query=None):
+        self.description = description or [("n", 3)]
+        self.rows = list(rows)
+        self.raise_on_query = raise_on_query
+        self.executed = []
+        self.params = []
+        self.closed = False
+
+    def cursor(self):
+        return _MySQLCursor(self)
+
+    def close(self):
+        self.closed = True
+
+
+def _fake_pymysql(monkeypatch, conn, seen=None):
+    def connect(**kwargs):
+        if seen is not None:
+            seen.update(kwargs)
+        return conn
+
+    monkeypatch.setitem(
+        sys.modules,
+        "pymysql",
+        SimpleNamespace(connect=connect, cursors=SimpleNamespace(DictCursor=object)),
+    )
+    monkeypatch.setenv("PG_DSN", _MYSQL_DSN)
+    return conn
+
+
+def test_mysql_dsn_maps_to_pymysql_connect_kwargs(monkeypatch):
+    seen = {}
+    _fake_pymysql(monkeypatch, _MySQLConnection(rows=[{"n": 1}]), seen)
+
+    assert db.query("select 1 as n") == [{"n": 1}]
+    assert seen["host"] == "proxy.internal"
+    assert seen["port"] == 8083
+    assert seen["user"] == "run"
+    assert seen["password"] == "tok@n"  # percent-decoded
+    assert seen["database"] == "vdb"
+    assert seen["connect_timeout"] == 15
+    assert seen["autocommit"] is False
+    assert seen["local_infile"] is False
+    # Dead-network backstop: the socket may not go silent for longer than the cap plus slack.
+    assert seen["read_timeout"] == 60
+    assert seen["write_timeout"] == 60
+    assert "ssl" not in seen  # the proxy hop is plaintext unless the DSN says otherwise
+
+
+@pytest.mark.parametrize(
+    ("tls", "expected"),
+    [("true", {"check_hostname": True}), ("skip-verify", {"check_hostname": False, "verify_mode": False})],
+)
+def test_mysql_tls_only_when_the_dsn_asks(monkeypatch, tls, expected):
+    seen = {}
+    _fake_pymysql(monkeypatch, _MySQLConnection(rows=[]), seen)
+    monkeypatch.setenv("PG_DSN", f"mysql://u:p@h:3306/d?tls={tls}")
+    db.query("select 1")
+    assert seen["ssl"] == expected
+
+
+def test_mysql_emits_read_only_transaction_and_timeout(monkeypatch):
+    conn = _fake_pymysql(monkeypatch, _MySQLConnection(rows=[]))
+    db.query("select 1", timeout_ms=9_000)
+    assert conn.executed[:3] == [
+        "SET SESSION max_execution_time = 9000",
+        "START TRANSACTION READ ONLY",
+        "select 1",
+    ]
+    assert conn.closed
+
+
+def test_mysql_timeout_is_clamped_to_the_hard_cap(monkeypatch, recwarn):
+    conn = _fake_pymysql(monkeypatch, _MySQLConnection(rows=[]))
+    db.query("select 1", timeout_ms=600_000)
+    assert conn.executed[0] == "SET SESSION max_execution_time = 120000"
+    assert any("hard cap" in str(w.message) for w in recwarn)
+
+
+def test_mysql_warns_but_continues_when_the_server_refuses_the_cap(monkeypatch, recwarn):
+    class _RefusingCursor(_MySQLCursor):
+        def execute(self, sql, params=None):
+            if sql.startswith("SET SESSION max_execution_time"):
+                raise _MySQLError(1193, "Unknown system variable")
+            return super().execute(sql, params)
+
+    conn = _fake_pymysql(monkeypatch, _MySQLConnection(rows=[{"n": 1}]))
+    monkeypatch.setattr(conn, "cursor", lambda: _RefusingCursor(conn))
+
+    assert db.query("select 1 as n") == [{"n": 1}]
+    assert any("refused SET SESSION max_execution_time" in str(w.message) for w in recwarn)
+
+
+def test_mysql_multi_statement_is_rejected_before_connecting(monkeypatch):
+    conn = _fake_pymysql(monkeypatch, _MySQLConnection())
+    with pytest.raises(RuntimeError, match="multiple SQL statements"):
+        db.query("SET SESSION max_execution_time = 0; select sleep(300)")
+    assert conn.executed == []
+
+
+def test_mysql_auto_heals_excluded_columns(monkeypatch, recwarn):
+    conn = _fake_pymysql(monkeypatch, _MySQLConnection(rows=[{"id": 1, "email": "a@b.test"}]))
+    monkeypatch.delenv("PG_DSN")  # resolve via the project's own *_DSN, which keys the heal map
+    monkeypatch.setenv("IBEAUTY_DSN", _MYSQL_DSN)
+    monkeypatch.setenv(
+        "RC_DB_EXCLUDED_COLUMNS",
+        '{"IBEAUTY_DSN": {"tables": {"clients": {"exclude": ["national_id"]}}}}',
+    )
+    db.query("select id, national_id, email from clients")
+    assert conn.executed[2] == "select id, email from clients"
+    assert any("dropped column(s) ['national_id']" in str(w.message) for w in recwarn)
+
+
+def test_mysql_unknown_column_gets_the_scoping_aware_hint(monkeypatch):
+    _fake_pymysql(
+        monkeypatch,
+        _MySQLConnection(raise_on_query=_MySQLError(1054, "Unknown column 'ssn' in 'field list'")),
+    )
+    with pytest.raises(RuntimeError) as excinfo:
+        db.query("select ssn from clients")
+    msg = str(excinfo.value)
+    assert "Unknown column 'ssn'" in msg
+    assert "intentionally hidden by this project's data-scoping" in msg
+    assert "lib.db.columns('<table>')" in msg
+
+
+def test_mysql_query_timeout_hint_names_the_limit(monkeypatch):
+    _fake_pymysql(
+        monkeypatch,
+        _MySQLConnection(raise_on_query=_MySQLError(3024, "Query execution was interrupted")),
+    )
+    monkeypatch.setattr(db, "table_stats", lambda *a, **k: (_ for _ in ()).throw(RuntimeError()))
+    with pytest.raises(RuntimeError, match="was killed on MySQL"):
+        db.query("select sleep(60)", timeout_ms=10_000)
+
+
+def test_mysql_syntax_error_hint_calls_out_the_dialect(monkeypatch):
+    _fake_pymysql(
+        monkeypatch,
+        _MySQLConnection(raise_on_query=_MySQLError(1064, "You have an error in your SQL syntax")),
+    )
+    with pytest.raises(RuntimeError, match="backticks"):
+        db.query('select "id"::text from clients')
+
+
+def test_mysql_json_columns_decode(monkeypatch):
+    _fake_pymysql(
+        monkeypatch,
+        _MySQLConnection(
+            description=[("meta", 245), ("note", 253)],
+            rows=[{"meta": '{"a": 1}', "note": "{not,json}"}],
+        ),
+    )
+    rows = db.query("select meta, note from t")
+    assert rows[0]["meta"] == {"a": 1}
+    assert rows[0]["note"] == "{not,json}"  # non-JSON column type is never touched
+
+
+def test_mysql_introspection_uses_database_not_current_schema(monkeypatch):
+    conn = _fake_pymysql(monkeypatch, _MySQLConnection(rows=[]))
+    db.tables()
+    db.columns("clients")
+    assert all("current_schema()" not in s for s in conn.executed)
+    assert any("coalesce(%s, database())" in s for s in conn.executed)
+
+
+def test_mysql_explain_prefers_format_tree(monkeypatch):
+    conn = _fake_pymysql(monkeypatch, _MySQLConnection(rows=[{"EXPLAIN": "-> Table scan on t"}]))
+    assert db.explain("select * from t") == "-> Table scan on t"
+    assert conn.executed[-1] == "EXPLAIN FORMAT=TREE select * from t"
+    with pytest.raises(RuntimeError, match="never runs ANALYZE"):
+        db.explain("EXPLAIN ANALYZE select * from t")

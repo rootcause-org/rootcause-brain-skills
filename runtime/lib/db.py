@@ -32,6 +32,18 @@ planner view (never ``ANALYZE``).
 ``psycopg`` is imported lazily, so the module — its DSN resolution, and the CLI's ``--list`` —
 loads even where the driver isn't installed.
 
+MySQL: a ``mysql://`` DSN transparently switches the whole module to PyMySQL — same helpers, same
+`Column`/`ColumnList` results, same read-only + hard-timeout posture (``START TRANSACTION READ
+ONLY`` + ``SET SESSION max_execution_time``, with the wire proxy in front enforcing the ceiling
+regardless), same one-statement rule, same hidden-column auto-heal and scoping-aware hints. What
+differs: ``schema=`` means the MySQL *database* (default: the DSN's own, via ``database()``);
+`columns` reports the full ``COLUMN_TYPE`` (``varchar(255)``, ``int unsigned``); `table_stats`
+returns ``information_schema`` sizes + the index list and has no ``seq_scan``/``idx_scan``/planner
+column stats; `explain` uses ``EXPLAIN FORMAT=TREE`` (falling back to tabular ``EXPLAIN``); there
+are no Postgres arrays to hydrate (``JSON`` columns decode to Python values instead); and only the
+text protocol is used — prepared statements are refused upstream, so ``%s`` params are interpolated
+client-side exactly as psycopg's simple protocol does.
+
 CLI (token-efficient one-offs from bash):
 
     python -m lib.db --list
@@ -44,6 +56,7 @@ CLI (token-efficient one-offs from bash):
 import os
 import re
 import warnings
+from typing import NoReturn
 
 
 def _configured_timeout_limits() -> tuple[int, int]:
@@ -397,11 +410,24 @@ def _timeout_table_evidence(sql: str | None, db: str | None) -> str:
         except Exception:  # noqa: BLE001 - timeout guidance is best-effort after the real failure.
             continue
         indexes = ",".join(i["name"] for i in info["indexes"][:4]) or "none"
-        evidence.append(
-            f"{info['schema']}.{table}: ~{info['estimated_rows']} rows, {info['total_size']}, "
-            f"seq_scan={info['seq_scan']}, idx_scan={info['idx_scan']}, indexes={indexes}"
-        )
+        parts = [f"~{info['estimated_rows']} rows", str(info["total_size"])]
+        # MySQL's information_schema has no scan counters; omit rather than print "None".
+        if info.get("seq_scan") is not None:
+            parts.append(f"seq_scan={info['seq_scan']}, idx_scan={info['idx_scan']}")
+        parts.append(f"indexes={indexes}")
+        evidence.append(f"{info['schema']}.{table}: " + ", ".join(parts))
     return " Referenced table stats: " + "; ".join(evidence) + "." if evidence else ""
+
+
+def _timeout_exceeded_hint(timeout_ms: int, sql: str | None, db: str | None, server: str) -> str:
+    """The 'your query was killed by the cap' correction, shared by both engines."""
+    seconds = timeout_ms / 1000
+    limit = str(int(seconds)) if seconds.is_integer() else f"{seconds:g}"
+    return (
+        f"Query exceeded this project's {limit}s limit and was killed on {server}. Rewrite for "
+        "performance: filter on indexed columns, add LIMIT, pre-aggregate, avoid count(*)/full "
+        "scans on large tables."
+    ) + _timeout_table_evidence(sql, db)
 
 
 def _mistake_hint(
@@ -426,14 +452,7 @@ def _mistake_hint(
     if sqlstate is None:
         sqlstate = getattr(getattr(exc, "diag", None), "sqlstate", None)
     if sqlstate == "57014":
-        seconds = timeout_ms / 1000
-        limit = str(int(seconds)) if seconds.is_integer() else f"{seconds:g}"
-        return (
-            f"Query exceeded this project's {limit}s limit and was killed on Postgres. Rewrite for "
-            "performance: filter on indexed columns, add LIMIT, pre-aggregate, avoid count(*)/full "
-            "scans on large tables."
-            + _timeout_table_evidence(sql, db)
-        )
+        return _timeout_exceeded_hint(timeout_ms, sql, db, "Postgres")
 
     # Invented enum label (InvalidTextRepresentation / 22P02). No hardcoded label maps: show the
     # database's OWN labels, which makes hyphen-vs-underscore and singular-vs-plural self-evident.
@@ -820,6 +839,181 @@ def _timeout_sql(conn, timeout_ms: int) -> str:
     return "; ".join(stmts)
 
 
+def _raise_connect_failure(e: Exception) -> NoReturn:
+    """Turn any driver connect error into the actionable 'run it on RootCause infra' guidance."""
+    hint = (
+        f"Database connection failed before the query could run "
+        f"(connect_timeout={DEFAULT_CONNECT_TIMEOUT_SECONDS}s)."
+    )
+    if os.environ.get("RC_LOCAL_BRAIN_RUN"):
+        hint += (
+            " This was a local brain_run.py live check; project DSNs are often IP/region "
+            "allowlisted for RootCause production. Use `rc dev console database ...` for direct SQL or "
+            "`rc dev console bash run 'python /brain/skills/.../scripts/<script>.py ...'` to run the "
+            "same brain script on RootCause infra."
+        )
+    else:
+        hint += (
+            " If this happened from a laptop/local live check, prefer `rc dev console database ...` "
+            "or `rc dev console bash run ...` "
+            "so the read executes on RootCause production infra."
+        )
+    raise RuntimeError(f"{hint}\n\nOriginal error: {type(e).__name__}: {e}") from e
+
+
+# --- MySQL branch ------------------------------------------------------------------------------
+#
+# A `mysql://` DSN reaches us through a wire proxy that speaks only the MySQL TEXT protocol: it
+# refuses COM_STMT_PREPARE, multi-statements, and any client `SET ... max_execution_time`, and holds
+# its own hard query ceiling. Everything below therefore stays on PyMySQL's client-side `%s`
+# interpolation (never a server-side prepare) and treats our session guards as belt-and-suspenders.
+
+_MYSQL_SCHEMES = ("mysql://", "mysql+pymysql://")
+
+# How long past the statement cap the socket may stay silent before we give up on a vanished peer.
+# The libpq keepalive kwargs have no PyMySQL equivalent; read/write timeouts are the analogue.
+_MYSQL_NETWORK_SLACK_SECONDS = 30
+
+# information_schema errnos worth a tailored correction (mysqlclient/PyMySQL put them in args[0]).
+_MYSQL_BAD_FIELD = 1054
+_MYSQL_NO_SUCH_TABLE = 1146
+_MYSQL_BAD_DB = 1049
+_MYSQL_SYNTAX_ERROR = 1064
+_MYSQL_EXEC_TIMEOUTS = (3024, 1317)  # max_execution_time exceeded / query interrupted
+
+_MYSQL_JSON_TYPE_CODE = 245  # FIELD_TYPE.JSON
+
+
+def _is_mysql_dsn(dsn: str) -> bool:
+    return dsn.strip().lower().startswith(_MYSQL_SCHEMES)
+
+
+def _engine_is_mysql(db: str | None) -> bool:
+    """Does ``db`` resolve to a MySQL DSN? Unresolvable → False, so `query` raises the good error."""
+    try:
+        return _is_mysql_dsn(_resolve_dsn(db))
+    except RuntimeError:
+        return False
+
+
+def _pretty_bytes(n) -> str:
+    """``information_schema`` byte counts in ``pg_size_pretty`` shape, so both engines read alike."""
+    try:
+        size = float(n or 0)
+    except (TypeError, ValueError):
+        return "0 bytes"
+    for unit in ("bytes", "kB", "MB", "GB", "TB"):
+        if size < 1024 or unit == "TB":
+            return f"{int(size)} {unit}" if unit == "bytes" else f"{size:.0f} {unit}"
+        size /= 1024
+    return f"{size:.0f} TB"
+
+
+def _mysql_connect_kwargs(dsn: str, timeout_ms: int) -> dict:
+    """PyMySQL connect kwargs from a ``mysql://`` URL. TLS only when the DSN asks (the proxy hop is
+    plaintext); ``read_timeout``/``write_timeout`` are the dead-network backstop libpq's keepalives
+    give the Postgres path."""
+    from urllib.parse import parse_qs, unquote, urlsplit
+
+    parts = urlsplit(dsn)
+    kwargs = {
+        "host": parts.hostname or "127.0.0.1",
+        "port": parts.port or 3306,
+        "user": unquote(parts.username or ""),
+        "password": unquote(parts.password or ""),
+        "database": unquote(parts.path.lstrip("/")) or None,
+        "connect_timeout": DEFAULT_CONNECT_TIMEOUT_SECONDS,
+        "read_timeout": int(timeout_ms / 1000) + _MYSQL_NETWORK_SLACK_SECONDS,
+        "write_timeout": int(timeout_ms / 1000) + _MYSQL_NETWORK_SLACK_SECONDS,
+        "autocommit": False,
+        "local_infile": False,
+        "charset": "utf8mb4",
+    }
+    tls = (parse_qs(parts.query).get("tls") or [""])[0].lower()
+    if tls in ("skip-verify", "preferred"):
+        kwargs["ssl"] = {"check_hostname": False, "verify_mode": False}
+    elif tls and tls not in ("false", "0", "disable", "disabled"):
+        kwargs["ssl"] = {"check_hostname": True}
+    return kwargs
+
+
+def _mysql_hint(exc, timeout_ms: int, sql: str | None, db: str | None) -> str | None:
+    """One corrective hint per MySQL error class agents actually hit, or None to re-raise untouched."""
+    errno = exc.args[0] if exc.args and isinstance(exc.args[0], int) else None
+    if errno in _MYSQL_EXEC_TIMEOUTS:
+        return _timeout_exceeded_hint(timeout_ms, sql, db, "MySQL")
+    if errno in (_MYSQL_NO_SUCH_TABLE, _MYSQL_BAD_DB):
+        std = _defaulted_to_standard(db)
+        if std is not None:
+            return (
+                f"No db= was passed, so the standard database {std!r} was used — that table isn't "
+                f"there. If it lives in another database, re-run with db=. Databases this run can "
+                f"read:\n{_format_catalog()}"
+            )
+        return _undefined_hint(exc)
+    if errno == _MYSQL_BAD_FIELD:
+        return _undefined_hint(exc)
+    if errno == _MYSQL_SYNTAX_ERROR:
+        return (
+            "MySQL rejected the syntax. This is MySQL, not Postgres: quote identifiers with "
+            "`backticks` (a \"double-quoted\" name is a string literal), cast with CAST(x AS CHAR) "
+            "instead of x::text, and use JSON_EXTRACT/-> instead of ->>."
+        )
+    return None
+
+
+def _mysql_query(sql, params, db_arg, dsn, timeout_ms, timeout_hint_stats):
+    """`query` on PyMySQL: read-only transaction + session cap, text protocol, dict rows."""
+    import pymysql
+
+    try:
+        conn = pymysql.connect(
+            cursorclass=pymysql.cursors.DictCursor, **_mysql_connect_kwargs(dsn, timeout_ms)
+        )
+    except Exception as e:  # noqa: BLE001 - PyMySQL connect errors vary by socket/TLS path.
+        _raise_connect_failure(e)
+
+    try:
+        with conn.cursor() as cur:
+            try:
+                cur.execute(f"SET SESSION max_execution_time = {timeout_ms}")
+            except Exception as e:  # noqa: BLE001 - advisory only; the wire proxy caps regardless.
+                warnings.warn(
+                    f"MySQL refused SET SESSION max_execution_time ({e}); the {timeout_ms} ms "
+                    "ceiling is still enforced in front of this database.",
+                    stacklevel=3,
+                )
+            # Read-only transaction: a write attempt errors instead of mutating customer data.
+            cur.execute("START TRANSACTION READ ONLY")
+            try:
+                # params=None keeps PyMySQL from scanning the SQL for placeholders, so an inline
+                # `LIKE 'avo%'` wildcard survives verbatim — same contract as the psycopg path.
+                cur.execute(sql, params if params else None)
+            except Exception as e:  # noqa: BLE001 - PyMySQL error classes vary; errno is the signal.
+                hint = _mysql_hint(e, timeout_ms, sql if timeout_hint_stats else None, db_arg)
+                if hint is None:
+                    raise
+                raise RuntimeError(f"{e}\n\n{hint}") from e
+            if cur.description is None:
+                return []
+            json_cols = {d[0] for d in cur.description if d[1] == _MYSQL_JSON_TYPE_CODE}
+            rows = [dict(r) for r in cur.fetchall()]
+        if json_cols:
+            import json
+
+            for row in rows:
+                for col in json_cols:
+                    val = row.get(col)
+                    if isinstance(val, str):
+                        try:
+                            row[col] = json.loads(val)
+                        except ValueError:  # a PII token replaced the document — leave it as text
+                            pass
+        return rows
+    finally:
+        conn.close()
+
+
 def query(
     sql: str,
     params: list | tuple | None = None,
@@ -858,8 +1052,6 @@ def query(
     field doesn't fail the whole query. A column that ISN'T manifest-hidden (a typo) is left in and
     raises with a scoping-aware hint (`_undefined_hint`) rather than being silently swallowed.
     """
-    import psycopg
-
     _reject_multi_statement(sql)
     timeout_ms = _effective_timeout_ms(timeout_ms)
     dsn = _resolve_dsn(db)
@@ -871,6 +1063,11 @@ def query(
             f"scope_manifest. Ran the trimmed query; the rest of your result is intact.",
             stacklevel=2,
         )
+    if _is_mysql_dsn(dsn):
+        return _mysql_query(sql, params, db, dsn, timeout_ms, _timeout_hint_stats)
+
+    import psycopg
+
     try:
         conn_cm = psycopg.connect(
             dsn,
@@ -879,24 +1076,7 @@ def query(
             **_KEEPALIVE_KWARGS,
         )
     except Exception as e:  # noqa: BLE001 - psycopg connection errors vary by driver/libpq path.
-        hint = (
-            f"Database connection failed before the query could run "
-            f"(connect_timeout={DEFAULT_CONNECT_TIMEOUT_SECONDS}s)."
-        )
-        if os.environ.get("RC_LOCAL_BRAIN_RUN"):
-            hint += (
-                " This was a local brain_run.py live check; project DSNs are often IP/region "
-                "allowlisted for RootCause production. Use `rc dev console database ...` for direct SQL or "
-                "`rc dev console bash run 'python /brain/skills/.../scripts/<script>.py ...'` to run the "
-                "same brain script on RootCause infra."
-            )
-        else:
-            hint += (
-                " If this happened from a laptop/local live check, prefer `rc dev console database ...` "
-                "or `rc dev console bash run ...` "
-                "so the read executes on RootCause production infra."
-            )
-        raise RuntimeError(f"{hint}\n\nOriginal error: {type(e).__name__}: {e}") from e
+        _raise_connect_failure(e)
 
     with conn_cm as conn:
         # Read-only transaction: a write attempt errors instead of mutating customer data.
@@ -984,8 +1164,18 @@ def tables(schema: str | None = None, db: str | None = None) -> list[dict]:
     """Table names in the run's effective schema.
 
     ``schema=None`` (default) mirrors ``columns``: introspect ``current_schema()`` so scoped runs see
-    their projected ``scope_<id>`` views and flat runs see ``public``.
+    their projected ``scope_<id>`` views and flat runs see ``public``. On MySQL the effective schema
+    is the DSN's own database (``database()``).
     """
+    if _engine_is_mysql(db):
+        return query(
+            "select table_name as table_name, table_type as table_type "
+            "from information_schema.tables "
+            "where table_schema = coalesce(%s, database()) "
+            "order by table_name",
+            [schema],
+            db=db,
+        )
     return query(
         "select table_name, table_type from information_schema.tables "
         "where table_schema = coalesce(%s::text, current_schema()) "
@@ -1147,13 +1337,25 @@ def columns(table: str, schema: str | None = None, db: str | None = None) -> "Co
     would see nothing); on a flat project it resolves to ``public`` exactly as before. Pass an
     explicit ``schema`` to override.
     """
-    rows = query(
-        "select column_name, data_type from information_schema.columns "
-        "where table_schema = coalesce(%s::text, current_schema()) and table_name = %s "
-        "order by ordinal_position",
-        [schema, table],
-        db=db,
-    )
+    if _engine_is_mysql(db):
+        # COLUMN_TYPE, not DATA_TYPE: `varchar(255)` / `int unsigned` carries the length and
+        # signedness an agent needs to write a correct predicate.
+        rows = query(
+            "select column_name as column_name, column_type as data_type "
+            "from information_schema.columns "
+            "where table_schema = coalesce(%s, database()) and table_name = %s "
+            "order by ordinal_position",
+            [schema, table],
+            db=db,
+        )
+    else:
+        rows = query(
+            "select column_name, data_type from information_schema.columns "
+            "where table_schema = coalesce(%s::text, current_schema()) and table_name = %s "
+            "order by ordinal_position",
+            [schema, table],
+            db=db,
+        )
     _warn_hidden_column_notes(_excluded_map_for_db(db), table=table)
     return ColumnList(
         Column(r["column_name"], r["data_type"], table=table) for r in rows
@@ -1171,13 +1373,24 @@ def tables_with_column(name_like: str, schema: str | None = None, db: str | None
     Same `ColumnList` shape as `columns`, with the owning table on each hit: ``c.table`` /
     ``c["table_name"]`` (``c.qualified`` → ``"people.email"``).
     """
-    rows = query(
-        "select table_name, column_name, data_type from information_schema.columns "
-        "where table_schema = coalesce(%s::text, current_schema()) and column_name ilike %s "
-        "order by table_name, column_name",
-        [schema, name_like],
-        db=db,
-    )
+    if _engine_is_mysql(db):
+        # MySQL's information_schema collation is case-insensitive, so plain LIKE is ILIKE here.
+        rows = query(
+            "select table_name as table_name, column_name as column_name, "
+            "column_type as data_type from information_schema.columns "
+            "where table_schema = coalesce(%s, database()) and column_name like %s "
+            "order by table_name, column_name",
+            [schema, name_like],
+            db=db,
+        )
+    else:
+        rows = query(
+            "select table_name, column_name, data_type from information_schema.columns "
+            "where table_schema = coalesce(%s::text, current_schema()) and column_name ilike %s "
+            "order by table_name, column_name",
+            [schema, name_like],
+            db=db,
+        )
     _warn_hidden_column_notes(_excluded_map_for_db(db), pattern=name_like)
     return ColumnList(
         Column(r["column_name"], r["data_type"], table=r["table_name"]) for r in rows
@@ -1189,7 +1402,13 @@ def table_stats(table: str, schema: str | None = None, db: str | None = None) ->
 
     Returns row estimate + pretty total size, scan/analyze counters, index definitions, and the
     planner's per-column ``n_distinct``/``null_frac``. It never scans the target table.
+
+    On MySQL the counters MySQL doesn't keep (``seq_scan``/``idx_scan``/``last_analyze``) come back
+    ``None`` and ``columns`` is empty; ``indexes`` lists each index's key columns instead of a DDL
+    definition.
     """
+    if _engine_is_mysql(db):
+        return _mysql_table_stats(table, schema, db)
     relations = query(
         """select n.nspname as schema, c.relname as table,
                   c.reltuples::bigint as estimated_rows,
@@ -1243,10 +1462,72 @@ def table_stats(table: str, schema: str | None = None, db: str | None = None) ->
     }
 
 
+def _mysql_table_stats(table: str, schema: str | None, db: str | None) -> dict:
+    """`table_stats` on MySQL: information_schema only, so the target table is never scanned."""
+    relations = query(
+        "select table_schema as `schema`, table_name as `table`, "
+        "table_rows as estimated_rows, data_length as data_length, "
+        "index_length as index_length, update_time as update_time "
+        "from information_schema.tables "
+        "where table_schema = coalesce(%s, database()) and table_name = %s limit 1",
+        [schema, table],
+        db=db,
+        _timeout_hint_stats=False,
+    )
+    if not relations:
+        raise RuntimeError(
+            f"table {table!r} not found in {schema or 'the effective schema'}; "
+            "use lib.db.tables() to list queryable tables"
+        )
+    base = relations[0]
+    resolved_schema = base["schema"]
+    index_rows = query(
+        "select index_name as name, "
+        "concat(if(min(non_unique) = 0, 'UNIQUE ', ''), 'KEY (', "
+        "group_concat(column_name order by seq_in_index separator ', '), ')') as definition "
+        "from information_schema.statistics "
+        "where table_schema = %s and table_name = %s "
+        "group by index_name order by index_name",
+        [resolved_schema, table],
+        db=db,
+        _timeout_hint_stats=False,
+    )
+    data_length = base["data_length"] or 0
+    index_length = base["index_length"] or 0
+    return {
+        "schema": resolved_schema,
+        "table": base["table"],
+        # A VIEW (what a scoped run actually queries) has no row/byte accounting at all.
+        "estimated_rows": base["estimated_rows"],
+        "total_size": _pretty_bytes(data_length + index_length),
+        "data_size": _pretty_bytes(data_length),
+        "index_size": _pretty_bytes(index_length),
+        "seq_scan": None,
+        "idx_scan": None,
+        "last_analyze": base["update_time"],
+        "last_autoanalyze": None,
+        "indexes": index_rows,
+        "columns": [],
+    }
+
+
 def explain(sql: str, params: list | tuple | None = None, db: str | None = None) -> str:
-    """Return ``EXPLAIN (FORMAT TEXT)`` output without executing ``ANALYZE``."""
+    """Return ``EXPLAIN (FORMAT TEXT)`` output without executing ``ANALYZE``.
+
+    MySQL uses ``EXPLAIN FORMAT=TREE``, falling back to the tabular ``EXPLAIN`` when the server
+    rejects it. Never ``ANALYZE`` on either engine — that would run the query.
+    """
     if re.match(r"(?is)^\s*(?:analyze\b|explain\b[^;]*\banalyze\b)", sql):
         raise RuntimeError("lib.db.explain() never runs ANALYZE; pass the underlying SELECT only")
+    if _engine_is_mysql(db):
+        try:
+            rows = query("EXPLAIN FORMAT=TREE " + sql, params, db=db)
+        except Exception:  # noqa: BLE001 - FORMAT=TREE is 8.0.16+ and SELECT-only; degrade cleanly.
+            rows = query("EXPLAIN " + sql, params, db=db)
+            return "\n".join(
+                ", ".join(f"{k}={v}" for k, v in row.items() if v is not None) for row in rows
+            )
+        return "\n".join(str(next(iter(row.values()))) for row in rows)
     rows = query("EXPLAIN (FORMAT TEXT) " + sql, params, db=db)
     return "\n".join(str(next(iter(row.values()))) for row in rows)
 

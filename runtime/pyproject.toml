@@ -18,6 +18,9 @@ requires-python = ">=3.11"
 # image tag so a uv-mode install and the docker-mode image carry the same dependency surface.
 dependencies = [
     "psycopg[binary]==3.2.3",
+    # MySQL grounding (lib.db mysql:// branch). Pure Python, text protocol only — the wire
+    # proxy in front of a customer MySQL refuses prepared statements.
+    "pymysql==1.1.2",
     "stripe==11.4.1",
     "boto3==1.35.92",
     "requests>=2.32.3,<3",
