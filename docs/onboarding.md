@@ -32,13 +32,13 @@ bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brai
 This creates/updates one shared clone at `~/.rootcause-brain-skills` and links shipped skills into the
 brain's Codex-native `.agents/skills/`. Claude Code discovers only `.claude/skills`, so the installer
 creates a relative alias `.claude/skills -> ../.agents/skills` when that path has no user content —
-**commit it** (`git add .claude/skills`). Git worktrees contain tracked files only, so an uncommitted
-alias makes every brain skill an "Unknown command" there. The shipped skills themselves stay ignored
-through `.git/info/exclude`, so installation neither changes tracked `.gitignore` nor reaches
-committed `/brain`.
+**never commit it** — a tracked alias over an untracked target makes prod's run view materialize a
+broken symlink (it broke the whole fleet for ~22h on 2026-09-02) and brain lint's `symlink-broken` rule
+fails preflight on it. Alias, skills, and docs all stay ignored through `.git/info/exclude`, so
+installation neither changes tracked `.gitignore` nor reaches committed `/brain`.
 
-Those skills are ignored symlinks into the shared clone, so a fresh git worktree inherits the alias
-but not the skill content — re-run `install.sh <worktree-dir>` inside the worktree when you need it.
+Git worktrees carry tracked files only, so the installer lists the kit's four discovery paths in the
+repo-root `.worktreeinclude` allowlist; otherwise re-run `install.sh <worktree-dir>` in the worktree.
 
 Do not install Brain Dev as a user/global Codex or Claude Code plugin. These skills must be discovered
 from the brain checkout's canonical `.agents/skills/` tree. A user/global install makes

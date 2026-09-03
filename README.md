@@ -36,14 +36,15 @@ exactly one repo-local copy, scoped to that brain. User/global installs make the
 unrelated projects and can drift from the pinned brain checkout.
 
 The installer makes `.agents/skills/` the canonical Codex discovery tree. `.claude/skills` is a
-**committed** relative symlink to it (`.claude/skills -> ../.agents/skills`): Claude Code only
-discovers `.claude/skills`, and a `git worktree` carries tracked files only, so an uncommitted alias
-means "Unknown command" for every brain skill inside worktrees. Run `git add .claude/skills` once per
-brain. The kit-installed skills the alias exposes stay ignored locally through `.git/info/exclude`, so
-setup never modifies the brain's tracked `.gitignore`.
+relative symlink to it (Claude Code discovers only that path). **Never commit it, or any kit path.** A
+committed alias points at an untracked target, so prod's filtered run view materializes a *broken*
+symlink — that broke every run of 10 projects for ~22h on 2026-09-02, and brain lint's `symlink-broken`
+rule now fails preflight/promote on it. Everything the installer creates is ignored through
+`.git/info/exclude`, so setup never touches the brain's tracked `.gitignore` either.
 
-Because those skills are ignored symlinks into `~/.rootcause-brain-skills`, a fresh git worktree has
-the alias but no skill content — re-run `install.sh <worktree-dir>` inside it if you need them there.
+A `git worktree` carries tracked files only, so ignored kit paths do not follow it. The installer keeps
+them in the repo-root `.worktreeinclude` allowlist (the operator convention for local files an agent
+copies into a managed worktree); otherwise re-run `install.sh <worktree-dir>` inside the worktree.
 
 Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 
