@@ -1,6 +1,6 @@
 ---
 name: brain-harvest
-description: Run the full local harvest cycle for a rootcause project from a brain checkout using only the public rc CLI — the sent-history analog of brain-dream-cycle. Use when asked to onboard a mailbox's past replies, bootstrap a brain from historical sent mail, harvest/mine/synthesize a mailbox's answered-email corpus, or seed brain knowledge from a production export. Trigger a production harvest export, download the cleaned Markdown corpus, prepare a deterministic opaque-ID manifest with coverage ledger, fan out per-topic subagents to distil patterns (never raw mail), critic the first draft, reduce, decide durable homes across brain files / persona / triage, run a privacy+contract lint, evaluate against held-out threads, gate on operator diff approval, publish, then delete the local corpus.
+description: Run the full local harvest cycle for a rootcause project from a brain checkout using only the public rc CLI — the sent-history analog of brain-dream-cycle. Use when asked to onboard a mailbox's past replies, bootstrap a brain from historical sent mail, harvest/mine/synthesize a mailbox's answered-email corpus, or seed brain knowledge from a production export. Trigger a production harvest export, download the cleaned Markdown corpus, prepare a deterministic opaque-ID manifest with coverage ledger, fan out per-topic subagents to distil patterns (never raw mail), critic the first draft, reduce, decide durable homes across brain files / persona / triage, run a privacy+contract lint, evaluate against held-out threads, gate on operator diff approval, publish, then delete the local corpus. Also carries the standalone voice-format probe that recovers a mailbox's Gmail composer font and signature block (logo included) from its own sent HTML when drafts look foreign.
 ---
 
 # brain-harvest - synthesize a brain from historical sent mail
@@ -368,6 +368,7 @@ rg -n "<customer phrase>|<internal term>|<policy name>" AGENTS.md skills notes p
 | Product fact, routing, terminology, source-of-truth pointer, repeatable investigation/playbook | Brain files. |
 | Missing reusable script, action instructions, action selection rules | Brain files or `actions/<id>/`. |
 | Voice, language, signature, formality, wording preference, "sound more like us" | Persona settings via `rc project settings behavior`. |
+| Drafts look foreign: wrong font, missing signature/logo | `channel.draft_font_css` + `channel.signature_html` via the [voice-format probe](#voice-format-font--signature). |
 | Which inbound mail should become a draft, broad draft/no-draft guidance | Triage policy via `rc project triage policy`. |
 | Deterministic draft blacklist/whitelist based on sender/subject/header | Triage hard rule via `rc project triage rules` (`skip` / `force_process`). |
 | Shared project channel promotion | `brain-publish` exact-SHA public `rc` flow. |
@@ -441,6 +442,46 @@ The one legitimate negative signal is **presence-without-prose-reply**: mail tha
 This narrows the v1 guidance that routed "mail you never answer" to `effect=skip` freely. A temporary
 rule created just to verify the contract must be removed with `rc project triage rules rm <id>` before
 finishing.
+
+#### Voice format (font + signature)
+
+Persona settings carry *words*; the visual shell of a draft is two channel knobs. Gmail exposes
+neither the staff composer font nor the signature over its API, so both are harvested from the
+mailbox's own sent HTML. Run this at onboarding, and whenever someone says drafts "look off" —
+default Arial, missing logo. It is standalone: no scratch root or corpus needed.
+
+```bash
+# 1. the row export query (raw message HTML is not on a public rc surface yet — RootCause runs it;
+#    from a brain checkout, request the export through brain-publish).
+uv run --no-project python "$SKILL/scripts/voice_format_probe.py" --print-sql \
+  --mailbox info@example.com --limit 30
+# 2. the proposal (JSON rows in, one JSON proposal out; HEADs each signature image)
+uv run --no-project python "$SKILL/scripts/voice_format_probe.py" \
+  --messages "$SCRATCH/voice/rows.json" --out "$SCRATCH/voice/proposal.json"
+```
+
+The query skips our own sent replies (`drafts.sent_message_id`) — on a send-mode mailbox they are
+outbound rows too, and learning from them feeds our default straight back to us.
+
+**Review before applying — never apply silently.** Read `signature_text` (plain-text rendering) with
+the operator, and check `checks`: image HEADs must be `200`, `signature_share` ≥ 60%, and the byte
+count under the 16 KB server cap. A `warn` on font share means the mailbox is inconsistent — prefer
+unset over a wrong font. Signature image URLs are Google-hosted (`ci3.googleusercontent.com/mail-sig/…`),
+stable across sends and reused verbatim; never rehost them.
+
+Apply at the scope whose staff share the signature: **mailbox** when a project has several mailboxes
+with different staff (the usual multi-tenant case), otherwise tenant or project.
+
+```bash
+rc project mailbox ls -o json      # mailbox settings are keyed by UUID, not address
+rc --project <project> project mailbox settings set <mailbox-id> \
+  channel.draft_font_css="font-family:verdana,sans-serif" \
+  channel.signature_html="$(jq -r .signature_html "$SCRATCH/voice/proposal.json")"
+```
+
+Side effect: with `channel.signature_html` set, the agent stops writing its own sign-off. Reduce
+`persona.signature` to empty, or keep it only as tone guidance ("warm, first-name close") — a persona
+signature left in place duplicates the harvested block.
 
 ### 8. ⚙ Lint — scratch drafts and staged brain
 
