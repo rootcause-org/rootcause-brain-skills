@@ -242,6 +242,8 @@ def run_preflight(brain_dir: Path, action_path: Path, params: dict, mirrors_root
     print(("✅ " if ok else "❌ ") + (result.get("summary") or ""))
     if not ok and result.get("reason"):
         print(f"   reason: {result['reason']}")
+    if result.get("resource_url"):
+        print(f"   resource_url: {result['resource_url']}")
     if result.get("observed"):
         print("   observed: " + json.dumps(result["observed"], indent=2, default=str).replace("\n", "\n   "))
     if not ok:

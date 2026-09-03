@@ -34,6 +34,18 @@ class PreflightHelpers(unittest.TestCase):
             {"ok": True, "summary": "safe", "reason": ""},
         )
 
+    def test_result_includes_resource_url_only_when_non_empty(self):
+        self.assertNotIn("resource_url", preflight.result(True, "safe", resource_url=""))
+        self.assertEqual(
+            preflight.result(True, "Maité · afwezig di 19/09", resource_url="https://admin.example/t/x/1"),
+            {
+                "ok": True,
+                "summary": "Maité · afwezig di 19/09",
+                "reason": "",
+                "resource_url": "https://admin.example/t/x/1",
+            },
+        )
+
     def test_result_preserves_empty_observed_and_failure_class(self):
         self.assertEqual(
             preflight.result(

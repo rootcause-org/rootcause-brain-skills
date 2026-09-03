@@ -35,6 +35,7 @@ def result(
     reason: str = "",
     observed: Mapping[str, Any] | None = None,
     failure_class: str = "",
+    resource_url: str = "",
 ) -> dict[str, Any]:
     """Build the host preflight verdict envelope, including only supplied optional fields."""
     out: dict[str, Any] = {"ok": bool(ok), "summary": summary, "reason": reason}
@@ -42,6 +43,8 @@ def result(
         out["observed"] = dict(observed)
     if failure_class:
         out["class"] = failure_class
+    if resource_url:
+        out["resource_url"] = resource_url
     return out
 
 

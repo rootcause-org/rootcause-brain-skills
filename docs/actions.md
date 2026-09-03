@@ -109,6 +109,20 @@ write them in the project's customer language. `display_name` becomes the mailbo
 
 Unknown or absent values fall back to green — a color can never fail an action.
 
+### `resource_url` — link to the record
+
+Per-invocation, returned by the **preflight** (`preflight.result(..., resource_url=...)`) — not the
+manifest, not the LLM. An absolute `https` URL to the record the action will modify, in the customer's
+own admin UI. The host renders it as a link on the confirm button/card/page. Non-`http(s)` or invalid
+values are dropped silently, so a bad URL can never fail an action.
+
+### `summary` — the confirm-surface blurb
+
+The preflight `summary` is the human's one-line blurb on the confirm surface, so keep it ≤ ~60 chars in
+`<who/what> · <what changes>` shape — e.g. `Maité · afwezig di 19/09`. No full sentences; details belong
+behind `resource_url`. The host now shows the preflight summary instead of the agent's `intent` when
+both exist.
+
 ## Param Types
 
 `manifest.yaml` params are a small closed vocabulary:
