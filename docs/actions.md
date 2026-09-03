@@ -37,7 +37,7 @@ actions/<id>/
 - `manifest.yaml` describes the action, param schema, any hosted write connections, and its `autonomy`.
   `description` is for the agent; `display_name` + `customer_description` are customer-facing.
 - Optional `surfaces:` limits host awareness, proposal, and execution to `chat`, `dashboard_chat`,
-  `gmail`, `outlook`, `intercom`, `whatsapp`, `compose`, `prompt_api`, `mcp`, `embassy`, or `console`.
+  `gmail`, `outlook`, `imap`, `intercom`, `whatsapp`, `compose`, `prompt_api`, `mcp`, `embassy`, or `console`.
   Omission means all; unknown values fail lint and registry loading. Files remain mounted wholesale:
   this gates action eligibility, not filesystem visibility.
 - `preflight.py`, when present, is read-only and blocks unsafe/mis-grounded params before proposal.
