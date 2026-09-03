@@ -9,12 +9,14 @@ that contract:
     frontmatter, or one whose whitespace-collapsed length exceeds 90 chars (the tree truncates
     there, so the tail never reaches the model; nothing else consumes a long md description);
     an `actions/*/manifest.yaml` with no top-level `description:`.
-  * **FAIL** — a git-tracked symlink whose target is absolute, escapes the repo root, or is not
-    itself tracked. A run worktree is a fresh checkout of tracked files only, so a link to an
-    untracked/ignored path resolves on the author's machine and dangles in production.
+  * **FAIL** — a git-tracked symlink whose target is absolute or escapes the repo root; neither can
+    resolve to brain content in a fresh checkout.
   * **FAIL** — a Python script outside `skills/`, `actions/`, or `tests/` (except root
     `conftest.py`). Import smoke intentionally discovers only `skills/**`, so grounding scripts must
     live under `skills/<topic>/scripts/` rather than beside notes or at the brain root.
+  * **WARN** — a git-tracked relative symlink whose target is not tracked (the supported committed
+    `.claude/skills -> ../.agents/skills` alias shape): it dangles in a fresh checkout, which the host
+    skips when building a run view.
   * **WARN** — an overlong action-manifest description whose first complete sentence does not fit in
     the 90-character tree gloss (the SAME field is injected full-length into the per-run action
     catalog prompt, so rich copy is load-bearing there — lead with a short routing sentence, never
@@ -254,13 +256,16 @@ def _walk_symlinks(root: Path) -> list[str]:
 
 
 def _check_symlinks(root: Path) -> list[Finding]:
-    """FAIL tracked symlinks that won't resolve in a fresh checkout.
+    """FAIL symlinks that can never point at brain content; WARN merely dangling relative ones.
 
-    The failure this exists for: a tracked `.claude/skills -> ../.agents/skills` link whose target is
-    gitignored. It resolves on the author's box and dangles in every production run worktree, where
-    the whole brain is a bare `git checkout` of tracked paths.
+    A committed `.claude/skills -> ../.agents/skills` alias over a gitignored target is the supported
+    layout: the link dangles in a fresh checkout, and the host skips dangling relative in-repo links
+    when it materializes a run view. Absolute or escaping targets stay fatal — they would reach
+    outside the brain if they resolved at all.
     """
     fix = "remove the symlink or track its target; untracked targets dangle in run worktrees"
+    dangling = ("dangling in checkouts (target untracked); harmless, the host skips it when building "
+                "the run view")
     index = _git_index(root)
     candidates = sorted(index[1]) if index else _walk_symlinks(root)
     tracked = index[0] if index else None
@@ -290,15 +295,15 @@ def _check_symlinks(root: Path) -> list[Finding]:
         if tracked is None:
             if not link.exists():  # follows the link; git-less fallback can only prove disk existence
                 findings.append(Finding(
-                    rel, "FAIL", f"symlink target {target!r} does not exist — {fix}", "symlink-broken",
+                    rel, "WARN", f"symlink target {target!r} does not exist — {dangling}",
+                    "symlink-broken",
                 ))
             continue
         prefix = resolved + "/"
         if resolved not in tracked and not any(t.startswith(prefix) for t in tracked):
             findings.append(Finding(
-                rel, "FAIL",
-                f"symlink target {target!r} is not tracked in this repo, so it will not exist in a "
-                f"fresh checkout — {fix}",
+                rel, "WARN",
+                f"symlink target {target!r} is not tracked in this repo — {dangling}",
                 "symlink-broken",
             ))
     return findings

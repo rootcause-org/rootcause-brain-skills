@@ -1,23 +1,19 @@
 #!/usr/bin/env bash
-# Install the Brain Dev kit LOCALLY into a brain repo — every kit path is IGNORED, never committed.
+# Install the Brain Dev kit LOCALLY into a brain repo — the kit content is gitignored.
 #
-# Why nothing here may be committed:
+# Why the kit content stays untracked:
 #   - Prod materializes a filtered run view of the committed brain (rootcause internal/brain/visible.go)
 #     and the grounding agent rg/find/ls's the whole tree. Committed harness = run-time pollution; an
 #     untracked one can never reach /brain.
-#   - A COMMITTED `.claude/skills -> ../.agents/skills` alias is worse than useless: its target is
-#     ignored, so the run view materializes a BROKEN symlink. That took down every run of 10 projects
-#     for ~22h on 2026-09-02. The host now tolerates it but WARNs per run view, and brain lint
-#     (`runtime/lib/brain_lint.py`, rule `symlink-broken`) FAILs a tracked symlink whose target is not
-#     tracked — a committed alias blocks preflight/promote.
 #   - Committing the kit into each brain also re-creates the multi-copy skill drift this repo kills.
 #
 # Model: ONE pinned clone on disk, SYMLINKED into each brain's locally ignored `.agents/skills/`
-# discovery tree (Codex is canonical). Claude Code discovers only `.claude/skills`, so the brain gets a
-# relative alias `.claude/skills -> ../.agents/skills` — also ignored, via `.git/info/exclude` (no
-# commit in any brain). A `git worktree` carries tracked files only, so agent worktrees pick the kit up
-# through the repo-root `.worktreeinclude` allowlist this installer maintains, or by re-running
-# `install.sh <worktree-dir>` inside the worktree.
+# discovery tree (Codex is canonical). Claude Code discovers only `.claude/skills`, so each brain
+# COMMITS one relative alias `.claude/skills -> ../.agents/skills`. That alias is the single tracked
+# kit path: a `git worktree` carries tracked files only, so without it every brain skill is "Unknown
+# command" in worktrees. Its target is usually an ignored local install, so the link dangles in a fresh
+# checkout — prod skips dangling relative in-repo symlinks when building the run view, and brain lint
+# only WARNs. `.worktreeinclude` additionally carries the ignored kit paths into managed worktrees.
 # Do not also install this kit as a user/global Claude Code or Codex plugin; that creates a second,
 # project-agnostic discovery path and makes Brain Dev appear in unrelated repos.
 #
@@ -226,10 +222,11 @@ do
 done
 
 # 3. Codex-first discovery. `.agents/skills/` is the one canonical per-brain tree. Claude Code uses
-#    `.claude/skills -> ../.agents/skills` when possible. That alias is LOCAL and IGNORED like the kit
-#    skills behind it — committing it ships a symlink whose target is untracked, which the run view
-#    materializes broken and brain lint (`symlink-broken`) rejects. An existing compatibility directory
-#    is collapsed to the alias only when it contains installer-owned links and nothing user-owned.
+#    `.claude/skills -> ../.agents/skills` when possible; that relative alias is meant to be COMMITTED
+#    (worktrees only carry tracked files), while the kit skills it exposes stay locally ignored — so it
+#    dangles in a fresh checkout, which prod skips and brain lint only warns about. An existing
+#    compatibility directory is collapsed to the alias only when it contains installer-owned links and
+#    nothing user-owned.
 if [ -L "$BRAIN/.agents/skills" ]; then
   echo "error: $BRAIN/.agents/skills is a symlink; refusing to replace the canonical Codex tree" >&2
   exit 1
@@ -343,8 +340,8 @@ fi
 # 4. Local-only ignore rules (idempotent). Never dirty a brain's tracked `.gitignore` just to install
 #    developer tooling. Replace only this installer's marked block, preserving every user rule.
 #    `.agents/skills/` is listed per SHIPPED NAME, not wholesale: a brain may author and commit its own
-#    skills in that tree. `.claude/skills` is ignored only in alias mode — in fallback (directory) mode
-#    it holds user content and only the per-name links inside it are ignored.
+#    skills in that tree. `.claude/skills` is never ignored — the alias is committed, and in fallback
+#    (directory) mode it holds user content with only the per-name links inside it ignored.
 mkdir -p "$(dirname "$EXCLUDE")"
 touch "$EXCLUDE"
 BRAIN_ID="${BRAIN_PREFIX%/}"
@@ -375,9 +372,6 @@ mv "$EXCLUDE_TMP" "$EXCLUDE"
       echo "${IGNORE_ROOT}.claude/skills/$name"
     fi
   done
-  if [ "$CLAUDE_MODE" = "alias" ]; then
-    echo "${IGNORE_ROOT}.claude/skills"
-  fi
   if [ -d "$DOCS_SRC" ]; then
     echo "${IGNORE_ROOT}.agents/docs"
     echo "${IGNORE_ROOT}.claude/docs"
@@ -385,7 +379,7 @@ mv "$EXCLUDE_TMP" "$EXCLUDE"
   echo "$EXCLUDE_END"
 } >>"$EXCLUDE"
 
-# 5. Agent worktrees carry TRACKED files only, and none of the kit is tracked. The repo-root
+# 5. Agent worktrees carry TRACKED files only; the alias is, the kit content behind it is not. The repo-root
 #    `.worktreeinclude` allowlist is the operator convention for ignored local files an agent should
 #    copy into a new managed worktree; keep the kit's discovery paths in it. Written but never
 #    committed by this installer.
@@ -404,24 +398,18 @@ for path in .agents/skills .agents/docs .claude/skills .claude/docs; do
   grep -qxF "$path" "$WTI" || { echo "$path" >>"$WTI"; WTI_CHANGED=1; }
 done
 
-# 6. Loud audit: a TRACKED kit path is the 2026-09-02 outage shape. The alias is tracked-safe only when
-#    its target `.agents/skills` is tracked content too (brains that genuinely commit skills there).
-AGENTS_SKILLS_TRACKED=0
-git -C "$BRAIN" ls-files --error-unmatch -- .agents/skills >/dev/null 2>&1 && AGENTS_SKILLS_TRACKED=1
+# 6. Loud audit: a TRACKED kit *content* path ships developer tooling into /brain. Only the
+#    `.claude/skills` alias belongs in git.
 warn_tracked() {
   local path="$1"
   echo >&2
   echo "  ⚠  WARNING: $path is TRACKED in $BRAIN" >&2
-  echo "     Prod materializes it into the run view; brain lint rule symlink-broken FAILs preflight/promote." >&2
+  echo "     Prod materializes it into the run view as brain content." >&2
   echo "     Fix it yourself (this installer never rewrites your git state):" >&2
   echo "       git -C $BRAIN rm --cached -r --quiet $path && git -C $BRAIN commit -m 'chore: untrack local brain-dev kit path' && git -C $BRAIN push" >&2
 }
-for path in .claude/skills .claude/docs .agents/docs; do
+for path in .claude/docs .agents/docs; do
   git -C "$BRAIN" ls-files --error-unmatch -- "$path" >/dev/null 2>&1 || continue
-  if [ "$path" = ".claude/skills" ] && [ "$AGENTS_SKILLS_TRACKED" = 1 ]; then
-    echo "note: tracked .claude/skills alias points at tracked .agents/skills content — leaving it alone"
-    continue
-  fi
   warn_tracked "$path"
 done
 
@@ -438,7 +426,10 @@ echo "  uv run \"\$SKILL/scripts/brain_run.py\" --brief"
 echo "  uv run \"\$SKILL/scripts/brain_test.py\" --live"
 echo "Codex auto-discovers the canonical .agents/skills tree."
 if [ "$CLAUDE_MODE" = "alias" ]; then
-  echo "Claude Code compatibility: .claude/skills -> ../.agents/skills (local + ignored, never commit it)"
+  echo "Claude Code compatibility: .claude/skills -> ../.agents/skills"
+  if ! git -C "$BRAIN" ls-files --error-unmatch .claude/skills >/dev/null 2>&1; then
+    echo "  commit that alias so git worktrees see the skills: git add .claude/skills && git commit"
+  fi
 else
   echo "Claude Code compatibility: preserved user-owned .claude/skills directory"
 fi

@@ -29,12 +29,13 @@ run_install() {
   RC_BRAIN_KIT="$KIT" "$ROOT/install.sh" "$BRAIN"
 }
 
-# EVERY kit path stays local + ignored, including the `.claude/skills` alias: a committed alias points
-# at an untracked target, so prod's run view materializes a broken symlink (2026-09-02 fleet outage) and
-# brain lint's symlink-broken rule fails preflight. `.worktreeinclude` (the operator allowlist that
-# carries these ignored paths into agent worktrees) is the only untracked entry left behind.
+# The kit content stays ignored, but the `.claude/skills` alias is meant to be COMMITTED: Claude Code
+# discovers only that path and a git worktree carries tracked files only. So it must NOT be ignored.
+# `.worktreeinclude` (the allowlist that carries the ignored kit paths into agent worktrees) is written
+# too, so both show up untracked after a fresh install.
 assert_clean_local_install() {
-  test "$(git -C "$BRAIN" status --short --untracked-files=all)" = '?? .worktreeinclude'
+  test "$(git -C "$BRAIN" status --short --untracked-files=all)" = '?? .claude/skills
+?? .worktreeinclude'
   test "$(cat "$BRAIN/.gitignore")" = "# tracked rules stay unchanged"
   local exclude
   exclude="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path info/exclude)"
@@ -43,8 +44,14 @@ assert_clean_local_install() {
   grep -qxF '/.agents/skills/beta' "$exclude"
   grep -qxF '/.agents/docs' "$exclude"
   grep -qxF '/.claude/docs' "$exclude"
-  grep -qxF '/.claude/skills' "$exclude"
-  git -C "$BRAIN" check-ignore -q .claude/skills
+  if grep -qxF '/.claude/skills' "$exclude"; then
+    echo "error: committable .claude/skills alias was ignored" >&2
+    exit 1
+  fi
+  if git -C "$BRAIN" check-ignore -q .claude/skills; then
+    echo "error: .claude/skills is ignored; it cannot be committed for worktrees" >&2
+    exit 1
+  fi
 }
 
 assert_worktreeinclude() {
@@ -69,40 +76,27 @@ run_install >"$TMP/clean.out"
 test "$(readlink "$BRAIN/.agents/skills/alpha")" = "$KIT/skills/alpha"
 test "$(readlink "$BRAIN/.agents/skills/beta")" = "$KIT/skills/beta"
 test "$(readlink "$BRAIN/.claude/skills")" = '../.agents/skills'
-if grep -q 'git add .claude/skills' "$TMP/clean.out"; then
-  echo "error: installer still tells operators to commit the alias" >&2
-  exit 1
-fi
+grep -q 'git add .claude/skills' "$TMP/clean.out"
 assert_clean_local_install
 assert_docs_links_resolve
 assert_worktreeinclude
 
-# A tracked alias over an untracked target is the outage shape: warn loudly, never rewrite git state.
-git -C "$BRAIN" add -f .claude/skills
+# Once the alias is committed, the installer stops nagging about it, and a dangling (ignored) target is
+# fine: prod skips such links and brain lint only warns.
+git -C "$BRAIN" add .claude/skills
 git -C "$BRAIN" commit -q -m 'commit claude alias'
-run_install >"$TMP/tracked.out" 2>"$TMP/tracked.err"
-grep -q 'is TRACKED in' "$TMP/tracked.err"
-grep -q 'rm --cached' "$TMP/tracked.err"
-test -n "$(git -C "$BRAIN" ls-files .claude/skills)"
-git -C "$BRAIN" rm -q --cached .claude/skills
-git -C "$BRAIN" commit -q -m 'uncommit claude alias'
-
-# A brain that genuinely tracks .agents/skills content may keep its tracked alias: no warning.
-new_brain tracked-content
-mkdir -p "$BRAIN/.agents/skills/own-skill"
-printf '%s\n' 'own' >"$BRAIN/.agents/skills/own-skill/SKILL.md"
-mkdir -p "$BRAIN/.claude"
-ln -s ../.agents/skills "$BRAIN/.claude/skills"
-git -C "$BRAIN" add -f .agents/skills/own-skill/SKILL.md .claude/skills
-git -C "$BRAIN" commit -q -m 'brain-owned skills'
-run_install >"$TMP/tracked-content.out" 2>"$TMP/tracked-content.err"
-if grep -q 'is TRACKED in' "$TMP/tracked-content.err"; then
-  echo "error: warned about a legitimately tracked alias" >&2
+run_install >"$TMP/committed.out" 2>"$TMP/committed.err"
+if grep -q 'git add .claude/skills' "$TMP/committed.out"; then
+  echo "error: installer still asked to add an already-tracked alias" >&2
   exit 1
 fi
-grep -q 'leaving it alone' "$TMP/tracked-content.out"
-test -f "$BRAIN/.agents/skills/own-skill/SKILL.md"
-BRAIN="$TMP/clean"
+if grep -q 'is TRACKED in' "$TMP/committed.err"; then
+  echo "error: installer warned about the supported committed alias" >&2
+  exit 1
+fi
+test "$(git -C "$BRAIN" status --short --untracked-files=all)" = '?? .worktreeinclude'
+git -C "$BRAIN" rm -q --cached .claude/skills
+git -C "$BRAIN" commit -q -m 'uncommit claude alias'
 
 # Idempotence keeps the same topology and does not duplicate local excludes.
 run_install >"$TMP/idempotent.out"
@@ -221,8 +215,8 @@ run_install >"$TMP/nested.out"
 exclude="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path info/exclude)"
 grep -qxF '/tenant/.agents/skills/alpha' "$exclude"
 grep -qxF '/tenant/.agents/docs' "$exclude"
-grep -qxF '/tenant/.claude/skills' "$exclude"
-test "$(git -C "$REPO" status --short --untracked-files=all)" = '?? tenant/.worktreeinclude'
+test "$(git -C "$REPO" status --short --untracked-files=all)" = '?? tenant/.claude/skills
+?? tenant/.worktreeinclude'
 
 # A second nested brain keeps the first brain's independently managed excludes.
 FIRST_BRAIN="$BRAIN"
@@ -239,7 +233,9 @@ grep -qxF '/other/.agents/skills/alpha' "$exclude"
 git -C "$REPO" check-ignore -q tenant/.rootcause/dump
 git -C "$REPO" check-ignore -q tenant/.agents/skills/alpha
 git -C "$REPO" check-ignore -q other/.agents/skills/alpha
-test "$(git -C "$REPO" status --short --untracked-files=all)" = '?? other/.worktreeinclude
+test "$(git -C "$REPO" status --short --untracked-files=all)" = '?? other/.claude/skills
+?? other/.worktreeinclude
+?? tenant/.claude/skills
 ?? tenant/.worktreeinclude'
 
 echo "install tests passed"
