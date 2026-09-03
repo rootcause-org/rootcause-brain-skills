@@ -9,6 +9,9 @@ that contract:
     frontmatter, or one whose whitespace-collapsed length exceeds 90 chars (the tree truncates
     there, so the tail never reaches the model; nothing else consumes a long md description);
     an `actions/*/manifest.yaml` with no top-level `description:`.
+  * **FAIL** — a git-tracked symlink whose target is absolute, escapes the repo root, or is not
+    itself tracked. A run worktree is a fresh checkout of tracked files only, so a link to an
+    untracked/ignored path resolves on the author's machine and dangles in production.
   * **FAIL** — a Python script outside `skills/`, `actions/`, or `tests/` (except root
     `conftest.py`). Import smoke intentionally discovers only `skills/**`, so grounding scripts must
     live under `skills/<topic>/scripts/` rather than beside notes or at the brain root.
@@ -31,6 +34,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -66,6 +70,9 @@ _SCRIPT_IGNORED_DIRS = frozenset({
     "_internal",
     "node_modules",
 })
+
+
+_SYMLINK_WALK_IGNORED_DIRS = frozenset({".git", ".venv", "node_modules"})
 
 
 @dataclass(frozen=True)
@@ -205,6 +212,98 @@ def _check(path: Path, rel: str, desc: str | None, kind: str) -> list[Finding]:
     return out
 
 
+def _git_index(root: Path) -> tuple[frozenset[str], frozenset[str]] | None:
+    """(tracked paths, tracked symlink paths) from the git index, or None when git can't answer.
+
+    `git ls-files -s` is the only source that knows what a *fresh checkout* will contain — the working
+    tree cannot distinguish a tracked file from an ignored one that only exists locally.
+    """
+    if not (root / ".git").exists():
+        return None
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-s", "-z"],
+            capture_output=True, text=True, check=True, timeout=30,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    tracked: set[str] = set()
+    links: set[str] = set()
+    for entry in out.split("\0"):
+        if not entry:
+            continue
+        meta, _, rel = entry.partition("\t")
+        if not rel:
+            continue
+        tracked.add(rel)
+        if meta.split(" ", 1)[0] == "120000":
+            links.add(rel)
+    return frozenset(tracked), frozenset(links)
+
+
+def _walk_symlinks(root: Path) -> list[str]:
+    """Every symlink under `root` (repo-relative, posix), used when git can't tell us what's tracked."""
+    found: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
+        dirnames[:] = sorted(n for n in dirnames if n not in _SYMLINK_WALK_IGNORED_DIRS)
+        rel_dir = Path(dirpath).relative_to(root)
+        for name in sorted(dirnames + filenames):
+            if (Path(dirpath) / name).is_symlink():
+                found.append((rel_dir / name).as_posix())
+    return sorted(set(found))
+
+
+def _check_symlinks(root: Path) -> list[Finding]:
+    """FAIL tracked symlinks that won't resolve in a fresh checkout.
+
+    The failure this exists for: a tracked `.claude/skills -> ../.agents/skills` link whose target is
+    gitignored. It resolves on the author's box and dangles in every production run worktree, where
+    the whole brain is a bare `git checkout` of tracked paths.
+    """
+    fix = "remove the symlink or track its target; untracked targets dangle in run worktrees"
+    index = _git_index(root)
+    candidates = sorted(index[1]) if index else _walk_symlinks(root)
+    tracked = index[0] if index else None
+
+    findings: list[Finding] = []
+    for rel in candidates:
+        link = root / rel
+        try:
+            target = os.readlink(link)
+        except OSError:
+            continue
+        if os.path.isabs(target):
+            findings.append(Finding(
+                rel, "FAIL",
+                f"symlink target {target!r} is absolute and exists only on this machine — {fix}",
+                "symlink-broken",
+            ))
+            continue
+        resolved = os.path.normpath(os.path.join(os.path.dirname(rel), target))
+        if resolved == ".." or resolved.startswith("../") or os.path.isabs(resolved):
+            findings.append(Finding(
+                rel, "FAIL",
+                f"symlink target {target!r} escapes the brain root — {fix}",
+                "symlink-broken",
+            ))
+            continue
+        if tracked is None:
+            if not link.exists():  # follows the link; git-less fallback can only prove disk existence
+                findings.append(Finding(
+                    rel, "FAIL", f"symlink target {target!r} does not exist — {fix}", "symlink-broken",
+                ))
+            continue
+        prefix = resolved + "/"
+        if resolved not in tracked and not any(t.startswith(prefix) for t in tracked):
+            findings.append(Finding(
+                rel, "FAIL",
+                f"symlink target {target!r} is not tracked in this repo, so it will not exist in a "
+                f"fresh checkout — {fix}",
+                "symlink-broken",
+            ))
+    return findings
+
+
 def lint_brain(brain_root: str | Path) -> list[Finding]:
     """Lint every routable file under `brain_root` for a renderable, in-budget `description:`.
 
@@ -229,6 +328,8 @@ def lint_brain(brain_root: str | Path) -> list[Finding]:
                 "covers only `skills/**`",
                 "script-outside-skills",
             ))
+
+    findings += _check_symlinks(root)
 
     for skill_md in sorted(root.glob("skills/*/SKILL.md")):
         findings += _check(skill_md, _rel(root, skill_md), _md_description(skill_md), "SKILL.md")
@@ -264,6 +365,7 @@ _RULE_LABELS = {
     "description-length": "description length",
     "description-style": "description style",
     "script-size": "script size",
+    "symlink-broken": "broken symlinks",
     "script-outside-skills": "scripts outside skills",
     "helper-duplicate": "duplicate helpers",
     "helper-drift": "drifted helpers",

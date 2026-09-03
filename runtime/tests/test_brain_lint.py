@@ -236,3 +236,74 @@ def test_pytest_adapter_surfaces_script_outside_skills(tmp_path: Path) -> None:
     assert run.returncode == 1
     assert "FAIL scripts outside skills (1)" in run.stdout
     assert "notes/faq/scripts/generate_index.py" in run.stdout
+
+
+def _git_brain(root: Path) -> None:
+    """A real git repo so the symlink lint can consult the index, not just the working tree."""
+    _seed_brain(root)
+    _write(root / ".gitignore", ".agents/\n")
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
+    subprocess.run(["git", "init", "-q", "-b", "main", str(root)], check=True, env=env)
+    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, env=env)
+
+
+def _symlink_fails(root: Path) -> list[Finding]:
+    return [f for f in _fails(lint_brain(root)) if f.rule == "symlink-broken"]
+
+
+def test_lint_brain_fails_tracked_symlink_to_untracked_target(tmp_path: Path) -> None:
+    # The real incident: .claude/skills -> ../.agents/skills, with .agents/ gitignored. Resolves
+    # locally, dangles in every fresh run worktree.
+    _git_brain(tmp_path)
+    _write(tmp_path / ".agents/skills/local/SKILL.md", "---\ndescription: local\n---\n")
+    (tmp_path / ".claude").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".claude/skills").symlink_to("../.agents/skills")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-f", ".claude/skills"], check=True)
+
+    findings = _symlink_fails(tmp_path)
+
+    assert [f.path for f in findings] == [".claude/skills"]
+    assert "not tracked" in findings[0].message
+    assert "dangle in run worktrees" in findings[0].message
+
+
+def test_lint_brain_allows_tracked_symlink_to_tracked_dir(tmp_path: Path) -> None:
+    _git_brain(tmp_path)
+    (tmp_path / "shortcuts").mkdir()
+    (tmp_path / "shortcuts/cases").symlink_to("../skills/cases")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+
+    assert _symlink_fails(tmp_path) == []
+
+
+def test_lint_brain_fails_absolute_symlink(tmp_path: Path) -> None:
+    _git_brain(tmp_path)
+    (tmp_path / "abs").symlink_to("/etc/hosts")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+
+    findings = _symlink_fails(tmp_path)
+
+    assert [f.path for f in findings] == ["abs"]
+    assert "absolute" in findings[0].message
+
+
+def test_lint_brain_fails_symlink_escaping_root(tmp_path: Path) -> None:
+    _git_brain(tmp_path)
+    (tmp_path / "outside").symlink_to("../elsewhere")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+
+    findings = _symlink_fails(tmp_path)
+
+    assert [f.path for f in findings] == ["outside"]
+    assert "escapes the brain root" in findings[0].message
+
+
+def test_lint_brain_without_git_falls_back_to_disk_existence(tmp_path: Path) -> None:
+    _seed_brain(tmp_path)  # no .git → existence check only
+    (tmp_path / "dangling").symlink_to("skills/missing")
+    (tmp_path / "ok").symlink_to("skills/cases")
+
+    findings = _symlink_fails(tmp_path)
+
+    assert [f.path for f in findings] == ["dangling"]
+    assert "does not exist" in findings[0].message
