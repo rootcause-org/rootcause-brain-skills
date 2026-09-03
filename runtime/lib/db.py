@@ -34,15 +34,24 @@ loads even where the driver isn't installed.
 
 MySQL: a ``mysql://`` DSN transparently switches the whole module to PyMySQL — same helpers, same
 `Column`/`ColumnList` results, same read-only + hard-timeout posture (``START TRANSACTION READ
-ONLY`` + ``SET SESSION max_execution_time``, with the wire proxy in front enforcing the ceiling
-regardless), same one-statement rule, same hidden-column auto-heal and scoping-aware hints. What
-differs: ``schema=`` means the MySQL *database* (default: the DSN's own, via ``database()``);
-`columns` reports the full ``COLUMN_TYPE`` (``varchar(255)``, ``int unsigned``); `table_stats`
-returns ``information_schema`` sizes + the index list and has no ``seq_scan``/``idx_scan``/planner
-column stats; `explain` uses ``EXPLAIN FORMAT=TREE`` (falling back to tabular ``EXPLAIN``); there
-are no Postgres arrays to hydrate (``JSON`` columns decode to Python values instead); and only the
-text protocol is used — prepared statements are refused upstream, so ``%s`` params are interpolated
-client-side exactly as psycopg's simple protocol does.
+ONLY`` + ``SET SESSION max_execution_time`` where the server has it, with the wire proxy in front
+enforcing the ceiling regardless), same one-statement rule, same hidden-column auto-heal and
+scoping-aware hints. What differs: ``schema=`` means the MySQL *database* (default: the DSN's own,
+via ``database()``); `columns` reports the full ``COLUMN_TYPE`` (``varchar(255)``, ``int
+unsigned``); `table_stats` returns ``information_schema`` sizes + the index list and has no
+``seq_scan``/``idx_scan``/planner column stats; `explain` uses ``EXPLAIN FORMAT=TREE`` on servers
+that support it (8.0.16+), tabular ``EXPLAIN`` otherwise; there are no Postgres arrays to hydrate
+(``JSON`` columns decode to Python values instead); and only the text protocol is used — prepared
+statements are refused upstream, so ``%s`` params are interpolated client-side exactly as psycopg's
+simple protocol does.
+
+Server version is read once per DSN straight off the connection handshake (free — no extra round
+trip) and gates the GUCs/features that don't exist on older MySQL: ``max_execution_time`` is
+5.7.8+ (silently skipped below that — the wire proxy enforces the timeout ceiling regardless, this
+is only belt-and-suspenders); ``START TRANSACTION READ ONLY`` is 5.6.5+ (below that this module
+refuses rather than running unguarded); ``EXPLAIN FORMAT=TREE`` is 8.0.16+; CTEs/window functions
+are 8.0+ and the ``JSON`` type is 5.7+ (both called out in the syntax-error hint, version-keyed so
+newer servers don't get a stale caveat).
 
 CLI (token-efficient one-offs from bash):
 
@@ -883,6 +892,54 @@ _MYSQL_EXEC_TIMEOUTS = (3024, 1317)  # max_execution_time exceeded / query inter
 
 _MYSQL_JSON_TYPE_CODE = 245  # FIELD_TYPE.JSON
 
+# Version floors for the features/GUCs this module touches (major, minor, patch).
+_MYSQL_MIN_READ_ONLY_TXN = (5, 6, 5)  # START TRANSACTION READ ONLY
+_MYSQL_MIN_MAX_EXECUTION_TIME = (5, 7, 8)  # SET SESSION max_execution_time (ER_UNKNOWN_SYSTEM_VARIABLE below)
+_MYSQL_MIN_EXPLAIN_TREE = (8, 0, 16)  # EXPLAIN FORMAT=TREE
+_MYSQL_MIN_WINDOW_AND_CTE = (8, 0, 0)
+_MYSQL_MIN_JSON_TYPE = (5, 7, 0)
+
+_MYSQL_VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+# Cache of (major, minor, patch) per resolved DSN — parsed once from the connection handshake
+# (``conn.get_server_info()``), which PyMySQL already captures on connect at zero extra cost, so
+# "detect the version" never costs a dedicated round trip once a DSN has connected at least once.
+_MYSQL_VERSION_CACHE: dict[str, tuple[int, int, int]] = {}
+
+
+def _parse_mysql_version(raw: str | None) -> tuple[int, int, int]:
+    """``(major, minor, patch)`` from a handshake version string (``"5.6.51-log"`` → ``(5, 6, 51)``),
+    or ``(0, 0, 0)`` when unparseable — callers must treat that as "unknown", not "ancient"."""
+    m = _MYSQL_VERSION_RE.search(raw or "")
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else (0, 0, 0)
+
+
+def _mysql_note_version(dsn: str, conn) -> tuple[int, int, int]:
+    """Cache+return this DSN's server version from an already-open connection's handshake info."""
+    cached = _MYSQL_VERSION_CACHE.get(dsn)
+    if cached is not None:
+        return cached
+    version = _parse_mysql_version(conn.get_server_info())
+    _MYSQL_VERSION_CACHE[dsn] = version
+    return version
+
+
+def _mysql_server_version(db: str | None) -> tuple[int, int, int]:
+    """This db's MySQL version, connecting only if no query has resolved it yet this process."""
+    dsn = _resolve_dsn(db)
+    cached = _MYSQL_VERSION_CACHE.get(dsn)
+    if cached is not None:
+        return cached
+    import pymysql
+
+    try:
+        conn = pymysql.connect(**_mysql_connect_kwargs(dsn, DEFAULT_TIMEOUT_MS))
+    except Exception as e:  # noqa: BLE001 - PyMySQL connect errors vary by socket/TLS path.
+        _raise_connect_failure(e)
+    try:
+        return _mysql_note_version(dsn, conn)
+    finally:
+        conn.close()
+
 
 def _is_mysql_dsn(dsn: str) -> bool:
     return dsn.strip().lower().startswith(_MYSQL_SCHEMES)
@@ -937,7 +994,23 @@ def _mysql_connect_kwargs(dsn: str, timeout_ms: int) -> dict:
     return kwargs
 
 
-def _mysql_hint(exc, timeout_ms: int, sql: str | None, db: str | None) -> str | None:
+def _mysql_syntax_caveats(version: tuple[int, int, int]) -> str:
+    """Version-keyed dialect gaps worth mentioning on a 1064, or "" when unknown/all supported."""
+    if version == (0, 0, 0):
+        return ""
+    gaps = []
+    if version < _MYSQL_MIN_WINDOW_AND_CTE:
+        gaps.append("no CTEs (`WITH ...`) or window functions")
+    if version < _MYSQL_MIN_JSON_TYPE:
+        gaps.append("no JSON type/functions")
+    if not gaps:
+        return ""
+    return f" Also, this server is MySQL {'.'.join(map(str, version))}: {'; '.join(gaps)}."
+
+
+def _mysql_hint(
+    exc, timeout_ms: int, sql: str | None, db: str | None, version: tuple[int, int, int] = (0, 0, 0)
+) -> str | None:
     """One corrective hint per MySQL error class agents actually hit, or None to re-raise untouched."""
     errno = exc.args[0] if exc.args and isinstance(exc.args[0], int) else None
     if errno in _MYSQL_EXEC_TIMEOUTS:
@@ -958,7 +1031,7 @@ def _mysql_hint(exc, timeout_ms: int, sql: str | None, db: str | None) -> str | 
             "MySQL rejected the syntax. This is MySQL, not Postgres: quote identifiers with "
             "`backticks` (a \"double-quoted\" name is a string literal), cast with CAST(x AS CHAR) "
             "instead of x::text, and use JSON_EXTRACT/-> instead of ->>."
-        )
+        ) + _mysql_syntax_caveats(version)
     return None
 
 
@@ -973,16 +1046,30 @@ def _mysql_query(sql, params, db_arg, dsn, timeout_ms, timeout_hint_stats):
     except Exception as e:  # noqa: BLE001 - PyMySQL connect errors vary by socket/TLS path.
         _raise_connect_failure(e)
 
+    version = _mysql_note_version(dsn, conn)
     try:
         with conn.cursor() as cur:
-            try:
-                cur.execute(f"SET SESSION max_execution_time = {timeout_ms}")
-            except Exception as e:  # noqa: BLE001 - advisory only; the wire proxy caps regardless.
-                warnings.warn(
-                    f"MySQL refused SET SESSION max_execution_time ({e}); the {timeout_ms} ms "
-                    "ceiling is still enforced in front of this database.",
-                    stacklevel=3,
+            if version != (0, 0, 0) and version < _MYSQL_MIN_READ_ONLY_TXN:
+                raise RuntimeError(
+                    f"MySQL {'.'.join(map(str, version))} predates "
+                    f"{'.'.join(map(str, _MYSQL_MIN_READ_ONLY_TXN))}, which is where "
+                    "`START TRANSACTION READ ONLY` was introduced — this module refuses to run "
+                    "queries against it rather than drop the read-only guarantee."
                 )
+            # max_execution_time doesn't exist before 5.7.8 (ER_UNKNOWN_SYSTEM_VARIABLE, 1193) — on
+            # a 5.6 server EVERY query would warn, so skip it silently below the floor instead of
+            # trying and catching. The wire proxy in front enforces the timeout ceiling either way,
+            # so this SET is belt-and-suspenders, not the only guard. Keep the warn path for a
+            # genuine refusal on a server that claims 5.7.8+ but still rejects it.
+            if version == (0, 0, 0) or version >= _MYSQL_MIN_MAX_EXECUTION_TIME:
+                try:
+                    cur.execute(f"SET SESSION max_execution_time = {timeout_ms}")
+                except Exception as e:  # noqa: BLE001 - advisory only; the wire proxy caps regardless.
+                    warnings.warn(
+                        f"MySQL refused SET SESSION max_execution_time ({e}); the {timeout_ms} ms "
+                        "ceiling is still enforced in front of this database.",
+                        stacklevel=3,
+                    )
             # Read-only transaction: a write attempt errors instead of mutating customer data.
             cur.execute("START TRANSACTION READ ONLY")
             try:
@@ -990,7 +1077,7 @@ def _mysql_query(sql, params, db_arg, dsn, timeout_ms, timeout_hint_stats):
                 # `LIKE 'avo%'` wildcard survives verbatim — same contract as the psycopg path.
                 cur.execute(sql, params if params else None)
             except Exception as e:  # noqa: BLE001 - PyMySQL error classes vary; errno is the signal.
-                hint = _mysql_hint(e, timeout_ms, sql if timeout_hint_stats else None, db_arg)
+                hint = _mysql_hint(e, timeout_ms, sql if timeout_hint_stats else None, db_arg, version)
                 if hint is None:
                     raise
                 raise RuntimeError(f"{e}\n\n{hint}") from e
@@ -1514,20 +1601,26 @@ def _mysql_table_stats(table: str, schema: str | None, db: str | None) -> dict:
 def explain(sql: str, params: list | tuple | None = None, db: str | None = None) -> str:
     """Return ``EXPLAIN (FORMAT TEXT)`` output without executing ``ANALYZE``.
 
-    MySQL uses ``EXPLAIN FORMAT=TREE``, falling back to the tabular ``EXPLAIN`` when the server
-    rejects it. Never ``ANALYZE`` on either engine — that would run the query.
+    MySQL uses ``EXPLAIN FORMAT=TREE`` on 8.0.16+ servers, tabular ``EXPLAIN`` below that (checked
+    up front by version, not by a failed FORMAT=TREE round trip) or if it's rejected anyway. Never
+    ``ANALYZE`` on either engine — that would run the query.
     """
     if re.match(r"(?is)^\s*(?:analyze\b|explain\b[^;]*\banalyze\b)", sql):
         raise RuntimeError("lib.db.explain() never runs ANALYZE; pass the underlying SELECT only")
     if _engine_is_mysql(db):
-        try:
-            rows = query("EXPLAIN FORMAT=TREE " + sql, params, db=db)
-        except Exception:  # noqa: BLE001 - FORMAT=TREE is 8.0.16+ and SELECT-only; degrade cleanly.
-            rows = query("EXPLAIN " + sql, params, db=db)
-            return "\n".join(
-                ", ".join(f"{k}={v}" for k, v in row.items() if v is not None) for row in rows
-            )
-        return "\n".join(str(next(iter(row.values()))) for row in rows)
+        version = _mysql_server_version(db)
+        # FORMAT=TREE is 8.0.16+; below that (or if the version is unknown) go straight to tabular
+        # rather than pay a failed round trip we already know will be rejected.
+        if version == (0, 0, 0) or version >= _MYSQL_MIN_EXPLAIN_TREE:
+            try:
+                rows = query("EXPLAIN FORMAT=TREE " + sql, params, db=db)
+                return "\n".join(str(next(iter(row.values()))) for row in rows)
+            except Exception:  # noqa: BLE001 - SELECT-only / server quirks; degrade cleanly.
+                pass
+        rows = query("EXPLAIN " + sql, params, db=db)
+        return "\n".join(
+            ", ".join(f"{k}={v}" for k, v in row.items() if v is not None) for row in rows
+        )
     rows = query("EXPLAIN (FORMAT TEXT) " + sql, params, db=db)
     return "\n".join(str(next(iter(row.values()))) for row in rows)
 

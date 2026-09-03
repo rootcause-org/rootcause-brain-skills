@@ -491,19 +491,32 @@ class _MySQLCursor:
 
 
 class _MySQLConnection:
-    def __init__(self, description=None, rows=(), raise_on_query=None):
+    def __init__(self, description=None, rows=(), raise_on_query=None, server_version="8.0.34"):
         self.description = description or [("n", 3)]
         self.rows = list(rows)
         self.raise_on_query = raise_on_query
         self.executed = []
         self.params = []
         self.closed = False
+        self.server_version = server_version
 
     def cursor(self):
         return _MySQLCursor(self)
 
+    def get_server_info(self):
+        return self.server_version
+
     def close(self):
         self.closed = True
+
+
+@pytest.fixture(autouse=True)
+def _clear_mysql_version_cache():
+    """Every test gets a fresh version detection — the cache is keyed by DSN, and tests reuse
+    `_MYSQL_DSN` across differing fake server versions."""
+    db._MYSQL_VERSION_CACHE.clear()
+    yield
+    db._MYSQL_VERSION_CACHE.clear()
 
 
 def _fake_pymysql(monkeypatch, conn, seen=None):
@@ -584,6 +597,28 @@ def test_mysql_warns_but_continues_when_the_server_refuses_the_cap(monkeypatch, 
     assert any("refused SET SESSION max_execution_time" in str(w.message) for w in recwarn)
 
 
+def test_mysql_skips_max_execution_time_before_5_7_8(monkeypatch, recwarn):
+    """5.6 doesn't have the GUC (ER_UNKNOWN_SYSTEM_VARIABLE, 1193) — skip it silently rather than
+    warn on every single query; the wire proxy enforces the ceiling regardless."""
+    conn = _fake_pymysql(monkeypatch, _MySQLConnection(rows=[], server_version="5.6.51-log"))
+    db.query("select 1", timeout_ms=9_000)
+    assert conn.executed == ["START TRANSACTION READ ONLY", "select 1"]
+    assert not any("max_execution_time" in str(w.message) for w in recwarn)
+
+
+def test_mysql_still_sets_max_execution_time_on_5_7_8(monkeypatch):
+    conn = _fake_pymysql(monkeypatch, _MySQLConnection(rows=[], server_version="5.7.8"))
+    db.query("select 1", timeout_ms=9_000)
+    assert conn.executed[0] == "SET SESSION max_execution_time = 9000"
+
+
+def test_mysql_refuses_below_5_6_5(monkeypatch):
+    conn = _fake_pymysql(monkeypatch, _MySQLConnection(rows=[], server_version="5.5.62"))
+    with pytest.raises(RuntimeError, match="predates 5.6.5"):
+        db.query("select 1")
+    assert conn.executed == []
+
+
 def test_mysql_multi_statement_is_rejected_before_connecting(monkeypatch):
     conn = _fake_pymysql(monkeypatch, _MySQLConnection())
     with pytest.raises(RuntimeError, match="multiple SQL statements"):
@@ -636,6 +671,34 @@ def test_mysql_syntax_error_hint_calls_out_the_dialect(monkeypatch):
         db.query('select "id"::text from clients')
 
 
+def test_mysql_syntax_error_hint_is_version_keyed_on_5_6(monkeypatch):
+    _fake_pymysql(
+        monkeypatch,
+        _MySQLConnection(
+            raise_on_query=_MySQLError(1064, "You have an error in your SQL syntax"),
+            server_version="5.6.51-log",
+        ),
+    )
+    with pytest.raises(RuntimeError) as excinfo:
+        db.query("select 1")
+    msg = str(excinfo.value)
+    assert "no CTEs" in msg
+    assert "no JSON type" in msg
+
+
+def test_mysql_syntax_error_hint_has_no_stale_caveat_on_8x(monkeypatch):
+    _fake_pymysql(
+        monkeypatch,
+        _MySQLConnection(
+            raise_on_query=_MySQLError(1064, "You have an error in your SQL syntax"),
+            server_version="8.0.34",
+        ),
+    )
+    with pytest.raises(RuntimeError) as excinfo:
+        db.query("select 1")
+    assert "no CTEs" not in str(excinfo.value)
+
+
 def test_mysql_json_columns_decode(monkeypatch):
     _fake_pymysql(
         monkeypatch,
@@ -663,3 +726,17 @@ def test_mysql_explain_prefers_format_tree(monkeypatch):
     assert conn.executed[-1] == "EXPLAIN FORMAT=TREE select * from t"
     with pytest.raises(RuntimeError, match="never runs ANALYZE"):
         db.explain("EXPLAIN ANALYZE select * from t")
+
+
+def test_mysql_explain_skips_format_tree_before_8_0_16(monkeypatch):
+    conn = _fake_pymysql(
+        monkeypatch,
+        _MySQLConnection(
+            description=[("id", 3), ("select_type", 253), ("table", 253)],
+            rows=[{"id": 1, "select_type": "SIMPLE", "table": "t"}],
+            server_version="5.6.51-log",
+        ),
+    )
+    plan = db.explain("select * from t")
+    assert "table=t" in plan
+    assert all("FORMAT=TREE" not in s for s in conn.executed)

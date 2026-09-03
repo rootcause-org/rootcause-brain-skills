@@ -23,6 +23,12 @@ DSN = os.environ.get("TEST_MYSQL_DSN")
 pytestmark = pytest.mark.skipif(not DSN, reason="set TEST_MYSQL_DSN to run the live MySQL proof")
 
 
+def _has_json_type() -> bool:
+    """The JSON column type is 5.7+; the fixture and its test degrade to a plain TEXT column below
+    that so this suite runs unmodified against a real 5.6 as well as 8.x."""
+    return db._mysql_server_version(DSN) >= db._MYSQL_MIN_JSON_TYPE
+
+
 @pytest.fixture(scope="module")
 def fixture_table():
     """A tiny table + index, created with the raw driver (lib.db is read-only by construction)."""
@@ -30,11 +36,12 @@ def fixture_table():
 
     kwargs = db._mysql_connect_kwargs(DSN, 30_000)
     conn = pymysql.connect(cursorclass=pymysql.cursors.DictCursor, **kwargs)
+    meta_type = "JSON" if _has_json_type() else "TEXT"
     with conn.cursor() as cur:
         cur.execute("DROP TABLE IF EXISTS rc_clients")
         cur.execute(
             "CREATE TABLE rc_clients (id INT PRIMARY KEY, email VARCHAR(255), "
-            "national_id VARCHAR(32), meta JSON, KEY rc_clients_email_idx (email))"
+            f"national_id VARCHAR(32), meta {meta_type}, KEY rc_clients_email_idx (email))"
         )
         cur.execute(
             "INSERT INTO rc_clients VALUES (1, 'a@b.test', 'X1', '{\"tier\": \"pro\"}'), "
@@ -56,6 +63,8 @@ def test_query_returns_dict_rows_and_binds_params(fixture_table):
 
 
 def test_json_column_decodes(fixture_table):
+    if not _has_json_type():
+        pytest.skip("JSON type is 5.7+; this server predates it")
     rows = db.query("select id, meta from rc_clients order by id")
     assert rows[0]["meta"] == {"tier": "pro"}
     assert rows[1]["meta"] is None
@@ -90,6 +99,8 @@ def test_table_stats_is_catalog_only(fixture_table):
 
 
 def test_explain_uses_format_tree(fixture_table):
+    # FORMAT=TREE is 8.0.16+; below that (e.g. MySQL 5.6) `explain` goes straight to tabular
+    # EXPLAIN, whose row still names the table — so this assertion holds on either shape.
     plan = db.explain("select * from rc_clients where email = 'a@b.test'")
     assert "rc_clients" in plan
 
@@ -118,6 +129,11 @@ def test_excluded_column_auto_heals(fixture_table, monkeypatch):
 
 
 def test_statement_timeout_kills_a_runaway_query(fixture_table, monkeypatch):
+    # max_execution_time (the mechanism this test exercises) is 5.7.8+; below that there is no
+    # in-process backstop at all — production relies on the wire proxy in front, which this raw
+    # integration test doesn't have — so skip rather than assert a timeout that can't happen.
+    if db._mysql_server_version(DSN) < db._MYSQL_MIN_MAX_EXECUTION_TIME:
+        pytest.skip("max_execution_time is 5.7.8+; this server predates it")
     # SLEEP() is deliberately immune to max_execution_time, so burn real CPU instead.
     monkeypatch.setattr(db, "MAX_TIMEOUT_MS", 1_000)
     with pytest.raises(RuntimeError) as excinfo:
@@ -127,3 +143,17 @@ def test_statement_timeout_kills_a_runaway_query(fixture_table, monkeypatch):
             timeout_ms=600_000,
         )
     assert "killed on MySQL" in str(excinfo.value)
+
+
+def test_max_execution_time_is_skipped_silently_below_5_7_8(fixture_table, recwarn):
+    if db._mysql_server_version(DSN) >= db._MYSQL_MIN_MAX_EXECUTION_TIME:
+        pytest.skip("only meaningful below the max_execution_time floor")
+    db.query("select 1")
+    assert not any("max_execution_time" in str(w.message) for w in recwarn)
+
+
+def test_read_only_transaction_is_supported_by_this_server():
+    assert db._mysql_server_version(DSN) >= db._MYSQL_MIN_READ_ONLY_TXN, (
+        "this module refuses to run against a server below 5.6.5 — see "
+        "test_transaction_is_read_only for the refusal itself"
+    )
