@@ -99,9 +99,9 @@ delta. Fix at the highest level that generalizes; tenant is the easiest level to
 | Action execution/wiring | The correct outcome needs a mutation or reviewer operation the workflow cannot represent. |
 | Human-only knowledge (non-brain) | A phone call, private decision, or other out-of-band fact decided the answer. |
 
-Host convention is **as-if-done**: `reply.actions` proposals and `👀` reviewer to-do lines are performed
-by the reviewer before sending. Judge them as executed. If the human performs the same mutation and our
-draft describes it as done with a backing proposed action or `👀` line, the shadow outcome is
+Host convention is **as-if-done**: human-gated `action` tool proposals and `👀` reviewer to-do lines are
+performed by the reviewer before sending. Judge them as executed. If the human performs the same mutation
+and our draft describes it as done with a backing proposed action or `👀` line, the shadow outcome is
 `equivalent`. A `proposed` action status in a shadow trace is expected—shadow suppresses the draft, so
 nothing executes—and is not evidence of a false claim. The real miss is asking the **customer** to
 confirm or authorize instead of proposing the action or giving the reviewer a `👀` task.
