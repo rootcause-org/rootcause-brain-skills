@@ -251,5 +251,30 @@ class GoogleMethodPolicy(_Creds):
         self.assertEqual(ga._resolve("/v1beta/accountSummaries")[0], ga.ADMIN_HOST)
 
 
+class MintGuards(unittest.TestCase):
+    def test_mint_refuses_inside_a_run_workspace(self):
+        from lib.connectors.google_analytics import _mint
+
+        saved = os.environ.get("RC_RUN_ID")
+        os.environ["RC_RUN_ID"] = "00000000-0000-0000-0000-000000000000"
+        try:
+            with self.assertRaises(RuntimeError) as ctx:
+                _mint.cmd_mint(_args(client_json=None, client_id="a", client_secret="b"))
+            self.assertIn("operator-laptop", str(ctx.exception))
+        finally:
+            if saved is None:
+                os.environ.pop("RC_RUN_ID", None)
+            else:
+                os.environ["RC_RUN_ID"] = saved
+
+
+class RaggedTables(unittest.TestCase):
+    def test_table_pads_short_rows(self):
+        from lib.connectors import _tables
+
+        out = _tables.table([["A", "B", "C"], ["1"], ["2", "3"]])
+        self.assertEqual(out.splitlines()[1].strip(), "1")
+
+
 if __name__ == "__main__":
     unittest.main()

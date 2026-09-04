@@ -16,8 +16,8 @@ auth:
   # Graph accepts Authorization: Bearer <system-user token>, which keeps the secret out of URLs.
   strategy: bearer
 pagination:
-  # Graph pages via an opaque absolute paging.next URL that must be re-pinned to the Graph host
-  # before it is followed; the connector owns that loop.
+  # Graph's paging.next embeds ?access_token=; the connector pages with paging.cursors.after on
+  # the same endpoint instead, and strips the paging envelope from anything it returns.
   style: none
 rate_limit:
   # Graph signals throttling via X-Business-Use-Case-Usage (a JSON blob, not a remaining count) and

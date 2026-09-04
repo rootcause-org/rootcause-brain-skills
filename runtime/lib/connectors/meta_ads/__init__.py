@@ -1,9 +1,10 @@
 """Meta (Facebook/Instagram) Ads connector — read-only marketing grounding.
 
 Force-code triggers: a multi-field credential (system-user token + ad account id, see
-``lib.connectors._fields``), Graph's `paging.next` continuation (an opaque absolute URL that must be
-re-pinned to graph.facebook.com), and heavy field pre-selection — insights come back with a nested
-``actions[]`` array that only becomes readable once flattened into ``action:<type>`` columns.
+``lib.connectors._fields``), Graph's cursor continuation (its ``paging.next`` URL embeds a copy of
+the access token, so we page with ``paging.cursors.after`` and strip the envelope), and heavy field
+pre-selection — insights come back with a nested ``actions[]`` array that only becomes readable once
+flattened into ``action:<type>`` columns.
 
 Read-only posture: GET only, host pinned to ``graph.facebook.com``. Writes (creating/pausing a
 campaign, editing a budget) are action-plane work, never this connector.
@@ -78,11 +79,26 @@ def _client(token: str | None = None) -> api.Client:
 
 
 def _pin(url: str) -> str:
-    """Refuse any absolute URL that is not HTTPS on graph.facebook.com (incl. a paging.next)."""
+    """Refuse any absolute URL that is not HTTPS on graph.facebook.com.
+
+    The refusal message carries only scheme+host: a rejected URL is attacker-influenced and may
+    itself embed a credential in its query string.
+    """
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname != HOST or parsed.port not in (None, 443):
-        raise RuntimeError(f"refusing non-{HOST} URL: {url}")
+        raise RuntimeError(f"refusing non-{HOST} URL: {parsed.scheme}://{parsed.hostname or '?'}")
     return url
+
+
+def _strip_paging(data: Any) -> Any:
+    """Drop Graph's ``paging`` envelope before anything is returned or printed.
+
+    ``paging.next``/``previous`` embed ``access_token=`` in a URL — printing them (``--json``) or
+    following them verbatim would leak the credential past the Authorization header.
+    """
+    if isinstance(data, dict) and "paging" in data:
+        return {k: v for k, v in data.items() if k != "paging"}
+    return data
 
 
 def _call(client: api.Client, url: str, params: dict) -> Any:
@@ -100,7 +116,13 @@ def _call(client: api.Client, url: str, params: dict) -> Any:
 
 def get(path: str, params: dict | None = None, *, token: str | None = None,
         paginate: bool = True) -> Any:
-    """GET a Graph edge, transparently following ``paging.next`` up to ``MAX_PAGES``."""
+    """GET a Graph edge, auto-paging up to ``MAX_PAGES``.
+
+    Paging re-requests the SAME endpoint with ``after=<paging.cursors.after>`` rather than following
+    ``paging.next``: that URL carries its own ``access_token=`` copy of the credential, and the
+    bearer header must stay the only place the secret lives. ``paging.next`` is used only as the
+    "there is more" signal.
+    """
     client = _client(token)
     url = _pin(path) if path.startswith(("http://", "https://")) else path
     query = dict(params or {})
@@ -111,15 +133,16 @@ def get(path: str, params: dict | None = None, *, token: str | None = None,
         if first is None:
             first = data
         if not (paginate and isinstance(data, dict) and isinstance(data.get("data"), list)):
-            return data
+            return _strip_paging(data)
         rows += data["data"]
-        nxt = (data.get("paging") or {}).get("next")
-        if not nxt:
+        paging = data.get("paging") or {}
+        after = (paging.get("cursors") or {}).get("after")
+        if not paging.get("next") or not after:
             break
-        url, query = _pin(nxt), {}
+        query = {**query, "after": after}
     else:
         print(f"warning: stopped after {MAX_PAGES} pages", file=sys.stderr)
-    return {**first, "data": rows}
+    return {**_strip_paging(first), "data": rows}
 
 
 # ---------------------------------------------------------------------------
@@ -189,10 +212,12 @@ def insight_params(a, level: str, fields: list[str]) -> dict:
         if not value:
             raise RuntimeError(f"bad --filter {spec!r} (use field==value, e.g. campaign.id==123)")
         op = "IN" if "," in value else "EQUAL"
-        val = ('["' + '","'.join(value.split(",")) + '"]') if op == "IN" else f'"{value}"'
-        filters.append(f'{{"field":"{field.strip()}","operator":"{op}","value":{val}}}')
+        val = value.split(",") if op == "IN" else value
+        filters.append({"field": field.strip(), "operator": op, "value": val})
     if filters:
-        params["filtering"] = "[" + ",".join(filters) + "]"
+        # Graph takes `filtering` as a JSON string; json.dumps so a quote/backslash in a value
+        # cannot break out of the literal and 400 the call.
+        params["filtering"] = json.dumps(filters, separators=(",", ":"))
     return params
 
 
@@ -309,6 +334,9 @@ def cmd_whoami(a):
     """Identity/scope/account discovery — type, app, scopes, accounts and pages. Never the token."""
     token = _fields.require(credentials(), "META_ACCESS_TOKEN", key=KEY)
     me = get("/me", {"fields": "id,name"}, paginate=False)
+    # The only call that puts the token in a query string: debug_token has no header form, and
+    # token type/validity/expiry are exactly what an operator needs. Provider-side URL only — our
+    # audit line records the endpoint, never query params.
     debug = get("/debug_token", {"input_token": token}, paginate=False).get("data", {})
     perms = get("/me/permissions").get("data", [])
     accounts = get("/me/adaccounts",

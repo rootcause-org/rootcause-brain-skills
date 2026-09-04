@@ -11,6 +11,7 @@ RC_CONN_META_ADS JSON object set by the test.
         pytest tests/test_meta_ads_connector.py -q
 """
 
+import json
 import os
 import sys
 import unittest
@@ -111,18 +112,20 @@ class MetaAdsReads(_Creds):
         self.assertEqual(row["objective"].replace("OUTCOME_", ""), "TRAFFIC")
 
     @responses_lib.activate
-    def test_bearer_token_rides_every_request_and_paging_next_is_followed(self):
-        page2 = f"{BASE}/{ACCOUNT}/insights?after=CURSOR2"
+    def test_bearer_auth_and_cursor_paging_never_leak_the_token(self):
+        # Graph's paging.next embeds ?access_token=<secret>. We must use it only as a "there is
+        # more" signal, page via cursors.after on the same endpoint, and never return/print it.
+        leaky_next = f"{BASE}/{ACCOUNT}/insights?after=CURSOR2&access_token=EAAtest-system-user"
         responses_lib.add(responses_lib.GET, f"{BASE}/{ACCOUNT}/insights", json={
             "data": [{"date_start": "2026-08-01", "spend": "10", "clicks": "5",
                       "actions": [{"action_type": "link_click", "value": "4"},
                                   {"action_type": "landing_page_view", "value": "3"}]}],
-            "paging": {"next": page2},
+            "paging": {"cursors": {"before": "CURSOR1", "after": "CURSOR2"}, "next": leaky_next},
         })
-        responses_lib.add(responses_lib.GET, page2, json={
+        responses_lib.add(responses_lib.GET, f"{BASE}/{ACCOUNT}/insights", json={
             "data": [{"date_start": "2026-08-02", "spend": "20", "clicks": "9",
                       "actions": [{"action_type": "link_click", "value": "8"}]}],
-            "paging": {},
+            "paging": {"cursors": {"before": "CURSOR2", "after": "CURSOR3"}},
         })
 
         args = type("A", (), {"account": ACCOUNT, "json": False, "csv": False, "since": None,
@@ -134,12 +137,41 @@ class MetaAdsReads(_Creds):
         self.assertEqual(len(responses_lib.calls), 2)
         for call in responses_lib.calls:
             self.assertEqual(call.request.headers["Authorization"], "Bearer EAAtest-system-user")
+            self.assertNotIn("access_token", call.request.url)
+        # page 2 was requested with the cursor, not by following the leaky next URL
+        self.assertIn("after=CURSOR2", responses_lib.calls[1].request.url)
+        # nothing that reaches --json output carries the token or the paging envelope
+        self.assertNotIn("paging", data)
+        dumped = json.dumps(data)
+        self.assertNotIn("access_token", dumped)
+        self.assertNotIn("EAAtest-system-user", dumped)
 
         rows = meta_ads.insight_rows(data["data"], ["date_start", "spend", "clicks"], False)
         self.assertEqual(rows[0], ["DATE_START", "SPEND", "CLICKS",
                                    "action:link_click", "action:landing_page_view"])
         self.assertEqual(rows[1], ["2026-08-01", "10.00", "5", "4", "3"])
         self.assertEqual(rows[2][-1], "")  # page-2 row has no landing_page_view
+
+    @responses_lib.activate
+    def test_single_page_response_also_drops_paging(self):
+        responses_lib.add(responses_lib.GET, f"{BASE}/me/accounts", json={
+            "data": [{"id": "1", "name": "Page"}],
+            "paging": {"next": f"{BASE}/me/accounts?access_token=EAAtest-system-user"}})
+        data = meta_ads.get("/me/accounts", {"fields": "id,name"}, paginate=False)
+        self.assertNotIn("paging", data)
+
+    @responses_lib.activate
+    def test_filtering_is_json_encoded(self):
+        responses_lib.add(responses_lib.GET, f"{BASE}/{ACCOUNT}/insights", json={"data": []})
+        args = type("A", (), {"account": ACCOUNT, "json": False, "csv": False, "since": None,
+                              "until": None, "preset": "last_30d", "increment": "all",
+                              "breakdown": None, "all_actions": False,
+                              "filter": ['campaign.name==He said "hi"', "campaign.id==1,2"]})()
+        params = meta_ads.insight_params(args, "campaign", ["spend"])
+        self.assertEqual(json.loads(params["filtering"]), [
+            {"field": "campaign.name", "operator": "EQUAL", "value": 'He said "hi"'},
+            {"field": "campaign.id", "operator": "IN", "value": ["1", "2"]},
+        ])
 
     @responses_lib.activate
     def test_all_actions_widens_the_columns(self):
@@ -175,12 +207,23 @@ class MetaAdsHostPinning(_Creds):
         self.assertIn("read-only", str(ctx.exception))
 
     @responses_lib.activate
-    def test_a_foreign_paging_next_is_refused_mid_stream(self):
+    def test_a_foreign_paging_next_is_never_followed(self):
         responses_lib.add(responses_lib.GET, f"{BASE}/{ACCOUNT}/campaigns", json={
-            "data": [{"id": "1"}], "paging": {"next": "https://evil.example.com/steal"}})
+            "data": [{"id": "1"}],
+            "paging": {"cursors": {"after": "C1"}, "next": "https://evil.example.com/steal"}})
+        responses_lib.add(responses_lib.GET, f"{BASE}/{ACCOUNT}/campaigns", json={"data": []})
+
+        meta_ads.get(f"/{ACCOUNT}/campaigns")
+
+        for call in responses_lib.calls:
+            self.assertIn("graph.facebook.com", call.request.url)
+
+    def test_refusal_message_omits_the_rejected_urls_query_string(self):
         with self.assertRaises(RuntimeError) as ctx:
-            meta_ads.get(f"/{ACCOUNT}/campaigns")
-        self.assertIn("refusing", str(ctx.exception))
+            meta_ads._pin("https://evil.example.com/steal?access_token=EAAsupersecret")
+        self.assertNotIn("EAAsupersecret", str(ctx.exception))
+        self.assertNotIn("steal", str(ctx.exception))
+        self.assertIn("evil.example.com", str(ctx.exception))
 
 
 if __name__ == "__main__":

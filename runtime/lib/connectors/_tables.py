@@ -15,10 +15,16 @@ from typing import Any
 
 
 def table(rows: list[list[str]]) -> str:
-    """Fixed-width aligned text; ``rows[0]`` is the header."""
-    widths = [max(len(str(r[i])) for r in rows) for i in range(len(rows[0]))]
+    """Fixed-width aligned text; ``rows[0]`` is the header.
+
+    Ragged rows are padded, not fatal: a provider that omits a field for one row must not turn a
+    report into an IndexError.
+    """
+    width_count = max(len(r) for r in rows)
+    padded = [list(r) + [""] * (width_count - len(r)) for r in rows]
+    widths = [max(len(str(r[i])) for r in padded) for i in range(width_count)]
     return "\n".join(
-        "  ".join(str(c).ljust(widths[i]) for i, c in enumerate(r)).rstrip() for r in rows
+        "  ".join(str(c).ljust(widths[i]) for i, c in enumerate(r)).rstrip() for r in padded
     )
 
 

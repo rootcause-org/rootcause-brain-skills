@@ -37,6 +37,19 @@ def add_parser(add) -> None:
     s.add_argument("--site", help="Search Console property, e.g. sc-domain:example.com")
 
 
+def _refuse_in_workspace() -> None:
+    """Fail fast inside a run: no browser, no reachable loopback — otherwise we hang 5 minutes."""
+    import os
+    import pathlib
+
+    if os.environ.get("RC_RUN_ID") or pathlib.Path("/brain").exists():
+        raise RuntimeError(
+            "`mint` is an operator-laptop command: it opens a browser and listens on localhost, "
+            "neither of which exists in a run workspace. Run it on your own machine and paste the "
+            "printed fields into the ReplyPen connection."
+        )
+
+
 def _client_pair(a) -> tuple[str, str]:
     if a.client_json:
         with open(a.client_json, encoding="utf-8") as fh:
@@ -147,6 +160,7 @@ def _exchange(code: str, redirect_uri: str, client_id: str,
 def cmd_mint(a) -> None:
     from . import ADMIN, ADMIN_HOST, GSC, GSC_HOST, call, _set_cached_token
 
+    _refuse_in_workspace()
     client_id, client_secret = _client_pair(a)
     code, redirect_uri = _authorize(client_id)
     refresh_token, access_token, expires_in = _exchange(code, redirect_uri, client_id, client_secret)
