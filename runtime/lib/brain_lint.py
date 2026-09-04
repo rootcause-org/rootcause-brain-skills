@@ -6,7 +6,7 @@ tree line has no customer-vocabulary gloss never gets grepped. This lint holds t
 that contract:
 
   * **FAIL** — a `skills/*/SKILL.md` or `skills/cases/*.md` with no renderable `description:`
-    frontmatter, or one whose whitespace-collapsed length exceeds 90 chars (the tree truncates
+    frontmatter, or one whose whitespace-collapsed length exceeds 150 chars (the tree truncates
     there, so the tail never reaches the model; nothing else consumes a long md description);
     an `actions/*/manifest.yaml` with no top-level `description:`.
   * **FAIL** — a git-tracked symlink whose target is absolute or escapes the repo root; neither can
@@ -18,7 +18,7 @@ that contract:
     `.claude/skills -> ../.agents/skills` alias shape): it dangles in a fresh checkout, which the host
     skips when building a run view.
   * **WARN** — an overlong action-manifest description whose first complete sentence does not fit in
-    the 90-character tree gloss (the SAME field is injected full-length into the per-run action
+    the 150-character tree gloss (the SAME field is injected full-length into the per-run action
     catalog prompt, so rich copy is load-bearing there — lead with a short routing sentence, never
     shorten the catalog detail merely for lint); "what this file contains"-style phrasing (`This file…`,
     `Contains…`, `Dit bestand…`). Deterministic, best-effort; never fails a run.
@@ -26,7 +26,7 @@ that contract:
 It mirrors `rootcause/internal/brain/bootstrap.go` so lint and tree **agree**: the same bounded
 head-read frontmatter parse for markdown (block scalars / multi-line values are *not* rendered, so
 they count as missing here), real YAML for action manifests, and the same `tidyDesc` whitespace
-collapse before the 90-char measure.
+collapse before the 150-char measure.
 
 This module stays stdlib + PyYAML only so the standalone developer entrypoint and the production
 publish gate can import it without pytest. `lib.brain_lint_pytest` owns the optional pytest wiring.
@@ -45,7 +45,7 @@ import yaml
 from .action_lint import lint_actions
 
 # Mirror bootstrap.go's descMaxLen / descHeadBytes so the lint's verdict matches what the tree renders.
-DESC_MAX_LEN = 90
+DESC_MAX_LEN = 150
 DESC_HEAD_BYTES = 2048
 ACTION_SURFACES = (
     "chat", "dashboard_chat", "gmail", "outlook", "intercom", "whatsapp",

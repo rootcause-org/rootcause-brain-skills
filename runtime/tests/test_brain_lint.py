@@ -152,6 +152,18 @@ def test_lint_brain_flags_missing_and_overlong(tmp_path: Path) -> None:
     assert all("skills/backups/SKILL.md" != f.path for f in fails)
 
 
+def test_md_description_length_boundary(tmp_path: Path) -> None:
+    # The cap mirrors bootstrap.go's descMaxLen: exactly at the cap renders, one over truncates.
+    assert DESC_MAX_LEN == 150
+    _seed_brain(tmp_path)
+    _write(tmp_path / "skills/cases/atcap.md", f"---\ndescription: {'x' * DESC_MAX_LEN}\n---\n")
+    _write(tmp_path / "skills/cases/overcap.md", f"---\ndescription: {'x' * (DESC_MAX_LEN + 1)}\n---\n")
+
+    fails = {f.path for f in _fails(lint_brain(tmp_path))}
+    assert "skills/cases/atcap.md" not in fails
+    assert "skills/cases/overcap.md" in fails
+
+
 def test_lint_brain_overlong_manifest_warns_not_fails(tmp_path: Path) -> None:
     # Manifest descriptions double as full-length action-catalog copy: overlong is WARN, never FAIL.
     _seed_brain(tmp_path)

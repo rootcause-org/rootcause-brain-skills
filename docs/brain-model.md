@@ -307,9 +307,9 @@ its selection into the model's opening turn. Every upfront line is a router hook
 an irrelevant one is an active distractor. Checklist:
 
 - `description:` frontmatter on every `skills/*/SKILL.md`, `skills/cases/*.md` runbook, and
-  `actions/*/manifest.yaml` — "when to open this" in customer vocabulary, ≤90 chars for Markdown.
+  `actions/*/manifest.yaml` — "when to open this" in customer vocabulary, ≤150 chars for Markdown.
   Action descriptions also feed the full catalog and may stay rich; lead those with one complete
-  routing sentence that fits within 90 chars. The offline lint preserves this distinction.
+  routing sentence that fits within 150 chars. The offline lint preserves this distinction.
 - Python scripts: first docstring line = **usage + purpose** — e.g. `backup_status.py <backup-id> —
   why-isn't-this-backup-running triage.` It is the script's tree gloss and the only line an agent sees
   before calling, so teach the invocation, not just the topic.
@@ -342,6 +342,15 @@ an irrelevant one is an active distractor. Checklist:
   tree, so keep them current when files move.
 - Before committing: `uv run "$SKILL/scripts/brain_test.py"` (offline tier; includes the
   description lint, no DSN needed).
+
+#### The `description:` field
+
+It is the only text the model sees before deciding whether to open the file, so write **when the file
+becomes relevant** — the situations, questions and symptoms in the customer's own words ("Open when…",
+"Use for…"). Say what it is *not* for when that prevents a wrong hop ("not for cancellations"). Never
+summarise contents: "This file contains…" tells the router nothing it can match on. The offline lint
+FAILs a Markdown description over 150 chars (the tree truncates, the tail never reaches the model) and
+WARNs on contents-style openers.
 
 ## Production Mounts
 
