@@ -196,11 +196,12 @@ def _post(form: dict, parts: list) -> bytes:
     reason = "initial"
     while True:
         try:
+            # Text fields ride as multipart parts too: with an empty ``files`` list requests would
+            # urlencode the body and the host (multipart-only) rejects it.
             resp = _http_audit.request(
                 "POST",
                 BROKER_URL,
-                data=form,
-                files=parts,
+                files=[(k, (None, str(v))) for k, v in form.items()] + parts,
                 timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
                 attempt=attempt,
                 reason=reason,

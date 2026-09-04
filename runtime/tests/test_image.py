@@ -67,7 +67,7 @@ class ImageTest(unittest.TestCase):
         )
 
     def _form(self, call=0) -> str:
-        """Request body as text — urlencoded when there are no files, multipart when there are."""
+        """Request body as text (always multipart; text fields ride as parts)."""
         body = responses.calls[call].request.body
         if isinstance(body, bytes):
             body = body.decode("utf-8", "replace")
@@ -248,3 +248,14 @@ class Cli(ImageTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MultipartWithoutRefs(ImageTest):
+    @responses.activate
+    def test_generate_without_refs_is_still_multipart(self):
+        self._broker()
+        image.generate("a laptop", aspect="1:1")
+        req = responses.calls[0].request
+        self.assertTrue(req.headers["Content-Type"].startswith("multipart/form-data"), req.headers["Content-Type"])
+        self.assertIn(b'name="prompt"', req.body)
+        self.assertIn(b'name="size"', req.body)
