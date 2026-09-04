@@ -48,7 +48,9 @@ Keep these planes explicit in every skill, template, and brain edit:
 - **Production main loop:** the model has `bash` plus its scenario terminal tool (`reply` for email),
   not an `rc` binary. The committed brain is mounted read-only at `/brain`. Ground through `/brain`
   scripts and the injected `lib.db`, `lib.cloudwatch`, `lib.http`, `lib.fs`, `lib.connectors`,
-  `lib.api`, and `lib.mcp` capabilities available for that project/run.
+  `lib.api`, `lib.mcp`, and `lib.image` capabilities available for that project/run.
+  (`lib.image` — cheap preview → refine-from-preview image generation over the broker's `image`
+  mount, saving to `/tmp/outbox`; absent mount ⇒ one clear "not enabled" sentence.)
 
 Never put `rc ...` command guidance in committed project-brain content. Describe the project-specific
 evidence or decision; keep laptop-side control-plane steps in this kit's local skills/docs.

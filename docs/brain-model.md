@@ -65,7 +65,7 @@ Do not mix the local control plane with the production model's workspace:
 | Context | Available interface | Brain access | Instruction home |
 |---|---|---|---|
 | Local brain-development agent | Public `rc` CLI after OAuth, local engine scripts, local shell | Writable checkout | This kit's locally installed skills and docs |
-| Production main LLM loop | `bash` plus the scenario terminal tool (`reply` for email); `/brain` scripts and injected `lib.db`, `lib.cloudwatch`, `lib.http`, `lib.fs`, `lib.connectors`, `lib.api`, `lib.mcp` as configured | `/brain` read-only | Committed project business context, routing, playbooks, and grounding scripts |
+| Production main LLM loop | `bash` plus the scenario terminal tool (`reply` for email); `/brain` scripts and injected `lib.db`, `lib.cloudwatch`, `lib.http`, `lib.fs`, `lib.connectors`, `lib.api`, `lib.mcp`, `lib.image` as configured | `/brain` read-only | Committed project business context, routing, playbooks, and grounding scripts |
 
 There is no `rc` binary in the production loop. Never put `rc ...` command guidance in committed
 project-brain content: it cannot execute there and competes with the actual grounding path. A brain
