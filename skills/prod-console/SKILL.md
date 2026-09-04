@@ -121,6 +121,11 @@ Read:
    [`rc-fleet`](../rc-fleet/SKILL.md) skill.
    `run` is a real state-changing operation. Use it only when the user asked for execution or the task
    clearly requires it and params were grounded. Report the action run id, status, and result summary.
+   `preflight` honours `--tenant`: the body runs in the same tenant-scoped grounding workspace a run
+   gets (scoped `*_DSN`, `RC_TENANT_ID/SLUG/SCOPE_VALUE` stamped, no action/write credential). A
+   "record N not found" from a console preflight therefore means the grounding data no longer holds N
+   — not a scope or env gap — even if a run saw N earlier. Confirm with `rc dev console bash run
+   --tenant <slug>` + `lib.db` before suspecting the console.
 
 ## Brain-script catalog convention
 
