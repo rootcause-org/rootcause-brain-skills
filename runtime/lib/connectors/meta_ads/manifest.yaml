@@ -1,0 +1,133 @@
+key: meta_ads
+name: Meta Ads
+kinds: [token]
+credential_exposure: env
+credential_exposure_reason: multi-field credential
+connector_module: lib.connectors.meta_ads
+env_var: RC_CONN_META_ADS
+egress_hosts:
+  - graph.facebook.com
+# The connector drives Graph directly through lib.api (retry/backoff/audit) rather than the generic
+# `python -m lib.api get` CLI: the credential is a multi-field JSON object, `paging.next` is an
+# opaque absolute URL, and insights need actions[] flattened. base_url is the version pin the
+# connector builds on; the generic CLI is not the intended path here.
+base_url: https://graph.facebook.com/v24.0
+auth:
+  # Graph accepts Authorization: Bearer <system-user token>, which keeps the secret out of URLs.
+  strategy: bearer
+pagination:
+  # Graph pages via an opaque absolute paging.next URL that must be re-pinned to the Graph host
+  # before it is followed; the connector owns that loop.
+  style: none
+rate_limit:
+  # Graph signals throttling via X-Business-Use-Case-Usage (a JSON blob, not a remaining count) and
+  # plain 429s, which lib.api already retries.
+  remaining_header: ""
+token_fields:
+  - key: META_ACCESS_TOKEN
+    label: System user token
+    secret: true
+    hint: Business Manager → System users → Generate new token, expiry "Never", scopes ads_read +
+      business_management + pages_read_engagement (NOT ads_management).
+  - key: META_AD_ACCOUNT_ID
+    label: Ad account id
+    secret: false
+    placeholder: act_1234567890
+    hint: The act_… id shown in Ads Manager under the account name.
+help_md: |
+  Reads Meta (Facebook/Instagram) ad accounts — campaigns, ad sets, ads, and their spend / reach /
+  clicks / conversion insights — plus the connected Facebook page's organic numbers. Read-only:
+  GET only. Creating, pausing or re-budgeting anything is action-plane work, never this connector.
+
+  Progressive disclosure: **preset first** → `insights` when the preset is close but not exact →
+  `api` only for edges the CLI does not cover.
+
+      python -m lib.connectors.meta_ads whoami                      # app, scopes, ad accounts, pages
+      python -m lib.connectors.meta_ads campaigns [--status ACTIVE]
+      python -m lib.connectors.meta_ads adsets [--campaign ID]
+      python -m lib.connectors.meta_ads ads [--campaign ID | --adset ID]
+      python -m lib.connectors.meta_ads overview --preset maximum --increment monthly
+      python -m lib.connectors.meta_ads insights --level campaign --preset last_30d
+      python -m lib.connectors.meta_ads insights --level account --breakdown publisher_platform
+      python -m lib.connectors.meta_ads page [--page ID]
+      python -m lib.connectors.meta_ads api GET /act_123/insights --param date_preset=maximum
+
+  `--json` (before or after the subcommand) prints raw Graph JSON, `--csv` prints unrounded CSV,
+  `--account act_…` overrides the connected ad account. Dates: `--preset` (today, yesterday,
+  last_7d, last_30d, last_90d, this_month, last_month, this_year, maximum) or `--since/--until`
+  (YYYY-MM-DD). `--increment daily|weekly|monthly|all`. `--filter field==value` is repeatable and
+  AND-ed (`campaign.id==123`; a comma in the value becomes an IN filter). Breakdowns: age, gender,
+  country, region, publisher_platform, platform_position, device_platform, impression_device.
+
+  ## Recipes
+
+  **Campaign review.** `campaigns` first for ids, names, objective, dates and budget, then
+  `insights --level campaign --since … --until …` over the period the customer asked about. Add
+  `--increment monthly` to see the shape over time and
+  `--level account --breakdown publisher_platform` for the Facebook-vs-Instagram split. Drill one
+  campaign with `insights --level ad --filter campaign.id==<id>`.
+
+  **Campaign naming.** Many accounts encode meaning in the name, commonly
+  `<OBJECTIVE> - <period> - wave N - <year>` (e.g. `TRAFFIC - zomer - wave 3 - 2026`). Detect the
+  pattern from `campaigns` output and use it to group; if the names do not parse cleanly, ask the
+  customer what the segments mean instead of guessing.
+
+  **Comparing periods.** Meta has no compare flag: run the same `insights` call twice with explicit
+  `--since/--until` (e.g. the same range one year earlier) and diff. Spend and impressions are
+  additive across rows and periods; **reach is not** (unique people) — for a whole-period reach
+  number ask for one row over the whole range instead of summing months. Data lags ~1 day, so
+  today is always incomplete, and history stops at 37 months.
+
+  **Action columns.** `actions[]` holds attributed conversions, several accountings of one event.
+  The CLI flattens them into `action:<type>` columns and shows only link_click,
+  landing_page_view, post_engagement and lead; `--all-actions` adds the rest (mostly `omni_*`,
+  `onsite_*`, `offsite_conversion.*` re-counting the same event). `landing_page_view` ≪
+  `link_click` is normal — people bounce before the page loads. Budgets come back in cents; the
+  CLI divides. A missing ad-set budget means campaign budget optimization.
+
+  Meta's click counts will not match a web-analytics session count (attribution windows, bot
+  filtering, ad blockers) — cross-check landing traffic on the analytics side, not by arguing with
+  the numbers. A campaign that ended weeks ago returns no rows for a short preset: widen the range.
+
+  For anything multi-step, write a `/tmp` script that imports `lib.connectors.meta_ads` and calls
+  `get()` / `fetch_insights()` directly rather than shelling out repeatedly.
+onboarding_md: |
+  Ask which ad accounts and campaigns the customer wants reported on, and who administers their
+  Meta Business Manager. Meta access is a system-user token: it never expires, carries read-only
+  scopes, and needs no App Review. Someone with Business Manager admin rights has to mint it — the
+  numbered recipe below (and the Dutch prompt they can forward verbatim) is what to hand them.
+  Capture the ad account id (act_…) and the Facebook page id if page numbers matter. Creating,
+  pausing or re-budgeting campaigns is a write and stays a live action or a manual step.
+
+  **What you need:** admin access to the Meta Business Manager that owns the ad account.
+
+  1. Create an app: developers.facebook.com → My Apps → Create app → type **Business**, name it
+     e.g. "<Project> Reporting", link it to your Business. Add the product **Marketing API**.
+     No App Review needed.
+  2. business.facebook.com → Settings → Users → **System users** → Add. Name it e.g.
+     "<project>-replypen", role Admin.
+  3. On that system user: **Assign assets** → your ad account → "View performance" only. Do the
+     same for your Facebook page (view rights) if you want page numbers.
+  4. **Generate new token** → pick the app from step 1 → expiry **Never** → tick `ads_read`,
+     `business_management`, `pages_read_engagement`. Do **not** tick `ads_management`.
+  5. Copy the token into "System user token" here, and the ad account id (the `act_…` number shown
+     in Ads Manager under the account name) into "Ad account id". Save.
+
+  Prompt you can forward to your Business Manager admin (Dutch):
+
+  ```
+  Maak in Meta Business Manager een read-only API-toegang voor ReplyPen.
+  1. developers.facebook.com → My Apps → Create app → type "Business", naam "<Project> Reporting",
+     koppel aan onze Business. Voeg het product "Marketing API" toe. Geen App Review nodig.
+  2. business.facebook.com → Settings → Users → System users → Add: naam "<project>-replypen",
+     rol Admin.
+  3. Die system user → Assign assets → ad account "<Project>" → alleen "View performance";
+     idem onze Facebook-pagina → view-rechten.
+  4. Generate new token → app uit stap 1 → expiry "Never" → vink aan: ads_read,
+     business_management, pages_read_engagement. NIET ads_management.
+  5. Stuur het token veilig door (niet in chat) samen met het ad account id (act_…).
+  ```
+
+  Why a token and not a "Log in with Facebook" button: ReplyPen has no reviewed Meta app for these
+  scopes yet, so a system-user token is the read-only path that works today. Rotate it the same way
+  (Generate new token) and paste the new value here.

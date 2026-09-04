@@ -1,0 +1,164 @@
+key: google_analytics
+name: Google Analytics & Search Console
+kinds: [token]
+credential_exposure: env
+credential_exposure_reason: multi-field credential
+connector_module: lib.connectors.google_analytics
+env_var: RC_CONN_GOOGLE_ANALYTICS
+egress_hosts:
+  - analyticsdata.googleapis.com
+  - analyticsadmin.googleapis.com
+  - searchconsole.googleapis.com
+  - oauth2.googleapis.com     # refresh-token exchange only
+# One connector key spans three API hosts, and the credential is a refresh token the connector
+# exchanges itself, so the generic `python -m lib.api get` CLI is not the path here. base_url names
+# the primary (GA4 Data) host; the connector pins each call to one of the hosts above.
+base_url: https://analyticsdata.googleapis.com/v1beta
+auth:
+  strategy: bearer
+pagination:
+  # GA4 reports page by limit/offset inside the POST body and GSC by rowLimit/startRow; neither is a
+  # generic style. The presets keep responses small instead (GA4 has a daily per-property quota).
+  style: none
+rate_limit:
+  remaining_header: ""
+read_endpoints:
+  # GA4 reports and GSC queries are POST BY DESIGN and non-mutating; nothing else may POST.
+  post:
+    - /v1beta/properties/*:runReport
+    - /v1beta/properties/*:runRealtimeReport
+    - /v1beta/properties/*:batchRunReports
+    - /webmasters/v3/sites/*/searchAnalytics/query
+    - /v1/urlInspection/index:inspect
+token_fields:
+  - key: GWS_REFRESH_TOKEN
+    label: Refresh token
+    secret: true
+    hint: Printed by the mint step below; it is tied to the OAuth client and the Google account
+      that consented.
+  - key: GWS_CLIENT_ID
+    label: OAuth client id
+    secret: false
+    placeholder: 1234567890-abc.apps.googleusercontent.com
+  - key: GWS_CLIENT_SECRET
+    label: OAuth client secret
+    secret: true
+  - key: GA_PROPERTY_ID
+    label: GA4 property id
+    secret: false
+    placeholder: "123456789"
+    hint: The numeric id in Admin → Property settings, or the p123456789 segment of an
+      analytics.google.com URL.
+  - key: GSC_SITE
+    label: Search Console property
+    secret: false
+    optional: true
+    placeholder: sc-domain:example.com
+    hint: Leave empty if you only want GA4. A URL-prefix property looks like
+      https://www.example.com/.
+help_md: |
+  Reads Google Analytics 4 (traffic, landing pages, sources, events, conversions) and Google Search
+  Console (queries, pages, clicks/impressions/position, indexing status) for the connected website.
+  Read-only: GETs plus exactly the documented read POSTs (GA4 `:runReport` / `:runRealtimeReport`,
+  GSC `searchAnalytics/query`, URL inspection). Anything else is refused — writes go through an
+  action.
+
+  Progressive disclosure: **preset first** → `ga-report` / `gsc-query` when a preset is close but
+  not exact → `api` only for endpoints the CLI does not cover.
+
+      python -m lib.connectors.google_analytics ga-overview [--start 28daysAgo --end today]
+      python -m lib.connectors.google_analytics ga-compare          # vs the previous equal period
+      python -m lib.connectors.google_analytics ga-pages | ga-landing | ga-sources | ga-events
+      python -m lib.connectors.google_analytics ga-devices | ga-countries | ga-realtime
+      python -m lib.connectors.google_analytics ga-report --metrics sessions,activeUsers \
+          --dimensions date,landingPage --filter 'pagePath=*pricing' --order-by sessions:desc
+      python -m lib.connectors.google_analytics ga-properties | ga-meta --search conversion
+      python -m lib.connectors.google_analytics gsc-overview | gsc-queries | gsc-pages
+      python -m lib.connectors.google_analytics gsc-query --dimensions query,page --limit 50
+      python -m lib.connectors.google_analytics gsc-sites | gsc-sitemaps
+      python -m lib.connectors.google_analytics gsc-inspect https://www.example.com/pricing
+      python -m lib.connectors.google_analytics api GET /v1beta/properties/123456789/metadata
+
+  `--json` prints raw API JSON, `--csv` prints unrounded CSV (rates stay fractions, durations
+  seconds). `--property` / `--site` override the connected property/site. GA4 dates accept
+  `YYYY-MM-DD`, `today`, `yesterday`, `NdaysAgo`. GA4 `--filter` is `dim==value`, `dim=~regex`,
+  `dim=^prefix`, `dim=*contains` (repeatable, AND-ed); GSC `--filter` is `dimension:operator:expression`
+  (`page:contains:/pricing/`, `query:equals:demo`).
+
+  ## Recipes
+
+  **Landing pages → sign-ups.** `ga-landing` gives sessions/users/engagement per entry page; join
+  the conversion side with
+  `ga-report --dimensions landingPage --metrics sessions,conversions,eventCount --filter 'eventName==<sign_up_event>'`.
+  Ask the customer which event name marks a sign-up (`ga-events` lists what actually fires) — never
+  assume `sign_up`, `generate_lead` and `purchase` mean the same thing in their setup.
+
+  **Do the ad clicks land?** `ga-sources` (sessionSource × sessionMedium) or
+  `ga-report --dimensions sessionSource,sessionCampaignName --metrics sessions` is the UTM view.
+  Compare it with the ad platform's click counts as an order-of-magnitude check only: platform
+  clicks are always higher (attribution windows, bots, ad blockers, bounces before the page loads).
+  A source that is missing entirely usually means broken/absent UTM tagging, which is worth saying.
+
+  **Queries → GEO/SEO.** `gsc-queries` and `gsc-pages` over two explicit absolute date ranges show
+  which queries and pages gain or lose clicks, impressions and average position; `gsc-query
+  --dimensions query,page` ties a query to the page that ranks for it, and `gsc-inspect URL` says
+  whether a page is indexed at all. GSC lags ~3 days (so `--end` defaults to `3daysAgo`), keeps
+  only 16 months, and needs absolute dates — the CLI converts the relative forms for you.
+
+  **Be frugal.** GA4's Data API has a daily token quota per property: prefer a preset over an
+  exploratory loop, keep `--limit` low, and ask for one report rather than five. Run
+  `ga-meta --search <word>` before guessing a dimension/metric name — a wrong name is a hard 400,
+  not an empty result.
+
+  GA4 daily data lags 1–2 days (a 7-day window typically returns 6 rows) and `date` values come back
+  as `20260902`. `ga-realtime` has its own small dimension set; most standard dimensions 400 there.
+  For multi-step analysis, write a `/tmp` script that imports `lib.connectors.google_analytics` and
+  calls `run_report()` / `gsc_query()` directly instead of shelling out repeatedly.
+onboarding_md: |
+  Ask which website and which sign-up or conversion event the customer wants reported on, and who
+  owns their Google Analytics and Search Console. This connection reads GA4 and Search Console
+  through a Google account that already has access to both. It needs a one-time setup on a laptop:
+  a Google Cloud project you own, an OAuth client, and a short browser consent that prints the five
+  values below. Capture the GA4 property id and the Search Console property while you are there.
+  Changing anything in Analytics or Search Console is a write and stays a live action or a manual
+  step.
+
+  **What you need:** a Google account with Viewer access on the GA4 property and access on the
+  Search Console property, plus a Google Cloud project you control.
+
+  1. In Google Cloud Console, pick (or create) a project you own and enable three APIs:
+     **Google Analytics Data API**, **Google Analytics Admin API**, **Google Search Console API**.
+  2. APIs & Services → Credentials → Create credentials → **OAuth client ID** → application type
+     **Desktop app**. Download the JSON (it is your `client.json`).
+  3. Make sure the Google account you will consent with has access:
+     Analytics → Admin → Property access management → the account, role **Viewer**;
+     Search Console → Settings → Users and permissions → the account, **Full**.
+  4. On your laptop, install the ReplyPen runtime kit (one line, see the kit README:
+     `bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh)`)
+     and run:
+
+         python -m lib.connectors.google_analytics mint --client-json client.json
+
+     A browser opens. Consent **as the account from step 3** — consenting as another account
+     silently gives you a token that sees nothing. "Google hasn't verified this app" is expected
+     for your own client: Advanced → Go to … (unsafe). Tick every box, including Analytics and
+     Search Console.
+  5. The command prints your GA4 properties and Search Console sites, then a JSON block with the
+     five values. Paste each one into the matching field here and save. Treat the refresh token and
+     client secret like passwords.
+
+  Prompt you can forward to whoever administers Analytics / Search Console (Dutch):
+
+  ```
+  Kan je read-only toegang geven voor ReplyPen (rapportage, geen wijzigingen)?
+  1. Google Analytics → Beheer → Toegangsbeheer voor property "<Project>" → voeg
+     <account@…> toe met de rol "Viewer" (Kijker).
+  2. Search Console → Instellingen → Gebruikers en machtigingen voor "<Project>" → voeg
+     <account@…> toe met machtiging "Volledig".
+  3. Laat het weten wanneer beide klaar zijn; er moet daarna eenmalig ingelogd worden met
+     <account@…> om de koppeling goed te keuren.
+  ```
+
+  Why a token and not a "Sign in with Google" button: ReplyPen has no Google-verified OAuth app for
+  the Analytics and Search Console scopes yet, so the connection uses an OAuth client from your own
+  Cloud project. Re-run the mint command any time to replace an expired or revoked token.
