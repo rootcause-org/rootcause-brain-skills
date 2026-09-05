@@ -57,7 +57,10 @@ def main(argv: list[str] | None = None) -> int:
     live = args.live or args.require_live
     marker = "live" if live else "not live"
     # The adapter injects one offline lint item and prints one compact end-of-tier report.
-    pytest_args = ["-p", "lib.livecheck", "-p", "lib.brain_lint_pytest", "-p", "lib.mirror_skip", "-m", marker, "-q", *args.pytest_args]
+    # --import-mode=importlib: brains keep one `tests/test_preflight.py` per action dir with no
+    # `__init__.py`, so rootdir-based import would collide on the shared basename (audit 2026-09-05).
+    pytest_args = ["-p", "lib.livecheck", "-p", "lib.brain_lint_pytest", "-p", "lib.mirror_skip",
+                   "--import-mode=importlib", "-m", marker, "-q", *args.pytest_args]
     if args.require_live:
         pytest_args.append("--require-live")
 
