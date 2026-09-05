@@ -1,12 +1,9 @@
 # Critic prompt (pipeline step 5)
 
-The **early critic**. It runs on the **untouched first-draft proposal set** — every
-`drafts/<cluster>.md` + `drafts/<cluster>.report.json` — **before any reduction** (step 6). Reducing
-first would hide the raw cross-cluster picture the critic needs. Runs locally; may read scratch and
-opaque IDs. Output is advisory notes for reduction, written under `critic/`.
-
-Numeric knobs referenced here (era bands, prose-reply threshold, risk cap) are **tunable defaults from
-the prepare config**, not constants.
+The **early critic**: runs on the **untouched first-draft proposal set** — every `drafts/<cluster>.md` +
+`.report.json` — **before any reduction** (step 6), because reducing first would hide the raw
+cross-cluster picture it needs. Output is advisory notes under `critic/`. Numeric knobs referenced here
+(era bands, prose-reply threshold, risk cap) are **tunable defaults from the prepare config**.
 
 ---
 

@@ -1,22 +1,14 @@
 # Generated committed harvest record (pipeline steps 10 and 12)
 
-`prepare_harvest.py review` renders the exact tracked-safe JSON candidate under
-`$SCRATCH/brief/record-candidate.json` before the operator gate. It is the only record the operator
-approves. After approval, promote it into the tracked brain **before** deleting scratch:
+`review` renders the exact tracked-safe candidate at `$SCRATCH/brief/record-candidate.json` — the only
+record the operator approves. `record --approved` then promotes it into the tracked brain **before**
+scratch is deleted (invocation in step 12 of [`../SKILL.md`](../SKILL.md)).
 
-```bash
-uv run --no-project python "$SKILL/scripts/prepare_harvest.py" record \
-  --scratch "$SCRATCH" \
-  --out "notes/harvest-records/YYYY-MM-DD.json" \
-  --approved
-```
-
-`record` revalidates current ledger/run/preflight binding, recomputes the expected candidate from the sanitized
-source, refuses a changed/tampered candidate, requires a non-ignored destination inside the Git root,
+`record` recomputes the expected candidate from the sanitized source and refuses a tampered one,
+revalidates the ledger/run/preflight binding, requires a non-ignored destination inside the Git root,
 privacy-lints it, and writes the reviewed bytes unchanged. An identical existing record is a no-op; a
-different existing file is never overwritten. Use one file per
-harvest under `notes/harvest-records/`; the upper date span plus export handle is the future incremental
-`--since` watermark.
+different existing file is never overwritten. One file per harvest under `notes/harvest-records/`; its
+upper date span plus export handle is the future incremental `--since` watermark.
 
 ## Tracked-safe JSON shape
 

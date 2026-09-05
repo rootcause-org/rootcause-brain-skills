@@ -1,38 +1,28 @@
 ---
 name: rc-health
-description: Check whether a rootcause project is quietly unhealthy using `rc fleet health` for stale or failed source mirrors plus dead-lettered runs. Use inside a brain checkout for periodic sweeps, CI/cron-style gates, or "is anything broken?" questions. Exits non-zero when unhealthy and points flagged run UUIDs toward `rc-debug`.
+description: "Check whether a rootcause project is quietly unhealthy — `rc fleet health` reports stale/failing source mirrors, failed brain boot checks, and dead-lettered runs. Use for periodic sweeps, a CI/cron gate, or an open 'is anything broken?' question; hand flagged run UUIDs to rc-debug."
 ---
 
-# rc-health - project health sweep
+# rc-health — project health sweep
 
-Use the `rc` CLI from inside the brain checkout. Scope comes from the logged-in OAuth token and brain
-metadata; no project argument, SSM, or operator access.
-If a RootCause MCP is installed, ignore it unless the user explicitly asks for MCP; this workflow uses
-`rc`.
-
-## Required Context
-
-Read [docs/mirrors.md](../../docs/mirrors.md) for mirror failures and
-[docs/support-boundary.md](../../docs/support-boundary.md) for escalation boundaries.
-
-## Workflow
-
-Run:
+Read-only. Public `rc` only, scoped by the OAuth login and brain metadata
+([docs/support-boundary.md](../../docs/support-boundary.md)). Ignore an installed RootCause MCP
+unless the user asks for it.
 
 ```bash
-rc fleet health
-rc fleet health --hours 72
+rc fleet health              # default 24h dead-letter window; pass through an explicit --hours <n>
 ```
 
-Pass through an explicit `--hours <n>` if supplied; default is a 24-hour dead-letter window.
+`--all` fans out across every project (all-projects token) and is non-zero if *any* project is
+unhealthy. **Non-zero exit is the verdict, not a tool failure** — that is what makes this
+cron/CI-usable. Read the output and report what is unhealthy.
 
-Relay the verdict plainly:
+Relay plainly:
 
-- Mirrors: name any source mirror that failed sync or went stale, including how long it has been stale.
-- Dead-lettered runs: surface run UUIDs; these are urgent because a draft never reached the customer.
+- **Mirrors** — name each source mirror that failed sync or went stale, and for how long
+  ([docs/mirrors.md](../../docs/mirrors.md)).
+- **Brain boot** — a failed boot check means the mounted brain does not start.
+- **Dead-lettered runs** — surface the UUIDs; these are urgent, a draft never reached the customer.
 
-`rc fleet health` exits non-zero when unhealthy, so do not treat non-zero as a tool failure by itself. Read
-the output and report what is unhealthy.
-
-Use `rc-debug` for flagged UUIDs or thread/session ids. If a finding leads to a brain edit, finish
+Hand flagged UUIDs to [`rc-debug`](../rc-debug/SKILL.md). If a finding leads to a brain edit, finish
 through `brain-publish`.

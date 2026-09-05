@@ -1,108 +1,72 @@
 ---
 name: rc-fleet
-description: Review recent production runs with `rc fleet runs`, including audits limited to human-scored reviews, discover exact cross-run action history with `rc fleet actions`, then mine systemic failures with `rc fleet patterns`. Use inside a brain checkout for run health, review-score audits, action arguments/statuses/run links over a date window, worst-offender triage, recurring failures, or when no single run is known yet.
+description: "Review many production runs at once from a brain checkout — `rc fleet runs` for the digest and human-score audits, `rc fleet actions` for cross-run action history, `rc fleet patterns` for recurring failures. Use for periodic run health, review-score audits, worst-offender triage, or 'something is off and I have no UUID yet'."
 ---
 
-# rc-fleet - recent run digest
+# rc-fleet — recent run digest
 
-Use the `rc` CLI from inside the brain checkout. Scope comes from the logged-in OAuth token and brain
-metadata. Use `--project` only with an all-projects token; `--tenant` follows the normal token
-pin/mismatch rules. Do not use SSM or private operator mechanics.
-If a RootCause MCP is installed, ignore it unless the user explicitly asks for MCP; this workflow uses
-`rc`.
+The entry point when no single run is known yet. Flags and windows: `rc fleet <cmd> --help` and
+[docs/rc-cli.md](../../docs/rc-cli.md). Public `rc` only, scoped by the OAuth token and brain metadata
+([docs/support-boundary.md](../../docs/support-boundary.md)); `--project` needs an all-projects token.
+Ignore an installed RootCause MCP unless the user asks for it.
 
 ## Required Context
 
-Read:
+[docs/mirrors.md](../../docs/mirrors.md) when failures involve source freshness ·
+[docs/side-effects.md](../../docs/side-effects.md) before interpreting action statuses.
 
-- [docs/mirrors.md](../../docs/mirrors.md) when failures involve mirrors or source freshness.
-- [docs/side-effects.md](../../docs/side-effects.md) before interpreting action statuses.
+## 1. Digest — `rc fleet runs`
 
-## Workflow
+Pass through any supplied `--days` / `--kind`. `--format agent` is the token-lean shortlist. The
+tool prints its own flag legend; read it rather than memorising one — including `T!` (turns far above
+the same-kind median), the heaviness signal.
 
-1. Digest first:
-   ```bash
-   rc fleet runs --days 7
-   rc fleet runs --format agent
-   rc fleet runs --kind email --days 14
-   rc fleet runs --kind email --days 14 --reviewed --format agent
-   rc fleet runs --kind email --days 14 --reviewed -o json
-   rc fleet runs --days 14 --learning=sent_delta --format agent
-   ```
-   Pass through supplied `--days <n>` and `--kind email|prompt|mcp|analysis`. Read the per-run flag
-   table, aggregate rates, and worst offenders. `--format agent` is the token-lean shortlist.
-   `--learning` (bare, or `=feedback|sent_delta|triage_skipped|triage_corrected`) narrows to runs a
-   dream cycle can learn from. `--reviewed` is different: it returns every run with a 1–5 human score,
-   including held-out evaluation threads that learning correctly excludes. Its JSON rows include
-   `review.score` and `review.comment`; use this filter for reply audits and never substitute
-   `--learning=feedback` when the request says "scored" or "reviewed."
+**The one trap: `--reviewed` ≠ `--learning`.**
 
-2. Find actions across runs before drilling into individual traces:
-   ```bash
-   rc fleet actions --days 14 \
-     --action create_appointment --action update_appointment
-   rc fleet actions --days 14 --action create_appointment \
-     --status succeeded --format agent
-   rc fleet actions --days 14 --action create_appointment -o json |
-     jq '.items[] | {id, run_id, action_id, status, params, run_url}'
-   ```
-   Repeated `--action` and `--status` filters are exact-match ORs. Human and agent output include exact
-   grounded params and the full freshly tokenized run URL by default; JSON preserves complete raw
-   rows. Results page automatically. If the client warns that its page cap was reached, narrow the
-   days/actions/statuses rather than trusting the partial tail.
+- `--learning[=feedback|sent_delta|triage_skipped|triage_corrected]` = runs a dream cycle can learn
+  from.
+- `--reviewed` = every run with a 1–5 human score, *including held-out evaluation threads that
+  learning deliberately excludes*. JSON rows carry `review.score` / `review.comment`.
 
-   This feed requires `console:action` plus operator/admin action-view authority because params may
-   contain customer values. Minimize filters and do not commit raw output or share tokenized URLs.
-   Open `run_url` as returned; it can be null for direct operator actions or when run-page signing is
-   unavailable.
+When the request says "scored" or "reviewed", use `--reviewed`. Substituting `--learning=feedback`
+silently drops the eval set.
 
-   Status is lifecycle evidence:
-   - `proposed` means recorded, not executed.
-   - `executing` is non-terminal.
-   - `succeeded`, `failed`, and `canceled` are terminal execution outcomes.
+## 2. Actions across runs — `rc fleet actions`
 
-   A `failed` row also carries its settled failure: the `CLASS` column plus an `Error:` detail line
-   (message clamped to one line; `-o json` keeps `error_class` + `error_message` whole). Classify before
-   drilling in — `executor_predispatch` (provably nothing ran, retry-safe), `executor_error`,
-   `no_executor`, `no_runner_url` and `attachment_fetch` are RootCause infrastructure, anything else is
-   the action's own domain refusal. See [docs/actions.md](../../docs/actions.md#failure-classes-infra-vs-domain).
+Use before drilling individual traces: it returns exact grounded params plus a freshly tokenized
+`run_url` per row, so it answers "what did we actually do, with what arguments" in one call. Repeated
+`--action` / `--status` are exact-match ORs; results page automatically — if the client warns its
+page cap was hit, narrow the window rather than trusting the partial tail. The server clamps `--days`
+above 14.
 
-   There is no action-detail command. For result/preflight context, use the row's `run_id` with
-   `rc-debug` or open `run_url`; a null `run_id` means no originating run trace.
+**Privacy constraint (params can hold customer values):** the feed needs `console:action` plus
+action-view authority. Minimize filters, never commit raw output, never share the tokenized URLs.
 
-3. Interpret run flags:
-   - `ERRxn`: bash failures.
-   - `EGRxn`: blocked egress.
-   - `GD`: grounding discarded.
-   - `LRN:<signals>`: dream-cycle learning candidate — human feedback, a live sent edit, a blind
-     shadow comparison, or a triage skip/correction on that run.
+Reading a row:
 
-   Heaviness is not a flag: judge it from the run's turn count and wall-clock duration. Unusually
-   many turns or a long duration against the fleet's norm marks a run worth drilling.
+- `proposed` = recorded, never executed. `executing` = non-terminal. `succeeded|failed|canceled` =
+  terminal.
+- A `failed` row settles into a `CLASS` + one-line `Error:` (`-o json` keeps both whole).
+  **Classify before drilling:** infra classes are RootCause's machinery failing (report, do not edit
+  the brain); anything else is the action's own domain refusal —
+  [docs/actions.md](../../docs/actions.md#failure-classes-infra-vs-domain).
+- There is no action-detail command. For result/preflight context use the row's `run_id` with
+  [`rc-debug`](../rc-debug/SKILL.md), or open `run_url`.
 
-4. Drill two to five flagged runs with the `rc-debug` skill. Pass any listed run UUID directly to
-   `rc run thread <uuid>` for its thread/session lineage.
+## 3. Drill and close out
 
-   `LRN:sent_delta` marks a live human edit. `LRN:sent_delta/<verdict>` marks a blind shadow
-   comparison (`/unjudged` when no verdict exists); `equivalent` is positive evidence, not a failure.
-   Fleet never carries the two bodies. For the proposal and human answer, switch to
-   [`brain-dream-cycle`](../brain-dream-cycle/SKILL.md), which reads them from
-   `rc dev learning evidence` and renders live edits or a verdict-first shadow report.
+Drill two to five flagged runs with [`rc-debug`](../rc-debug/SKILL.md).
 
-5. Close out feedback you acted on, so the next review starts from the unprocessed remainder:
-   ```bash
-   rc run feedback <id> --processed --resolution-note "added mirror runbook for refund flow"
-   ```
-   Project-admin authority only; `--unprocessed` reopens a row.
+`LRN:sent_delta` marks a live human edit; `LRN:sent_delta/<verdict>` a blind shadow comparison
+(`/unjudged` = no verdict yet, `equivalent` = positive evidence, not a failure). **Fleet never carries
+the two bodies** — for the proposal vs. the human answer, switch to
+[`brain-dream-cycle`](../brain-dream-cycle/SKILL.md), which reads them from `rc dev learning evidence`.
 
-6. Confirm systemic failures:
-   ```bash
-   rc fleet patterns --days 14
-   rc fleet patterns --days 30
-   ```
-   Each ranked cluster is a candidate brain fix: missing runbook, wrong query, or a domain to
-   allowlist. Author from evidence, then verify with `brain-ask` and finish through `brain-publish`
-   when files changed.
+Mark feedback you acted on processed (`rc run feedback <id> --processed --resolution-note …`;
+project-admin only) so the next review starts from the unprocessed remainder.
 
-Use this as the entry point for periodic fleet review and for "something is off, but I do not have a
-specific UUID yet."
+## 4. Confirm systemic failures — `rc fleet patterns`
+
+Each ranked cluster is a candidate brain fix: a missing runbook, a wrong query, or a domain to
+allowlist. Author from evidence, verify with `brain-ask`, finish through `brain-publish` when files
+changed.

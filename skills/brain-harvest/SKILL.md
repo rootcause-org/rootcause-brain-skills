@@ -1,73 +1,60 @@
 ---
 name: brain-harvest
-description: Run the full local harvest cycle for a rootcause project from a brain checkout using only the public rc CLI — the sent-history analog of brain-dream-cycle. Use when asked to onboard a mailbox's past replies, bootstrap a brain from historical sent mail, harvest/mine/synthesize a mailbox's answered-email corpus, or seed brain knowledge from a production export. Trigger a production harvest export, download the cleaned Markdown corpus, prepare a deterministic opaque-ID manifest with coverage ledger, fan out per-topic subagents to distil patterns (never raw mail), critic the first draft, reduce, decide durable homes across brain files / persona / triage, run a privacy+contract lint, evaluate against held-out threads, gate on operator diff approval, publish, then delete the local corpus. Also carries the standalone voice-format probe that recovers a mailbox's Gmail composer font and signature block (logo included) from its own sent HTML when drafts look foreign.
+description: "Turn a mailbox's historical sent mail into durable brain knowledge plus persona/triage settings, locally from a brain checkout with the public rc CLI. Use when onboarding a mailbox's past replies, seeding or growing a brain from a sent-history export, or when drafts look foreign (font/signature probe in voice-format.md)."
 ---
 
-# brain-harvest - synthesize a brain from historical sent mail
+# brain-harvest — synthesize a brain from historical sent mail
 
-Use this from inside a project or tenant brain checkout to bootstrap or grow a brain from a mailbox's
-own answered-email history. It is the harvest analog of [`brain-dream-cycle`](../brain-dream-cycle/SKILL.md):
-where dream-cycle mines a handful of recent runs, harvest sweeps the full sent corpus once, partitions it
-deterministically, and distils durable patterns. Synthesis runs **locally in your coding-agent session**
-(Claude Code / Codex) so it uses your stronger-model subscription instead of a hosted tier — the corpus
-lands on the laptop only for the session and is deleted **after** the operator approves the diff.
+Run from inside a project or tenant brain checkout. Where
+[`brain-dream-cycle`](../brain-dream-cycle/SKILL.md) mines a handful of recent runs, harvest sweeps the
+full sent corpus once, partitions it deterministically, and distils durable patterns. Synthesis runs
+**locally in your coding-agent session** so it uses your stronger-model subscription instead of a hosted
+tier; the corpus lands on the laptop only for the session.
 
-The workflow is public-CLI only: no RootCause private source, host shell, SSM, `db.py`, raw registry
-SQL, or private operator scripts. If a needed read/write is not exposed through `rc`, finish with a
-RootCause support request through [`brain-publish`](../brain-publish/SKILL.md).
+Public-CLI only: no RootCause private source, host shell, SSM, raw registry SQL, or private operator
+scripts. If a needed read/write is not exposed through `rc`, finish with a support request through
+[`brain-publish`](../brain-publish/SKILL.md).
 
-**Privacy is the hard rule of this skill.** The corpus is real customer mail. Only *distilled patterns*
-land in tracked brain files — never raw thread text, credentials, patient data, addresses, payment
-links, correspondent names, or the opaque IDs that index the scratch corpus. The corpus, manifests,
-cluster drafts, critic notes, review brief, and evidence filenames are all sensitive until reduced;
-they live under one gitignored scratch root and are deleted only after the human gate.
+**Privacy is the hard rule.** The corpus is real customer mail. Only *distilled patterns* may land in
+tracked brain files — never raw thread text, credentials, patient data, addresses, payment links,
+correspondent names, or the opaque IDs that index the scratch corpus. Corpus, manifests, cluster drafts,
+critic notes, review brief and evidence filenames are all sensitive until reduced; they live under one
+gitignored scratch root and are deleted only after the human gate. A `brain_lint.py` HARD finding blocks
+a commit, full stop.
 
-**Every harvest has two required outputs:** durable business knowledge in the brain, and a distilled
-reply voice in persona settings. Apply voice at the harvested business scope: tenant settings for a
-tenant checkout, otherwise project settings. Never make the mailbox the durable home for harvested
-voice; inspect mailbox overrides only to ensure they do not shadow the chosen tenant/project values.
+**Every harvest has two required outputs:** durable business knowledge in the brain, *and* a distilled
+reply voice in persona settings. Voice goes to the harvested business scope — tenant settings for a
+tenant checkout, otherwise project. Never make the mailbox the durable home for harvested voice; inspect
+mailbox overrides only to confirm they do not shadow the chosen values.
 
-## Required Context
+## Map
 
-Read when relevant:
-
-- [docs/brain-model.md](../../docs/brain-model.md) for what belongs in the brain and its layout.
-- [docs/rc-cli.md](../../docs/rc-cli.md) for public command scope, including the harvest/export commands.
-- [docs/side-effects.md](../../docs/side-effects.md) before triggering a harvest, download, or `rc ask`.
-- [docs/support-boundary.md](../../docs/support-boundary.md) when a needed surface is missing.
-- [docs/specs/brain-harvest-long-horizon-v2.md](../../docs/specs/brain-harvest-long-horizon-v2.md) — the
-  design this pipeline implements; consult §3/§5/§5a/§6/§7/§10 when a step's rationale is unclear.
-- [`brain-ask`](../brain-ask/SKILL.md) for production-loop verification.
-- [`brain-publish`](../brain-publish/SKILL.md) for the final sync/publish/support request.
-
-Templates in [`templates/`](templates/) hold the pipeline prompts (cluster / critic / reduction), the
-operator report formats (review brief, harvest record), and two archetype brain skeletons
-(product-support and personal/mixed). Read [`templates/README.md`](templates/README.md) first; edit the
-matching archetype skeleton in step 7 instead of inventing structure.
+- [`docs/specs/brain-harvest-long-horizon-v2.md`](../../docs/specs/brain-harvest-long-horizon-v2.md) —
+  the design this pipeline implements and the **rationale authority** for the §-numbered rules below
+  (§5 sent-only bias, §5a eras, §6 scope, §7 privacy, §8 ordering, §10 evaluation).
+- [`docs/brain-harvest-v2-migration.md`](../../docs/brain-harvest-v2-migration.md) — what changed from
+  the v1 manual flow, the deliberate reversals/narrowings, and the open `rc`/server gaps.
+- [`docs/brain-model.md`](../../docs/brain-model.md) — what belongs in a brain and its layout.
+- [`docs/rc-cli.md`](../../docs/rc-cli.md) — public command scope, incl. harvest/export syntax.
+- [`docs/side-effects.md`](../../docs/side-effects.md) · [`docs/support-boundary.md`](../../docs/support-boundary.md).
+- [`acquire.md`](acquire.md) — per-provider corpus acquisition (Gmail templates, Intercom, IMAP).
+- [`voice-format.md`](voice-format.md) — the standalone draft font + signature probe.
+- [`templates/`](templates/) — pipeline prompts (cluster / critic / reduction), operator report formats
+  (review brief, harvest record), and two archetype brain skeletons. Read
+  [`templates/README.md`](templates/README.md) first.
+- [`brain-ask`](../brain-ask/SKILL.md) (production verification) · [`brain-publish`](../brain-publish/SKILL.md) (publish / support request).
 
 ## Scratch root
 
-Preparation creates one gitignored root that holds **everything sensitive** for the run:
+One gitignored root holds **everything sensitive** for the run. `.rootcause/` is wholesale-gitignored in
+a brain checkout, but the scripts re-verify with `git check-ignore` and refuse to write a stageable root.
 
 ```
 .rootcause/harvest/<tag>/     # <tag> = a local scratch label, never the export id
-  corpus/                     # raw downloaded corpus file(s)
-  threads/H<32-hex>.md        # one file per thread, named by opaque ID only
-  manifest.jsonl              # per-thread machine facts, first key always "id"
-  clusters.json               # cluster reading plans (sample_ids + deep_read_ids)
-  ledger.json                 # machine-verified coverage ledger
-  holdout.json                # reserved held-out eval threads
-  run.json                    # effective config, export handle, corpus digest/format
-  replay-cases.json           # local redacted holdout question/answer pairs
-  drafts/                     # per-cluster <cluster>.md + <cluster>.report.json
-  critic/                     # critic report + reduced deltas (.md + strict .json)
-  brief/                      # evaluation/metrics, generated brief + exact record candidate
+  corpus/ threads/ manifest.jsonl clusters.json ledger.json holdout.json run.json
+  replay-cases.json diagnostics.{json,md} templates.json
+  drafts/ critic/ brief/ settings-verification/
 ```
-
-`.rootcause/` is wholesale-gitignored in a brain checkout, but the scripts still re-verify with
-`git check-ignore` and refuse to write a stageable root. Raw subjects, filenames, and opaque IDs never
-leave this root; only the reduced, opaque-ID-free result reaches the tracked diff. Set `SKILL` once so
-the bundled scripts are easy to invoke:
 
 ```bash
 SKILL=<absolute path to skills/brain-harvest>
@@ -77,129 +64,34 @@ EXPORT_ID=<actual-rc-export-id>
 SCRATCH=.rootcause/harvest/$TAG
 ```
 
-## Workflow (spec §8 — exact ordering)
+## Workflow
 
-The twelve steps below are the §8 pipeline. Steps marked ⚙ are script invocations with
-machine-checkable output; keep prose judgement in the fan-out/critic/reduce steps minimal. State that
-persists between steps is exactly the scratch root plus the tracked working diff, so **any step is
-re-entrant** — the only irreversible transition is scratch deletion in step 12, which is why it happens
-only after operator approval.
+Twelve steps in exactly this order (§8). ⚙ = script invocation with machine-checkable output. All state
+lives in the scratch root plus the tracked working diff, so **any step is re-entrant**; the only
+irreversible transition is scratch deletion in step 12, which is why it happens after approval.
 
 ### 1. ⚙ Preflight and acquire
 
-Inventory scope and existing configuration first so project/tenant mistakes fail early, and so
-synthesis knows what grounding, persona, and triage already exist before proposing homes — never infer
-"no grounding" from a local repo search alone:
+Inventory scope and existing configuration first, so project/tenant mistakes fail early and synthesis
+knows what grounding/persona/triage already exist before proposing homes. **Never infer "no grounding"
+from a local repo search.**
 
 ```bash
-rc auth status
-rc auth access
-rc project mailbox ls
-git status --short --branch
-git pull --ff-only
+rc auth status && rc auth access && rc project mailbox ls
+git status --short --branch && git pull --ff-only
 
 rc project settings behavior get -o json
 rc project triage policy get -o json
 rc project triage rules ls -o json
 rc dev console database list -o json   # grounding databases already wired
-rc dev console capabilities            # cataloged brain scripts / tools already available
-rc fleet health                        # source mirrors already mounted (and their freshness)
+rc dev console capabilities            # cataloged brain scripts / tools
+rc fleet health                        # mirrors mounted, and their freshness
 ```
 
-In a tenant checkout, route tenant-specific distillations to the tenant brain or tenant settings unless
-they clearly apply to the shared project. Preserve local work.
+Acquire the corpus per provider — see [`acquire.md`](acquire.md).
 
-**Acquire the corpus.** Reuse a fresh export if one exists; otherwise branch by mailbox provider.
-
-Hosted provider path (Gmail/Microsoft/Intercom):
-
-```bash
-rc project corpus ls -o json                       # has this mailbox been harvested already?
-rc project mailbox harvest <mailbox-id> --max-threads 1000
-rc project corpus get <export-id>                  # poll until terminal
-rc project corpus download <export-id> --out "$SCRATCH/corpus/corpus.md"
-```
-
-`rc project mailbox harvest` triggers a **production** provider sweep of the mailbox's sent history into
-a cleaned Markdown corpus; `rc project corpus download` marks the export consumed (starting the
-server-side eviction window, ~48h) and lands raw mail on local disk. Download with `--out` and let
-`prepare_harvest.py` parse the raw bytes: it reads corpus **v1, v2, and v3** itself, so `rc corpus download
---split` is a convenience, not a dependency. **This matters today:** the server emits v2, and released
-`rc` hard-rejects v2 in its splitter, so `--out` + local parse is the working path. If you already have
-a `--split` directory from an older export, point `prepare` at that directory instead.
-
-For Gmail, acquire canned responses as a **second export** after the sent corpus:
-
-```bash
-mkdir -p "$SCRATCH/templates"
-rc project mailbox templates <mailbox-id>
-rc project corpus get <templates-export-id>
-rc project corpus download <templates-export-id> --out "$SCRATCH/templates/export.json"
-```
-
-Gmail has no templates API: the host reads the backing drafts and emits `templates/v1` JSON. This is
-authored, high-signal voice and stock-phrasing reference material. It never enters the v3 sent corpus
-and never satisfies thread coverage, occurrence, era, skip, or durable-rule evidence gates. Non-Gmail
-harvests omit this step.
-
-**Intercom dialect.** Harvest remains a read-only hosted export; it neither enables production inbox
-processing nor writes to Intercom. The server searches `first_admin_reply_at` in configurable bounded,
-half-open date bands, paginates each band, deduplicates boundary overlap, hydrates candidates, and keeps
-only a contact message followed later by a verified human-admin reply. Corpus v3 headings are explicit
-`inbound/contact` and `outbound/human_admin`; `prepare` rejects unstructured or misordered v3 messages
-instead of guessing from headers or bodies. Bots, automation, system/team events, unverified admins,
-admin-before-contact-only conversations, and malformed structures are rejected and counted. Do not mix
-Help Center/KB work into a conversation harvest and never add a raw conversation dump to a brain.
-
-IMAP guard rails: for IMAP mailboxes, treat hosted harvest as a shallow/smoke path only (the server may
-cap rendered IMAP refs, currently 100, and warn that deep IMAP belongs in local tooling). Before any
-deep/local IMAP run, prove **both** public surfaces exist:
-
-```bash
-rc project mailbox imap-env --help
-test -f "$SKILL/scripts/local_imap_harvest.py"
-```
-
-If either is missing, do **not** reveal credentials, scrape private stores, or invent env-file handling
-— stop with an implementation/ops gap (via `brain-publish`), or run only the capped hosted harvest as a
-smoke test. When both exist:
-
-```bash
-rc project mailbox imap-env <mailbox-id> --out "$SCRATCH/imap.env"
-git check-ignore "$SCRATCH/imap.env"
-uv run "$SKILL/scripts/local_imap_harvest.py" --env "$SCRATCH/imap.env" --out "$SCRATCH/imap-export/"
-```
-
-The IMAP env file is secret material: never print it, commit it, or keep it after the session (cleanup
-in step 12 removes it with the rest of scratch).
-
-**The IMAP exporter now feeds `prepare` directly.** `local_imap_harvest.py` writes a `harvest_format: v1`
-corpus blob at `$SCRATCH/imap-export/corpus/corpus.md` — the same section shape the server's canonical
-renderer emits, with **real sender addresses** (the natural fit for locally-fetched mail) — so
-`prepare_harvest.py` parses it exactly like the hosted corpus. It also still writes a human-readable
-`INDEX.md` + `threads/` split at the top level for one deprecation release; the blob lives in its own
-`corpus/` subdir so pointing `prepare` there never trips over the non-front-mattered `INDEX.md`. In step 2,
-point `prepare` at the blob dir:
-
-```bash
-uv run --no-project python "$SKILL/scripts/prepare_harvest.py" prepare \
-  --corpus "$SCRATCH/imap-export/corpus/" --scratch "$SCRATCH" --export-id "$EXPORT_ID"
-```
-
-Because the export is **sent-folder only**, every rendered message is mailbox-authored: expect
-`direction: mailbox_first` and no external-question holdouts, so pass `--holdout 0` (a sent-only corpus
-cannot fill the default reserve). Deep inbound-thread expansion is still future work — until then this
-corpus proves only what the mailbox *sent*. The [manual fallback path](#fallback-the-v1-manual-path-one-release-only)
-below remains only for a corpus `prepare_harvest.py` genuinely cannot parse.
-
-An unbound diagnostic preflight checks local Git/gitignore/format plus best-effort `rc` environment
-state (and degrades to WARN when `rc` is absent):
-
-```bash
-uv run --no-project python "$SKILL/scripts/prepare_harvest.py" preflight --scratch "$SCRATCH"
-```
-
-Preparation requires the machine-reconciled form: pass the explicit context and actual export ID:
+Then bind the target. The unbound form (`preflight --scratch` alone) is a local diagnostic that degrades
+to WARN without `rc`; `prepare` requires the bound form:
 
 ```bash
 uv run --no-project python "$SKILL/scripts/prepare_harvest.py" preflight \
@@ -207,13 +99,13 @@ uv run --no-project python "$SKILL/scripts/prepare_harvest.py" preflight \
   [--tenant <tenant-slug>] --provider <google|microsoft|imap|intercom> --export-id "$EXPORT_ID"
 ```
 
-It sniffs the acquired format; checks Git state/gitignore plus public auth/access, mailbox/provider,
-persona, triage, grounding, capabilities, mirror-health, corpus-history, export, and doctor surfaces;
-and writes private `$SCRATCH/preflight.json` with the target, scope matrix, and check results. A `FAIL`
-must be fixed before proceeding. Missing `rc` degrades non-target inventory to `WARN` for fixture/local
-work, but an explicit project/mailbox/provider/export target fails closed unless critical reads succeed
-and export metadata proves the exact target. The artifact persists normalized capabilities, verified
-read/write scopes, tenant context, and the checkout root; raw command output is never copied into it.
+It sniffs the acquired format, checks Git/gitignore state plus the public auth, scope, persona, triage,
+grounding, capability, mirror, corpus-history, export and doctor surfaces, and writes private
+`$SCRATCH/preflight.json` (target, scope matrix, results — never raw command output). A `FAIL` must be
+fixed before proceeding; a bound target **fails closed** unless export metadata proves the exact target.
+
+In a tenant checkout, route tenant-specific distillations to the tenant brain or tenant settings unless
+they clearly apply to the shared project.
 
 ### 2. ⚙ Deterministic prepare, verify
 
@@ -224,138 +116,78 @@ uv run --no-project python "$SKILL/scripts/prepare_harvest.py" prepare \
 uv run --no-project python "$SKILL/scripts/prepare_harvest.py" verify --scratch "$SCRATCH"
 ```
 
-Omit `--templates` for non-Gmail mailboxes; preparation still emits an empty normalized
-`templates.json` so later stages have one stable path.
+`prepare` binds the verified preflight into `run.json`, then writes the whole synthesis input set
+atomically and idempotently over the same corpus bytes (see the script's module docstring for the file
+list, and spec §1/§3 for why each exists). What you must know as the operator:
 
-`prepare` requires that verified artifact, binds its canonical digest and exact target into `run.json`,
-then parses the raw corpus into an opaque-ID manifest and writes synthesis-only `threads/`, `manifest.jsonl`,
-`clusters.json`, `ledger.json`, `holdout.json`, `replay-cases.json`, `diagnostics.json`,
-`diagnostics.md`, normalized `templates.json`, and `run.json` atomically
-(re-running replaces them; it is deterministic and idempotent over the same corpus bytes). It:
+- IDs are **opaque and content-derived** (`H<32-hex>`), stable across full/delta overlap; raw filenames
+  stay internal and indistinguishable duplicates hard-fail.
+- Metadata is extracted **without LLM synthesis** — including the `prose_reply` flag (the only legitimate
+  negative signal, §5) and the era band (§5a).
+- Clustering is **deliberately dumb** and carries a mandatory `mixed` bucket: it is a work-partitioning
+  unit, not routing truth. Generic subjects ("contact", "order", "invoice") never determine a topic.
+- The **holdout** (default 8) is excluded from every synthesis read and never written under `threads/`.
+  If the requested count is unavailable, `prepare` hard-fails — deliberately lower `--holdout` or acquire
+  a larger corpus rather than silently shrinking the evaluation.
 
-- assigns each thread a content-derived opaque `H<32-hex>` ID that remains stable across full/delta
-  overlap — raw filenames stay internal and indistinguishable duplicates hard-fail;
-- extracts metadata without LLM synthesis: date span, subject family, language, message/reply counts,
-  direction, form source, attachments, the **prose-reply-present** flag (§5 evidence), era band (§5a),
-  and safe risk markers;
-- clusters **deliberately dumbly** (direction, form source, subject family, light content markers) with
-  a mandatory `mixed` bucket — generic subjects like "contact", "order", "invoice" never determine a
-  topic alone; clustering is a work-partitioning unit, not routing truth;
-- emits a coverage ledger proving every thread is assigned exactly once (`assigned` / `holdout` /
-  `excluded_noise`), with per-cluster stratified `sample_ids` (single-pass reading plan) and
-  `deep_read_ids` (risk-flagged, always read);
-- reserves a small stratified holdout (default 8, tunable 5–10) of threads with substantive inbound
-  questions followed by real human answers, excluded from all synthesis reads (§10), and emits
-  contact/identifier-redacted local replay cases; if the requested count is unavailable, preparation
-  hard-fails so you deliberately lower `--holdout` or acquire a larger corpus;
-  raw holdout threads are never written under `threads/`;
-- writes counts-only pre-synthesis diagnostics (accepted/rejection reasons, actor types, initiation
-  types, date-band candidates, deduplication) with no bodies, names, emails, or raw source IDs. Read
-  `diagnostics.md` before fan-out; unexpected/noisy distributions are a stop-and-fix signal, and the
-  same distributions are embedded in the final operator review brief;
-- reports the **forced-deep distribution** across risk markers plus ambiguous generic-subject threads:
-  if their union exceeds the cap (default 15%), the ledger marks `over_cap: true` with the per-marker
-  breakdown so you prune rules **before** fan-out rather than silently reintroducing read-everything.
+Two artifacts gate fan-out. Read `diagnostics.md` (counts only, no bodies/names/IDs): an unexpected or
+noisy distribution is a stop-and-fix signal. Inspect `ledger.json` → `risk`: `over_cap: true` means the
+forced-deep set exceeds the cap (default 15%) — prune risk markers via `--config` and re-run `prepare`,
+rather than silently reintroducing read-everything.
 
-`verify` (also run automatically inside `prepare`) checks the ledger invariants and exits non-zero on
-any violation. Inspect `ledger.json` → `risk`: if `over_cap` is true, lower/prune risk markers via a
-`--config` JSON and re-run `prepare` before fanning out. Every numeric knob (sample cap, era bands,
-holdout count, risk cap, prose-reply threshold) is a **tunable default**, overridable with
-`--config <json>`, `--holdout N`, or `--seed N` — never a hard constant.
+Every numeric knob (sample cap, era bands, holdout, risk cap, prose-reply threshold) is a **tunable
+default** via `--config <json>` / `--holdout N` / `--seed N`, never a hard constant.
 
 ### 3. Bounded per-cluster drafts
 
-Fan out one coding-agent subagent per cluster using
-[`templates/cluster-agent-prompt.md`](templates/cluster-agent-prompt.md), substituting the `{{…}}`
-slots from `clusters.json`. Each subagent reads **only** its assigned threads under `$SCRATCH/threads/`
-— the stratified `sample_ids` in a **single pass** (no incremental batch rounds) **plus every**
-`deep_read_ids` (all risk-flagged threads) — and the relevant tracked brain files, then returns deltas
-against the existing brain (never a from-scratch rewrite). Each subagent must:
+Fan out one coding-agent subagent per cluster with
+[`templates/cluster-agent-prompt.md`](templates/cluster-agent-prompt.md), substituting the `{{…}}` slots
+from `clusters.json`. That template owns the full contract (reads, delta format, era tags, §5 gate,
+honesty signals, privacy, self-lint, the two output files). Orchestrator-side rules:
 
-- separate brain-fact, persona, and triage candidates;
-- tag every durable rule with the era of its supporting evidence, marking `stale-era` where all evidence
-  sits outside the trailing era (§5a);
-- obey the §5 skip-evidence gate (presence-without-prose-reply only; occurrence count stated);
-- report saturation honesty (`still_yielding`), route-elsewhere items, discovered contradictions,
-  current-source verification needs, and coverage counts;
-- emit **no** raw quotes, names, addresses, identifiers, counterparties, links, raw filenames, or opaque
-  IDs into the proposal prose — opaque IDs live only in the report JSON;
-- read `$SCRATCH/templates.json` in full when `template_count > 0`, treating it as authoritative for
-  persona and reusable response structure but never as thread evidence or durable-fact authority;
-- self-lint the proposal before marking the cluster complete (load-bearing; names leaked into proposals
-  in run 1):
+- Each subagent reads **only** its `sample_ids` in a single pass **plus every** `deep_read_ids` — no
+  incremental batch rounds, no reading beyond the plan.
+- **Resume granularity is the cluster**: a draft either exists complete (proposal + report, self-lint
+  clean) or the cluster reruns. Adjacent small clusters may share one assignment; a large diverse cluster
+  should be split and reduced once, not handed wholesale to one agent.
+- An honest `still_yielding: true` at the cap earns **one** orchestrator-controlled follow-up — never let
+  the agent silently read more:
   ```bash
-  uv run --no-project python "$SKILL/scripts/brain_lint.py" --scratch "$SCRATCH/drafts/<cluster>.md"
+  uv run --no-project python "$SKILL/scripts/prepare_harvest.py" ledger expand \
+    --scratch "$SCRATCH" --cluster <cluster-id> --count <bounded-count>
   ```
-
-Each cluster produces two files: `$SCRATCH/drafts/<cluster>.md` (the proposal) and
-`$SCRATCH/drafts/<cluster>.report.json` (machine coverage report).
-
-**Resume granularity is the cluster, not the batch.** A cluster's draft either exists complete (both
-files present, self-lint clean) or the cluster reruns — there are no per-batch checkpoints. Adjacent
-small clusters may be merged into one assignment; a large diverse cluster should be split into bounded
-assignments and reduced once, rather than handed wholesale to a single agent. If a subagent honestly
-reports `still_yielding: true` at the cap, issue **one** orchestrator-controlled follow-up assignment on
-that cluster — do not let the agent silently read more. Expand the plan over remaining assigned IDs,
-then replace the report with a final `still_yielding: false` report after the follow-up:
-
-```bash
-uv run --no-project python "$SKILL/scripts/prepare_harvest.py" ledger expand \
-  --scratch "$SCRATCH" --cluster <cluster-id> --count <bounded-count>
-```
-
-Fold each report back into the ledger so coverage and route-elsewhere reassignments are recorded:
-
-```bash
-uv run --no-project python "$SKILL/scripts/prepare_harvest.py" ledger apply \
-  --scratch "$SCRATCH" "$SCRATCH"/drafts/*.report.json
-```
-
-`ledger apply` validates the strict report schema, hard-fails on unknown/non-assigned/holdout IDs,
-re-verifies invariants, and persists nothing if the merge would break them. Step 10 proves every
-planned sampled/deep read was completed and every non-empty original cluster has one final report.
+- Fold reports back so coverage and route-elsewhere reassignments are recorded. `ledger apply` validates
+  the strict schema, hard-fails on unknown/non-assigned/holdout IDs, and persists nothing if the merge
+  would break invariants:
+  ```bash
+  uv run --no-project python "$SKILL/scripts/prepare_harvest.py" ledger apply \
+    --scratch "$SCRATCH" "$SCRATCH"/drafts/*.report.json
+  ```
 
 ### 4. Induce one candidate taxonomy
 
-Merge the per-cluster returns into a single candidate brain tree: one induced taxonomy of topics/homes
-that the reduction step will tighten each proposal against. This is orchestrator work over the draft
-proposals only — no new corpus reads.
+Orchestrator work over the draft proposals only, no new corpus reads: merge the per-cluster returns into
+one induced tree of topics/homes that reduction will tighten every proposal against.
 
 ### 5. Early critic on the untouched first-draft set
 
-Run one critic subagent over the **untouched** first-draft proposal set — every `drafts/<cluster>.md`
-plus its `.report.json` — using [`templates/critic-prompt.md`](templates/critic-prompt.md), **before any
-reduction**. Reducing first would hide the raw cross-cluster picture the critic needs. The critic judges
-and flags only (it never edits proposals): brain-contract home correctness, the §5 skip/`force_process`
-evidence gate, §5a era flags, the §6 scope matrix on every settings change, cross-cluster contradictions,
-and privacy leaks. It writes advisory notes to `$SCRATCH/critic/critic.md`.
-When templates exist, the critic also reads `$SCRATCH/templates.json` in full and flags persona or
-stock-phrasing proposals that contradict the authored reference, without treating templates as evidence.
-
-(This resolves the v1 skill's self-contradiction: the critic runs on the first draft, **before**
-reduction, not after polishing.)
+One critic subagent over **every** `drafts/<cluster>.md` + `.report.json`, using
+[`templates/critic-prompt.md`](templates/critic-prompt.md), **before any reduction** — reducing first
+would hide the raw cross-cluster picture the critic needs. It judges and flags only (never edits
+proposals) and writes advisory notes to `$SCRATCH/critic/critic.md`.
 
 ### 6. Per-topic reduction
 
-Run reduction per topic against the critic report using
-[`templates/reduction-prompt.md`](templates/reduction-prompt.md). It turns the critic-judged first draft
-into tight final deltas against the one induced taxonomy: drop or fix what the critic rejected, resolve
-contradictions where evidence reconciles (and **surface** the rest for the review brief), apply era
-supersessions (prefer recent evidence, record what was superseded), collapse per-cluster restatements
-into one delta per fact/rule, and keep the brain/persona/triage home split clean. Output is
-`$SCRATCH/critic/reduced.md` plus the strict machine-readable `$SCRATCH/critic/reduced.json` contract
-in the template; nothing tracked is written yet.
-When present, `$SCRATCH/templates.json` is a required full read during reduction: prefer its authored
-voice and reusable structures for persona/template-fingerprint synthesis, while factual and policy
-claims still require harvested-thread or current-source support.
-The JSON carries scratch-only `evidence_ids`: skip counts must equal summed manifest occurrences from
-non-holdout `prose_reply=false` rows; durable-rule strength must equal distinct, semantically read IDs.
+[`templates/reduction-prompt.md`](templates/reduction-prompt.md) turns the critic-judged first draft into
+tight final deltas against the induced taxonomy: apply the critic, resolve contradictions where evidence
+reconciles and **surface** the rest, apply era supersessions (prefer recent), collapse restatements into
+one delta per fact/rule, keep the brain/persona/triage split clean. Output is `critic/reduced.md` plus the
+strict `critic/reduced.json` contract. Nothing tracked is written yet.
 
 ### 7. Tracked edits plus narrow settings changes
 
-Apply the reduced deltas to the tracked working tree and the settings surfaces. Start from the matching
-[archetype template](templates/) — product-support or personal/mixed — and **edit** its skeleton rather
-than inventing new top-level structure. Search before adding:
+Apply the reduced deltas. Start from the matching [archetype skeleton](templates/) — product-support or
+personal/mixed — and **edit** it rather than inventing new top-level structure. Search before adding:
 
 ```bash
 rg -n "<customer phrase>|<internal term>|<policy name>" AGENTS.md skills notes playbooks actions terminology.md 2>/dev/null
@@ -368,164 +200,92 @@ rg -n "<customer phrase>|<internal term>|<policy name>" AGENTS.md skills notes p
 | Product fact, routing, terminology, source-of-truth pointer, repeatable investigation/playbook | Brain files. |
 | Missing reusable script, action instructions, action selection rules | Brain files or `actions/<id>/`. |
 | Voice, language, signature, formality, wording preference, "sound more like us" | Persona settings via `rc project settings behavior`. |
-| Drafts look foreign: wrong font, missing signature/logo | `channel.draft_font_css` + `channel.signature_html` via the [voice-format probe](#voice-format-font--signature). |
+| Drafts look foreign: wrong font, missing signature/logo | `channel.draft_font_css` + `channel.signature_html` — see [`voice-format.md`](voice-format.md). |
 | Which inbound mail should become a draft, broad draft/no-draft guidance | Triage policy via `rc project triage policy`. |
-| Deterministic draft blacklist/whitelist based on sender/subject/header | Triage hard rule via `rc project triage rules` (`skip` / `force_process`). |
-| Shared project channel promotion | `brain-publish` exact-SHA public `rc` flow. |
-| Missing public surface, tenant publish, action wiring, cache divergence | `brain-publish` support request. |
+| Deterministic draft blacklist/whitelist by sender/subject/header | Triage hard rule via `rc project triage rules` (`skip` / `force_process`). |
+| Shared project channel promotion, or a missing public surface | [`brain-publish`](../brain-publish/SKILL.md). |
 
-Onboarding-shaped outputs land where the mechanical seeder points: `notes/onboarding-inbox.md`-style
-survey facts and `notes/mailbox-patterns.md`-style distilled patterns, plus case/terminology files.
+Onboarding-shaped outputs land where the mechanical seeder points: `notes/onboarding-inbox.md` (survey
+facts) and `notes/mailbox-patterns.md` (distilled patterns), plus case/terminology files. Never copy a
+deterministic selector into brain prose or a brain test — apply it only through the settings surface so
+the UI and CLI share one source of truth.
 
-Never copy a deterministic blacklist/whitelist selector into brain prose or a brain test. Apply it
-only through the settings surface above so the UI and CLI share one source of truth.
-
-**Apply persona + triage at the narrowest writable scope (§6 scope matrix).** Re-read the current values
-(step 1) immediately before mutating, and verify the resolved source afterward. Writable scope is not
-uniform across surfaces:
+**Scope matrix (§6).** Re-read current values immediately before mutating, and verify the resolved source
+after.
 
 | Signal | Narrowest writable target today | Rule |
 |---|---|---|
-| Persona | **tenant when tenant-bound; otherwise project** | Always synthesize harvested voice at the business scope; never mailbox. |
-| Triage policy | **tenant or project only — no mailbox scope** | Mailbox-derived evidence necessarily widens; widen only with explicit scope authority, else emit a **pending recommendation**. |
-| Hard rules | **tenant or project only — no mailbox scope** | Same widening rule; require deterministic evidence per §5. |
+| Persona | **tenant when tenant-bound, else project** | Mandatory harvest output; never mailbox. |
+| Triage policy | **tenant or project — no mailbox scope exists** | Mailbox-derived evidence necessarily widens; widen only with explicit scope authority, else a **pending recommendation**. |
+| Hard rules | **tenant or project — no mailbox scope exists** | Same widening rule; deterministic evidence per §5. |
 | Brain facts | tenant or project brain | Match the business scope of the fact. |
 
-Because triage policy and hard rules have **no mailbox scope**, a rule learned from one mailbox
-necessarily widens to tenant/project. Widen only with explicit scope authority; otherwise carry it as a
-pending recommendation in the review brief, not a silent write. If the needed narrow scope is
-unavailable, produce a pending recommendation / support gap rather than writing a broader setting.
-
-Persona synthesis is mandatory: derive concise `tone`, `language`, `formality`, and `guidance` from the
-recent human replies; set `signature` only when repeated evidence supports it. If evidence genuinely
-cannot support a field, record that gap rather than inventing a value. A harvest is not complete until
-the supported persona fields are applied and the harvested mailbox resolves those fields from the target
-tenant/project. Reconcile or explicitly surface any mailbox override that shadows them.
-
-For every change marked `applied`, save the immediate pre-write and post-write `get -o json` responses
-under `$SCRATCH/settings-verification/`. Record their scratch-relative filenames, SHA-256 digests,
-timezone-qualified timestamps, resolved scope, and exact target in `reduced.json`; the post-read must
-occur within five minutes. `review` hashes both snapshots and reconciles scope/target to preflight.
-Pending recommendations use `"verification": null`. For tenant triage, use the explicit global
-`--project <project> --tenant <slug>` selectors on both reads and the write.
+Persona synthesis is mandatory: derive concise `tone`, `language`, `formality`, `guidance` from the
+recent human replies; set `signature` only on repeated evidence. Record a gap rather than inventing a
+value. A harvest is not complete until the harvested mailbox *resolves* those fields from the target
+tenant/project — reconcile or surface any mailbox override that shadows them.
 
 ```bash
-# Voice from human replies → tenant when tenant-bound, otherwise project.
-# Keys: persona.tone, persona.signature, persona.language, persona.formality, persona.guidance.
+# tenant when tenant-bound, otherwise project
 rc project tenant settings set <slug> persona.tone="..." persona.language="..." persona.formality="..." persona.guidance="..."
 rc project settings behavior set persona.tone="..." persona.language="..." persona.formality="..." persona.guidance="..."
 
-# Broad draft / no-draft judgement the corpus shows → triage policy (tenant/project only)
 rc project triage policy set "Draft customer support + billing questions; skip vendor newsletters and automated alerts."
-
-# Deterministic per-sender / per-subject rules the corpus proves → triage HARD rules (tenant/project only)
 rc project triage rules add effect=force_process match_kind=sender_domain pattern="partner.com" reason="partner mailbox — always answered"
 rc project triage rules add effect=skip match_kind=subject_contains pattern="unsubscribe" reason="presence-without-prose-reply, N occurrences"
 ```
 
-**Skip-evidence rules (§5) — this deliberately narrows the old skill.** A sent-history corpus proves
-only what the mailbox answered; **absence from the corpus proves nothing** (unanswered inbound mail is
-never exported), so no skip rule may be inferred from a sender or subject merely being missing or rare.
-The one legitimate negative signal is **presence-without-prose-reply**: mail that recurs in-corpus with
-`prose_reply=false` across multiple threads (the `prose-reply-present` manifest flag). Therefore:
+For tenant triage, use the explicit global `--project <project> --tenant <slug>` selectors on both reads
+and the write. For every change marked `applied`, save the immediate pre/post `get -o json` responses
+under `$SCRATCH/settings-verification/` and record their filenames, SHA-256 digests, timestamps, resolved
+scope and exact target in `reduced.json` (post-read within five minutes); `review` hashes both and
+reconciles them to preflight. Pending recommendations use `"verification": null`. A temporary rule created
+only to verify the contract must be removed with `rc project triage rules rm <id>` before finishing.
 
-- persona, terminology, intake, routing, and historical handling are supported outputs;
-- `effect=force_process` may be proposed only when repeated positive evidence is deterministic;
-- `effect=skip`, sender blocks, and hard skip rules may be proposed **only** from
-  presence-without-prose-reply evidence that is repeated, unambiguous, and machine-countable — frequency
-  of a subject/domain alone is not evidence of actionability;
-- every skip proposal is surfaced **individually** in the review brief with its occurrence count, never
-  applied silently;
-- absence-based skip inference stays prohibited (it needs a paired inbound/no-reply export that does not
-  exist — out of scope for v2).
+**Skip-evidence gate (§5).** A sent-history corpus proves only what the mailbox *answered*, and
+unanswered inbound mail is never exported — so **absence proves nothing** and no skip rule may be inferred
+from a sender or subject being missing or rare. The one legitimate negative signal is
+**presence-without-prose-reply**: recurring in-corpus threads with `prose_reply=false`.
 
-This narrows the v1 guidance that routed "mail you never answer" to `effect=skip` freely. A temporary
-rule created just to verify the contract must be removed with `rc project triage rules rm <id>` before
-finishing.
-
-#### Voice format (font + signature)
-
-Persona settings carry *words*; the visual shell of a draft is two channel knobs. Gmail exposes
-neither the staff composer font nor the signature over its API, so both are harvested from the
-mailbox's own sent HTML. Run this at onboarding, and whenever someone says drafts "look off" —
-default Arial, missing logo. It is standalone: no scratch root or corpus needed.
-
-```bash
-# 1. the row export query (raw message HTML is not on a public rc surface yet — RootCause runs it;
-#    from a brain checkout, request the export through brain-publish).
-uv run --no-project python "$SKILL/scripts/voice_format_probe.py" --print-sql \
-  --mailbox info@example.com --limit 30
-# 2. the proposal (JSON rows in, one JSON proposal out; HEADs each signature image)
-uv run --no-project python "$SKILL/scripts/voice_format_probe.py" \
-  --messages "$SCRATCH/voice/rows.json" --out "$SCRATCH/voice/proposal.json"
-```
-
-The query skips our own sent replies (`drafts.sent_message_id`) — on a send-mode mailbox they are
-outbound rows too, and learning from them feeds our default straight back to us.
-
-**Review before applying — never apply silently.** Read `signature_text` (plain-text rendering) with
-the operator, and check `checks`: image HEADs must be `200`, `signature_share` ≥ 60%, and the byte
-count under the 16 KB server cap. A `warn` on font share means the mailbox is inconsistent — prefer
-unset over a wrong font. Signature image URLs are Google-hosted (`ci3.googleusercontent.com/mail-sig/…`),
-stable across sends and reused verbatim; never rehost them.
-
-Apply at the scope whose staff share the signature: **mailbox** when a project has several mailboxes
-with different staff (the usual multi-tenant case), otherwise tenant or project.
-
-```bash
-rc project mailbox ls -o json      # mailbox settings are keyed by UUID, not address
-rc --project <project> project mailbox settings set <mailbox-id> \
-  channel.draft_font_css="font-family:verdana,sans-serif" \
-  channel.signature_html="$(jq -r .signature_html "$SCRATCH/voice/proposal.json")"
-```
-
-Side effect: with `channel.signature_html` set, the agent stops writing its own sign-off. Reduce
-`persona.signature` to empty, or keep it only as tone guidance ("warm, first-name close") — a persona
-signature left in place duplicates the harvested block.
+- Persona, terminology, intake, routing and historical handling are supported outputs.
+- `force_process` needs repeated deterministic *positive* evidence.
+- `skip` / sender blocks need presence-without-prose-reply evidence that is repeated, unambiguous and
+  machine-countable. Raw frequency of a subject or domain is not evidence of actionability.
+- Every skip proposal is surfaced **individually** in the review brief with its occurrence count, never
+  applied silently.
 
 ### 8. ⚙ Lint — scratch drafts and staged brain
 
-Two lint passes back the privacy judgement:
-
 ```bash
-# scratch drafts: opaque IDs/raw filenames are expected there, so those classes are suppressed,
-# but secrets/raw-thread/payment/identifier/name classes still apply (names downgrade HARD→SOFT).
+# scratch: opaque IDs/raw filenames expected there and suppressed; secrets/raw-thread/payment/
+# identifier/name classes still apply (names downgrade HARD→SOFT).
 uv run --no-project python "$SKILL/scripts/brain_lint.py" --scratch "$SCRATCH/drafts/"
 
-# tracked brain text you wrote: nothing opaque may reach a tracked file.
 git add <brain files you wrote>
 uv run --no-project python "$SKILL/scripts/brain_lint.py"                 # staged pre-commit gate
-uv run --no-project python "$SKILL/scripts/brain_lint.py" --all --strict  # whole-tree, address/persona warnings fatal too
+uv run --no-project python "$SKILL/scripts/brain_lint.py" --all --strict  # whole-tree; address/persona warnings fatal too
 ```
 
 Secrets, raw-thread shape, payment links/IBANs, contact details, order/invoice/tracking/account
-identifiers, opaque-ID/raw-filename leakage into tracked files, and known `rc` command roots hard-block
-(exit 1); coarse address/persona-wording heuristics are warnings, fatal under `--strict`. A HARD finding
-blocks the commit, full stop. (The kit checkout is exempt from the `rc`-command rule because its
-authenticated local-development skills intentionally document the CLI; a brain checkout is not.)
+identifiers, opaque-ID or raw-filename leakage into tracked files, and `rc` command roots hard-block. (The
+kit checkout is exempt from the `rc`-command rule because its local-development skills intentionally
+document the CLI; a brain checkout is not.)
 
-**History-rewrite decision must be explicit.** If a legacy onboarding path ever committed raw mail (e.g.
-a `past-replies.md`), deleting the file leaves it in git history. Do **not** silently `git rm` and move
-on — escalate to the operator with the exact path and commit, because scrubbing history is a deliberate,
-coordinated rewrite. (Precedent: a `past-replies.md` was deleted post-onboarding for exactly this, and a
-real credential had been committed.)
+**A history-rewrite decision must be explicit.** If a legacy onboarding path committed raw mail (e.g. a
+`notes/past-replies.md`), deleting the file leaves it in git history. Do **not** silently `git rm` —
+escalate to the operator with the exact path and commit; scrubbing history is a deliberate, coordinated
+rewrite. (Precedent: one such file was deleted post-onboarding and a real credential had been committed.)
 
-### 9. Independent staged-diff review and fixes
+### 9. Independent staged-diff review
 
-Review the full staged diff independently (a fresh reviewer subagent is ideal): confirm every claim is a
-distilled pattern traceable to corpus evidence, homes are correct, no raw data or opaque IDs slipped in,
-and settings changes respect the §6 scope matrix. Fix findings against the still-present corpus before
-the gate.
+Review the full staged diff with a fresh reviewer subagent: every claim a distilled pattern traceable to
+corpus evidence, homes correct, no raw data or opaque IDs, settings changes within the §6 matrix. Fix
+findings **against the still-present corpus**, before the gate.
 
-### 10. ⚙ Review brief, sanitized replay, and held-out evaluation
-
-Generate the operator brief and prove the output before the gate. Preparation writes redacted local
-question/historical-answer pairs to `$SCRATCH/replay-cases.json`; holdout handles never appear in
-cluster plans, raw holdouts never enter `threads/`, and review rejects both holdout handles and copied
-long-form replay content anywhere under `drafts/` or `critic/`.
+### 10. ⚙ Review brief, sanitized replay, held-out evaluation
 
 Commit the staged edits to a local `dev/<branch>` (a WIP commit is fine — the mandatory gate guards the
-push to `main`/publish, not dev refs), push it, and replay every reserved question against that dev ref:
+push to `main`/publish, not dev refs), push, and replay every reserved question against that ref:
 
 ```bash
 git checkout -b dev/<branch> && git commit -m "wip: harvest draft"
@@ -534,15 +294,10 @@ rc ask "<held-out inbound question>" --brain-ref dev/<branch>
 rc run debug <run-id>
 ```
 
-Have a comparison agent score each answer against the paired historical answer on the fixed integer
-scale 0–4 for factual agreement, routing, and tone. Each holdout records successful status, an absolute
-trace URL, a unique replay ID, and a resolved SHA; neither IDs nor traces may be reused across cases.
-Pick a distinct representative new route for the required
-full production replay. Record all scores plus its run id, status, turns, trace URL, resolved
-40-character brain SHA, and brain diff in the strict `evaluation.json` contract. All holdouts and the
-representative replay must succeed at that same SHA. Record turns,
-wall clock, and preparation time in `metrics.json`. Use
-[`templates/review-brief.md`](templates/review-brief.md) for both schemas, then generate:
+Have a comparison agent score each answer against its paired historical answer (0–4: factual agreement,
+routing, tone), then run one distinct representative full production replay.
+[`templates/review-brief.md`](templates/review-brief.md) owns the `evaluation.json` / `metrics.json`
+schemas and what the generator validates.
 
 ```bash
 uv run --no-project python "$SKILL/scripts/prepare_harvest.py" review \
@@ -554,33 +309,24 @@ uv run --no-project python "$SKILL/scripts/prepare_harvest.py" review \
   --harvest-date "$(date +%F)" --kit-version <installed-kit-version>
 ```
 
-`review` also requires the unchanged target/preflight binding, including a successful current-value
-read at the exact scope of every applied settings change; rejects `risk.over_cap`; and fails on
-schema/privacy/coverage/saturation/scope/evidence/replay inconsistencies. On success it validates a
-temporary bundle before replacing each local `review-brief.md`, sanitized
-`record-source.json`, and exact `record-candidate.json`, publishing `bundle-manifest.json` last as the
-commit marker. This is not a multi-file transaction: `record` rejects any interrupted old/new mixture
-until `review` is rerun. The candidate contains ordinal holdout scores and aggregate audit fields only;
-it is the byte sequence the operator approves for the tracked harvest record.
+Then the structural validator (lint already ran in step 8) — link/route targets resolve, skill frontmatter
+valid, routed case files reachable, no raw-harvest path tracked now or in history:
 
-- Run the structural validator (skipping lint, already run in step 8):
-  ```bash
-  uv run --no-project python "$LBW/scripts/brain_structure.py" --skip lint
-  ```
-  It checks relative link/route targets resolve, skill frontmatter is valid, routed case files are
-  reachable from the router, and no raw-harvest path is tracked now or in history.
+```bash
+uv run --no-project python "$LBW/scripts/brain_structure.py" --skip lint
+```
 
 ### 11. Mandatory operator diff approval
 
-Pause for the single human diff-approval gate **with the local evidence brief still present**. The
-operator consults `$SCRATCH/brief/review-brief.md`, the exact `record-candidate.json`, and, via opaque
-IDs, the local corpus; then approves each settings change and skip proposal. This gate is not optional
-and is never a rubber stamp — which is exactly why cleanup happens **after** it, not before.
+Pause for the single human gate **with the local evidence brief still present**. The operator consults
+`$SCRATCH/brief/review-brief.md`, the exact `record-candidate.json`, and — via opaque IDs — the local
+corpus, then approves each settings change and each skip proposal individually. Not optional, never a
+rubber stamp; which is exactly why cleanup happens after it.
 
 ### 12. ⚙ Cleanup, then publish
 
-Only **after** approval, promote the already-reviewed record candidate into the tracked diff, then
-delete all sensitive scratch and verify it is gone:
+Only **after** approval, promote the already-reviewed candidate into the tracked diff, then delete all
+sensitive scratch and prove it is gone:
 
 ```bash
 uv run --no-project python "$SKILL/scripts/prepare_harvest.py" record \
@@ -589,50 +335,19 @@ uv run --no-project python "$SKILL/scripts/prepare_harvest.py" cleanup --scratch
 uv run --no-project python "$LBW/scripts/brain_structure.py" --expect-clean
 ```
 
-`record` revalidates current ledger/run state and writes the approved candidate byte-for-byte; it
-refuses without `--approved`. `cleanup` removes the whole scratch root and refuses without `--yes`;
-`brain_structure.py --expect-clean` confirms no `.rootcause/harvest/` root remains. Then:
-
-- finalize the commit on the approved diff, including the generated
-  [`harvest record`](templates/harvest-record.md), then merge/fast-forward it to `main` via the
-  `brain-git-sync` flow;
-- run the full [`brain-publish`](../brain-publish/SKILL.md) flow: `brain-git-sync` precondition, dev-ref
-  replay/debug, server sync, channel promote where applicable, and exact-SHA verification;
-- settings-only changes: record the exact `rc` commands and the verification run id;
-- missing public surface: use the `brain-publish` support-request template with evidence.
-
-The harvest record is the watermark for a future incremental `--since` re-harvest (spec §10).
+`record` writes the approved candidate byte-for-byte and refuses without `--approved`; `cleanup` refuses
+without `--yes`. Then finalize the commit including the generated
+[harvest record](templates/harvest-record.md), fast-forward to `main` via
+[`brain-git-sync`](../brain-git-sync/SKILL.md), and run the full
+[`brain-publish`](../brain-publish/SKILL.md) flow (dev-ref replay, server sync, channel promote,
+exact-SHA verification). Settings-only changes: record the exact `rc` commands and the verification run
+id. The harvest record is the watermark for a future incremental `--since` re-harvest.
 
 ## Fallback: the v1 manual path (one release only)
 
-For a corpus `prepare_harvest.py` cannot parse (an unsupported `harvest_format`, or a shape outside
-v1/v2/v3), fall back for one release to the pre-v2 manual flow: `rc project corpus download --split` into
-a gitignored dir, read its `INDEX.md`, cluster from thread metadata, fan out per-topic subagents that
-read only their own `threads/`, then critic-on-first-draft → reduce → durable homes → lint → verify →
-publish → delete the export dir. The privacy, critic-before-reduce, and post-approval-cleanup rules
-above all still apply; only the deterministic manifest/ledger/holdout machinery is unavailable. Prefer
-`prepare_harvest.py` whenever it can parse the corpus — the manual path exists only to unblock an
-unparseable export while v2 splitting/rescue lands in `rc` (see the migration note). Never use this
-fallback to bypass rejected v3 structure or diagnostics; reacquire or fix the exporter instead.
-
-## Discipline
-
-- Never load the full corpus into one context; cluster from `manifest.jsonl`/`clusters.json`, then fan
-  out per-topic subagents that read only their assigned threads.
-- Never commit raw thread text, credentials, patient data, addresses, payment links, correspondent
-  names, or opaque IDs — distilled patterns only. `brain_lint.py` gates every commit; a HARD finding
-  blocks it, full stop.
-- Inventory persona/triage/grounding via `rc` before proposing homes. Do not conclude "no grounding
-  exists" from a local repo search.
-- Run the critic on the **first draft, before reduction** — not after polishing.
-- Skip rules only from presence-without-prose-reply evidence with occurrence counts (§5); never from
-  absence or raw frequency. Harvested persona targets tenant or project; triage policy and hard rules
-  do not have mailbox scope — widen only
-  with explicit scope authority, else a pending recommendation (§6).
-- Edit an archetype template's skeleton; do not invent new top-level brain structure per harvest.
-- Do not hide draft/no-draft policy in persona; use triage for it and actions for confirmed mutations.
-- Make the history-rewrite decision explicit and escalate it; deleting a file does not scrub history.
-- **Cleanup happens AFTER operator approval**, never before — the gate needs the evidence. Resume
-  granularity is the cluster (scratch root + tracked diff); any step is re-entrant; there are no
-  per-batch checkpoints.
-- Do not use private rootcause `db.py`, raw production SQL, host scripts, or support-only credentials.
+Only for a corpus `prepare_harvest.py` genuinely cannot parse (a `harvest_format` outside v1/v2/v3): fall
+back to `rc project corpus download --split` into a gitignored dir, read its `INDEX.md`, cluster from
+thread metadata, then the same fan-out → critic-first → reduce → homes → lint → verify → publish → delete
+sequence. Privacy, critic-before-reduce and post-approval cleanup still apply; only the deterministic
+manifest/ledger/holdout machinery is unavailable. Never use it to bypass rejected v3 structure or bad
+diagnostics — reacquire or fix the exporter instead.

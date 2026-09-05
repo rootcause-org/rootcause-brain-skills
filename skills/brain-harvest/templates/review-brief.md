@@ -1,26 +1,14 @@
 # Generated review brief (pipeline step 10)
 
-Run the deterministic generator after replaying every reserved holdout against the pushed dev ref.
-The command validates the ledger, every final agent report, reduced proposals, scores, representative
-production replay, turns, and wall clock before writing anything:
+Input contracts for `prepare_harvest.py review` (invocation in step 10 of [`../SKILL.md`](../SKILL.md); repeat
+`--agent-report` when shell expansion is unavailable).
 
-```bash
-uv run --no-project python "$SKILL/scripts/prepare_harvest.py" review \
-  --scratch "$SCRATCH" \
-  --agent-report "$SCRATCH"/drafts/*.report.json \
-  --reduction "$SCRATCH/critic/reduced.json" \
-  --evaluation "$SCRATCH/brief/evaluation.json" \
-  --metrics "$SCRATCH/brief/metrics.json" \
-  --harvest-date YYYY-MM-DD --kit-version vX.Y.Z
-```
-
-Repeat `--agent-report` when shell expansion is unavailable. Generation fails unless every non-empty
-original cluster has exactly one final report, all planned sampled/deep reads reconcile to the ledger,
-all risk-marked threads were deep-read, no report remains `still_yielding`, every contradiction is
-resolved or surfaced, and no reserved holdout handle or copied replay-content fingerprint appears in
-synthesis artifacts. Applied settings changes additionally require before/after snapshots under
-`$SCRATCH/settings-verification/`; their digests, exact target/scope, and five-minute read/write window
-must match `reduced.json` and bound preflight state.
+The generator is the real gate: it refuses to write unless every non-empty original cluster has exactly
+one final report, planned sampled/deep reads reconcile to the ledger, all risk-marked threads were
+deep-read, no report is still `still_yielding`, every contradiction is resolved or surfaced, and no
+reserved holdout handle or copied replay-content fingerprint appears in synthesis artifacts. Applied
+settings changes additionally need matching before/after snapshots under `$SCRATCH/settings-verification/`
+(digests, exact target/scope, five-minute window) bound to preflight state.
 
 ## Evaluation input
 
@@ -59,10 +47,10 @@ Write `$SCRATCH/brief/metrics.json`. Preparation time cannot exceed the full wal
 
 ## Generated outputs
 
-`review` fully validates and privacy-lints a temporary bundle before replacing each local, ignored file
-with an atomic rename. A failed validation leaves prior files untouched. Publication is not a
-multi-file transaction, so it publishes `bundle-manifest.json` last as a commit marker; `record` rejects
-an interrupted old/new mixture until `review` is rerun:
+`review` validates and privacy-lints a temporary bundle before atomically replacing each local ignored
+file; a failed validation leaves the prior files untouched. Publication is **not** a multi-file
+transaction, so `bundle-manifest.json` is published last as the commit marker and `record` rejects an
+interrupted old/new mixture until `review` is rerun.
 
 - `brief/review-brief.md` — full operator evidence: effective config/corpus digest, reconciled per-cluster
   coverage, counts-only source diagnostics, saturation, settings scope, skip evidence, durable

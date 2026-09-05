@@ -1,12 +1,9 @@
 # Cluster agent prompt (pipeline step 3)
 
-Standard prompt + output contract for one per-cluster synthesis subagent. The orchestrator (the
-harvest SKILL) fans this out once per cluster, substituting the `{{…}}` slots from `clusters.json`.
-It runs **locally** in a coding-agent session; it may read scratch paths and opaque IDs but must never
-emit them into anything that could become tracked brain content.
-
-Numeric values below (sample cap 50, era bands, prose-reply threshold) are **tunable defaults sourced
-from the prepare config**, not constants — always read the actual plan handed to you, never assume.
+Prompt + output contract for one per-cluster synthesis subagent. The orchestrator fans this out once per
+cluster, substituting the `{{…}}` slots from `clusters.json`. Numeric values below (sample cap, era
+bands, prose-reply threshold) are **tunable defaults from the prepare config** — read the actual plan
+handed to you, never assume.
 
 ---
 
@@ -50,21 +47,14 @@ outside the trailing (`recent`) era, mark the rule **`stale-era`** — reduction
 newer evidence and may supersede it.
 
 ### Skip / no-draft proposals — the narrow evidence gate (§5)
-A sent-history corpus proves only what the mailbox answered. Obey these §5 rules, quoted faithfully:
+A sent-history corpus proves only what the mailbox answered, and unanswered inbound mail is never
+exported — so **absence proves nothing**: no skip rule from a sender or subject merely being missing or
+rare, and none from raw frequency alone.
 
-- *"Absence from the corpus proves nothing — unanswered inbound mail is not exported at all, so no skip
-  rule may be inferred from a sender or subject merely being missing or rare."*
-- *"skip/no-draft policy, sender blocks, and hard skip rules may be proposed **only** from
-  presence-without-prose-reply evidence that is repeated, unambiguous, and machine-countable from the
-  manifest (`prose-reply-present` flag); frequency of a subject or domain alone is not evidence of
-  actionability."*
-
-So: propose a skip/no-draft **only** for a subject/sender family that recurs in-corpus with
-`prose_reply=false` across multiple threads, and state the **occurrence count** (how many such threads,
-from the manifest). Never from absence, and never from raw frequency alone. `force_process` needs
-deterministic repeated *positive* evidence. This narrowing (skip rules only for the
-presence-without-prose-reply class) is **a deliberate product decision, not an oversight** — do not
-widen it.
+Propose a skip/no-draft **only** for a subject/sender family that recurs in-corpus with
+`prose_reply=false` across multiple threads, and state the **occurrence count** from the manifest.
+`force_process` needs deterministic repeated *positive* evidence. This narrowing is **a deliberate
+product decision, not an oversight** — do not widen it.
 
 ### Honesty signals to report
 - **Saturation:** were your final reads still yielding new durable rules, conflicts, terms, routes, or
@@ -87,10 +77,8 @@ Run the scratch linter on your proposal and fix every finding before marking the
 uv run --no-project python "$SKILL/scripts/brain_lint.py" --scratch {{SCRATCH_ROOT}}/drafts/{{CLUSTER_ID}}.md
 ```
 
-(`SKILL` = the absolute path to the installed `brain-harvest` skill directory, set by the orchestrating
-SKILL workflow.)
-
-Names leaked into proposals in the first real run; this check is the guard.
+(`SKILL` = the absolute path to the installed `brain-harvest` skill directory, exported by the
+orchestrating workflow.) Names have leaked into proposals before; this check is the guard.
 
 ---
 

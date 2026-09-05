@@ -1,10 +1,9 @@
 # Reduction prompt (pipeline step 6)
 
-Per-topic reduction, run **after** the critic (step 5) and **before** tracked edits (step 7). It turns
-the first-draft proposal set — as judged by `critic/critic.md` — into tight, final deltas against one
-induced taxonomy (step 4). Runs locally; may read scratch and opaque IDs; emits nothing tracked yet.
-
-Era bands and other numeric knobs are **tunable defaults from the prepare config**, not constants.
+Per-topic reduction: **after** the critic (step 5), **before** tracked edits (step 7). Turns the
+first-draft set — as judged by `critic/critic.md` — into tight final deltas against the induced taxonomy
+(step 4). Emits nothing tracked yet. Era bands and other numeric knobs are **tunable defaults from the
+prepare config**.
 
 ---
 

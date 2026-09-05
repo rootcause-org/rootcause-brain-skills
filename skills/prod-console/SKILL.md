@@ -1,136 +1,81 @@
 ---
 name: prod-console
-description: "Direct guarded production access from a brain checkout through `rc dev console` and exact source-mirror refresh through `rc dev mirror`. Use when a developer or their coding agent already knows the exact production primitive to run: refresh a pushed source commit, SQL/schema lookup, dry-run-first rare SQL write, cataloged brain script discovery, log command planning, or preflight-first action execution. No rootcause-side LLM; the caller reasons locally and rootcause supplies scoped, audited hands."
+description: "Run a guarded production primitive directly from a brain checkout via rc dev console: SQL/schema read, rare dry-run-first SQL write, workspace bash, cataloged script, action preflight/run, exact mirror refresh. Use when a query, script, or action must be checked against production without wrapping it in an LLM run."
 ---
 
-# prod-console - direct production primitives
+# prod-console — direct production primitives
 
-Use this skill from inside a brain checkout when the task is targeted ("run this query", "inspect this
-schema", "show available actions", "preflight this action"). If the question is vague and RootCause
-should investigate, use `brain-ask` instead.
+Verbs and flags live in one home: [docs/rc-cli.md](../../docs/rc-cli.md) and `rc dev console <cmd> --help`.
+This file is the decision logic around them.
 
-The console is public `rc` only. Do not use private RootCause repos, host shells, SSM, registry SQL, or
-customer credentials. Scope comes from `.rootcause.toml`, the active OAuth login, and optional
-`--project`; tenant-capable database/bash reads also accept `--tenant`. Action settings and action
-execution are project-owned and reject `--tenant` rather than silently ignoring it.
+Public `rc` only — never private RootCause repos, host shells, SSM, or registry SQL
+([docs/support-boundary.md](../../docs/support-boundary.md)). Scope comes from `.rootcause.toml`, the
+active OAuth login, and optional `--project` / `--tenant`.
 
-For debugging, tool parity, and "does this script/query work?" checks, prefer `rc dev console database`
-and `rc dev console bash`. They are the fast production primitives. `rc ask` wraps those primitives in
-an LLM run and should be reserved for full-loop behavior validation, ambiguous investigations, or
-customer-style simulations.
+**Console vs `rc ask`:** console primitives answer "does this query/script work?" directly and fast.
+`rc ask` wraps them in an LLM run — keep it for full-loop behavior validation, ambiguous
+investigations, and customer-style simulations.
 
 ## Required Context
 
-Read:
-
-- [docs/side-effects.md](../../docs/side-effects.md)
-- [docs/brain-model.md](../../docs/brain-model.md)
-- [docs/mirrors.md](../../docs/mirrors.md)
+- [docs/side-effects.md](../../docs/side-effects.md) — what is read-only and what is not.
+- [docs/brain-model.md](../../docs/brain-model.md), [docs/mirrors.md](../../docs/mirrors.md).
 
 ## Workflow
 
-1. Discover first:
-   ```bash
-   rc dev console capabilities
-   rc project connection ls
-   ```
-   Treat it as the manifest: database short names/descriptions, cataloged scripts, available actions,
-   connected OAuth/API grants, and which console planes are live. Use `-o json` when comparing exact
-   permission tiers or automation output.
-   If a pushed brain script is missing or `/brain` looks stale, run:
-   ```bash
-   rc dev brain status
-   rc dev brain sync
-   rc dev console bash list
-   ```
-   If a pushed source mirror change must be visible immediately, run from that source checkout:
-   ```bash
-   rc dev mirror refresh --repo <configured-name> --expect-sha "$(git rev-parse HEAD)"
-   ```
-   Run it once per affected RootCause project. Success proves the exact commit is mounted for the next
-   ask or console workspace; do not restart Docker.
-
-2. For database work, fetch only what you need:
-   ```bash
-   rc dev console database list
-   rc dev console database schema <db>
-   rc dev console database schema <db> --table <table>
-   rc dev console database query <db> "SELECT ..."
-   ```
-   This `list` is the authoritative view of which DSNs actually exist and connect (`rc project database
-   ls` only shows the ones annotated with a description/scope/PII config). If the database you need is
-   missing here, it is not registered yet: seal its `<PROJECT>_<DBKEY>_DSN` grounding key, then annotate
-   it with `rc project database set` — see
-   [docs/secrets.md](../../docs/secrets.md#register-a-new-grounding-database).
-   Queries run host-side through RootCause's database proxy and project scoping. Prefer narrow SELECTs
-   and explicit columns. Large/repeated analysis belongs in local scripts over a complete export: use
-   `--all` (a partial result exits 3), an explicit `--format`, and `--out` rather than parsing a preview.
-   The [`rc-script-wrapper`](../rc-script-wrapper/SKILL.md) skill owns deterministic Python/shell wrappers.
-   ```bash
-   rc dev console database query <db> "SELECT ..." --all --format csv --out ./rows.csv
-   rc -o json dev console database query <db> "SELECT ..." --all --format json --out - | jq '.rows[]'
-   ```
-   Use repeated `--param key=value` for values, not SQL string interpolation. SQL/bash text can come
-   from stdin (`-`) or `@file`. Remote workspace artifacts named in a production preview are fetched
-   with `rc dev console file get <remote-path> --out <local-path>`.
-   If a query fails on a column name, stop and inspect schema:
-   ```bash
-   rc dev console database schema <db> --table <table> -o json |
-     jq -r '.. | objects | select(has("name") and has("type")) | [.name,.type] | @tsv'
-   ```
-   When a rare fix genuinely requires SQL, treat the write plane as project-level, mutation-grade access.
-   Rehearse first, returning the key and every changed column:
-   ```bash
-   rc dev console database query <db> \
-     "UPDATE <table> SET <column> = <value> WHERE <verified predicate> RETURNING id, <column>" \
-     --write --dry-run
-   ```
-   Stop on any unexpected affected-row count. To commit, rerun the identical statement without
-   `--dry-run` and confirm the count still matches; the two runs are separate executions. Use
-   `RETURNING *` for deletes so the removed row can be archived.
-
-3. For mounted workspace files, inspect before assuming paths:
-   ```bash
-   rc dev console bash run 'find /brain -maxdepth 2 -type f | sed -n "1,80p"'
-   rc dev console bash run 'find /kb -maxdepth 3 -type d -print | sed -n "1,120p"'
-   rc dev console bash run 'rg -n -i "invoice|payment|refund" /kb /brain/knowledge -g "*.md" 2>/dev/null | sed -n "1,60p"'
-   ```
-   Use `/kb` for synced knowledge-base articles when configured; use `/brain/knowledge` when the brain
-   commits its own knowledge articles. For title and frontmatter filters, read
+1. **Discover before guessing.** `rc dev console capabilities` is the manifest: databases, cataloged
+   scripts, actions, and which console planes this login actually has. `rc project connection ls`
+   adds OAuth/API grants.
+2. **Freshness.** A missing pushed script or stale `/brain` → `rc dev brain status` / `rc dev brain
+   sync` (sync expires warm bash workspaces, so the next run remounts). A pushed mirror commit that
+   must be visible now → `rc dev mirror refresh --repo <name> --expect-sha $(git rev-parse HEAD)`,
+   once per affected project; success proves that exact commit is mounted. Never restart Docker.
+3. **Database.** `rc dev console database list` is the authoritative view of which DSNs exist and
+   connect; `rc project database ls` only shows the annotated ones. A database missing from `list`
+   is not registered — seal `<PROJECT>_<DBKEY>_DSN`, then annotate
+   ([docs/secrets.md](../../docs/secrets.md#register-a-new-grounding-database)).
+   Query failing on a column name → stop and read `schema --table`, do not keep guessing.
+   Bind values with repeated `--param`, never string interpolation. Analysis over more than a
+   preview belongs in a local script over a complete `--all` export —
+   [`rc-script-wrapper`](../rc-script-wrapper/SKILL.md).
+4. **Workspace files.** `rc dev console bash run` is the exec plane; prefer a cataloged script
+   (`bash list`) over raw bash. Logs are reached through the same plane
+   (`python -m lib.cloudwatch …`), not a separate verb. `/kb` holds synced knowledge-base articles,
+   `/brain/knowledge` the brain's own — filters in
    [docs/knowledge-base.md](../../docs/knowledge-base.md).
+5. **Actions.** `list` / `show` / `preflight` are read-only; `run` is a real state-changing
+   execution on the project's own production. Run it only when the user asked for execution or the
+   task plainly requires it and params are grounded; report the action-run id, status, and result.
+   For history across runs (stored params, originating run links) use `rc fleet actions` —
+   [`rc-fleet`](../rc-fleet/SKILL.md).
 
-4. For scripts/logs, inspect the catalog:
-   ```bash
-   rc dev console bash list
-   ```
-   `rc dev console bash run` is the workspace-exec plane. Use cataloged scripts before raw bash. `rc
-   dev brain sync` invalidates warm bash workspaces, so the next run remounts the refreshed `/brain`.
-   Logs are reached through that exec plane, usually with `python -m lib.cloudwatch ...`, not a
-   separate log verb.
+## Side effects — the two that are not read-only
 
-5. For actions, preflight before running:
-   ```bash
-   rc dev console action list
-   rc project action-settings get
-   rc dev console action show <id>
-   rc dev console action preflight <id> --params '{"key":"value"}'
-   rc dev console action run <id> --params '{"key":"value"}'
-   ```
-   These commands discover definitions and preflight/execute one action. For read-only history across
-   runs, exact stored params, and originating run links, use `rc fleet actions` from the
-   [`rc-fleet`](../rc-fleet/SKILL.md) skill.
-   `run` is a real state-changing operation. Use it only when the user asked for execution or the task
-   clearly requires it and params were grounded. Report the action run id, status, and result summary.
-   `preflight` honours `--tenant`: the body runs in the same tenant-scoped grounding workspace a run
-   gets (scoped `*_DSN`, `RC_TENANT_ID/SLUG/SCOPE_VALUE` stamped, no action/write credential). A
-   "record N not found" from a console preflight therefore means the grounding data no longer holds N
-   — not a scope or env gap — even if a run saw N earlier. Confirm with `rc dev console bash run
-   --tenant <slug>` + `lib.db` before suspecting the console.
+**SQL writes.** `--write` uses the project's sealed write-plane DSN and COMMITs (scope
+`console:db:write`; project-level only — a tenant-bound request is refused). Discipline, because
+there is no undo:
+
+1. rehearse with `--write --dry-run` and a `RETURNING` list covering the key and every changed
+   column (`RETURNING *` for deletes, so the removed row can be archived);
+2. stop on any unexpected affected-row count;
+3. rerun the identical statement without `--dry-run` — the two runs are separate executions, so
+   confirm the count still matches.
+
+**`action run`.** See step 5 and [docs/actions.md](../../docs/actions.md).
+
+## Preflight is not a scope gap
+
+`preflight` honours `--tenant` and runs in the same tenant-scoped grounding workspace a run gets
+(scoped `*_DSN`, `RC_TENANT_*` stamped, no action/write credential). So a "record N not found" from
+a console preflight means the grounding data no longer holds N — not a scope or env gap — even if a
+run saw N earlier. Confirm with `rc dev console bash run --tenant <slug>` + `lib.db` before
+suspecting the console.
 
 ## Brain-script catalog convention
 
-To make scripts discoverable through `rc dev console bash list` / `rc dev console capabilities`, put small comment metadata near
-the top of each `skills/*/scripts/*.py` or `.sh` file:
+Host contract (`rootcause` parses it): comment metadata in the **first 40 lines** of a
+`skills/*/scripts/*.py|.sh` file makes the script discoverable through `rc dev console bash list` and
+`capabilities`.
 
 ```python
 # name: invoice_lookup
@@ -139,11 +84,10 @@ the top of each `skills/*/scripts/*.py` or `.sh` file:
 # required_env: APP_DSN, STRIPE_API_KEY
 ```
 
-Keep names stable, purposes one line, args human-readable, and required env names only. The script body
-stays the source of truth for behavior.
+`description` is accepted as an alias for `purpose`. Keep names stable and env names only — the
+script body stays the source of truth for behavior.
 
 ## Close-out
 
-Report exactly what was run, the scoped project/tenant if relevant, the material result, and any next
-command worth running. For any mutation, distinguish a rolled-back dry-run from a committed write;
-for actions, distinguish preflight-only from executed.
+Report what ran, the scoped project/tenant, the material result, and the next command worth running.
+Always distinguish a rolled-back dry-run from a committed write, and preflight-only from executed.

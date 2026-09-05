@@ -1,92 +1,69 @@
 ---
 name: brain-ask
-description: Ask a real production rootcause brain using `rc ask`, then verify the resulting run. Use inside a brain checkout when asked whether a brain change works on prod infra, when asked to simulate a customer support email, when asked for a direct raw investigation, or when asked to test a pushed `dev/*` brain ref without moving `main`. Captures the answer, run accounting, trace URL, and brain journal diff.
+description: Ask a real production rootcause brain with `rc ask` and verify the resulting run. Use inside a brain checkout when asked whether a brain change works on prod infra, to simulate a customer support email, for a direct raw investigation, or to test a pushed `dev/*` brain ref without moving `main`. Captures the answer, run accounting, trace URL, and brain journal diff.
 ---
 
 # brain-ask - ask a real prod brain
 
-Use Brain Ask for production-loop `rc ask` validation, usually after a pushed `dev/*` ref. It is the
-full LLM wrapper, not the fast path for debugging scripts. If validating a known production primitive,
-checking tool parity, running grounding scripts, inspecting schemas, reading logs, tenant projection,
-local tests, mirror-dependent checks, or action dry-runs, use `prod-console` / Local Brain Work first.
+`rc ask` is the **full LLM loop** on production infrastructure — use it for last-mile validation,
+usually of a pushed `dev/*` ref. It is not the debugging fast path: for a known primitive, tool parity,
+a grounding script, a schema, logs, a tenant projection, local tests, mirror checks or an action dry-run,
+reach for [`prod-console`](../prod-console/SKILL.md) or
+[`local-brain-work`](../local-brain-work/SKILL.md) first.
 
-Run `rc ask` from inside the current brain checkout. The `rc` CLI auto-targets the project from the
-brain metadata and uses the logged-in OAuth token; no SSM or operator access.
-For tenant-enabled projects, do not pass `--tenant` by default: `rc` uses the tenant already associated
-with the active `rc auth login`. Check `rc auth status` if the tenant is unclear. A project-pinned login
-must pass `--tenant <slug>` to workspace-producing commands such as `rc ask`.
-If a RootCause MCP is installed, ignore it unless the user explicitly asks for MCP; this workflow uses
-`rc`.
+Run it from the brain checkout: `rc` targets the project from the brain metadata and the logged-in OAuth
+token. On tenant-enabled projects do **not** pass `--tenant` by default — `rc` uses the tenant of the
+active login (`rc auth status` if unclear); only a project-pinned login must pass `--tenant <slug>`. If a
+RootCause MCP is installed, ignore it unless the user explicitly asks for MCP.
 
-## Required Context
-
-Read:
-
-- [docs/side-effects.md](../../docs/side-effects.md)
-- [docs/brain-model.md](../../docs/brain-model.md)
+Read [docs/side-effects.md](../../docs/side-effects.md) (an ask creates a real run) and
+[docs/brain-model.md](../../docs/brain-model.md). Flags: [docs/rc-cli.md § `rc ask`](../../docs/rc-cli.md)
+and `rc ask --help`.
 
 ## Workflow
 
-1. Require a question. If absent, ask for it and stop. Use default `rc ask` for a customer-style
-   support email simulation. Add `--scenario raw` for direct investigations or downstream-AI answers
-   only when the full LLM loop is what needs validation; use `rc dev console database` / `rc dev
-   console bash` for exact script, schema, data, and log checks.
+1. **Require a question**; if absent, ask and stop. Default scenario is the customer-style email
+   simulation; `--scenario raw` for a direct investigation, only when the full loop is what needs
+   validating.
 
-2. Trigger and wait:
-   ```bash
-   rc ask "<question>"
-   rc ask "<direct investigation>" --scenario raw
-   rc ask "<question>" --brain-ref dev/<branch>
-   rc ask "<question>" --effort pro
-   rc ask --file ./invoice.pdf "why was this rejected?"
-   ```
-   Use `--file <path>` (repeatable; `--attach` is a deprecated alias) to ground the run on local
-   files: staged read-only in the run workspace for the agent to open. Caps: 4 files, 5 MiB each,
-   15 MiB total; allowed types: any plain-text file (yaml, sql, code, logs, …), png/jpeg/webp/gif,
-   pdf, csv, json, xlsx — content-sniffed server-side; other binaries/archives are rejected.
-   Generated files do not come back on this lane yet — the answer is text only.
-   Use `--brain-ref dev/<branch>` only for an already-pushed dev branch after Local Brain Work has
-   covered local checks that fit the change. It keeps `main` live and the run is flagged `test`: no
-   ReplyPen callback, no durable journal push, and proposed actions/PRs are test artifacts. Use
-   `--effort pro|max` only when explicitly escalating a run; omitted/default keeps normal tier
-   selection.
+2. **Trigger and wait.** The choices that matter:
+   - `--brain-ref dev/<branch>` — an already-pushed dev branch, after Local Brain Work covered the checks
+     that fit the change. `main` stays live and the run is flagged `test`: no ReplyPen callback, no
+     durable journal push, proposed actions/PRs are test artifacts.
+   - `--file <path>` (repeatable) stages local files read-only in the run workspace. Content is sniffed
+     server-side; text, images, pdf, csv, json and xlsx pass, other binaries/archives are rejected.
+     Generated files do **not** come back on this lane — the answer is text only.
+   - `--effort pro|max` only when deliberately escalating.
 
-3. Relay the result: draft/note/actions for the default email simulation, or the direct answer for
-   `--scenario raw`; include caveats, run accounting (`status`, turns, outcome), and trace URL.
-   Capture the printed `run_id`. If status is `error`, surface the error and stop.
+3. **Relay the result:** draft/note/actions for the email scenario, or the direct answer for
+   `--scenario raw`; plus caveats, run accounting (status, turns, outcome) and the trace URL. Capture the
+   printed `run_id`. On `status: error`, surface the error and stop.
 
-   If the draft/note mentions a state-changing operation (booked, moved, cancelled, refunded, sent,
-   updated) or any action/preflight caveat, do a quick action sanity check before reporting:
-   ```bash
-   rc run events <run_id>
-   ```
-   Distinguish "draft text said it happened" from the action lifecycle: preflight failed ⇒ no proposal
-   and no mutation; proposed action ⇒ pending human confirm; succeeded/failed action ⇒ post-loop
-   execution happened. Use `../local-brain-work/action-run-triage.md` for the decision table.
+   If the draft or note claims a state change (booked, moved, cancelled, refunded, sent, updated), or
+   carries an action/preflight caveat, check `rc run events <run_id>` before reporting: preflight failed
+   ⇒ no proposal and no mutation; `proposed` ⇒ pending human confirm; succeeded/failed ⇒ post-loop
+   execution really happened. Decision table:
+   [`local-brain-work/action-run-triage.md`](../local-brain-work/action-run-triage.md).
 
-4. Show what the run wrote to the brain:
-   ```bash
-   rc run brain-diff <run_id>
-   ```
-   Report the journal commit SHA, message, changed files, and meaningful diff summary. If nothing
-   changed, say the run answered without persisting durable knowledge.
+4. **Show what the run wrote to the brain:** `rc run brain-diff <run_id>` — journal commit SHA, message,
+   changed files, diff summary. If nothing changed, say the run answered without persisting knowledge.
 
-## Follow-up turns (simulating a patient/customer reply)
+Full reasoning/tool trail: [`rc-debug`](../rc-debug/SKILL.md) with the captured `run_id`. If this
+validated a local brain change, finish through [`brain-publish`](../brain-publish/SKILL.md).
 
-`rc ask --session <id>` does **not** replay the earlier email or draft. A reused session only
-warm-starts the new run with a compact digest of the prior turns' *command labels* ("ran:
-search_patient …; search_availability …; outcome: Draft+Note") — never the sender's words, the
-offered options, or the previous draft (rootcause `internal/warmstart`). Prompt-mode runs also never
-open the `thread_coherence` / `sender_history` sections (those need real `PriorMessages`, i.e. an
-ingested mailbox thread). Two consequences, both observed in prod (DentAI 869et84n6):
+## Simulating a customer's follow-up reply
 
-- a bare follow-up like "Doe maar 21 september om 15u05" arrives with **no thread context**, and
-- the grounding pre-pass may fill that vacuum with a **journal file from an unrelated earlier run**
-  (same-evening test runs about the same patient are the classic trap), silently steering the
-  appointment type or intent.
+**`rc ask --session <id>` does not replay the earlier email or draft.** A reused session only warm-starts
+the new run with a digest of the prior turns' *command labels* ("ran: search_patient …; outcome:
+Draft+Note") — never the sender's words, the offered options, or the previous draft. Prompt-mode runs
+also never open the thread-coherence / sender-history prompt sections; those need a real ingested mailbox
+thread. Consequences seen in prod: a bare follow-up ("Doe maar 21 september om 15u05") arrives with *no*
+thread context, and the grounding pre-pass may fill the vacuum with a journal file from an unrelated
+earlier run — same-evening test runs about the same patient are the classic trap — silently steering
+intent.
 
-To simulate a reply, embed the whole prior conversation in the question — quoted, oldest first,
-exactly as a mail client would — and then the new reply on top:
+So embed the whole prior conversation in the question, quoted oldest-first exactly as a mail client
+would, with the new reply on top:
 
 ```bash
 rc ask "$(cat <<'MAIL'
@@ -100,9 +77,6 @@ MAIL
 )" --subject "Re: Afspraak vulling"
 ```
 
-Use `--session` only when you want the *investigation* continuity (which scripts already ran),
-not for thread history. If the run still picks up a stale journal note, mention it in the report:
-that is a grounding pre-pass artefact, not a brain bug.
-
-For the full reasoning/tool trail, use the `rc-debug` skill with the captured `run_id`. If this run
-validated a local brain change, finish through `brain-publish`.
+Use `--session` only for *investigation* continuity (which scripts already ran), never for thread
+history. If a run still picks up a stale journal note, report it as a grounding pre-pass artefact, not a
+brain bug.
