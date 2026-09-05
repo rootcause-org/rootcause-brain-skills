@@ -59,6 +59,16 @@ help_md: |
   AND-ed (`campaign.id==123`; a comma in the value becomes an IN filter). Breakdowns: age, gender,
   country, region, publisher_platform, platform_position, device_platform, impression_device.
 
+  ## Defaults for a one-line ask
+
+  A bare ask ("overzicht zomercampagne 2026") gets an answer, not a question set. Scope = the
+  currently ACTIVE campaign(s), or the most recent one if none is active; if the ask names a
+  campaign in words, match it against `campaigns` names (accent/case-insensitive, Dutch or English)
+  and use that one. Period = the campaign's own lifetime when it has ended, otherwise `last_30d`.
+  Metrics = spend, impressions, reach, clicks, CTR, CPC and results/conversions. Output = ONE
+  compact markdown table, the defaults you used in one line, then one line offering another period,
+  campaign or format.
+
   ## Recipes
 
   **Campaign review.** `campaigns` first for ids, names, objective, dates and budget, then

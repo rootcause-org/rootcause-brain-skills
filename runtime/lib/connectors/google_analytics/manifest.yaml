@@ -85,6 +85,15 @@ help_md: |
   `dim=^prefix`, `dim=*contains` (repeatable, AND-ed); GSC `--filter` is `dimension:operator:expression`
   (`page:contains:/pricing/`, `query:equals:demo`).
 
+  ## Defaults for a one-line ask
+
+  A bare ask ("hoe doet de site het?") gets an answer, not a question set. GA4: last 28 days vs the
+  previous equal period (`ga-compare`) on sessions, users, engagement and conversions, plus the top
+  5 landing pages (`ga-landing`) and top 5 sources (`ga-sources`). GSC: last 28 days clicks,
+  impressions, CTR and average position (`gsc-overview`) plus the top 10 queries (`gsc-queries`).
+  Output = compact markdown tables, the defaults you used in one line, then one line offering
+  another period, segment or format.
+
   ## Recipes
 
   **Landing pages → sign-ups.** `ga-landing` gives sessions/users/engagement per entry page; join
