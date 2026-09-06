@@ -34,6 +34,7 @@ publish gate can import it without pytest. `lib.brain_lint_pytest` owns the opti
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -47,10 +48,11 @@ from .action_lint import lint_actions
 # Mirror bootstrap.go's descMaxLen / descHeadBytes so the lint's verdict matches what the tree renders.
 DESC_MAX_LEN = 150
 DESC_HEAD_BYTES = 2048
-ACTION_SURFACES = (
-    "chat", "dashboard_chat", "gmail", "outlook", "intercom", "whatsapp",
-    "compose", "prompt_api", "mcp", "embassy", "console",
+_ACTION_SURFACE_CONTRACT = json.loads(
+    (Path(__file__).parent / "contracts" / "action_surfaces.json").read_text("utf-8")
 )
+ACTION_SURFACES = tuple(_ACTION_SURFACE_CONTRACT["surfaces"])
+ACTION_SURFACE_ALIASES = dict(_ACTION_SURFACE_CONTRACT["deprecated_aliases"])
 
 # Leading-phrase patterns that describe *contents* ("what this holds") instead of *when to open this*.
 # WARN-only and deliberately small — a few high-precision openers in English + Dutch, matched at the
@@ -169,16 +171,28 @@ def _check_manifest_surfaces(path: Path, rel: str) -> list[Finding]:
     findings: list[Finding] = []
     seen: set[str] = set()
     for value in surfaces:
-        if not isinstance(value, str) or value not in ACTION_SURFACES:
+        if not isinstance(value, str):
             findings.append(Finding(
                 rel, "FAIL", f"unknown action surface {value!r} (allowed: {allowed})",
                 "action-surfaces",
             ))
             continue
-        if value in seen:
-            findings.append(Finding(rel, "FAIL", f"action surface {value!r} is repeated",
+        normalized = ACTION_SURFACE_ALIASES.get(value, value)
+        if value in ACTION_SURFACE_ALIASES:
+            findings.append(Finding(
+                rel, "WARN", f"action surface {value!r} is deprecated; use {normalized!r}",
+                "action-surfaces",
+            ))
+        elif value not in ACTION_SURFACES:
+            findings.append(Finding(
+                rel, "FAIL", f"unknown action surface {value!r} (allowed: {allowed})",
+                "action-surfaces",
+            ))
+            continue
+        if normalized in seen:
+            findings.append(Finding(rel, "FAIL", f"action surface {normalized!r} is repeated after alias normalization",
                                     "action-surfaces"))
-        seen.add(value)
+        seen.add(normalized)
     return findings
 
 

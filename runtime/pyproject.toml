@@ -50,4 +50,4 @@ build-backend = "hatchling.build"
 # Ship the `lib` package as-is (db.py, fs.py, livecheck.py, …). The import name stays `lib` so brain
 # scripts and the prod container agree: `from lib import db`.
 packages = ["lib"]
-artifacts = ["lib/**/*.yaml"]
+artifacts = ["lib/**/*.yaml", "lib/contracts/*"]

@@ -11,6 +11,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lib.brain_lint import (
+    ACTION_SURFACE_ALIASES,
+    ACTION_SURFACES,
     DESC_MAX_LEN,
     Finding,
     _md_description,
@@ -74,7 +76,9 @@ def test_lint_brain_validates_action_surfaces_in_live_and_draft_manifests(tmp_pa
     _write(tmp_path / "actions/refund/manifest.yaml",
            "id: refund\ndescription: Refund a customer\nsurfaces: [gmail, dashboard_chat]\n")
     _write(tmp_path / "actions-drafts/bad/manifest.yaml",
-           "id: bad\ndescription: Bad draft\nsurfaces: [email]\n")
+           "id: bad\ndescription: Canonical draft\nsurfaces: [email]\n")
+    _write(tmp_path / "actions/bogus/manifest.yaml",
+           "id: bogus\ndescription: Bad value\nsurfaces: [bogus]\n")
     _write(tmp_path / "actions/bad_shape/manifest.yaml",
            "id: bad_shape\ndescription: Bad shape\nsurfaces: gmail\n")
     _write(tmp_path / "actions/empty/manifest.yaml",
@@ -82,18 +86,31 @@ def test_lint_brain_validates_action_surfaces_in_live_and_draft_manifests(tmp_pa
     _write(tmp_path / "actions/null/manifest.yaml",
            "id: null\ndescription: Null\nsurfaces: null\n")
 
-    findings = [f for f in _fails(lint_brain(tmp_path)) if f.rule == "action-surfaces"]
+    all_findings = [f for f in lint_brain(tmp_path) if f.rule == "action-surfaces"]
+    findings = _fails(all_findings)
 
     assert [f.path for f in findings] == [
         "actions/bad_shape/manifest.yaml",
+        "actions/bogus/manifest.yaml",
         "actions/empty/manifest.yaml",
         "actions/null/manifest.yaml",
-        "actions-drafts/bad/manifest.yaml",
     ]
     assert "must be a list" in findings[0].message
-    assert "omit it to allow all" in findings[1].message
-    assert "must be a list" in findings[2].message
-    assert "unknown action surface 'email'" in findings[3].message
+    assert "unknown action surface 'bogus'" in findings[1].message
+    assert "omit it to allow all" in findings[2].message
+    assert "must be a list" in findings[3].message
+    warnings = _warns(all_findings)
+    assert len(warnings) == 1
+    assert warnings[0].path == "actions/refund/manifest.yaml"
+    assert "'gmail' is deprecated; use 'email'" in warnings[0].message
+
+
+def test_action_surface_vocabulary_is_loaded_from_embassy_contract() -> None:
+    assert ACTION_SURFACES == (
+        "chat", "dashboard_chat", "email", "intercom", "whatsapp",
+        "compose", "prompt_api", "mcp", "embassy", "console",
+    )
+    assert ACTION_SURFACE_ALIASES == {"gmail": "email", "outlook": "email", "imap": "email"}
 
 
 def test_lint_brain_flags_python_outside_supported_roots(tmp_path: Path) -> None:
