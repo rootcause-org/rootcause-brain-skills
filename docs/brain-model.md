@@ -58,6 +58,15 @@ If a fact changes with the customer's app state or source code, prefer a groundi
 lookup over copying it into prose. If a fact is a stable support policy, product concept, customer
 promise, or decision tree, put it in the brain with tests where practical.
 
+**Reuse before writing.** Before authoring any skill prose or script, `rg` what the runtime agent
+already has mounted — `/kb`, `/mirrors/<name>` (including a mirror's committed agent skills), `/skills`,
+and `/brain` when working in a tenant overlay. If an existing article, mirror doc, or shared skill
+already explains the topic (e.g. a customer-facing API manual synced into `/kb`), the new file cites
+that runtime absolute path and adds only what is missing: when to open it, project-specific deltas, and
+how it ranks against other sources. Exemplar header pattern: "Sources of truth stay where they are —
+read them, do not restate them", followed by the exact `/mirrors/...` and `/kb/...` paths. Cite only
+run-visible paths — never an ignored one (see the `.replypenignore` boundary below).
+
 ## Execution Context Boundary
 
 Do not mix the local control plane with the production model's workspace:
@@ -332,6 +341,9 @@ an irrelevant one is an active distractor. Checklist:
 - `.replypenignore` — physically remove committed maintainer-only paths from every run-visible surface;
   default-hide tests/test fixtures unless a production diagnostic explicitly uses them, and never use
   `exclude_in` frontmatter for visibility.
+- Reuse before writing — `rg` `/kb`, `/mirrors/<name>`, `/skills` (and `/brain` for tenant files) for
+  existing coverage of the topic; cite the run-visible absolute path instead of restating the content
+  ("Brain Versus External Context" above).
 - Customer language everywhere — filenames, descriptions, `AGENTS.md` routing rows; retrieval is
   lexical `rg` over the words customers write, so a correct doc missing those words is invisible.
 - Flat archives (e.g. FAQ imports): greppable frontmatter facets on every item plus a generated
@@ -377,6 +389,9 @@ artifacts stay on the laptop.
   shared action catalog.
 - A tenant brain, when present, holds tenant-specific natural-language overlay. Tenant values may live
   in RootCause settings rather than committed files.
+- Tenant files reference project-brain material by its runtime path (`/brain/...`), and shared mounts
+  (`/kb`, `/mirrors/<name>`) the same way — never by restating them; the overlay carries only tenant
+  deltas.
 - A templated project brain may compile a tenant-specific `/brain` view from `projection.yaml` plus
   tenant profile values. Preview locally with `brain_projection.py` when present;
   `rc dev brain render --tenant <slug>` prints the server-compiled view exactly as `/brain` mounts it.
