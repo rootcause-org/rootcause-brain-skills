@@ -55,7 +55,7 @@ chmod +x "$REMOTE/hooks/pre-receive"
 # A release from any other branch must fail before changing files or remote refs.
 git -C "$CHECKOUT" switch -q -c release-test
 before="$(git -C "$CHECKOUT" rev-parse HEAD)"
-if RC_BRAINS_ROOT="$TMP/brains" "$CHECKOUT/refresh-brains.sh" --release patch --no-image \
+if RC_BRAINS_ROOT="$TMP/brains" "$CHECKOUT/refresh-brains.sh" --release patch --no-image --no-prod-bump \
     "$TMP/not-a-brain" >"$TMP/non-main.out" 2>&1; then
   echo "error: non-main release unexpectedly succeeded" >&2
   exit 1
@@ -77,7 +77,7 @@ git -C "$PEER" add peer-note.txt
 git -C "$PEER" commit -q -m "peer: concurrent work"
 peer_commit="$(git -C "$PEER" rev-parse HEAD)"
 git -C "$PEER" push -q origin main
-if ! RC_BRAINS_ROOT="$TMP/brains" "$CHECKOUT/refresh-brains.sh" --release patch --no-image \
+if ! RC_BRAINS_ROOT="$TMP/brains" "$CHECKOUT/refresh-brains.sh" --release patch --no-image --no-prod-bump \
     "$TMP/not-a-brain" >"$TMP/release.out" 2>&1; then
   cat "$TMP/release.out" >&2
   exit 1
@@ -93,7 +93,7 @@ grep -q "Reconcile and publish release commit through brain-git-sync" "$TMP/rele
 
 # --no-push creates the next release commit locally but creates no tag and leaves remote refs untouched.
 remote_main_before="$(git --git-dir="$REMOTE" rev-parse refs/heads/main)"
-if ! RC_BRAINS_ROOT="$TMP/brains" "$CHECKOUT/refresh-brains.sh" --release patch --no-image --no-push \
+if ! RC_BRAINS_ROOT="$TMP/brains" "$CHECKOUT/refresh-brains.sh" --release patch --no-image --no-prod-bump --no-push \
     "$TMP/not-a-brain" >"$TMP/no-push.out" 2>&1; then
   cat "$TMP/no-push.out" >&2
   exit 1
@@ -152,7 +152,7 @@ race_cur="$(grep -E '^VERSION = ' "$RACE_CHECKOUT/skills/local-brain-work/script
 IFS=. read -r _rma _rmi _rpa <<<"$race_cur"
 race_tag="v$_rma.$_rmi.$((_rpa + 1))"
 if PATH="$RACE_BIN:$PATH" REAL_GIT="$REAL_GIT" RACE_COUNT="$RACE_COUNT" RACE_PEER="$RACE_PEER" \
-    RC_BRAINS_ROOT="$TMP/brains" "$RACE_CHECKOUT/refresh-brains.sh" --release patch --no-image \
+    RC_BRAINS_ROOT="$TMP/brains" "$RACE_CHECKOUT/refresh-brains.sh" --release patch --no-image --no-prod-bump \
     "$TMP/not-a-brain" >"$TMP/tag-race.out" 2>&1; then
   echo "error: release unexpectedly tagged after origin/main moved" >&2
   exit 1
@@ -194,7 +194,7 @@ git -C "$CL" commit -q -am "test: add dotted-number collision"
 git -C "$CL" push -q origin main
 
 cl_release() {  # release a patch (extra flags in $@); fail loudly on error
-  if ! RC_BRAINS_ROOT="$TMP/brains" "$CL/refresh-brains.sh" --release patch --no-image \
+  if ! RC_BRAINS_ROOT="$TMP/brains" "$CL/refresh-brains.sh" --release patch --no-image --no-prod-bump \
       "$TMP/not-a-brain" "$@" >"$TMP/classify.out" 2>&1; then
     cat "$TMP/classify.out" >&2
     exit 1
@@ -219,6 +219,35 @@ printf '\n# classify probe\n' >>"$CL/runtime/lib/db.py"
 git -C "$CL" commit -q -am "runtime: lib probe"
 cl_release
 test "$(cl_classify)" = 1
+
+# A dependency pin that equals the NEXT version is someone else's version: the digest guard must not
+# abort the release (defusedxml==0.7.1 did exactly that on the real v0.7.1 bump).
+cl_cur="$(grep -E '^VERSION = ' "$CL/skills/local-brain-work/scripts/brain_env.py" | sed -E 's/.*"([0-9.]+)".*/\1/')"
+IFS=. read -r _cma _cmi _cpa <<<"$cl_cur"
+printf 'stray-pin==%s.%s.%s\n' "$_cma" "$_cmi" "$((_cpa + 1))" >>"$CL/runtime/requirements.lock"
+git -C "$CL" commit -q -am "test: pin colliding with the next version"
+cl_release
+test "$(cl_classify)" = 1
+
+# A release that aborts before the commit (here: a real stray literal tripping the digest guard) must
+# leave NO half-bumped files behind in the shared checkout.
+cl_next="$(grep -E '^VERSION = ' "$CL/skills/local-brain-work/scripts/brain_env.py" | sed -E 's/.*"([0-9.]+)".*/\1/')"
+IFS=. read -r _sma _smi _spa <<<"$cl_next"
+printf '\nRUNTIME_VERSION = "%s.%s.%s"\n' "$_sma" "$_smi" "$((_spa + 1))" >>"$CL/runtime/lib/db.py"
+git -C "$CL" commit -q -am "test: stray version literal in runtime/lib"
+if RC_BRAINS_ROOT="$TMP/brains" "$CL/refresh-brains.sh" --release patch --no-image --no-prod-bump \
+    "$TMP/not-a-brain" >"$TMP/stray.out" 2>&1; then
+  echo "error: stray runtime version literal did not abort the release" >&2
+  exit 1
+fi
+grep -q "carries the version literal" "$TMP/stray.out"
+if [ -n "$(git -C "$CL" status --porcelain=v1 --untracked-files=all)" ]; then
+  echo "error: aborted release left the checkout dirty:" >&2
+  git -C "$CL" status --porcelain=v1 --untracked-files=all >&2
+  exit 1
+fi
+git -C "$CL" revert --no-edit HEAD >/dev/null
+git -C "$CL" push -q origin main
 
 # pyproject dependency edit + --relock → 1 (real dep add; --relock regenerates the lock).
 python3 - "$CL/runtime/pyproject.toml" <<'PY'

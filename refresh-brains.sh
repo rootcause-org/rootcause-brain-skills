@@ -135,6 +135,19 @@ if [ -n "$RELEASE" ]; then
     runtime/pyproject.toml install.sh
     README.md docs/onboarding.md docs/migration-rootcause.md
   )
+  # Anything failing between the bump and the release commit (digest guard, coherence check) must not
+  # strand a half-bumped shared checkout. Restore only the files this step writes — parallel agents
+  # work in the same tree.
+  BUMPED=0
+  rollback_bump() {
+    [ "$BUMPED" = 1 ] || return 0
+    BUMPED=0
+    echo "  ↩ release aborted before the commit — restoring version-bumped files" >&2
+    git -C "$ROOT" reset -q -- "${FILES[@]}" RUNTIME_DIGEST runtime/requirements.lock 2>/dev/null || true
+    git -C "$ROOT" checkout -- "${FILES[@]}" RUNTIME_DIGEST runtime/requirements.lock 2>/dev/null || true
+  }
+  trap rollback_bump EXIT
+  [ "$DRY" = 1 ] || BUMPED=1
   for f in "${FILES[@]}"; do
     [ -f "$ROOT/$f" ] || continue
     grep -qF "$CUR" "$ROOT/$f" && run sed -i '' "s/${CUR//./\\.}/$NEW/g" "$ROOT/$f" || true
@@ -174,6 +187,7 @@ if [ -n "$RELEASE" ]; then
     git -C "$ROOT" commit -q -m "release: v$NEW" \
       -m "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
   fi
+  BUMPED=0   # the bump is committed; later failures keep the commit (see RELEASING.md)
 
   # Classify rebuild-vs-retag ONCE (reused by the image + prod-reminder steps). --relock forces a
   # rebuild; else compare the recorded digest to the prior release's. DIGEST equals HEAD's committed

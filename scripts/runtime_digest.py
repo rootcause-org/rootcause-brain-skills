@@ -14,9 +14,10 @@ differ only by the bump digest identical. The recorded value (repo-root `RUNTIME
     runtime_digest.py --worktree  digest the working tree (release time: HEAD isn't the commit yet)
 
 Guard: only pyproject.toml is canonicalized, so version-independence rests on no OTHER tracked file
-under runtime/ carrying the bare version literal (true today because uv.lock is untracked). Track
-uv.lock, or add a second literal, and this exits non-zero — the release breaks loudly instead of the
-classifier silently reverting to version-dependent.
+under runtime/ carrying the bare version literal as ITS OWN version. A dependency pin that happens to
+equal ours (`defusedxml==0.7.1` in requirements.lock on a v0.7.1 release) is someone else's version and
+is exempt; anything else exits non-zero — the release breaks loudly instead of the classifier silently
+reverting to version-dependent.
 """
 
 from __future__ import annotations
@@ -33,6 +34,19 @@ RUNTIME = "runtime/"
 PYPROJECT = "runtime/pyproject.toml"
 PLACEHOLDER = "@@VERSION@@"
 VERSION_LINE_RE = re.compile(r'^version = "(\d+\.\d+\.\d+)"', re.MULTILINE)
+
+
+def _stray_version_line(text: str, version: str) -> str | None:
+    """First line where `version` appears as OUR version, or None. A PEP 440 specifier before the
+    literal (`defusedxml==0.7.1`, `>=0.7.1`) marks a dependency's version, never the kit's, so it
+    never moves on our release bump and must not trip the guard."""
+    lit = re.escape(version)
+    bare = re.compile(rf"(?<![0-9.]){lit}(?![0-9.])")
+    pinned = re.compile(rf"[=<>!~]=\s*{lit}(?![0-9.])")
+    for line in text.splitlines():
+        if bare.search(pinned.sub("", line)):
+            return line
+    return None
 
 
 def _git(root: Path, *args: str) -> bytes:
@@ -59,11 +73,11 @@ def _digest(paths: list[str], read: Callable[[str], bytes]) -> str:
         raw = read(path)
         if path == PYPROJECT:
             raw = _canonicalize(raw.decode("utf-8", "replace"), version).encode()
-        elif re.search(rf"(?<![0-9.]){re.escape(version)}(?![0-9.])",
-                       raw.decode("utf-8", "replace")):
+        elif (stray := _stray_version_line(raw.decode("utf-8", "replace"), version)) is not None:
             sys.exit(
-                f"runtime_digest: tracked file {path} carries the version literal {version!r}; "
-                "canonicalize or untrack it — the digest must not change on the release bump"
+                f"runtime_digest: tracked file {path} carries the version literal {version!r} "
+                f"({stray.strip()!r}); canonicalize or untrack it — the digest must not change on "
+                "the release bump"
             )
         h.update(path.encode() + b"\0")
         h.update(raw)
