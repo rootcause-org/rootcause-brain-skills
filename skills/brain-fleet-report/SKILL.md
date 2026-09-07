@@ -1,6 +1,6 @@
 ---
 name: brain-fleet-report
-description: "Build the daily two-audience fleet report for one rootcause project from a brain checkout: Python collects a day of evidence (runs, actions, bash corpus, deltas, feedback, commits), you judge it and write report.json, Python validates, renders and publishes. Use for 'fleet report', 'dagrapport', 'daily report for the product owner', 'what did the agent do yesterday', or a ranked 'what do I fix today' list."
+description: "Build the daily two-audience fleet report for one rootcause project from a brain checkout: Python collects a day of evidence (runs, actions, bash corpus, deltas, feedback, commits), you judge it and write report.json, Python validates and renders it. Use for 'fleet report', 'dagrapport', 'daily report for the product owner', 'what did the agent do yesterday', or a ranked 'what do I fix today' list."
 ---
 
 # brain-fleet-report — one day, two audiences, ranked actionables
@@ -59,8 +59,11 @@ uv run "$FR/scripts/validate.py" "$OUT/report.json" \
     --kpis "$OUT/kpis.json" --manifest "$OUT/manifest.json" --evidence "$OUT/evidence.json"
 uv run "$FR/scripts/render.py" "$OUT/report.json"                 # 6 deliverables next to report.json
 uv run "$FR/scripts/prompt_compose.py" "$OUT/report.json" --finding F3   # check one prompt as text
-uv run "$FR/scripts/publish.py" --date "$D"                       # dry-run; --send to deliver
+open "$OUT/technical.html" "$OUT/owner.html"                      # read both halves locally
 ```
+
+Delivery to the owner is project-specific: a wrapper skill in the brain (e.g. `fleet-report-dentai`)
+attaches `owner.html` to a ticket.
 
 `evidence.json` is the raw tier — grep it, never read it whole. Copy `kpis.json` and `manifest.json`
 verbatim into `report.json` (all keys, including `raw` and `owner_lang`); never retype a counter.
@@ -176,5 +179,5 @@ contract · [`rc-fleet`](../rc-fleet/SKILL.md) interactive triage when you have 
 
 ## Iteration log
 
-- **2026-09-07** — built (collect/correlate/drill/schema/validate/render/publish + overlays). First
+- **2026-09-07** — built (collect/correlate/drill/schema/validate/render + overlays). First
   real runs: dentai, kampadmin (+kampadmin-support), pro-backup, momentum-tools on 09-03 / 09-04.

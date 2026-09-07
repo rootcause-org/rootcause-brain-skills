@@ -5,7 +5,7 @@ still works: one project, defaults, no project follow-up.
 
 ```
 <brain>/_internal/fleet-report/
-  config.toml   window, members, noise, repos, delivery      (read by fr_common.load_overlay)
+  config.toml   window, members, noise, repos                (read by fr_common.load_overlay)
   overlay.py    optional hooks, pure stdlib, fail-soft
   OVERLAY.md    guidance for the judging LLM (triage table, repo paths, dig-deeper recipes)
   ledger.md     human dispositions of known patterns
@@ -19,7 +19,7 @@ already is in most brains). The report output (`.rootcause/`) is gitignored.
 | Key | Meaning |
 |---|---|
 | `report_id` | output dir + `report.json.report_id`; defaults to the project name |
-| `display_name` | human label used in mail subjects and Drive file names |
+| `display_name` | human label used in report titles and ticket subjects |
 | `timezone` | day boundaries (default `Europe/Brussels`, DST-correct) |
 | `[[members]]` | `project` — one report over 1..n projects; `channel_label` labels the half (read by you, not by the scripts) |
 | `[owner]` | `name`, `email`, `lang` — who the owner half is written for. `lang` (default `nl`) is **load-bearing**: it reaches `manifest.owner_lang`, and `render.py` renders the owner page's chrome, labels and dates in it while `validate.py` skips the Dutch heuristic. The `*_nl` field names stay as they are; they mean "owner language" |
@@ -29,7 +29,6 @@ already is in most brains). The report output (`.rootcause/`) is gitignored.
 | `known_non_names` | words the privacy reducer must not mistake for a first name |
 | `include_kinds` | override the default `["email", "analysis"]` |
 | `[[repos]]` | `id`, `path`, `plane` (`brain\|tenant_brain\|mirror\|project_code\|host`), optional `relevant_paths` — scanned by `correlate.py` for onset candidates |
-| `[delivery]` | read by `publish.py`: `drive_folder_id` (or `drive_folder_name`), `recipients_technical`, `recipients_owner`, optional `gw_cli` argv prefix — see `scripts/publish.py` |
 
 TOML has no globs: enumerate tenant overlay repos explicitly, one `[[repos]]` row per tenant.
 `relevant_paths` matters on the host repo — without it every host commit becomes a candidate.

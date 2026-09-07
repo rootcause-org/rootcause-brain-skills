@@ -113,7 +113,7 @@ Ships here:
 - local brain engine: `brain_run.py`, `brain_test.py`, `brain_projection.py`, `brain_action.py`,
   `brain_dump.py`;
 - the fleet-report engine in `skills/brain-fleet-report/scripts/` (read-only collection over public
-  `rc`, plus schema/validate/render/publish);
+  `rc`, plus schema/validate/render);
 - public-API skills over `rc`;
 - `rootcause-runtime` (`runtime/lib`);
 - workspace Dockerfile/image.
