@@ -1,0 +1,64 @@
+{
+  "report_id": "kampadmin",
+  "projects": ["kampadmin", "kampadmin-support"],
+  "window": {
+    "focus": "2026-09-04",
+    "context_days": ["2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03"]
+  },
+  "generated_at": "2026-09-05T07:12:00+02:00",
+  "rc_version": "0.8.5",
+  "coverage": [
+    {
+      "feed": "runs",
+      "status": "complete",
+      "fetched": 241,
+      "observed_at": "2026-09-05T07:04:11+02:00"
+    },
+    {
+      "feed": "threads",
+      "status": "complete",
+      "fetched": 63,
+      "observed_at": "2026-09-05T07:05:48+02:00"
+    },
+    {
+      "feed": "actions",
+      "status": "complete",
+      "fetched": 52,
+      "observed_at": "2026-09-05T07:06:02+02:00"
+    },
+    {
+      "feed": "patterns",
+      "status": "partial",
+      "reason": "7-day server window; events older than 09-01 lost args.command",
+      "fetched": 1841,
+      "observed_at": "2026-09-05T07:07:30+02:00"
+    },
+    {
+      "feed": "learning_evidence",
+      "status": "partial",
+      "reason": "--limit caps at 100 with no cursor; deltas after 09-03 18:00 may be missing",
+      "fetched": 100,
+      "observed_at": "2026-09-05T07:08:12+02:00"
+    },
+    {
+      "feed": "health",
+      "status": "complete",
+      "fetched": 2,
+      "observed_at": "2026-09-05T07:08:20+02:00"
+    },
+    {
+      "feed": "deploy_state",
+      "status": "unavailable",
+      "reason": "rc fleet deploy-state returned no rows for kampadmin-support",
+      "fetched": 0,
+      "observed_at": "2026-09-05T07:08:24+02:00"
+    }
+  ],
+  "excluded": {
+    "dev_tenant": 9,
+    "mcp_operator": 41,
+    "chat_probe": 6,
+    "simulation": 3,
+    "internal_topic": 4
+  }
+}

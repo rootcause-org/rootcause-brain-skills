@@ -1,0 +1,1025 @@
+{
+  "schema_version": 1,
+  "report_id": "kampadmin",
+  "date": "2026-09-04",
+  "generated_at": "2026-09-05T07:12:00+02:00",
+  "window": {
+    "focus": "2026-09-04",
+    "context_days": [
+      "2026-08-31",
+      "2026-09-01",
+      "2026-09-02",
+      "2026-09-03"
+    ]
+  },
+  "kpis": {
+    "focus": {
+      "date": "2026-09-04",
+      "runs": 63,
+      "counted": 41,
+      "excluded": 22,
+      "drafts": 24,
+      "sent_as_proposed": 11,
+      "edited": 6,
+      "shadow_compared": 2,
+      "not_sent_yet": 3,
+      "no_draft": 17,
+      "actions_ok": 9,
+      "actions_failed": 2,
+      "actions_proposed": 4,
+      "run_errors": 3,
+      "bash_real_errors": 14,
+      "usage_errors": 5,
+      "deltas_live": 7,
+      "deltas_shadow": 2,
+      "feedback": 3
+    },
+    "context_days": [
+      {
+        "date": "2026-08-31",
+        "runs": 48,
+        "counted": 34,
+        "excluded": 14,
+        "drafts": 19,
+        "sent_as_proposed": 12,
+        "edited": 4,
+        "shadow_compared": 1,
+        "not_sent_yet": 2,
+        "no_draft": 15,
+        "actions_ok": 7,
+        "actions_failed": 0,
+        "actions_proposed": 2,
+        "run_errors": 1,
+        "bash_real_errors": 9,
+        "usage_errors": 3,
+        "deltas_live": 5,
+        "deltas_shadow": 1,
+        "feedback": 2
+      },
+      {
+        "date": "2026-09-01",
+        "runs": 21,
+        "counted": 12,
+        "excluded": 9,
+        "drafts": 6,
+        "sent_as_proposed": 5,
+        "edited": 1,
+        "shadow_compared": 0,
+        "not_sent_yet": 0,
+        "no_draft": 6,
+        "actions_ok": 2,
+        "actions_failed": 0,
+        "actions_proposed": 1,
+        "run_errors": 0,
+        "bash_real_errors": 2,
+        "usage_errors": 0,
+        "deltas_live": 1,
+        "deltas_shadow": 0,
+        "feedback": 0
+      },
+      {
+        "date": "2026-09-02",
+        "runs": 57,
+        "counted": 38,
+        "excluded": 19,
+        "drafts": 14,
+        "sent_as_proposed": 6,
+        "edited": 5,
+        "shadow_compared": 1,
+        "not_sent_yet": 2,
+        "no_draft": 24,
+        "actions_ok": 6,
+        "actions_failed": 1,
+        "actions_proposed": 3,
+        "run_errors": 24,
+        "bash_real_errors": 31,
+        "usage_errors": 8,
+        "deltas_live": 4,
+        "deltas_shadow": 1,
+        "feedback": 4
+      },
+      {
+        "date": "2026-09-03",
+        "runs": 52,
+        "counted": 36,
+        "excluded": 16,
+        "drafts": 21,
+        "sent_as_proposed": 10,
+        "edited": 7,
+        "shadow_compared": 2,
+        "not_sent_yet": 2,
+        "no_draft": 15,
+        "actions_ok": 8,
+        "actions_failed": 1,
+        "actions_proposed": 3,
+        "run_errors": 2,
+        "bash_real_errors": 17,
+        "usage_errors": 6,
+        "deltas_live": 6,
+        "deltas_shadow": 2,
+        "feedback": 1
+      }
+    ],
+    "per_axis": [
+      {
+        "axis": "tenant",
+        "key": "lbv",
+        "name": "Landelijke Bond Vakanties",
+        "mode": "live",
+        "runs": 34,
+        "counted": 26,
+        "excluded": 8,
+        "drafts": 17,
+        "sent_as_proposed": 8,
+        "edited": 4,
+        "shadow_compared": 1,
+        "not_sent_yet": 2,
+        "no_draft": 9,
+        "actions_ok": 6,
+        "actions_failed": 2,
+        "actions_proposed": 3,
+        "run_errors": 2,
+        "bash_real_errors": 9,
+        "usage_errors": 4,
+        "deltas_live": 5,
+        "deltas_shadow": 1,
+        "feedback": 2
+      },
+      {
+        "axis": "tenant",
+        "key": "yes_events",
+        "name": "YES Events",
+        "mode": "live",
+        "runs": 17,
+        "counted": 11,
+        "excluded": 6,
+        "drafts": 7,
+        "sent_as_proposed": 3,
+        "edited": 2,
+        "shadow_compared": 1,
+        "not_sent_yet": 1,
+        "no_draft": 4,
+        "actions_ok": 3,
+        "actions_failed": 0,
+        "actions_proposed": 1,
+        "run_errors": 1,
+        "bash_real_errors": 3,
+        "usage_errors": 1,
+        "deltas_live": 2,
+        "deltas_shadow": 1,
+        "feedback": 1
+      },
+      {
+        "axis": "tenant",
+        "key": "circolito",
+        "name": "Circolito",
+        "mode": "watch",
+        "runs": 8,
+        "counted": 3,
+        "excluded": 5,
+        "drafts": 0,
+        "sent_as_proposed": 0,
+        "edited": 0,
+        "shadow_compared": 0,
+        "not_sent_yet": 0,
+        "no_draft": 3,
+        "actions_ok": 0,
+        "actions_failed": 0,
+        "actions_proposed": 0,
+        "run_errors": 0,
+        "bash_real_errors": 2,
+        "usage_errors": 0,
+        "deltas_live": 0,
+        "deltas_shadow": 0,
+        "feedback": 0
+      },
+      {
+        "axis": "tenant",
+        "key": "s_sport",
+        "name": "S-Sport Federatie",
+        "mode": "watch",
+        "runs": 4,
+        "counted": 1,
+        "excluded": 3,
+        "drafts": 0,
+        "sent_as_proposed": 0,
+        "edited": 0,
+        "shadow_compared": 0,
+        "not_sent_yet": 0,
+        "no_draft": 1,
+        "actions_ok": 0,
+        "actions_failed": 0,
+        "actions_proposed": 0,
+        "run_errors": 0,
+        "bash_real_errors": 0,
+        "usage_errors": 0,
+        "deltas_live": 0,
+        "deltas_shadow": 0,
+        "feedback": 0
+      }
+    ]
+  },
+  "coverage": {
+    "report_id": "kampadmin",
+    "projects": [
+      "kampadmin",
+      "kampadmin-support"
+    ],
+    "window": {
+      "focus": "2026-09-04",
+      "context_days": [
+        "2026-08-31",
+        "2026-09-01",
+        "2026-09-02",
+        "2026-09-03"
+      ]
+    },
+    "generated_at": "2026-09-05T07:12:00+02:00",
+    "rc_version": "0.8.5",
+    "coverage": [
+      {
+        "feed": "runs",
+        "status": "complete",
+        "fetched": 241,
+        "observed_at": "2026-09-05T07:04:11+02:00"
+      },
+      {
+        "feed": "threads",
+        "status": "complete",
+        "fetched": 63,
+        "observed_at": "2026-09-05T07:05:48+02:00"
+      },
+      {
+        "feed": "actions",
+        "status": "complete",
+        "fetched": 52,
+        "observed_at": "2026-09-05T07:06:02+02:00"
+      },
+      {
+        "feed": "patterns",
+        "status": "partial",
+        "reason": "7-day server window; events older than 09-01 lost args.command",
+        "fetched": 1841,
+        "observed_at": "2026-09-05T07:07:30+02:00"
+      },
+      {
+        "feed": "learning_evidence",
+        "status": "partial",
+        "reason": "--limit caps at 100 with no cursor; deltas after 09-03 18:00 may be missing",
+        "fetched": 100,
+        "observed_at": "2026-09-05T07:08:12+02:00"
+      },
+      {
+        "feed": "health",
+        "status": "complete",
+        "fetched": 2,
+        "observed_at": "2026-09-05T07:08:20+02:00"
+      },
+      {
+        "feed": "deploy_state",
+        "status": "unavailable",
+        "reason": "rc fleet deploy-state returned no rows for kampadmin-support",
+        "fetched": 0,
+        "observed_at": "2026-09-05T07:08:24+02:00"
+      }
+    ],
+    "excluded": {
+      "dev_tenant": 9,
+      "mcp_operator": 41,
+      "chat_probe": 6,
+      "simulation": 3,
+      "internal_topic": 4
+    }
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "signature": "verify_link:relation-tenants-does-not-exist",
+      "kind": "script_error",
+      "audience": "both",
+      "members": [
+        "kampadmin"
+      ],
+      "scope": {
+        "level": "project"
+      },
+      "severity": "high",
+      "impact": {
+        "customer_effect": "Valid parent-login and offer links are stripped from drafts, so parents get an answer without the link they asked for.",
+        "runs": 14,
+        "threads": 11,
+        "confidence": "high"
+      },
+      "recurrence": {
+        "first_seen": "2026-09-02",
+        "last_seen": "2026-09-04",
+        "focus_count": 6,
+        "context_count": 8,
+        "state": "recurring"
+      },
+      "title": "verify_link.py reports every link invalid (relation \"tenants\" does not exist)",
+      "text_en": "In 14 runs since 09-02 verify_link.py returned 'invalid: controle mislukt: ... (pg: relation \"tenants\" does not exist)'. tenant_and_setting() in embed_url.py selects from tenants joined with settings, but tenants is not in the tenant-scoped projection, so the helper raises and the caller reports the link as invalid. nearby_activities_to_md.py and lookup_person.py die on the same call. The brain is instructed to drop every link marked invalid, so working links disappear from the draft.",
+      "text_nl": "Sinds 2 september haalt de linkcontrole het niet meer: elke link die de agent nakijkt komt terug als 'ongeldig', ook als hij perfect werkt. Omdat de agent geleerd heeft om ongeldige links weg te laten, vertrekken er antwoorden zonder de inschrijvings- of loginlink die de ouder net vroeg. Dit raakte 14 gesprekken in drie dagen.",
+      "evidence": {
+        "run_ids": [
+          "c725536a",
+          "9e3fa0db",
+          "97986308"
+        ],
+        "run_urls": [
+          "https://app.replypen.com/runs/c725536a-845b-4966-bc80-1f62bdac5f8b?t=OIdtHCm1fMGritbRmzgsdX7Zz8txEFf2",
+          "https://app.replypen.com/runs/9e3fa0db-1f42-4c9a-9d7e-2b60ac5518c1",
+          "https://app.replypen.com/runs/97986308-4f31-4e77-b2b6-1c8f0a9d4471"
+        ]
+      },
+      "root_cause": {
+        "plane": "mirror",
+        "detail": "embed_url.py:169 tenant_and_setting() queries a table the scoped projection does not expose; the helper cannot tell 'checked and invalid' from 'could not check'.",
+        "confidence": "high"
+      },
+      "recommendation": "Expose the two needed columns through the scoped view and make an unchecked link fall back to keeping the link.",
+      "prompt": {
+        "task_kind": "fix",
+        "target_repo": "~/code/kampadmin/kampadmin-rootcause-common",
+        "paths": [
+          "skills/records/scripts/embed_url.py:169",
+          "skills/records/scripts/verify_link.py"
+        ],
+        "skills": [
+          "prod-console",
+          "local-brain-work"
+        ],
+        "run_refs": [
+          "https://app.replypen.com/runs/c725536a-845b-4966-bc80-1f62bdac5f8b",
+          "https://app.replypen.com/runs/9e3fa0db-1f42-4c9a-9d7e-2b60ac5518c1"
+        ],
+        "conclusion": "tenant_and_setting() selects FROM tenants LEFT JOIN settings, but tenants is outside the tenant-scoped projection, so every link check raises and is reported as invalid; the brain then drops the link.",
+        "proposed_change": "Resolve the embed host without touching tenants, or expose the two needed columns through the scoped view, and split verify_link.py's result into checked-invalid versus could-not-check so a helper crash never removes a link.",
+        "verification": "Re-run the two runs above with brain-ask and confirm the parent login link survives; then check rc fleet patterns for a week without this signature."
+      }
+    },
+    {
+      "id": "F2",
+      "signature": "workspace_failure:dangling-claude-skills-symlink",
+      "kind": "lost_runs",
+      "audience": "technical",
+      "members": [
+        "kampadmin",
+        "kampadmin-support"
+      ],
+      "scope": {
+        "level": "project"
+      },
+      "severity": "high",
+      "impact": {
+        "customer_effect": "24 incoming mails were never answered on 09-02; they were only picked up after the host fix landed the next day.",
+        "runs": 24,
+        "threads": 24,
+        "confidence": "high"
+      },
+      "recurrence": {
+        "first_seen": "2026-09-02",
+        "last_seen": "2026-09-02",
+        "focus_count": 0,
+        "context_count": 24,
+        "state": "gone",
+        "known_since": "2026-09-02"
+      },
+      "title": "24 runs lost to workspace_failure after the .claude/skills symlink commit",
+      "text_en": "Brain commit c72b1af (09-02 11:34) added the committed .claude/skills relative symlink; the workspace refused to boot on a dangling link and 24 runs ended as workspace_failure with an empty answer. Host commits 1f93ea983 and a57368b7c (09-03) now tolerate dangling in-repo brain symlinks and page immediately on workspace_failure, and nothing failed this way on 09-03 or 09-04. Kept as context only: confirm the boot check is in the promoted revision.",
+      "evidence": {
+        "run_ids": [
+          "4a1de73c",
+          "b0c9e2f8"
+        ],
+        "run_urls": [
+          "https://app.replypen.com/runs/4a1de73c-9b41-4d2a-b5a3-6f0e2c1d7a88",
+          "https://app.replypen.com/runs/b0c9e2f8-5c44-4f19-8b23-0d5a71e9c402"
+        ]
+      },
+      "root_cause": {
+        "plane": "host",
+        "detail": "Workspace boot treated a dangling in-repo symlink as fatal; fixed on the host on 09-03.",
+        "confidence": "high"
+      },
+      "followup": {
+        "status": "done",
+        "evidence": "No workspace_failure on 09-03 or 09-04 for either member project."
+      },
+      "prompt": {
+        "task_kind": "investigate",
+        "target_repo": "~/code/rootcause-org/rootcause",
+        "paths": [
+          "internal/agent/workspace/",
+          "scripts/promote.py"
+        ],
+        "skills": [
+          "rc-health",
+          "rc-debug"
+        ],
+        "run_refs": [
+          "https://app.replypen.com/runs/4a1de73c-9b41-4d2a-b5a3-6f0e2c1d7a88"
+        ],
+        "conclusion": "The 09-02 outage is fixed on main by 1f93ea983 and a57368b7c, but the report cannot see which revision production actually runs because deploy-state returned no rows for kampadmin-support.",
+        "proposed_change": "Confirm the promoted revision contains both commits and that the brain boot check gates every main advance for both member projects; if not, promote.",
+        "verification": "rc fleet health shows no failed boot checks, and a deliberate dangling symlink in a dev brain ref boots with a warning instead of losing the run."
+      }
+    },
+    {
+      "id": "F3",
+      "signature": "correction:uitpas-asserted-at-yes-events",
+      "kind": "correction",
+      "audience": "both",
+      "members": [
+        "kampadmin"
+      ],
+      "scope": {
+        "level": "tenant",
+        "tenant": "yes_events"
+      },
+      "severity": "high",
+      "impact": {
+        "customer_effect": "Parents at YES Events are told they can enter a UiTPAS discount that this organiser does not offer, which produces a second mail and a disappointed parent.",
+        "runs": 2,
+        "threads": 2,
+        "confidence": "high"
+      },
+      "recurrence": {
+        "first_seen": "2026-08-31",
+        "last_seen": "2026-09-04",
+        "focus_count": 2,
+        "context_count": 3,
+        "state": "recurring",
+        "known_since": "2026-08-31"
+      },
+      "title": "UiTPAS promised again at YES Events, five days after the same correction",
+      "text_en": "Two runs told a YES Events parent that a UiTPAS kansentarief can be entered during registration. The organiser does not use UiTPAS. The same fact was corrected by the reviewer on 08-31 (delta category factual) and logged again as feedback on 09-02. The agent grounds UiTPAS from /kb/knowledgeowl, which documents it as a platform capability; no tenant overlay says it is off, and a tenant journal entry asserts the opposite.",
+      "text_nl": "De agent beloofde twee ouders van YES Events opnieuw een UiTPAS-kansentarief, terwijl YES Events met een eigen sociaal tarief werkt. Dezelfde correctie werd op 31 augustus al door de reviewer doorgevoerd en op 2 september nog eens als feedback gemeld. De reden: het platformhandboek beschrijft UiTPAS als een algemene mogelijkheid en er staat nergens dat deze organisator ze niet gebruikt.",
+      "evidence": {
+        "run_ids": [
+          "9142ee9e",
+          "9540b9d9"
+        ],
+        "run_urls": [
+          "https://app.replypen.com/runs/9142ee9e-a331-4c2d-9584-201bbf299ec5",
+          "https://app.replypen.com/runs/9540b9d9-6b28-4a10-9f36-7a2ce0f81b44"
+        ]
+      },
+      "root_cause": {
+        "plane": "tenant_brain",
+        "detail": "The tenant overlay has no explicit 'no UiTPAS' policy fact, and an older journal entry asserts the platform default.",
+        "confidence": "high"
+      },
+      "recommendation": "Write the tenant policy fact down and forbid asserting a platform capability the overlay has not confirmed.",
+      "prompt": {
+        "task_kind": "fix",
+        "target_repo": "~/code/rootcause-org/rootcause-brain-kampadmin-tenant-yes_events",
+        "paths": [
+          "AGENTS.md",
+          "journal/2026-08-20-cb8e7926.md",
+          "~/code/rootcause-org/rootcause-brain-kampadmin/AGENTS.md"
+        ],
+        "skills": [
+          "brain-dream-cycle",
+          "brain-ask"
+        ],
+        "run_refs": [
+          "https://app.replypen.com/runs/9142ee9e-a331-4c2d-9584-201bbf299ec5",
+          "https://app.replypen.com/runs/9540b9d9-6b28-4a10-9f36-7a2ce0f81b44"
+        ],
+        "conclusion": "A platform capability from /kb/knowledgeowl is asserted to parents of an organiser that does not offer it, and a stale journal line keeps reinforcing it after two human corrections.",
+        "proposed_change": "Add an explicit 'no UiTPAS, own social tariff plus FAQ link' policy fact to the tenant overlay, retract the journal line, and add a project rule that a platform capability is never asserted unless the tenant overlay confirms it.",
+        "verification": "Re-ask both questions with brain-ask and confirm the answer names the social tariff instead of UiTPAS."
+      }
+    },
+    {
+      "id": "F4",
+      "signature": "avo_urls:filter-supplied-more-than-once",
+      "kind": "script_error",
+      "audience": "technical",
+      "members": [
+        "kampadmin-support"
+      ],
+      "scope": {
+        "level": "project"
+      },
+      "severity": "medium",
+      "impact": {
+        "customer_effect": "An admin got an empty activity list and scored the answer 1 out of 5.",
+        "runs": 2,
+        "threads": 1,
+        "confidence": "high"
+      },
+      "recurrence": {
+        "first_seen": "2026-09-03",
+        "last_seen": "2026-09-04",
+        "focus_count": 1,
+        "context_count": 1,
+        "state": "recurring"
+      },
+      "title": "avo_urls.py refuses multi-value select filters, so admins get empty lists",
+      "text_en": "avo_urls.py scope raises \"Filter 'activity_period' was supplied more than once.\" for any filter given two values. The agent worked around it by hand-writing two filters[activity_period][is][] params; the resulting list returned zero rows and the admin scored the answer 1 with the comment that the two periods were passed as separate filters instead of one filter with both values.",
+      "evidence": {
+        "run_ids": [
+          "c7b6ffc5",
+          "f87e9ecf"
+        ],
+        "run_urls": [
+          "https://app.replypen.com/runs/c7b6ffc5-128b-4893-a1ef-893a4f8fdffc?t=d3ICCKZFVNk7PGgHH4G3yMruWZr2PNuv",
+          "https://app.replypen.com/runs/f87e9ecf-b4db-4ac1-826a-a91ed8ad657d"
+        ]
+      },
+      "root_cause": {
+        "plane": "project_code",
+        "detail": "The used_fields guard in build_scope_url treats a repeated filter as a caller mistake, which is only true for scalar and date fields.",
+        "confidence": "high"
+      },
+      "prompt": {
+        "task_kind": "fix",
+        "target_repo": "~/code/kampadmin/kampadmin-rootcause-common",
+        "paths": [
+          "skills/records/scripts/avo_urls.py:543",
+          "skills/records/tests/test_avo_urls.py"
+        ],
+        "skills": [
+          "local-brain-work"
+        ],
+        "run_refs": [
+          "https://app.replypen.com/runs/c7b6ffc5-128b-4893-a1ef-893a4f8fdffc",
+          "https://app.replypen.com/runs/f87e9ecf-b4db-4ac1-826a-a91ed8ad657d"
+        ],
+        "conclusion": "build_scope_url refuses a repeated filter for every field type, so a two-period question cannot be expressed and the hand-written fallback URL returns no rows.",
+        "proposed_change": "Allow repeated values for select and multi-select fields by emitting one filters[id][is][] parameter per value, keep the hard refusal for scalar and date fields, and add a --filter f:is:a,b shorthand.",
+        "verification": "A unit test proves two activity_period values produce two [] params, then open one generated URL in the browser and confirm it lists rows."
+      }
+    },
+    {
+      "id": "F5",
+      "signature": "sql:subscriptions-activity-name-undefined-column",
+      "kind": "pattern",
+      "audience": "technical",
+      "members": [
+        "kampadmin-support"
+      ],
+      "scope": {
+        "level": "project"
+      },
+      "severity": "medium",
+      "impact": {
+        "customer_effect": "Each wrong query costs a turn and slows the answer; two chat sessions ran out of turns before answering.",
+        "runs": 6,
+        "threads": 5,
+        "confidence": "high"
+      },
+      "recurrence": {
+        "first_seen": "2026-08-29",
+        "last_seen": "2026-09-04",
+        "focus_count": 2,
+        "context_count": 4,
+        "state": "recurring",
+        "known_since": "2026-08-29"
+      },
+      "title": "The brain keeps selecting subscriptions.activity_name (UndefinedColumn)",
+      "text_en": "Six failed queries in seven days select activity_name from subscriptions. The column exists on activities, not on subscriptions. The Guessed-to-real table in records-schema.md documents 'activities.name to activity_name', which reads as if the column is simply named activity_name and invites the wrong join.",
+      "evidence": {
+        "run_ids": [
+          "6c9f920c",
+          "8d6f2a21",
+          "d7c4594e"
+        ],
+        "run_urls": [
+          "https://app.replypen.com/runs/6c9f920c-f261-4b88-84f8-f4eb46bdc75d",
+          "https://app.replypen.com/runs/8d6f2a21-0a17-4d63-9c58-b2e6f1470d39"
+        ]
+      },
+      "root_cause": {
+        "plane": "mirror",
+        "detail": "An ambiguous row in the schema documentation the brain grounds on.",
+        "confidence": "medium"
+      },
+      "prompt": {
+        "task_kind": "fix",
+        "target_repo": "~/code/kampadmin/kampadmin-rootcause-common",
+        "paths": [
+          "docs/records-schema.md",
+          "skills/records/scripts/"
+        ],
+        "skills": [
+          "brain-dream-cycle"
+        ],
+        "run_refs": [
+          "https://app.replypen.com/runs/6c9f920c-f261-4b88-84f8-f4eb46bdc75d"
+        ],
+        "conclusion": "The Guessed-to-real table reads as if subscriptions carries activity_name, which produced six UndefinedColumn failures on the customer-facing planes in one week.",
+        "proposed_change": "Add explicit negative rows for subscriptions.activity_name and activity_title pointing at the join on activity_id, and document the leader and role enums in the same table.",
+        "verification": "Re-run rc fleet patterns a week later and confirm the UndefinedColumn count for this signature drops to zero."
+      }
+    },
+    {
+      "id": "F6",
+      "signature": "brain:embassy-as-if-done-drafting",
+      "kind": "correction",
+      "audience": "both",
+      "members": [
+        "kampadmin-support"
+      ],
+      "scope": {
+        "level": "project"
+      },
+      "severity": "medium",
+      "impact": {
+        "customer_effect": "A ticket answer described manual bookkeeping work as already done while it still had to be executed by a colleague.",
+        "runs": 1,
+        "threads": 1,
+        "confidence": "medium"
+      },
+      "recurrence": {
+        "first_seen": "2026-09-03",
+        "last_seen": "2026-09-04",
+        "focus_count": 1,
+        "context_count": 1,
+        "state": "recurring"
+      },
+      "title": "Embassy drafts still claim reviewer work is finished",
+      "text_en": "A ticket draft wrote that the manual refund and the savings balance had already been settled against each other. Brain commit 24635cb and host commit edff1a5dc (both 09-03) introduced the reviewer-marker posture; this run started before the commit, so treat it as a watch item and re-check on the next Embassy tickets rather than filing a new bug.",
+      "text_nl": "In een ticketantwoord schreef de agent dat een manuele terugbetaling al verrekend was, terwijl een collega dat nog moest doen. De regel hierover is intussen aangescherpt; deze run dateert van net ervoor. We volgen de volgende tickets op om te zien of het echt weg is.",
+      "evidence": {
+        "run_ids": [
+          "174799f9"
+        ],
+        "run_urls": [
+          "https://app.replypen.com/runs/174799f9-2c31-4b8e-9d51-8a4c3e2b1077"
+        ]
+      },
+      "root_cause": {
+        "plane": "brain_content",
+        "detail": "Pre-commit run; the from-the-future reviewer posture was not yet in the promoted brain.",
+        "confidence": "medium"
+      },
+      "prompt": {
+        "task_kind": "investigate",
+        "target_repo": "~/code/rootcause-org/rootcause-brain-kampadmin-support",
+        "paths": [
+          "AGENTS.md"
+        ],
+        "skills": [
+          "rc-debug",
+          "brain-ask"
+        ],
+        "run_refs": [
+          "https://app.replypen.com/runs/174799f9-2c31-4b8e-9d51-8a4c3e2b1077"
+        ],
+        "conclusion": "The as-if-done phrasing matches the example now marked wrong in AGENTS.md, but the run predates the commit that added it, so no new rule is needed yet.",
+        "proposed_change": "Re-read the next five Embassy drafts after the promoted revision and only change the brain if the posture reappears; otherwise close this as fixed.",
+        "verification": "Five consecutive Embassy drafts describe reviewer work in the imperative instead of the past tense."
+      }
+    },
+    {
+      "id": "F7",
+      "signature": "policy:lbv-refund-window-differs",
+      "kind": "policy_question",
+      "audience": "owner",
+      "members": [
+        "kampadmin"
+      ],
+      "scope": {
+        "level": "tenant",
+        "tenant": "lbv"
+      },
+      "severity": "high",
+      "impact": {
+        "customer_effect": "Parents get two different refund deadlines depending on which source the agent grounds on.",
+        "runs": 3,
+        "threads": 3,
+        "confidence": "medium"
+      },
+      "recurrence": {
+        "first_seen": "2026-09-01",
+        "last_seen": "2026-09-04",
+        "focus_count": 1,
+        "context_count": 2,
+        "state": "recurring"
+      },
+      "title": "Refund window: platform says 14 days, LBV answers 7",
+      "text_nl": "Het platformhandboek zegt dat ouders tot 14 dagen voor de start kosteloos kunnen annuleren; de medewerkers van LBV antwoorden consequent 7 dagen en pasten dat deze week drie keer aan in een concept. Zolang wij niet weten welke regel klopt, blijft de agent de 14 dagen herhalen en moet iemand elk antwoord bijsturen. Welke termijn is de juiste voor LBV?",
+      "evidence": {
+        "run_ids": [
+          "3ac91d55"
+        ],
+        "run_urls": [
+          "https://app.replypen.com/runs/3ac91d55-7e4c-4a6b-b1f0-92d7c0a5f318"
+        ]
+      },
+      "root_cause": {
+        "plane": "human_policy",
+        "detail": "Neither the tenant overlay nor the platform handbook records which deadline wins for this organiser.",
+        "confidence": "medium"
+      }
+    },
+    {
+      "id": "F8",
+      "signature": "capture_gap:embassy-delta-run-join",
+      "kind": "capture_gap",
+      "audience": "technical",
+      "members": [
+        "kampadmin-support"
+      ],
+      "scope": {
+        "level": "project"
+      },
+      "severity": "low",
+      "impact": {
+        "customer_effect": "None directly; the report cannot say which Embassy answers were edited before they left.",
+        "runs": 0,
+        "threads": 0,
+        "confidence": "high"
+      },
+      "recurrence": {
+        "first_seen": "2026-08-26",
+        "last_seen": "2026-09-04",
+        "focus_count": 1,
+        "context_count": 4,
+        "state": "recurring",
+        "known_since": "2026-08-26"
+      },
+      "title": "Embassy deltas carry no category and no run link",
+      "text_en": "All 25 Embassy deltas in the window have related_run_missing true and no delta_category or delta_description, so the edited-versus-accepted numbers only cover the mailbox channel. Deltas can be joined on session_id, which the collector now does, but the LLM classification of the edit is missing entirely.",
+      "evidence": {
+        "run_ids": [],
+        "run_urls": []
+      },
+      "root_cause": {
+        "plane": "host",
+        "detail": "The learning-evidence writer does not fill category and run reference for the Embassy channel.",
+        "confidence": "medium"
+      },
+      "recommendation": "Track as a known measurement gap; do not read the Embassy adoption numbers as complete."
+    },
+    {
+      "id": "F9",
+      "signature": "host:principal-verify-invalid-uuid",
+      "kind": "regression",
+      "audience": "technical",
+      "members": [
+        "kampadmin-support"
+      ],
+      "scope": {
+        "level": "channel",
+        "tenant": null
+      },
+      "severity": "medium",
+      "impact": {
+        "customer_effect": "Three chat sessions closed at turn one with no answer at all.",
+        "runs": 3,
+        "threads": 3,
+        "confidence": "medium"
+      },
+      "recurrence": {
+        "first_seen": "2026-09-03",
+        "last_seen": "2026-09-04",
+        "focus_count": 2,
+        "context_count": 1,
+        "state": "new"
+      },
+      "title": "Chat runs fail principal verification with invalid input syntax for type uuid",
+      "text_en": "Three chat runs failed at turn one with 'invalid input syntax for type uuid'. Nothing like it appears before 09-03. Host commits 330908c69 (server-token identity for principal-less embed decisions) and 361ab63e9 (typo'd principal-exclude kinds are a save-time fault) landed on 09-04 and 09-05; a non-UUID external id from the chat surface reaching the principal lookup is the obvious suspect.",
+      "evidence": {
+        "run_ids": [
+          "e2b71a44",
+          "5d0c8917"
+        ],
+        "run_urls": [
+          "https://app.replypen.com/runs/e2b71a44-3f19-4d80-a6c2-71b0e9d4c235",
+          "https://app.replypen.com/runs/5d0c8917-8a52-4e31-bd76-3f1c60a8e9d1"
+        ]
+      },
+      "root_cause": {
+        "plane": "host",
+        "detail": "Principal lookup on the chat surface receives an external id that is not a UUID and raises before the first turn.",
+        "confidence": "low"
+      },
+      "prompt": {
+        "task_kind": "investigate",
+        "target_repo": "~/code/rootcause-org/rootcause",
+        "paths": [
+          "internal/chat/",
+          "internal/data/principal.go"
+        ],
+        "skills": [
+          "rc-debug",
+          "prod-console"
+        ],
+        "run_refs": [
+          "https://app.replypen.com/runs/e2b71a44-3f19-4d80-a6c2-71b0e9d4c235"
+        ],
+        "conclusion": "Chat runs started failing principal verification on 09-03 with an invalid uuid cast, which closes the run before any turn happens; the failures start right around the chat identity commits.",
+        "proposed_change": "Trace one failing run to the exact query, then either coerce the external chat id to a lookup by external key or reject it with a clear message instead of a database cast error.",
+        "verification": "Replay the two chat sessions and confirm they reach turn one; no new occurrences in the next rc fleet patterns window."
+      }
+    },
+    {
+      "id": "F10",
+      "signature": "good:lbv-drafts-accepted-unchanged",
+      "kind": "good",
+      "audience": "both",
+      "members": [
+        "kampadmin"
+      ],
+      "scope": {
+        "level": "project"
+      },
+      "severity": "good",
+      "impact": {
+        "customer_effect": "Eight parents got an answer that the reviewer sent without touching a word.",
+        "runs": 8,
+        "threads": 8,
+        "confidence": "high"
+      },
+      "recurrence": {
+        "first_seen": "2026-08-31",
+        "last_seen": "2026-09-04",
+        "focus_count": 8,
+        "context_count": 22,
+        "state": "recurring"
+      },
+      "title": "Eight LBV drafts went out unchanged",
+      "text_en": "Eight of seventeen LBV drafts were sent exactly as proposed, all of them registration and payment questions. This is the fourth day in a row above 45 percent unchanged for this tenant.",
+      "text_nl": "Acht van de zeventien concepten bij LBV vertrokken woord voor woord zoals de agent ze voorstelde, allemaal vragen over inschrijven en betalen. Dat is de vierde dag op rij boven de 45 procent.",
+      "evidence": {
+        "run_ids": [],
+        "run_urls": []
+      },
+      "root_cause": {
+        "plane": "brain_content",
+        "detail": "Registration and payment playbooks are accurate and the tone matches the reviewer's.",
+        "confidence": "medium"
+      }
+    }
+  ],
+  "technical": {
+    "headline": "Link verification has been broken since 09-02 and silently strips working links from drafts; everything else is smaller.",
+    "tldr": [
+      {
+        "text": "verify_link.py reports every link invalid, so parent login and offer links are dropped from 14 drafts.",
+        "severity": "high",
+        "finding_ids": [
+          "F1"
+        ]
+      },
+      {
+        "text": "The 09-02 workspace outage that lost 24 runs is fixed on the host, but deploy-state cannot confirm the promoted revision.",
+        "severity": "high",
+        "finding_ids": [
+          "F2"
+        ]
+      },
+      {
+        "text": "UiTPAS was promised again at YES Events, five days after the same human correction.",
+        "severity": "high",
+        "finding_ids": [
+          "F3"
+        ]
+      },
+      {
+        "text": "Two helper bugs cost turns: multi-value filters in avo_urls.py and the subscriptions.activity_name guess.",
+        "severity": "medium",
+        "finding_ids": [
+          "F4",
+          "F5"
+        ]
+      },
+      {
+        "text": "Chat runs began failing principal verification on 09-03 with an invalid uuid cast.",
+        "severity": "medium",
+        "finding_ids": [
+          "F9"
+        ]
+      },
+      {
+        "text": "Eight of seventeen LBV drafts were sent unchanged, the fourth day above 45 percent.",
+        "severity": "good",
+        "finding_ids": [
+          "F10"
+        ]
+      }
+    ],
+    "actions": [
+      {
+        "rank": 1,
+        "finding_id": "F1",
+        "summary": "Fix the link check so a helper crash never removes a working link from a draft."
+      },
+      {
+        "rank": 2,
+        "finding_id": "F3",
+        "summary": "Write the 'no UiTPAS' policy fact into the YES Events overlay and retract the journal line."
+      },
+      {
+        "rank": 3,
+        "finding_id": "F9",
+        "summary": "Trace one failing chat run to the principal lookup and decide whether it is a host regression."
+      },
+      {
+        "rank": 4,
+        "finding_id": "F4",
+        "summary": "Allow repeated values for select filters in avo_urls.py and add the shorthand."
+      },
+      {
+        "rank": 5,
+        "finding_id": "F2",
+        "summary": "Confirm the promoted revision carries both symlink fixes for the two member projects."
+      }
+    ],
+    "regressions": [
+      "Chat principal verification: first failures on 09-03, none before (F9).",
+      "Workspace failures stopped after the 09-03 host fixes; 09-04 was clean (F2)."
+    ],
+    "watch": [
+      "Embassy reviewer-marker posture: re-read the next five drafts before changing anything (F6).",
+      "Mailbox subscription for the LBV Gmail channel expires on 2026-09-19; silent run loss if it is not renewed."
+    ],
+    "noise_note": "63 runs seen, 22 excluded: 41 mcp operator calls, 9 dev-tenant runs, 6 chat probes, 4 internal notification topics and 3 simulations."
+  },
+  "owner": {
+    "headline_nl": "Eén technisch probleem raakte deze week echte ouders: de agent liet werkende links weg uit zijn antwoorden.",
+    "tldr_nl": [
+      {
+        "text": "Door een fout in de linkcontrole vertrokken veertien antwoorden zonder de inschrijvingslink die de ouder vroeg.",
+        "severity": "high",
+        "finding_ids": [
+          "F1"
+        ]
+      },
+      {
+        "text": "Bij YES Events beloofde de agent opnieuw UiTPAS, terwijl die organisator een eigen sociaal tarief heeft.",
+        "severity": "high",
+        "finding_ids": [
+          "F3"
+        ]
+      },
+      {
+        "text": "In een ticket schreef de agent dat werk al gedaan was terwijl een collega het nog moest doen.",
+        "severity": "medium",
+        "finding_ids": [
+          "F6"
+        ]
+      },
+      {
+        "text": "Acht van de zeventien concepten bij LBV vertrokken ongewijzigd.",
+        "severity": "good",
+        "finding_ids": [
+          "F10"
+        ]
+      }
+    ],
+    "actions_nl": [
+      "Bevestig welke annulatietermijn geldt bij LBV: 7 of 14 dagen voor de start.",
+      "Laat YES Events bevestigen hoe hun sociaal tarief exact heet, dan zetten we het als vaste regel in hun profiel."
+    ],
+    "policy_questions_nl": [
+      "Mag de agent een platformmogelijkheid noemen als het profiel van de organisator daar niets over zegt, of moet hij dan zwijgen?",
+      "Wie beslist bij tegenstrijdige termijnen: het platformhandboek of de organisator?"
+    ],
+    "good_nl": [
+      "Vier dagen op rij ging meer dan 45 procent van de concepten bij LBV ongewijzigd de deur uit.",
+      "Geen enkele actie faalde bij YES Events deze week."
+    ],
+    "tenants": [
+      {
+        "slug": "yes_events",
+        "policy_difference_nl": "YES Events werkt niet met UiTPAS maar met een eigen sociaal tarief; het platformhandboek beschrijft UiTPAS wel als algemene mogelijkheid.",
+        "bullets": [
+          "Twee antwoorden beloofden opnieuw UiTPAS.",
+          "De correctie van 31 augustus staat nog nergens als vaste regel."
+        ],
+        "finding_ids": [
+          "F3"
+        ]
+      },
+      {
+        "slug": "lbv",
+        "policy_difference_nl": "LBV antwoordt consequent dat ouders tot 7 dagen voor de start kosteloos kunnen annuleren; het handboek zegt 14 dagen.",
+        "bullets": [
+          "Drie concepten werden deze week op dat punt bijgestuurd.",
+          "Zolang de regel niet vastligt blijft de agent 14 dagen antwoorden."
+        ],
+        "finding_ids": [
+          "F7"
+        ]
+      }
+    ]
+  },
+  "custom_sections": [
+    {
+      "id": "bash-signatures",
+      "audience": "technical",
+      "member": "kampadmin-support",
+      "title": "Top bash error signatures",
+      "html": "<table><thead><tr><th>Signature</th><th>Runs</th><th>Last seen</th></tr></thead><tbody><tr><td>python · UndefinedColumn: subscriptions.activity_name</td><td>6</td><td>09-04</td></tr><tr><td>python · relation \"tenants\" does not exist</td><td>14</td><td>09-04</td></tr><tr><td>python · Filter 'activity_period' was supplied more than once</td><td>2</td><td>09-04</td></tr><tr><td>bash · exit 64 (context re-read guard)</td><td>9</td><td>09-04</td></tr></tbody></table>",
+      "text": "UndefinedColumn subscriptions.activity_name: 6 runs, last 09-04\nrelation \"tenants\" does not exist: 14 runs, last 09-04\nFilter 'activity_period' supplied more than once: 2 runs, last 09-04\nexit 64 context re-read guard: 9 runs, last 09-04"
+    }
+  ],
+  "meta": {
+    "signal_note": "Failed link checks and the repeated UiTPAS correction carried the signal today; the bash cluster table is mostly the same two bugs seen from a different angle."
+  }
+}

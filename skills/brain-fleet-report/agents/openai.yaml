@@ -1,0 +1,4 @@
+interface:
+  display_name: "Brain Dev: Fleet Report"
+  short_description: "Build the daily two-audience fleet report"
+  default_prompt: "Use $brain-fleet-report to build yesterday's fleet report: collect the evidence, judge it, and render the technical and owner halves."

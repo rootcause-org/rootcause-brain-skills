@@ -94,6 +94,8 @@ Only these are first-class:
 - `rc-debug` — one run/thread/session trace; inspect/propose/stop before edits.
 - `rc-health` — stale mirrors and dead-lettered runs.
 - `rc-fleet` — recent fleet and recurring failure patterns.
+- `brain-fleet-report` — the daily two-audience fleet report: Python collects and renders a day of
+  evidence, the model judges it into ranked actionables (technical EN + owner NL).
 - `prod-console` — direct guarded production primitives through `rc dev console capabilities`,
   `rc dev console database`, `rc dev console bash`, and `rc dev console action`.
 - `rc-script-wrapper` — deterministic local Python/shell wrappers around `rc`, including complete
@@ -110,6 +112,8 @@ Ships here:
 
 - local brain engine: `brain_run.py`, `brain_test.py`, `brain_projection.py`, `brain_action.py`,
   `brain_dump.py`;
+- the fleet-report engine in `skills/brain-fleet-report/scripts/` (read-only collection over public
+  `rc`, plus schema/validate/render/publish);
 - public-API skills over `rc`;
 - `rootcause-runtime` (`runtime/lib`);
 - workspace Dockerfile/image.

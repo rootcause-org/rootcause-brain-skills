@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "report_id": "momentum-tools",
+  "date": "2026-09-06",
+  "generated_at": "2026-09-07T07:05:00+02:00",
+  "window": {
+    "focus": "2026-09-06",
+    "context_days": [
+      "2026-09-02",
+      "2026-09-03",
+      "2026-09-04",
+      "2026-09-05"
+    ]
+  },
+  "kpis": {
+    "focus": {
+      "date": "2026-09-06",
+      "runs": 1,
+      "counted": 0,
+      "excluded": 1
+    },
+    "context_days": [
+      {
+        "date": "2026-09-02",
+        "runs": 6,
+        "counted": 5,
+        "excluded": 1,
+        "drafts": 4,
+        "sent_as_proposed": 3
+      },
+      {
+        "date": "2026-09-03",
+        "runs": 4,
+        "counted": 4,
+        "drafts": 3,
+        "sent_as_proposed": 2,
+        "edited": 1
+      },
+      {
+        "date": "2026-09-04",
+        "runs": 5,
+        "counted": 4,
+        "excluded": 1,
+        "drafts": 3,
+        "sent_as_proposed": 3
+      },
+      {
+        "date": "2026-09-05",
+        "runs": 2,
+        "counted": 2,
+        "drafts": 2,
+        "sent_as_proposed": 2
+      }
+    ],
+    "per_axis": []
+  },
+  "coverage": {
+    "report_id": "momentum-tools",
+    "projects": [
+      "momentum-tools"
+    ],
+    "window": {
+      "focus": "2026-09-06",
+      "context_days": [
+        "2026-09-02",
+        "2026-09-03",
+        "2026-09-04",
+        "2026-09-05"
+      ]
+    },
+    "generated_at": "2026-09-07T07:05:00+02:00",
+    "rc_version": "0.8.5",
+    "coverage": [
+      {
+        "feed": "runs",
+        "status": "complete",
+        "fetched": 18,
+        "observed_at": "2026-09-07T07:04:02+02:00"
+      },
+      {
+        "feed": "actions",
+        "status": "complete",
+        "fetched": 0,
+        "observed_at": "2026-09-07T07:04:05+02:00"
+      },
+      {
+        "feed": "learning_evidence",
+        "status": "partial",
+        "reason": "one delta, no feedback rows in 30 days",
+        "fetched": 1,
+        "observed_at": "2026-09-07T07:04:09+02:00"
+      }
+    ],
+    "excluded": {
+      "simulation": 1
+    }
+  },
+  "findings": [],
+  "technical": {
+    "headline": "One simulated run on a Sunday and nothing else; the em-dash feedback from 27 days ago is still open.",
+    "tldr": [],
+    "actions": [],
+    "regressions": [],
+    "watch": [
+      "Open feedback about em dashes has not been consolidated for 27 days."
+    ],
+    "noise_note": "The single run was a simulation and was excluded."
+  },
+  "owner": {
+    "headline_nl": "Zondag was er geen enkele echte vraag; er is niets dat je moet bekijken.",
+    "tldr_nl": [],
+    "actions_nl": [],
+    "policy_questions_nl": [],
+    "good_nl": [],
+    "tenants": []
+  },
+  "custom_sections": [],
+  "meta": {
+    "signal_note": "Quiet day; absence of findings is not evidence that older items are resolved."
+  }
+}

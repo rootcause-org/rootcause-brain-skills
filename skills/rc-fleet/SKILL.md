@@ -62,6 +62,10 @@ Drill two to five flagged runs with [`rc-debug`](../rc-debug/SKILL.md).
 the two bodies** — for the proposal vs. the human answer, switch to
 [`brain-dream-cycle`](../brain-dream-cycle/SKILL.md), which reads them from `rc dev learning evidence`.
 
+For the recurring daily pass — one project, a fixed day, a ranked "what do I fix today" report for
+both you and the product owner — use [`brain-fleet-report`](../brain-fleet-report/SKILL.md) instead of
+driving these commands by hand.
+
 Mark feedback you acted on processed (`rc run feedback <id> --processed --resolution-note …`;
 project-admin only) so the next review starts from the unprocessed remainder.
 
