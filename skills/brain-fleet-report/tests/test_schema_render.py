@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -183,16 +184,25 @@ def test_renders_six_files(rendered):
     }
 
 
-def test_owner_html_has_no_prompt_and_no_english_body(rendered, sample):
+def test_owner_html_carries_the_prompts_but_no_technical_body(rendered, sample):
     owner = rendered["owner.html"]
-    assert "prompt" not in owner.lower()
-    assert "<script" not in owner
+    owner_facing = [f for f in sample.findings if f.audience in ("owner", "both") and f.prompt]
+    assert owner_facing
+    for finding in owner_facing:
+        assert f'id="prompt-{finding.id}"' in owner
+        assert finding.prompt.conclusion in owner
+    assert "Prompt voor een coding agent (Engels) — kopieer" in owner
+    assert 'button class="copy"' in owner
+    assert "<pre" in owner
+    # outside the (English, verbatim) prompt bodies nothing technical leaks
+    outside = re.sub(r"<pre.*?</pre>", "", owner, flags=re.S)
+    visible = re.sub(r"<[^>]+>", " ", outside)  # links keep their href, not their id
     for finding in sample.findings:
-        if finding.prompt:
-            assert finding.prompt.conclusion not in owner
         if finding.text_en:
-            assert finding.text_en not in owner
-        assert finding.title not in owner
+            assert finding.text_en not in outside
+        assert finding.title not in outside
+        for run_id in finding.evidence.run_ids:
+            assert run_id not in visible
 
 
 def test_owner_only_shows_owner_findings(rendered, sample):
@@ -300,8 +310,9 @@ def test_english_owner_half_skips_the_dutch_heuristic(tmp_path):
     assert 'html lang="en"' in owner
     assert "DAGRAPPORT" not in owner.upper() and "Dagrapport" not in owner
     assert "What we pick up today" in owner
-    # the owner half is still owner-only, whatever the language
-    assert "Copy prompt" not in owner
+    # the owner half stays owner-only, but the English prompts come along
+    assert "Prompt for a coding agent — copy" in owner
+    assert "Copy prompt" in owner
 
 
 def test_owner_page_never_labels_a_link_with_a_run_id(rendered, sample):

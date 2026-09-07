@@ -11,13 +11,15 @@
                           (owner-facing ones in a secondary block), coverage,
                           KPIs, custom sections for technical/both.
     owner.html            owner view only: findings with audience owner/both,
-                          `text_nl` only — no technical text, no prompts, no run
-                          ids. Chrome and labels follow `coverage.owner_lang`
-                          (default `nl`; the `*_nl` field names are historical).
+                          `text_nl` only — no technical text, no run ids. The
+                          copyable prompts ARE shown (English, in an accordion)
+                          so the owner can hand one to a coding agent. Chrome
+                          and labels follow `coverage.owner_lang` (default `nl`;
+                          the `*_nl` field names are historical).
     technical.email.html  same content, inline CSS, no JS, prompt as <pre>.
-    owner.email.html      idem for the owner.
+    owner.email.html      idem for the owner (prompts as plain <pre>).
     technical.txt         plain-text fallback (prompts included).
-    owner.txt             plain-text fallback (owner language).
+    owner.txt             plain-text fallback (owner language, prompts included).
 
 Neutral house style: no project branding, self-contained, mobile-friendly from
 500 px. Copy buttons are progressive enhancement — the <pre> stays selectable.
@@ -138,6 +140,8 @@ STR = {
         "tenants": "Per customer",
         "conversation": "conversation",
         "owner_footer": "Generated automatically. No surnames, no e-mail addresses.",
+        # the owner half shows the same prompts; they stay English on purpose
+        "owner_prompt": "Prompt for a coding agent — copy",
     },
     "nl": {
         "kicker": "Dagrapport",
@@ -155,9 +159,9 @@ STR = {
         "noise": "Ruis",
         "quiet": "Op deze dag was er niets dat een beslissing vroeg.",
         "evidence": "Bewijs",
-        "prompt": "",
-        "copy": "",
-        "copied": "",
+        "prompt": "Prompt — kopieer",
+        "copy": "Kopieer prompt",
+        "copied": "Gekopieerd",
         "followup": "Opvolging",
         "recommendation": "Aanbeveling",
         "impact": "Impact",
@@ -182,6 +186,7 @@ STR = {
         "tenants": "Per klant",
         "conversation": "gesprek",
         "owner_footer": "Automatisch gegenereerd. Geen achternamen, geen e-mailadressen.",
+        "owner_prompt": "Prompt voor een coding agent (Engels) — kopieer",
     },
 }
 
@@ -329,8 +334,8 @@ ul.bullets{{margin:8px 0 0;padding-left:18px;color:#344054;font-size:14.5px}}
 }}
 """
 
-# Only the technical page carries these; owner.html must stay free of the word
-# "prompt" so a leak is trivially greppable.
+# Both halves carry the prompt accordion (the prompt text itself is always
+# English); the CSS/JS only ship on the HTML pages that actually have one.
 _CSS_PROMPT = f"""
 .prompt-head{{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}}
 .copy{{font:inherit;font-size:12px;font-weight:700;border:1px solid {BORDER};background:#fff;
@@ -412,6 +417,33 @@ def _section(anchor: str, title: str, body: str, count: str = "") -> str:
     )
 
 
+def _prompt_details(finding: Finding, lang: str, owner: bool = False) -> str:
+    """The copyable prompt accordion, shown on both halves.
+
+    The prompt body is always English (it is handed to a coding agent); only the
+    summary and the button follow `lang`. Task-kind/repo chips are technical, so
+    the owner half drops them.
+    """
+    strings = STR[lang]
+    pid = f"prompt-{finding.id}"
+    chips = (
+        ""
+        if owner
+        else f'<span class="chip">{e(finding.prompt.task_kind)}</span>'
+        f'<span class="chip grey">{e(finding.prompt.target_repo)}</span>'
+    )
+    return (
+        f'<details class="prompt" id="{pid}">'
+        f'<summary>{e(strings["owner_prompt" if owner else "prompt"])}</summary>'
+        f'<div class="prompt-head">{chips}'
+        f'<button class="copy" type="button" data-target="{pid}-pre" '
+        f'data-done="{e(strings["copied"])}">{e(strings["copy"])}</button>'
+        "</div>"
+        f'<pre id="{pid}-pre">{e(compose_prompt(finding))}</pre>'
+        "</details>"
+    )
+
+
 def _tech_card(finding: Finding, report: Report) -> str:
     color = SEVERITY_COLOR[finding.severity]
     chips = [
@@ -459,25 +491,15 @@ def _tech_card(finding: Finding, report: Report) -> str:
             f"{e(finding.recommendation)}</div>"
         )
     if finding.prompt:
-        pid = f"prompt-{finding.id}"
-        parts.append(
-            f'<details class="prompt" id="prompt-{e(finding.id)}">'
-            f'<summary>{e(STR["en"]["prompt"])}</summary>'
-            '<div class="prompt-head">'
-            f'<span class="chip">{e(finding.prompt.task_kind)}</span>'
-            f'<span class="chip grey">{e(finding.prompt.target_repo)}</span>'
-            f'<button class="copy" type="button" data-target="{pid}" '
-            f'data-done="{e(STR["en"]["copied"])}">{e(STR["en"]["copy"])}</button>'
-            "</div>"
-            f'<pre id="{pid}">{e(compose_prompt(finding))}</pre>'
-            "</details>"
-        )
+        parts.append(_prompt_details(finding, "en"))
     parts.append("</article>")
     return "".join(parts)
 
 
 def _owner_card(finding: Finding, report: Report) -> str:
-    """NL only: no title, no text_en, no prompt — nothing technical leaks here."""
+    """Owner language only: no title, no text_en, no run ids — nothing technical
+    leaks here except the copyable English prompt, which is meant to be handed
+    to a coding agent as is."""
     color = SEVERITY_COLOR[finding.severity]
     text = (finding.text_nl or "").strip()
     # Lead with the first sentence, but never split a word: a long opener just
@@ -506,6 +528,7 @@ def _owner_card(finding: Finding, report: Report) -> str:
         + (f"<h3>{e(head)}</h3>" if head else "")
         + (f'<p class="body">{e(rest.strip())}</p>' if rest.strip() else "")
         + links
+        + (_prompt_details(finding, lang, owner=True) if finding.prompt else "")
         + "</article>"
     )
 
@@ -763,6 +786,7 @@ def render_owner_html(report: Report) -> str:
     body = [_header(report, lang, title, kicker=strings["owner_kicker"])]
 
     findings = [f for f in report.findings_sorted() if f.audience in ("owner", "both")]
+    with_prompts = {f.id for f in findings if f.prompt}
     if not findings:
         body.append(f'<div class="quiet">{e(report.owner.headline_nl)}</div>')
         body.append(_section("dekking", strings["coverage"], _coverage_block(report, lang)))
@@ -781,10 +805,18 @@ def render_owner_html(report: Report) -> str:
             )
         )
     if report.owner.tldr_nl:
-        items = "".join(
-            f'<li>{_sev(i.severity, lang)}<div class="body">{e(i.text)}</div></li>'
-            for i in report.owner.tldr_nl
-        )
+        items = ""
+        for item in report.owner.tldr_nl:
+            # only a pointer to the prompt below — never the finding id itself
+            link = "".join(
+                f'<a class="chip" style="margin-left:6px" href="#prompt-{e(fid)}">prompt ↓</a>'
+                for fid in item.finding_ids
+                if fid in with_prompts
+            )
+            items += (
+                f'<li>{_sev(item.severity, lang)}'
+                f'<div class="body">{e(item.text)}{link}</div></li>'
+            )
         body.append(
             _section("kort", strings["tldr"], f'<div class="card"><ul class="tldr">{items}</ul></div>')
         )
@@ -829,7 +861,7 @@ def render_owner_html(report: Report) -> str:
 
     body.append(_custom(report.sections_for("owner")))
     body.append(_footer(lang, owner=True))
-    return _page(title, lang, "".join(body), with_js=False)
+    return _page(title, lang, "".join(body), with_js=bool(with_prompts))
 
 
 def _footer(lang: str, owner: bool = False) -> str:
@@ -908,7 +940,12 @@ def render_email_html(report: Report, half: str) -> str:
                 f"{e(kind_label(finding.kind, lang))} · "
                 f"{e(recurrence_label(finding, lang))}</span><br>"
             ) + f'<span style="color:#344054">{e(text)}</span>'
-            if technical and finding.prompt:
+            if finding.prompt:
+                if not technical:
+                    inner += (
+                        f'<div style="{_EF}font-size:12px;color:{MUTED};margin-top:8px">'
+                        f'{e(strings["owner_prompt"])}</div>'
+                    )
                 inner += (
                     f'<pre style="{_EF}white-space:pre-wrap;background:#f2f4f7;'
                     f'border:1px solid {BORDER};border-radius:8px;padding:10px;'
@@ -1007,8 +1044,10 @@ def render_txt(report: Report, half: str) -> str:
             lines.append(f"      {text}")
             for url in finding.evidence.run_urls:
                 lines.append(f"      {url}")
-            if technical and finding.prompt:
+            if finding.prompt:
                 lines.append("")
+                if not technical:
+                    lines.append(f"      {strings['owner_prompt']}")
                 lines += [f"      {row}" for row in compose_prompt(finding).splitlines()]
             lines.append("")
 

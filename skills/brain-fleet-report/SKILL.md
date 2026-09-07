@@ -14,8 +14,9 @@ copy-paste prompt for a fresh coding agent. KPIs are context, not the point.
 
 Two halves of one report: **technical (EN)** for the developer — failing actions with error text,
 brain-script breakage, capture gaps, lost runs, correlating commits — and the **owner half** for the
-product owner, who sees `text_nl` only: no run ids, no code, no prompts — conversation links are
-fine. The owner language is the overlay's `[owner].lang` (default `nl`, `en` when the owner is you);
+product owner, who sees `text_nl` only: no run ids, no technical prose — conversation links are
+fine, and each finding's copyable **English prompt** rides along so the owner can hand it to a coding
+agent as is. The owner language is the overlay's `[owner].lang` (default `nl`, `en` when the owner is you);
 it travels through `manifest.owner_lang`, and `render.py` puts the page chrome in that language. The
 `*_nl` field names are historical.
 
@@ -141,7 +142,9 @@ you decide.
 
 ## Audience split
 
-- Technical half and **all prompts**: English. Owner half: Dutch, standing on its own.
+- Technical half and **all prompts**: English. Owner half: owner language, standing on its own —
+  with the English prompt accordions attached (copy button on the page, plain `<pre>` in the e-mail
+  and text variants).
 - Tenant-scoped findings ≈ 1 per 5 project findings (validator warns above 25%). A tenant section
   exists only when that tenant's **policy demonstrably departs from the project** (public says 14
   days, this tenant does 7) — never to show a nice example.

@@ -12,7 +12,8 @@ not failure. Keys and the technical half are **English**; the owner half is writ
 names are **owner-language fields**; `_nl` is historical. `render.py` renders the owner page's chrome,
 labels and dates in that language, and the validator only runs its Dutch heuristic when it really is
 Dutch. You never write a prompt blob: fill the `prompt` fields and Python composes the text
-(`prompt_compose.py`).
+(`prompt_compose.py`). Prompts stay English on **both** halves — the owner page shows them in a
+copyable accordion with owner-language chrome, so the owner can pass one to a coding agent.
 
 ## Root
 
@@ -46,7 +47,7 @@ Dutch. You never write a prompt blob: fill the `prompt` fields and Python compos
 | `recurrence` | `{first_seen, last_seen, focus_count, context_count, state: new\|recurring\|gone, known_since?}` — `evidence.json` clusters carry `first_seen`/`last_seen`/`state` on the cluster itself, so copy them; do not transcribe them out of digest prose |
 | `title` | ≤ 100, English |
 | `text_en` | required for audience `technical`/`both`; ≤ 1400 |
-| `text_nl` | required for audience `owner`/`both`; ≤ 1400, in `coverage.owner_lang`. The owner page shows **only** this — it must stand alone, no run ids, no code. Links from `evidence.run_urls` render as a neutral "conversation ↗" label, never a run id |
+| `text_nl` | required for audience `owner`/`both`; ≤ 1400, in `coverage.owner_lang`. The owner page shows **only** this as prose — it must stand alone, no run ids, no code (the finding's English `prompt` is still rendered below it as a copyable accordion). Links from `evidence.run_urls` render as a neutral "conversation ↗" label, never a run id |
 | `evidence` | `{run_ids[], run_urls[]}` — URLs may carry `?t=<token>` (they open for the owner) |
 | `root_cause` | `{plane, detail ≤ 600, confidence}` |
 | `followup` | optional `{status: done\|partial\|open, evidence ≤ 1200}` |
