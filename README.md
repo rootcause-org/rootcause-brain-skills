@@ -162,5 +162,7 @@ Check coherence:
 ## Develop
 
 ```bash
-cd runtime && uv run --with . --with pytest --no-project pytest tests -q
+# PYTHONPATH first: `--with .` installs a BUILT copy of runtime/, so without it a run can
+# import stale bytes (uv's cached wheel, or a same-second .pyc) and go green on old code.
+cd runtime && PYTHONPATH=$(pwd) uv run --with . --with pytest --no-project pytest tests -q
 ```
