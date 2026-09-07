@@ -140,6 +140,12 @@ Choose `root_cause.plane` only after the drill: `host`, `action_plane`, `brain_s
 cannot explain onset — at most expansion or recovery. Candidates in `commits.md` narrow the search;
 you decide.
 
+**Publish drift is a finding, never a footnote.** `commits.md` ends with *Deployed state*: the
+managed brain cache vs `origin/main` and every channel with its last promotion. A `⚠ PUBLISH DRIFT`
+line (cache diverged/dirty, or a channel not `current` for 24 h+) means the brain running in
+production is not the brain on `main` — put it in the technical "fix today" list with the
+`brain-publish` route, even when the day's runs look fine (the code Thomas is testing is not live).
+
 ## Audience split
 
 - Technical half and **all prompts**: English. Owner half: owner language, standing on its own —

@@ -174,14 +174,75 @@ def render(repo_commits: dict[str, list[dict[str, Any]]], found: Sequence[dict[s
     for member, state in (deploy_state or {}).items():
         if not isinstance(state, dict) or not state:
             continue
-        brain = state.get("brain") or state.get("channels") or {}
-        host = state.get("host") or {}
-        summary = one_line(json.dumps(host if host else brain, default=str), 220)
-        lines.append(f"\n### Deployed state · {member}\n- {summary}")
+        lines.extend(deploy_lines(member, state, tz))
         unpromoted = state.get("unpromoted")
         if unpromoted:
             lines.append(f"- unpromoted local host commits: {one_line(json.dumps(unpromoted, default=str), 300)}")
     return "\n".join(lines) + "\n"
+
+
+# ------------------------------------------------------------------ deployed state
+
+DRIFT_HOURS = 24
+
+
+def deploy_lines(member: str, state: dict[str, Any], tz) -> list[str]:
+    """Explicit per-channel publish state with a loud drift flag.
+
+    `rc fleet deploy-state` reports the managed brain cache (`brain`: on-box main vs origin/main)
+    and every channel (`channels[]`: resolved vs origin/main, `state` current|behind_main|…) plus
+    the promotion history. A stuck sync or a forgotten promote used to hide inside a 200-char
+    JSON blob; now it is one flagged line per condition so dashboard and brain logic cannot
+    silently diverge (DentAI 2026-09-07: a fix sat unpublished for a day behind a
+    "manual reconcile required" cache)."""
+    brain = state.get("brain") if isinstance(state.get("brain"), dict) else {}
+    host = state.get("host") if isinstance(state.get("host"), dict) else {}
+    lines = [f"\n### Deployed state · {member}"]
+    if host:
+        lines.append(f"- host release `{host.get('release', '?')}` up {float(host.get('uptime_hours') or 0):.1f} h")
+    if not brain:
+        if not host:
+            lines.append(f"- {one_line(json.dumps(state, default=str), 200)}")
+        return lines
+    flags: list[str] = []
+    main_sha = str(brain.get("main_sha") or "")[:12]
+    origin_sha = str(brain.get("origin_sha") or "")[:12]
+    cache_state = str(brain.get("state") or "?")
+    lines.append(f"- managed cache main `{main_sha or '?'}` vs origin/main `{origin_sha or '?'}` · {cache_state}"
+                 + (f" · synced {stamp(brain['synced_at'], tz)}" if brain.get("synced_at") else ""))
+    if cache_state not in ("current", "behind") or brain.get("dirty") or (brain.get("ahead") or 0) > 0:
+        flags.append(f"managed cache `{cache_state}`"
+                     + (" with unpublished on-box commits" if (brain.get("ahead") or 0) > 0 else "")
+                     + (" and a dirty tree" if brain.get("dirty") else "")
+                     + " — `rc dev brain sync` will demand a manual reconcile; see brain-publish")
+    latest_promotion: dict[str, datetime] = {}
+    for promo in brain.get("promotions") or []:
+        if not isinstance(promo, dict):
+            continue
+        at = parse_ts(promo.get("finished_at") or promo.get("created_at"))
+        channel = str(promo.get("channel") or "")
+        if at and channel and (channel not in latest_promotion or at > latest_promotion[channel]):
+            latest_promotion[channel] = at
+    now = datetime.now(UTC)
+    for channel in brain.get("channels") or []:
+        if not isinstance(channel, dict):
+            continue
+        name = str(channel.get("channel") or "?")
+        resolved = str(channel.get("resolved_sha") or "")[:12]
+        ch_state = str(channel.get("state") or "?")
+        promoted = latest_promotion.get(name)
+        lines.append(f"- channel `{name}` @ `{resolved or '?'}` · {ch_state}"
+                     + (f" · last promoted {stamp(promoted, tz)}" if promoted else ""))
+        if ch_state == "current":
+            continue
+        age_h = (now - promoted).total_seconds() / 3600 if promoted else None
+        if ch_state != "behind_main" or age_h is None or age_h >= DRIFT_HOURS:
+            since = f"for {age_h:.0f} h" if age_h is not None else "with no promotion on record"
+            flags.append(f"channel `{name}` is `{ch_state}` {since} (origin/main `{origin_sha}`, "
+                         f"channel `{resolved}`) — publish or consciously park it")
+    for flag in flags:
+        lines.append(f"- ⚠ PUBLISH DRIFT: {flag}")
+    return lines
 
 
 # Every repo has a SKILL.md and a script.py; matching those links every commit to every error.
@@ -259,8 +320,7 @@ def render_brief(repo_commits: dict[str, list[dict[str, Any]]], found: Sequence[
 
     for member, state in (deploy_state or {}).items():
         if isinstance(state, dict) and state:
-            summary = one_line(json.dumps(state.get("host") or state.get("brain") or state, default=str), 200)
-            lines.append(f"\n### Deployed state · {member}\n- {summary}")
+            lines.extend(deploy_lines(member, state, tz))
     return "\n".join(lines) + "\n"
 
 
