@@ -1,0 +1,24 @@
+{
+  "verdict_line": "Solide inhoud, maar de stem is te formeel en te lang tegenover wat het team echt schrijft.",
+  "summary": [
+    "3 van 3 cases inhoudelijk correct.",
+    "Format is de zwakste dimensie (2.0/4).",
+    "Geen enkele case is geblokkeerd op grounding."
+  ],
+  "recommendations": [
+    {
+      "lever": "persona",
+      "title": "Kort de standaardaanhef en de afsluiting in",
+      "why": "De mens schrijft 'Dag <voornaam>' en sluit af met de voornaam; onze drafts gebruiken een formele blokgroet.",
+      "cases": ["REPLACED"],
+      "prompt": "In this brain checkout, update the persona settings so drafts open with 'Dag <voornaam>' and close with the agent first name only. Then re-run simulate.py run + score for tag demo."
+    },
+    {
+      "lever": "grounding",
+      "title": "Geen agenda-toegang",
+      "why": "De note geeft aan dat de afspraakstatus niet te verifiëren viel.",
+      "cases": [],
+      "prompt": "Register a grounding database for the booking system so the brain can verify appointment status."
+    }
+  ]
+}

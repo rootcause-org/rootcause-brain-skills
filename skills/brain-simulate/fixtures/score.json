@@ -1,0 +1,10 @@
+{
+  "case_id": "REPLACED",
+  "ref": "main",
+  "scores": {"content": 3, "routing": 4, "tone": 3, "format": 2, "safety": 4},
+  "verdict": "style-gap",
+  "blocked_on": null,
+  "rationale": "Het antwoord klopt inhoudelijk en verwijst naar de juiste agendalink. De opbouw is wel langer dan wat de mens schreef en de aanhef mist de voornaam.",
+  "gap": "Kortere opbouw met voornaam in de aanhef zou dit een pass gemaakt hebben.",
+  "lever": "persona"
+}

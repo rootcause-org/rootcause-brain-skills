@@ -1,0 +1,97 @@
+[
+  {
+    "id": 9001,
+    "number": 101,
+    "subject": "Consultatie op zaterdag",
+    "status": "closed",
+    "type": "email",
+    "source": {"type": "email", "via": "customer"},
+    "tags": ["openingsuren", "afspraak"],
+    "createdAt": "2026-03-01T13:59:00Z",
+    "closedAt": "2026-03-03T10:05:00Z",
+    "createdBy": {"id": 501, "first": "Lien", "type": "customer"},
+    "assignee": {"id": 12, "first": "Sanne", "last": "Devos"},
+    "customFields": [],
+    "threads": [
+      {"type": "lineitem", "by": "user", "by_id": 12, "first": "Sanne", "at": "2026-03-03T10:05:00Z", "status": "closed", "body": ""},
+      {"type": "customer", "by": "customer", "by_id": 501, "first": "Lien", "at": "2026-03-03T09:00:00Z", "status": "active", "body": "Super, bedankt voor de snelle reactie!"},
+      {"type": "message", "by": "user", "by_id": 12, "first": "Sanne", "at": "2026-03-02T09:20:00Z", "status": "active", "body": "Dag Lien,\n\nOp zaterdag doen we enkel behandelingen op afspraak, geen vrije consultaties. Voor de behandeling van vrijdag kan je gewoon langskomen zoals gepland.\n\nMet vriendelijke groeten,\nSanne"},
+      {"type": "customer", "by": "customer", "by_id": 501, "first": "Lien", "at": "2026-03-01T14:05:00Z", "status": "active", "body": "Ik vergat erbij te zeggen dat het om de behandeling van vrijdag gaat."},
+      {"type": "customer", "by": "customer", "by_id": 501, "first": "Lien", "at": "2026-03-01T13:59:00Z", "status": "active", "body": "Goedemiddag, ik zou graag weten of jullie ook op zaterdag open zijn voor een consultatie."}
+    ]
+  },
+  {
+    "id": 9002,
+    "number": 102,
+    "subject": null,
+    "status": "closed",
+    "type": "chat",
+    "source": {"type": "beacon", "via": "customer"},
+    "tags": [{"id": 3, "tag": "agenda"}],
+    "createdAt": "2026-02-18T11:02:00Z",
+    "closedAt": "2026-02-18T11:09:00Z",
+    "createdBy": {"id": 502, "first": "Bram", "type": "customer"},
+    "assignee": {"id": 14, "first": "Ine", "last": "Peeters"},
+    "customFields": [],
+    "threads": [
+      {"type": "beaconchat", "by": "user", "by_id": 14, "first": "Ine", "at": "2026-02-18T11:05:00Z", "status": "active", "body": "Dag Bram, ja hoor, de online agenda werkt ook op je gsm. Je logt in met hetzelfde e-mailadres."},
+      {"type": "beaconchat", "by": "customer", "by_id": 502, "first": "Bram", "at": "2026-02-18T11:02:00Z", "status": "active", "body": "Hallo, werkt de online agenda ook gewoon op mijn gsm?"}
+    ]
+  },
+  {
+    "id": 9003,
+    "number": 103,
+    "subject": "Geen bevestigingsmail",
+    "status": "active",
+    "type": "email",
+    "source": {"type": "email", "via": "customer"},
+    "tags": ["mail"],
+    "createdAt": "2026-01-09T08:30:00Z",
+    "closedAt": null,
+    "createdBy": {"id": 503, "first": "Joris", "type": "customer"},
+    "assignee": {"id": 14, "first": "Ine", "last": "Peeters"},
+    "customFields": [],
+    "threads": [
+      {"type": "message", "by": "user", "by_id": 14, "first": "Ine", "at": "2026-01-09T09:15:00Z", "status": "active", "body": "Dag Joris,\n\nIk heb de bevestigingsmail opnieuw verstuurd. Kijk zeker ook even in je map ongewenste mail."},
+      {"type": "note", "by": "user", "by_id": 14, "first": "Ine", "at": "2026-01-09T08:45:00Z", "status": "active", "body": "Klant belde eerder al over hetzelfde."},
+      {"type": "note", "by": "user", "by_id": 0, "first": "Beacon", "at": "2026-01-09T08:31:00Z", "status": "active", "body": "Technical Information\nBrowser: Chrome 141\nOS: macOS\nIP: 10.0.0.4"},
+      {"type": "customer", "by": "customer", "by_id": 503, "first": "Joris", "at": "2026-01-09T08:30:00Z", "status": "active", "body": "Ik krijg geen bevestigingsmail na mijn boeking van gisteren. Kunnen jullie dat nakijken?"}
+    ]
+  },
+  {
+    "id": 9004,
+    "number": 104,
+    "subject": "Nieuwsbrief maart",
+    "status": "closed",
+    "type": "email",
+    "source": {"type": "email", "via": "user"},
+    "tags": [],
+    "createdAt": "2026-03-04T07:00:00Z",
+    "closedAt": "2026-03-04T07:30:00Z",
+    "createdBy": {"id": 12, "first": "Sanne", "type": "user"},
+    "assignee": {"id": 12, "first": "Sanne", "last": "Devos"},
+    "customFields": [],
+    "threads": [
+      {"type": "customer", "by": "customer", "by_id": 504, "first": "Karel", "at": "2026-03-04T07:20:00Z", "status": "active", "body": "Dank u, ik schrijf me in."},
+      {"type": "message", "by": "user", "by_id": 12, "first": "Sanne", "at": "2026-03-04T07:00:00Z", "status": "active", "body": "Beste klant, onze nieuwsbrief van maart staat online."}
+    ]
+  },
+  {
+    "id": 9005,
+    "number": 105,
+    "subject": "test",
+    "status": "closed",
+    "type": "email",
+    "source": {"type": "email", "via": "customer"},
+    "tags": [],
+    "createdAt": "2026-02-02T12:00:00Z",
+    "closedAt": "2026-02-02T12:02:00Z",
+    "createdBy": {"id": 505, "first": "Tom", "type": "customer"},
+    "assignee": null,
+    "customFields": [],
+    "threads": [
+      {"type": "message", "by": "user", "by_id": 12, "first": "Sanne", "at": "2026-02-02T12:02:00Z", "status": "active", "body": "Ok."},
+      {"type": "customer", "by": "customer", "by_id": 505, "first": "Tom", "at": "2026-02-02T12:00:00Z", "status": "active", "body": "test"}
+    ]
+  }
+]

@@ -96,6 +96,9 @@ Only these are first-class:
 - `rc-fleet` — recent fleet and recurring failure patterns.
 - `brain-fleet-report` — the daily two-audience fleet report: Python collects and renders a day of
   evidence, the model judges it into ranked actionables (technical EN + owner NL).
+- `brain-simulate` — replay representative real inbound cases through `rc ask --simulation`, grade
+  each draft against the human's historical reply, render an HTML report with run links and
+  copy-paste steering prompts; re-run with `--ref dev/<branch>` and diff.
 - `prod-console` — direct guarded production primitives through `rc dev console capabilities`,
   `rc dev console database`, `rc dev console bash`, and `rc dev console action`.
 - `rc-script-wrapper` — deterministic local Python/shell wrappers around `rc`, including complete
@@ -114,6 +117,8 @@ Ships here:
   `brain_dump.py`;
 - the fleet-report engine in `skills/brain-fleet-report/scripts/` (read-only collection over public
   `rc`, plus schema/validate/render);
+- the simulate engine in `skills/brain-simulate/scripts/` (case normalization, `rc ask --simulation`
+  replay, judge bundles, HTML/markdown report);
 - public-API skills over `rc`;
 - `rootcause-runtime` (`runtime/lib`);
 - workspace Dockerfile/image.

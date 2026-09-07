@@ -62,6 +62,7 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 | `rc-health` | Stale mirrors plus dead-lettered runs. |
 | `rc-fleet` | Recent fleet digest plus recurring failure patterns. |
 | [`brain-fleet-report`](skills/brain-fleet-report/SKILL.md) | Daily two-audience fleet report for one project: collect a day of evidence, judge it into ranked actionables with copy-paste prompts, render the technical (EN) and owner (NL) halves. |
+| [`brain-simulate`](skills/brain-simulate/SKILL.md) | Replay ~10 representative real inbound cases through `rc ask --simulation`, grade each draft against the human's real reply (content, routing, tone, format, safety), render a self-contained HTML report with run links and copy-paste steering prompts; diff a `dev/<branch>` brain against `main`. |
 | [`rc-script-wrapper`](skills/rc-script-wrapper/SKILL.md) | Deterministic local Python/shell wrappers for `rc` console queries, exports, typed failures, and remote artifacts. |
 | `brain-dev-upgrade` | Update local kit and `rc` CLI. |
 | [`brain-git-sync`](skills/brain-git-sync/SKILL.md) | Safely inventory, merge, and push local plus cross-computer work to `origin/main`. |

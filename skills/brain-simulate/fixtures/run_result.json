@@ -1,0 +1,19 @@
+{
+  "case_id": "REPLACED",
+  "ref": "main",
+  "run_id": "11111111-2222-3333-4444-555555555555",
+  "run_url": "https://app.replypen.com/runs/11111111-2222-3333-4444-555555555555?t=abc123",
+  "status": "done",
+  "category": "ok",
+  "outcome": "answered",
+  "metadata_outcome": "replied",
+  "draft_markdown": "Dag Lien,\n\nOp **zaterdag** werken we enkel op afspraak. Je kan online een moment kiezen via https://voorbeeld.test/agenda.\n\nMet vriendelijke groeten",
+  "note_markdown": "Geen agenda-toegang: kon de vrijdagafspraak niet verifiëren.",
+  "turns": 5,
+  "bash_total": 5,
+  "duration_ms": 21324,
+  "attempts": 1,
+  "error": "",
+  "command": ["rc", "ask", "Goedemiddag, ik zou graag weten of jullie ook op zaterdag open zijn…", "--scenario", "email", "--simulation"],
+  "ran_at": "2026-03-06T09:00:00Z"
+}
