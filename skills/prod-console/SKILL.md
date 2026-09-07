@@ -44,7 +44,12 @@ investigations, and customer-style simulations.
    `/brain/knowledge` the brain's own — filters in
    [docs/knowledge-base.md](../../docs/knowledge-base.md).
 5. **Actions.** `list` / `show` / `preflight` are read-only; `run` is a real state-changing
-   execution on the project's own production. Run it only when the user asked for execution or the
+   execution on the project's own production. `preflight` runs the brain's Python
+   `actions/<id>/preflight.py` in the console workspace first and returns its
+   `{ok, summary, observed, resource_url}`; on Embassy projects a passing preflight is then followed
+   by the Ruby `would_execute` dry-run (a refusal short-circuits). So the old
+   `bash run 'python actions/<id>/preflight.py …'` workaround is no longer needed for the verdict —
+   only for debugging the script's own stdout/stderr. Run it only when the user asked for execution or the
    task plainly requires it and params are grounded; report the action-run id, status, and result.
    For history across runs (stored params, originating run links) use `rc fleet actions` —
    [`rc-fleet`](../rc-fleet/SKILL.md).

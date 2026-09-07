@@ -414,6 +414,9 @@ uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --preflight-only
 # Ruby body syntax, mirroring the Embassy executor's lambda wrapper
 { printf 'lambda do |params|\n'; cat actions/<id>/script.rb; printf '\nend\n'; } | ruby -c -
 
+# deployed brain, prod data: Python preflight, then the Embassy would_execute dry-run
+rc --tenant <slug> dev console action preflight <id> --params '<json>'
+
 # real signed path, after pushing/syncing a safe target
 rc dev console action run <id> --params '<json>'
 ```
