@@ -39,8 +39,9 @@ uv run "$SI/scripts/scan.py" --repo app=~/code/customer/app [--tables tables.txt
 rc dev console bash run 'mkdir -p /tmp/rootcause-out; find /mirrors/app -type f -not -path "*/.git/*" > /tmp/rootcause-out/listing.txt; wc -l < /tmp/rootcause-out/listing.txt'
 rc dev console file get /tmp/rootcause-out/listing.txt --out /tmp/listing-app.txt
 uv run "$SI/scripts/scan.py" --listing app=/tmp/listing-app.txt [--tables tables.txt]
-# the table list, when a grounding database is registered (rc dev console database list)
-rc -o json dev console database query <db> "select table_name from information_schema.tables where table_schema = database()" --all --format csv --out tables.txt
+# the table list, when a grounding database is registered (rc dev console database list); `database query`
+# refuses MySQL (ENGINE_UNSUPPORTED), so go through lib.db in the workspace and read the envelope with jq
+rc dev console bash run -o json --raw-output 'python -c "from lib import db; print(chr(10).join(r[\"table_name\"] for r in db.tables(db=\"<db>\")))"' | jq -r .stdout > tables.txt
 OUT="$PWD/.rootcause/source-intake/<date>"                       # last line of the scan summary
 
 uv run "$SI/scripts/questions.py" --days 60                      # or --from questions.txt (one per line)
@@ -159,5 +160,15 @@ benchmark tally is in the brain's notes with a date, so the next intake measures
 
 ## Iteration log
 
-- **2026-09-08** built (scan/questions/validate/render, fixture tests). First target: iBeauty (PHP,
-  CodeIgniter plus Symfony side by side, MySQL 5.6 with 172 tables). Not yet run against it.
+- **2026-09-08 first real run: iBeauty** (local clone, 4881 files, 172 tables, 85 questions, 20 min
+  judge time, 19 dev questions). Found on the way: the repo is CodeIgniter 2 only, the Symfony app is
+  a second repository that was not readable, so 20 of 85 questions are `missing` by design and the
+  first dev question is "which repo". Scanner fixes from this run: a manifest under `libraries/`,
+  `third_party/`, `lib/`, `plugins/` is a vendored package, not an app root; `system/` (CI core) and
+  dot directories are never candidates; table declarations include the CodeIgniter query builder
+  (`->get('t')`, `->from('t')`, `->join('t'`) and raw SQL `FROM t`, and the mapping reads the whole
+  model directory, not the 12 listed files (0 → 130 of 172 tables matched). `rc dev console database
+  query` refuses MySQL, `lib.db.tables()` in the workspace does not. A mirror view carries no `.git`,
+  so ages come from the local clone only. Run it after `brain-schema-intake` and keep the `db` group
+  to code-versus-column questions; the schema intake already asks the semantics.
+- **2026-09-08** built (scan/questions/validate/render, fixture tests).
