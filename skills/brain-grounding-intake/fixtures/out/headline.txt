@@ -1,0 +1,3 @@
+Listing mode for the code half: we read file names, never file contents, so every path below is a candidate and not a proof.
+The staging schema was read in full; row counts are indicative and no production value was touched.
+The two open questions that block the most answers are the mailer and the scheduler.

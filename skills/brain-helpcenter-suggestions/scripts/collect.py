@@ -56,6 +56,7 @@ MAX_DAYS = 120
 CONSOLE_TIMEOUT = 300
 TRACE_TIMEOUT = 120
 OUT = "/tmp/rootcause-out"
+MIN_RUNS_OVER_HELPSCOUT = 20  # fewer runs than this and a Help Scout box wins
 CORPUS_KINDS = ("email", "chat", "analysis")
 # `analysis` runs are Embassy support tickets: an admin filing one is an admin who did not find
 # the article. Named in the coverage line so the reader knows which feed that is.
@@ -90,6 +91,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-tenant", action="append", default=[], metavar="SLUG",
                         help="tenant whose conversations are internal traffic (repeatable)")
     parser.add_argument("--out", help="output directory (default .rootcause/helpcenter/<end date>)")
+    parser.add_argument("--source", choices=("auto", "runs", "helpscout"), default="auto",
+                        help="corpus source; auto = runs unless fewer than %d and a Help Scout "
+                             "mailbox exists" % MIN_RUNS_OVER_HELPSCOUT)
     parser.add_argument("--kind", action="append", choices=list(CORPUS_KINDS), metavar="KIND",
                         help=f"run kind to read ({'|'.join(CORPUS_KINDS)}, repeatable, default all)")
     args = parser.parse_args()
@@ -537,7 +541,13 @@ def pick_source(rc: Rc, brain_root: Path, raw_dir: Path, args, start, end):
                    and not r.get("simulation")]
     others = other_runs_feed([r for r in rows if str(r.get("kind") or "") not in kinds])
     boxes = mailboxes(rc)
-    if corpus_rows:
+    providers = sorted({str(b.get("provider") or "") for b in boxes})
+    source = getattr(args, "source", "auto")
+    if source == "auto" and "helpscout" in providers and len(corpus_rows) < MIN_RUNS_OVER_HELPSCOUT:
+        print(f"only {len(corpus_rows)} runs in the window: reading Help Scout instead "
+              "(--source runs to force the runs)", file=sys.stderr)
+        source = "helpscout"
+    if corpus_rows and source != "helpscout":
         # our own addresses: an `is_inbound` turn from one of these domains is still an agent
         domains = frozenset(str(b.get("email_address") or "").lower().rpartition("@")[2]
                             for b in boxes) - {""}
@@ -547,7 +557,6 @@ def pick_source(rc: Rc, brain_root: Path, raw_dir: Path, args, start, end):
                                           args.tenant, args.skip_tenant, domains, simulations,
                                           kinds)
         return "runs", convs, feeds + [others], tenants
-    providers = sorted({str(b.get("provider") or "") for b in boxes})
     if "helpscout" in providers:
         convs, feeds = from_helpscout(brain_root, raw_dir, start, end, args.skip_tenant)
         return "helpscout", convs, feeds + [others], Counter()

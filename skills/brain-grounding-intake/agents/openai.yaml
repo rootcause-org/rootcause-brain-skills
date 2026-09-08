@@ -1,0 +1,4 @@
+interface:
+  display_name: "Brain Dev: Grounding intake"
+  short_description: "Turn readable code and data into a proposed brain map, a question benchmark, and a dev questionnaire"
+  default_prompt: "Use $brain-grounding-intake to scan whatever is readable (source mirrors, the grounding database), hold the last 60 days of real customer questions against it, write the proposed skills/codebase/ and skills/databases/ maps plus the benchmark and the dev questionnaire, and render the report for the customer's developer."

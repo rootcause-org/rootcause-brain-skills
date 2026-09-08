@@ -1,4 +1,0 @@
-interface:
-  display_name: "Brain Dev: Source intake"
-  short_description: "Turn a readable customer codebase into a proposed brain map, a question benchmark, and a dev questionnaire"
-  default_prompt: "Use $brain-source-intake to scan the customer codebase, hold the last 60 days of real customer questions against it, write the proposed skills/codebase/ map plus the benchmark and the dev questionnaire, and render the report for the customer's developer."

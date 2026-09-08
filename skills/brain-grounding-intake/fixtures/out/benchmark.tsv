@@ -1,0 +1,9 @@
+id	cluster	status	where	note
+Q1	booking-visibility	grounded	/mirrors/app/app/app/Models/Booking.php:isOnlineBookable	one model decides whether a slot is offered online
+Q2	mail-delivery	ambiguous	/mirrors/app/app/app/Mail/ReminderMail.php;/mirrors/app/legacy/application/libraries/Mailer.php	the legacy library and the Laravel mailable both still exist, we cannot tell which one sends
+Q3	invoices	missing		no invoice model, no invoice table, only a mail class name
+Q4	pricing	human		a second salon is a contract change, a person quotes it
+Q5	booking-state	grounded	/mirrors/app/legacy/application/models/Booking_model.php;db:agenda.status	the cancelled state is a value on the appointment row, not a delete
+Q6	reminders	ambiguous	/mirrors/app/app/app/Jobs/SendReminder.php;/mirrors/app/legacy/application/controllers/cron/Reminders.php	two schedulers, we cannot tell which one runs in production
+Q7	tenant-model	knowledge	brain:skills/tenant-model.md	the brain already explains that a salon sees only its own agenda
+Q8	exports	missing		nothing that writes a spreadsheet in either app

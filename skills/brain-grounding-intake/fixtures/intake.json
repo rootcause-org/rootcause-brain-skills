@@ -1,0 +1,1231 @@
+{
+ "benchmark": [
+  {
+   "cluster": "booking-visibility",
+   "id": "Q1",
+   "note": "one model decides whether a slot is offered online",
+   "status": "grounded",
+   "where": [
+    "/mirrors/app/app/app/Models/Booking.php:isOnlineBookable"
+   ]
+  },
+  {
+   "cluster": "mail-delivery",
+   "id": "Q2",
+   "note": "the legacy library and the Laravel mailable both still exist, we cannot tell which one sends",
+   "status": "ambiguous",
+   "where": [
+    "/mirrors/app/app/app/Mail/ReminderMail.php",
+    "/mirrors/app/legacy/application/libraries/Mailer.php"
+   ]
+  },
+  {
+   "cluster": "invoices",
+   "id": "Q3",
+   "note": "no invoice model, no invoice table, only a mail class name",
+   "status": "missing",
+   "where": []
+  },
+  {
+   "cluster": "pricing",
+   "id": "Q4",
+   "note": "a second salon is a contract change, a person quotes it",
+   "status": "human",
+   "where": []
+  },
+  {
+   "cluster": "booking-state",
+   "id": "Q5",
+   "note": "the cancelled state is a value on the appointment row, not a delete",
+   "status": "grounded",
+   "where": [
+    "/mirrors/app/legacy/application/models/Booking_model.php",
+    "db:agenda.status"
+   ]
+  },
+  {
+   "cluster": "reminders",
+   "id": "Q6",
+   "note": "two schedulers, we cannot tell which one runs in production",
+   "status": "ambiguous",
+   "where": [
+    "/mirrors/app/app/app/Jobs/SendReminder.php",
+    "/mirrors/app/legacy/application/controllers/cron/Reminders.php"
+   ]
+  },
+  {
+   "cluster": "tenant-model",
+   "id": "Q7",
+   "note": "the brain already explains that a salon sees only its own agenda",
+   "status": "knowledge",
+   "where": [
+    "brain:skills/tenant-model.md"
+   ]
+  },
+  {
+   "cluster": "exports",
+   "id": "Q8",
+   "note": "nothing that writes a spreadsheet in either app",
+   "status": "missing",
+   "where": []
+  }
+ ],
+ "collected_at": "2026-09-08T19:06:40+00:00",
+ "context": "# what a run of salonx receives\n\n## databases\n\n- `staging`: SalonX staging, a backup restore of production, a few days old. MySQL 5.6, 6 tables.\n\n## source mirrors\n\n- `/mirrors/app`: the single checkout that holds both apps, legacy/ and app/.\n\n## brain files (tracked markdown, line counts)\n\n- skills: 2 files, 61 lines\n  - skills/tenant-model.md (24)\n  - skills/mail-delivery-check.md (37)\n",
+ "db": "staging",
+ "devquestions": [
+  {
+   "evidence": [
+    "booking-visibility",
+    "/mirrors/app/legacy/index.php"
+   ],
+   "group": "architecture",
+   "id": "D1",
+   "impact": "Without this a run reads the legacy code for every question and explains behaviour that no longer runs.",
+   "proposal": "(?) /mirrors/app/legacy/index.php serves everything and forwards only the newer paths to the Laravel app",
+   "question": "Which requests still hit the CodeIgniter app and which the Laravel app? Is there a routing rule, or is it per URL prefix?"
+  },
+  {
+   "evidence": [
+    "mail-delivery"
+   ],
+   "group": "where",
+   "id": "D2",
+   "impact": "Every mail question is answered from a sender that may not be the one that ran.",
+   "proposal": "(?) the Laravel ReminderMail replaced the CodeIgniter Mailer library, and the library is dead code",
+   "question": "Which mailer actually sends the appointment reminder today?"
+  },
+  {
+   "evidence": [
+    "reminders",
+    "db:reminder_jobs.already_sent"
+   ],
+   "group": "queues",
+   "id": "D3",
+   "impact": "A run cannot say whether a reminder was handed over, so the salon gets a guess instead of a time.",
+   "proposal": "",
+   "question": "Which scheduler runs in production: the Laravel job or the CodeIgniter cron controller?"
+  },
+  {
+   "evidence": [
+    "db:users",
+    "db:agenda.customer_id"
+   ],
+   "group": "data",
+   "id": "D4",
+   "impact": "Every per salon lookup filters on the wrong key until this is settled.",
+   "proposal": "(?) users = salon logins, and agenda.customer_id points at a table we cannot see",
+   "question": "Is `users` the salon (tenant) table, and where does the end customer live?"
+  },
+  {
+   "evidence": [
+    "reminders",
+    "db:settings.reminder_time"
+   ],
+   "group": "settings",
+   "id": "D5",
+   "impact": "Answers about send time quote a column that may hold something else entirely.",
+   "proposal": "(?) one row per salon, reminder_time is the send hour",
+   "question": "Is `settings.reminder_time` the hour the reminder leaves for that salon, and does `settings.reminder_enabled` switch it off?"
+  },
+  {
+   "evidence": [
+    "invoices"
+   ],
+   "group": "data",
+   "id": "D6",
+   "impact": "A billing question is answered with a guess instead of a pointer to the billing system.",
+   "proposal": "",
+   "question": "Is there any invoice table, or does billing live outside this codebase?"
+  },
+  {
+   "evidence": [
+    "exports"
+   ],
+   "group": "conventions",
+   "id": "D7",
+   "impact": "Support promises an export button that may not exist.",
+   "proposal": "",
+   "question": "Is there an export feature at all, or do customers ask support for a spreadsheet?"
+  },
+  {
+   "evidence": [
+    "db:agenda",
+    "brain:skills/tenant-model.md"
+   ],
+   "group": "ownership",
+   "id": "D8",
+   "impact": "Without this we cannot tell whether a stale row is a bug or the other app catching up.",
+   "proposal": "",
+   "question": "Which tables does the Laravel app write and which are still written by the legacy app only?"
+  }
+ ],
+ "engine": "mysql",
+ "headline": [
+  "Listing mode for the code half: we read file names, never file contents, so every path below is a candidate and not a proof.",
+  "The staging schema was read in full; row counts are indicative and no production value was touched.",
+  "The two open questions that block the most answers are the mailer and the scheduler."
+ ],
+ "project": "salonx",
+ "proposal": {
+  "codebase/INDEX.md": "---\ndescription: Routes a customer symptom to the part of the SalonX codebase that grounds the answer. Two apps live side by side, the CodeIgniter app under legacy/ and the Laravel app under app/.\n---\n\n# SalonX codebase map\n\nThe customer sees one product. The code is two apps behind one entry point.\n\n- Online booking, free slots, cancellations: read codebase/booking.md.\n- Reminders, confirmations, any mail the patient receives: read codebase/booking.md first, then\n  ask about the sender, we could not tell which of the two is live.\n- Anything a salon sees as data (appointments, tickets, settings): read databases/staging.md.\n- Invoices and exports: nothing in this codebase grounds them yet, ask the dev first.\n\nBoth apps talk to the same database. Table names are plural, model class names are singular:\n`agenda.status` is read by `/mirrors/app/app/app/Models/Booking.php` and by\n`/mirrors/app/legacy/application/models/Booking_model.php`.\n\n(?) The legacy entry point `/mirrors/app/legacy/index.php` still serves most URLs.\n",
+  "codebase/booking.md": "---\ndescription: Where online booking, slot visibility and cancellation state are decided in the SalonX code, for questions about a customer who cannot book or sees the wrong agenda.\n---\n\n# Booking and slot visibility\n\nTwo models read the same `agenda` table.\n\n- `/mirrors/app/app/app/Models/Booking.php` is the Laravel model, used by the newer screens.\n- `/mirrors/app/legacy/application/models/Booking_model.php` is the CodeIgniter model.\n- The controller a patient hits is `/mirrors/app/legacy/application/controllers/Booking.php`.\n\nSlot visibility is decided on the model, not in a setting, so a salon cannot change it from the\nproduct. Cancellation is a state on the booking row, not a delete.\n\n(?) The Laravel routes in `/mirrors/app/app/routes/web.php` cover only the newer screens.\n",
+  "databases/staging.md": "---\ndescription: What lives where in the salonx staging database: the tenant key, the core entities, the settings rows and the reminder queue, for grounding a support answer in data.\n---\n\n# The salonx database\n\nTenant key: `user_id` on every table but `users`. `users` is one row per salon (?).\nNever answer across salons: always filter on `user_id`.\n\n## Core entities\n\n- `agenda` is the appointment. `agenda.status` is open, done or cancelled, and\n  `agenda.deleted` is a soft delete flag, so a cancelled appointment still has a row.\n- `remarks` is the point of sale ticket header, not a note (?). `remarks.total` is the amount,\n  `remarks.state` is paid or open, and `remarks.agenda_id` links it back to the appointment.\n- `users` holds the salon account. `users.active` marks a closed account.\n\n## Settings\n\n`settings` is one row per salon: the unique index on `user_id` proves it. `settings.reminder_time`\nis the hour the reminder leaves (?) and `settings.reminder_enabled` is the on switch.\n\n## Queue and logs\n\n`reminder_jobs` is one row per planned reminder. `already_sent` flips when it left and `sent_at`\ncarries the moment (?). `logging` is a write only trail, 900k rows, so never scan it without a\n`user_id` filter and a date bound.\n\n## Reading rules\n\n- Timestamps: `agenda` uses `created_at`, `remarks` uses `time_added`, a legacy hint (?).\n- Anything the customer sees as removed is a flag, not a missing row.\n"
+ },
+ "questions": [
+  {
+   "channel": "email",
+   "date": "2026-08-02",
+   "id": "Q1",
+   "question": "Waarom ziet mijn klant geen vrije slots online terwijl de agenda leeg is?",
+   "url": "https://app.replypen.com/runs/1"
+  },
+  {
+   "channel": "email",
+   "date": "2026-08-04",
+   "id": "Q2",
+   "question": "De herinneringsmail is niet aangekomen bij twee patienten van gisteren.",
+   "url": "https://app.replypen.com/runs/2"
+  },
+  {
+   "channel": "chat",
+   "date": "2026-08-07",
+   "id": "Q3",
+   "question": "Waar vind ik de factuur van augustus?",
+   "url": "https://app.replypen.com/runs/3"
+  },
+  {
+   "channel": "email",
+   "date": "2026-08-09",
+   "id": "Q4",
+   "question": "Wat kost het om een tweede vestiging toe te voegen?",
+   "url": "https://app.replypen.com/runs/4"
+  },
+  {
+   "channel": "chat",
+   "date": "2026-08-12",
+   "id": "Q5",
+   "question": "Een afspraak staat op geannuleerd maar de klant zegt dat hij niet geannuleerd heeft.",
+   "url": "https://app.replypen.com/runs/5"
+  },
+  {
+   "channel": "email",
+   "date": "2026-08-18",
+   "id": "Q6",
+   "question": "De herinnering vertrekt om 7 uur, kan dat later?",
+   "url": "https://app.replypen.com/runs/6"
+  },
+  {
+   "channel": "chat",
+   "date": "2026-08-21",
+   "id": "Q7",
+   "question": "Mijn collega ziet de agenda van de andere vestiging niet.",
+   "url": "https://app.replypen.com/runs/7"
+  },
+  {
+   "channel": "email",
+   "date": "2026-08-27",
+   "id": "Q8",
+   "question": "Kan ik alle afspraken van dit jaar exporteren naar Excel?",
+   "url": "https://app.replypen.com/runs/8"
+  }
+ ],
+ "scan": {
+  "project": "salonx",
+  "repos": [
+   {
+    "apps": [
+     {
+      "areas": {
+       "config": [
+        {
+         "lines": 0,
+         "path": "/mirrors/app/app/.env.example"
+        },
+        {
+         "lines": 0,
+         "path": "/mirrors/app/app/config/mail.php"
+        },
+        {
+         "lines": 0,
+         "path": "/mirrors/app/app/config/queue.php"
+        }
+       ],
+       "entry": [
+        {
+         "lines": 0,
+         "path": "/mirrors/app/app/public/index.php"
+        },
+        {
+         "lines": 0,
+         "path": "/mirrors/app/app/artisan"
+        }
+       ],
+       "frontend": [
+        {
+         "lines": 1,
+         "path": "/mirrors/app/app/resources/views/"
+        }
+       ],
+       "jobs": [
+        {
+         "lines": 0,
+         "path": "/mirrors/app/app/app/Console/Kernel.php"
+        },
+        {
+         "lines": 0,
+         "path": "/mirrors/app/app/app/Jobs/SendReminder.php"
+        },
+        {
+         "lines": 0,
+         "path": "/mirrors/app/app/config/queue.php"
+        }
+       ],
+       "mail": [
+        {
+         "lines": 0,
+         "path": "/mirrors/app/app/app/Mail/InvoiceMail.php"
+        },
+        {
+         "lines": 0,
+         "path": "/mirrors/app/app/app/Mail/ReminderMail.php"
+        },
+        {
+         "lines": 0,
+         "path": "/mirrors/app/app/config/mail.php"
+        }
+       ],
+       "migrations": [
+        {
+         "lines": 2,
+         "path": "/mirrors/app/app/database/migrations/"
+        }
+       ],
+       "models": [
+        {
+         "lines": 0,
+         "path": "/mirrors/app/app/app/Models/Booking.php"
+        },
+        {
+         "lines": 0,
+         "path": "/mirrors/app/app/app/Models/Treatment.php"
+        }
+       ],
+       "routes": [
+        {
+         "lines": 0,
+         "path": "/mirrors/app/app/routes/api.php"
+        },
+        {
+         "lines": 0,
+         "path": "/mirrors/app/app/routes/web.php"
+        }
+       ],
+       "tests": [
+        {
+         "lines": 1,
+         "path": "/mirrors/app/app/tests/"
+        }
+       ]
+      },
+      "deps": [],
+      "ext_tally": {
+       ".": {
+        "(none)": 1,
+        "example": 1,
+        "json": 1
+       },
+       "app": {
+        "php": 6
+       },
+       "config": {
+        "php": 2
+       },
+       "database": {
+        "php": 2
+       },
+       "public": {
+        "php": 1
+       },
+       "resources": {
+        "php": 1
+       },
+       "routes": {
+        "php": 2
+       },
+       "tests": {
+        "php": 1
+       }
+      },
+      "frameworks": [
+       {
+        "marker": "artisan",
+        "name": "laravel"
+       },
+       {
+        "marker": "composer.json",
+        "name": "php"
+       }
+      ],
+      "integrations": [],
+      "markers": [
+       "artisan",
+       "composer.json"
+      ],
+      "root": "/mirrors/app/app"
+     },
+     {
+      "areas": {
+       "config": [
+        {
+         "lines": 0,
+         "path": "/mirrors/app/legacy/application/config/config.php"
+        },
+        {
+         "lines": 0,
+         "path": "/mirrors/app/legacy/application/config/routes.php"
+        },
+        {
+         "lines": 0,
+         "path": "/mirrors/app/legacy/application/config/database.php"
+        }
+       ],
+       "entry": [
+        {
+         "lines": 0,
+         "path": "/mirrors/app/legacy/index.php"
+        }
+       ],
+       "jobs": [
+        {
+         "lines": 0,
+         "path": "/mirrors/app/legacy/application/controllers/cron/Reminders.php"
+        }
+       ],
+       "mail": [
+        {
+         "lines": 0,
+         "path": "/mirrors/app/legacy/application/libraries/Mailer.php"
+        }
+       ],
+       "migrations": [
+        {
+         "lines": 1,
+         "path": "/mirrors/app/legacy/application/migrations/"
+        }
+       ],
+       "models": [
+        {
+         "lines": 0,
+         "path": "/mirrors/app/legacy/application/models/User_model.php"
+        },
+        {
+         "lines": 0,
+         "path": "/mirrors/app/legacy/application/models/Salon_model.php"
+        },
+        {
+         "lines": 0,
+         "path": "/mirrors/app/legacy/application/models/Booking_model.php"
+        }
+       ],
+       "routes": [
+        {
+         "lines": 0,
+         "path": "/mirrors/app/legacy/application/config/routes.php"
+        }
+       ]
+      },
+      "deps": [],
+      "ext_tally": {
+       ".": {
+        "php": 1
+       },
+       "application": {
+        "php": 9,
+        "sql": 1
+       },
+       "system": {
+        "php": 1
+       }
+      },
+      "frameworks": [
+       {
+        "marker": "application/config/config.php",
+        "name": "codeigniter"
+       },
+       {
+        "marker": "application/config/config.php",
+        "name": "php"
+       }
+      ],
+      "integrations": [],
+      "markers": [
+       "application/config/config.php"
+      ],
+      "root": "/mirrors/app/legacy"
+     }
+    ],
+    "files": 30,
+    "mode": "listing",
+    "name": "app",
+    "root": "/mirrors/app",
+    "truncated": false
+   }
+  ],
+  "scanned_at": "2026-09-08",
+  "tables": [
+   {
+    "guess": "/mirrors/app/app/app/Models/Booking.php",
+    "mentions": 0,
+    "model_files": [],
+    "table": "bookings"
+   },
+   {
+    "guess": "/mirrors/app/app/app/Models/Treatment.php",
+    "mentions": 0,
+    "model_files": [],
+    "table": "treatments"
+   },
+   {
+    "guess": "/mirrors/app/legacy/application/models/User_model.php",
+    "mentions": 0,
+    "model_files": [],
+    "table": "users"
+   },
+   {
+    "guess": "",
+    "mentions": 0,
+    "model_files": [],
+    "table": "invoices"
+   }
+  ]
+ },
+ "schema": {
+  "budget": {
+   "queries": 41,
+   "seconds": 18.4,
+   "skipped": [
+    {
+     "column": "message",
+     "reason": "OperationalError: query timed out",
+     "table": "logging"
+    }
+   ]
+  },
+  "collected_at": "2026-09-08T06:12:00+00:00",
+  "columns": [
+   {
+    "column": "id",
+    "comment": "",
+    "default": null,
+    "extra": "auto_increment",
+    "key": "PRI",
+    "nullable": "NO",
+    "position": 1,
+    "schema": "",
+    "table": "users",
+    "type": "int(11)"
+   },
+   {
+    "column": "email",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 2,
+    "schema": "",
+    "table": "users",
+    "type": "varchar(255)"
+   },
+   {
+    "column": "active",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 3,
+    "schema": "",
+    "table": "users",
+    "type": "tinyint(1)"
+   },
+   {
+    "column": "created_at",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 4,
+    "schema": "",
+    "table": "users",
+    "type": "datetime"
+   },
+   {
+    "column": "id",
+    "comment": "",
+    "default": null,
+    "extra": "auto_increment",
+    "key": "PRI",
+    "nullable": "NO",
+    "position": 1,
+    "schema": "",
+    "table": "settings",
+    "type": "int(11)"
+   },
+   {
+    "column": "user_id",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "UNI",
+    "nullable": "YES",
+    "position": 2,
+    "schema": "",
+    "table": "settings",
+    "type": "int(11)"
+   },
+   {
+    "column": "reminder_time",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 3,
+    "schema": "",
+    "table": "settings",
+    "type": "time"
+   },
+   {
+    "column": "reminder_enabled",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 4,
+    "schema": "",
+    "table": "settings",
+    "type": "tinyint(1)"
+   },
+   {
+    "column": "created_at",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 5,
+    "schema": "",
+    "table": "settings",
+    "type": "datetime"
+   },
+   {
+    "column": "id",
+    "comment": "",
+    "default": null,
+    "extra": "auto_increment",
+    "key": "PRI",
+    "nullable": "NO",
+    "position": 1,
+    "schema": "",
+    "table": "agenda",
+    "type": "int(11)"
+   },
+   {
+    "column": "user_id",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "MUL",
+    "nullable": "YES",
+    "position": 2,
+    "schema": "",
+    "table": "agenda",
+    "type": "int(11)"
+   },
+   {
+    "column": "customer_id",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "MUL",
+    "nullable": "YES",
+    "position": 3,
+    "schema": "",
+    "table": "agenda",
+    "type": "int(11)"
+   },
+   {
+    "column": "start_time",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 4,
+    "schema": "",
+    "table": "agenda",
+    "type": "datetime"
+   },
+   {
+    "column": "status",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 5,
+    "schema": "",
+    "table": "agenda",
+    "type": "varchar(16)"
+   },
+   {
+    "column": "deleted",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 6,
+    "schema": "",
+    "table": "agenda",
+    "type": "tinyint(1)"
+   },
+   {
+    "column": "created_at",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 7,
+    "schema": "",
+    "table": "agenda",
+    "type": "datetime"
+   },
+   {
+    "column": "id",
+    "comment": "",
+    "default": null,
+    "extra": "auto_increment",
+    "key": "PRI",
+    "nullable": "NO",
+    "position": 1,
+    "schema": "",
+    "table": "remarks",
+    "type": "int(11)"
+   },
+   {
+    "column": "user_id",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "MUL",
+    "nullable": "YES",
+    "position": 2,
+    "schema": "",
+    "table": "remarks",
+    "type": "int(11)"
+   },
+   {
+    "column": "agenda_id",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "MUL",
+    "nullable": "YES",
+    "position": 3,
+    "schema": "",
+    "table": "remarks",
+    "type": "int(11)"
+   },
+   {
+    "column": "total",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 4,
+    "schema": "",
+    "table": "remarks",
+    "type": "decimal(10,2)"
+   },
+   {
+    "column": "state",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 5,
+    "schema": "",
+    "table": "remarks",
+    "type": "varchar(16)"
+   },
+   {
+    "column": "time_added",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 6,
+    "schema": "",
+    "table": "remarks",
+    "type": "int(11)"
+   },
+   {
+    "column": "id",
+    "comment": "",
+    "default": null,
+    "extra": "auto_increment",
+    "key": "PRI",
+    "nullable": "NO",
+    "position": 1,
+    "schema": "",
+    "table": "reminder_jobs",
+    "type": "int(11)"
+   },
+   {
+    "column": "user_id",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "MUL",
+    "nullable": "YES",
+    "position": 2,
+    "schema": "",
+    "table": "reminder_jobs",
+    "type": "int(11)"
+   },
+   {
+    "column": "agenda_id",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 3,
+    "schema": "",
+    "table": "reminder_jobs",
+    "type": "int(11)"
+   },
+   {
+    "column": "already_sent",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 4,
+    "schema": "",
+    "table": "reminder_jobs",
+    "type": "tinyint(1)"
+   },
+   {
+    "column": "sent_at",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 5,
+    "schema": "",
+    "table": "reminder_jobs",
+    "type": "datetime"
+   },
+   {
+    "column": "created_at",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 6,
+    "schema": "",
+    "table": "reminder_jobs",
+    "type": "datetime"
+   },
+   {
+    "column": "id",
+    "comment": "",
+    "default": null,
+    "extra": "auto_increment",
+    "key": "PRI",
+    "nullable": "NO",
+    "position": 1,
+    "schema": "",
+    "table": "logging",
+    "type": "int(11)"
+   },
+   {
+    "column": "user_id",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "MUL",
+    "nullable": "YES",
+    "position": 2,
+    "schema": "",
+    "table": "logging",
+    "type": "int(11)"
+   },
+   {
+    "column": "message",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 3,
+    "schema": "",
+    "table": "logging",
+    "type": "text"
+   },
+   {
+    "column": "created_at",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 4,
+    "schema": "",
+    "table": "logging",
+    "type": "datetime"
+   },
+   {
+    "column": "id",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 1,
+    "schema": "",
+    "table": "v_agenda_today",
+    "type": "int(11)"
+   },
+   {
+    "column": "user_id",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 2,
+    "schema": "",
+    "table": "v_agenda_today",
+    "type": "int(11)"
+   },
+   {
+    "column": "start_time",
+    "comment": "",
+    "default": null,
+    "extra": "",
+    "key": "",
+    "nullable": "YES",
+    "position": 3,
+    "schema": "",
+    "table": "v_agenda_today",
+    "type": "datetime"
+   }
+  ],
+  "counts": [
+   {
+    "rows": 520,
+    "table": "settings",
+    "tenants": 520
+   },
+   {
+    "rows": 11840,
+    "table": "reminder_jobs",
+    "tenants": 486
+   },
+   {
+    "rows": 91755,
+    "table": "remarks",
+    "tenants": 502
+   }
+  ],
+  "database": "salonx_staging",
+  "db": "staging",
+  "engine": "mysql",
+  "indexes": [
+   {
+    "column": "user_id",
+    "index": "uniq_settings_user",
+    "non_unique": 0,
+    "seq": 1,
+    "table": "settings"
+   },
+   {
+    "column": "user_id",
+    "index": "idx_agenda_user_start",
+    "non_unique": 1,
+    "seq": 1,
+    "table": "agenda"
+   },
+   {
+    "column": "start_time",
+    "index": "idx_agenda_user_start",
+    "non_unique": 1,
+    "seq": 2,
+    "table": "agenda"
+   },
+   {
+    "column": "user_id",
+    "index": "idx_remarks_user",
+    "non_unique": 1,
+    "seq": 1,
+    "table": "remarks"
+   },
+   {
+    "column": "id",
+    "index": "PRIMARY",
+    "non_unique": 0,
+    "seq": 1,
+    "table": "users"
+   },
+   {
+    "column": "id",
+    "index": "PRIMARY",
+    "non_unique": 0,
+    "seq": 1,
+    "table": "settings"
+   },
+   {
+    "column": "id",
+    "index": "PRIMARY",
+    "non_unique": 0,
+    "seq": 1,
+    "table": "agenda"
+   },
+   {
+    "column": "id",
+    "index": "PRIMARY",
+    "non_unique": 0,
+    "seq": 1,
+    "table": "remarks"
+   },
+   {
+    "column": "id",
+    "index": "PRIMARY",
+    "non_unique": 0,
+    "seq": 1,
+    "table": "reminder_jobs"
+   },
+   {
+    "column": "id",
+    "index": "PRIMARY",
+    "non_unique": 0,
+    "seq": 1,
+    "table": "logging"
+   }
+  ],
+  "keys": [
+   {
+    "column": "user_id",
+    "constraint": "fk_agenda_user",
+    "position": 1,
+    "referenced_column": "id",
+    "referenced_table": "users",
+    "table": "agenda",
+    "type": "FOREIGN KEY"
+   },
+   {
+    "column": "agenda_id",
+    "constraint": "fk_remarks_agenda",
+    "position": 1,
+    "referenced_column": "id",
+    "referenced_table": "agenda",
+    "table": "remarks",
+    "type": "FOREIGN KEY"
+   },
+   {
+    "column": "id",
+    "constraint": "PRIMARY",
+    "position": 1,
+    "referenced_column": "",
+    "referenced_table": "",
+    "table": "settings",
+    "type": "PRIMARY KEY"
+   }
+  ],
+  "profiles": [
+   {
+    "column": "status",
+    "table": "agenda",
+    "values": [
+     {
+      "c": 128800,
+      "v": "open"
+     },
+     {
+      "c": 46000,
+      "v": "done"
+     },
+     {
+      "c": 9200,
+      "v": "cancelled"
+     }
+    ]
+   },
+   {
+    "column": "deleted",
+    "table": "agenda",
+    "values": [
+     {
+      "c": 180320,
+      "v": "0"
+     },
+     {
+      "c": 3680,
+      "v": "1"
+     }
+    ]
+   },
+   {
+    "column": "state",
+    "table": "remarks",
+    "values": [
+     {
+      "c": 82800,
+      "v": "paid"
+     },
+     {
+      "c": 9200,
+      "v": "open"
+     }
+    ]
+   },
+   {
+    "column": "reminder_enabled",
+    "table": "settings",
+    "values": [
+     {
+      "c": 470,
+      "v": "1"
+     },
+     {
+      "c": 50,
+      "v": "0"
+     }
+    ]
+   }
+  ],
+  "project": "salonx",
+  "tables": [
+   {
+    "comment": "salon accounts, one row per salon",
+    "create_time": "2016-03-04 10:12:00",
+    "data_length": 262144,
+    "engine": "InnoDB",
+    "index_length": 65536,
+    "rows": 520,
+    "schema": "",
+    "table": "users",
+    "type": "BASE TABLE",
+    "update_time": "2026-09-07 22:41:00"
+   },
+   {
+    "comment": "",
+    "create_time": "2016-03-04 10:12:00",
+    "data_length": 131072,
+    "engine": "InnoDB",
+    "index_length": 65536,
+    "rows": 520,
+    "schema": "",
+    "table": "settings",
+    "type": "BASE TABLE",
+    "update_time": "2026-09-07 22:41:00"
+   },
+   {
+    "comment": "",
+    "create_time": "2016-03-04 10:12:00",
+    "data_length": 41943040,
+    "engine": "InnoDB",
+    "index_length": 12582912,
+    "rows": 184000,
+    "schema": "",
+    "table": "agenda",
+    "type": "BASE TABLE",
+    "update_time": "2026-09-07 22:41:00"
+   },
+   {
+    "comment": "POS ticket header, not a free text note",
+    "create_time": "2016-03-04 10:12:00",
+    "data_length": 20971520,
+    "engine": "InnoDB",
+    "index_length": 6291456,
+    "rows": 92000,
+    "schema": "",
+    "table": "remarks",
+    "type": "BASE TABLE",
+    "update_time": "2026-09-07 22:41:00"
+   },
+   {
+    "comment": "",
+    "create_time": "2016-03-04 10:12:00",
+    "data_length": 2097152,
+    "engine": "InnoDB",
+    "index_length": 1048576,
+    "rows": 12000,
+    "schema": "",
+    "table": "reminder_jobs",
+    "type": "BASE TABLE",
+    "update_time": "2026-09-07 22:41:00"
+   },
+   {
+    "comment": "",
+    "create_time": "2016-03-04 10:12:00",
+    "data_length": 314572800,
+    "engine": "InnoDB",
+    "index_length": 41943040,
+    "rows": 900000,
+    "schema": "",
+    "table": "logging",
+    "type": "BASE TABLE",
+    "update_time": "2026-09-07 22:41:00"
+   },
+   {
+    "comment": "",
+    "create_time": "2016-03-04 10:12:00",
+    "data_length": 0,
+    "engine": "InnoDB",
+    "index_length": 0,
+    "rows": 0,
+    "schema": "",
+    "table": "v_agenda_today",
+    "type": "VIEW",
+    "update_time": "2026-09-07 22:41:00"
+   }
+  ],
+  "tenant_candidates": [
+   {
+    "column": "user_id",
+    "tables": 6
+   },
+   {
+    "column": "agenda_id",
+    "tables": 2
+   },
+   {
+    "column": "customer_id",
+    "tables": 1
+   }
+  ],
+  "version": "5.6.51-log"
+ },
+ "tally": {
+  "ambiguous": 2,
+  "grounded": 2,
+  "human": 1,
+  "knowledge": 1,
+  "missing": 2
+ }
+}

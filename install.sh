@@ -216,7 +216,11 @@ for old in \
   "$BRAIN/.agents/skills/rc-thread" \
   "$BRAIN/.claude/skills/rc-thread" \
   "$BRAIN/.agents/skills/rc-run" \
-  "$BRAIN/.claude/skills/rc-run"
+  "$BRAIN/.claude/skills/rc-run" \
+  "$BRAIN/.agents/skills/brain-source-intake" \
+  "$BRAIN/.claude/skills/brain-source-intake" \
+  "$BRAIN/.agents/skills/brain-schema-intake" \
+  "$BRAIN/.claude/skills/brain-schema-intake"
 do
   is_kit_link "$old" && rm "$old"
 done

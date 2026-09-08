@@ -104,17 +104,15 @@ Only these are first-class:
   every article body, the model classifies in two passes and writes one small markdown file per
   suggestion, Python validates every quote and anchor and renders one `report.html` of ranked,
   anchored KB edits for the help-centre owner, with a bot-readable block per card.
-- `brain-source-intake` — a customer codebase that became readable (source mirror or local clone)
-  turned into brain knowledge: a bounded orientation scan, a benchmark of real customer questions
-  against code and DB (found / ambiguous / missing), a self-contained `report.html` questionnaire
-  for the customer's developer with one copy-as-markdown button, and the answers written back as a
-  `skills/codebase/` map plus routing rows.
-- `brain-schema-intake` — a grounding database that became readable turned into brain knowledge:
-  a bounded schema probe run on the box (`rc dev console database query` refuses MySQL), a benchmark
-  of real customer questions into answer-from-data / knowledge / both / human, a self-contained
-  `report.html` questionnaire for the customer's developer, and the answers written back as
-  `skills/databases/<db>.md`. The database twin of `brain-source-intake`, sharing its validator
-  helpers and HTML renderer.
+- `brain-grounding-intake` — a customer's code (source mirror or local clone) and grounding
+  database, taken in together from the production run's chair: `context.py` writes what a run
+  receives (database descriptions, mirrors, brain files), a bounded repo scan and a bounded schema
+  probe on the box, a benchmark of the last window of real customer questions into grounded /
+  ambiguous / missing / knowledge / human, safe data drills through a guarded `query.py`, a
+  self-contained `report.html` questionnaire for the customer's developer (impact line per
+  question, clickable cluster chips showing the real tickets, one copy-as-markdown button), and
+  the answers written back as `skills/codebase/` and `skills/databases/<db>.md` plus routing rows
+  and the database description line.
 - `prod-console` — direct guarded production primitives through `rc dev console capabilities`,
   `rc dev console database`, `rc dev console bash`, and `rc dev console action`.
 - `rc-script-wrapper` — deterministic local Python/shell wrappers around `rc`, including complete
@@ -123,7 +121,8 @@ Only these are first-class:
 - `brain-git-sync` — safely reconcile local brain work with cross-computer `origin/main` and push.
 - `brain-publish` — post-edit publish/support-request step.
 
-Do not reintroduce aliases such as `brain-debug`, `observability`, `rc-inspect`, or `rc-thread`.
+Do not reintroduce aliases such as `brain-debug`, `observability`, `rc-inspect`, `rc-thread`,
+`brain-source-intake`, or `brain-schema-intake`.
 
 ## Boundaries
 
@@ -137,10 +136,9 @@ Ships here:
   replay, judge bundles, HTML/markdown report);
 - the help-centre engine in `skills/brain-helpcenter-suggestions/scripts/` (corpus normalisers,
   read-only collection over public `rc`, strict suggestion schema, HTML report);
-- the source-intake engine in `skills/brain-source-intake/scripts/` (bounded repo scan, question
-  benchmark, validator, HTML questionnaire);
-- the schema-intake engine in `skills/brain-schema-intake/scripts/` (remote schema probe, reduction
-  to `schema.md`, validator over tables and columns, HTML questionnaire);
+- the grounding-intake engine in `skills/brain-grounding-intake/scripts/` (run context, bounded
+  repo scan, remote schema probe and reduction, guarded read-only drill, question benchmark,
+  validator over paths and tables and columns, HTML questionnaire);
 - public-API skills over `rc`;
 - `rootcause-runtime` (`runtime/lib`);
 - workspace Dockerfile/image.
