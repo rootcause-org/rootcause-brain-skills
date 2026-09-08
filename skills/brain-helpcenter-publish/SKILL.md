@@ -45,19 +45,19 @@ mkdir -p .rootcause/helpcenter/apply
 pbpaste > .rootcause/helpcenter/apply/reminder-mail.md
 
 # 2. rehearse: prints op/changes and the exact provider request(s) that WOULD be sent
-rc project knowledge article apply .rootcause/helpcenter/apply/reminder-mail.md --dry-run
+rc project knowledge article apply --from .rootcause/helpcenter/apply/reminder-mail.md --dry-run
 
 # 3. apply for real (still a draft on create / Help Scout update)
-rc project knowledge article apply .rootcause/helpcenter/apply/reminder-mail.md
+rc project knowledge article apply --from .rootcause/helpcenter/apply/reminder-mail.md
 
 # 4. read it back — prints the article as a fresh `op: update` block
-rc project knowledge article get helpscout 5f1a… > .rootcause/helpcenter/apply/reminder-mail.md
+rc project knowledge article get --provider helpscout --id 5f1a… > .rootcause/helpcenter/apply/reminder-mail.md
 
 # 5. go live only when the owner said so
-rc project knowledge article apply .rootcause/helpcenter/apply/reminder-mail.md --publish
+rc project knowledge article apply --from .rootcause/helpcenter/apply/reminder-mail.md --publish
 
 # tenant-scoped project: one help centre per tenant
-rc --tenant <slug> project knowledge article apply <file> --dry-run
+rc --tenant <slug> project knowledge article apply --from <file> --dry-run
 ```
 
 **Always dry-run first and read the printed request** — it is the only place the rendered HTML and the

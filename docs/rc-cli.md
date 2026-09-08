@@ -61,8 +61,8 @@ rc project database set <DSN_ENV> description="..."
 rc project database controls get <DSN_ENV>
 rc project connection ls
 rc project connection add integration_key=<key> label=<label> tier=write token=<token>
-rc project knowledge article apply <file.md> [--dry-run] [--publish]
-rc project knowledge article get <provider> <article-id>
+rc project knowledge article apply --from <file.md> [--dry-run] [--publish]
+rc project knowledge article get --provider <provider> --id <article-id>
 rc auth login
 rc auth status
 rc self update
@@ -396,11 +396,11 @@ rc project connection ls                                  # the row shows `tier:
 Write-tier connections are host-only: they are never injected into a run workspace.
 
 ```bash
-rc project knowledge article apply ./article.md --dry-run   # prints op/changes + the provider request
-rc project knowledge article apply ./article.md             # real write; create/update lands as a draft
-rc project knowledge article apply ./article.md --publish   # change or publish the LIVE article
-rc project knowledge article get helpscout <article-id>     # read back as a fresh `op: update` block
-rc --tenant <slug> project knowledge article apply ./article.md   # one help centre per tenant
+rc project knowledge article apply --from ./article.md --dry-run   # prints op/changes + the provider request
+rc project knowledge article apply --from ./article.md             # real write; create/update lands as a draft
+rc project knowledge article apply --from ./article.md --publish   # change or publish the LIVE article
+rc project knowledge article get --provider helpscout --id <article-id>     # read back as a fresh `op: update` block
+rc --tenant <slug> project knowledge article apply --from ./article.md   # one help centre per tenant
 ```
 
 `apply` is a **side effect** ([side-effects.md](side-effects.md)); `--dry-run` and `get` are read-only.
