@@ -29,7 +29,7 @@ rc project connection ls        # the row shows `tier: write`
 |---|---|---|
 | Help Scout Docs | `helpscout_docs` | Docs API key — Help Scout **Manage → API keys** (Docs, not Mailbox) |
 | Intercom | `intercom` | Access token with **Articles write** |
-| KnowledgeOwl | `knowledgeowl` | Authoring API key (KO **Settings → API**; the same key the `/kb` sync uses is fine — the write row exists so write authority is an explicit, revocable grant). Block `id` = KO's 24-hex `article_id`, never the slug |
+| KnowledgeOwl | `knowledgeowl` | **Authoring** API key (KO **Settings → API**) — NOT the read-only export key `/kb` sync may use: with that one every write fails `PROVIDER_ERROR: knowledgeowl: rejected the request: Invalid ID for article` (KO's wording for no write permission — the write row exists so write authority is an explicit, revocable grant). Block `id` = KO's 24-hex `article_id`, never the slug |
 
 Sealed like an action credential ([docs/secrets.md](../../docs/secrets.md)): never in the brain, never
 in a run — write-tier rows are host-only and are never injected into a workspace. Missing grant ⇒ the
