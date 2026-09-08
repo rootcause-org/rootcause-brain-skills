@@ -60,6 +60,16 @@ answers as of now, not as of the run, and the difference between "the agent misr
 `tz`, `brain_root`, `privacy`, `fr`. Everything you emit must pass through `ctx["privacy"]`.
 Import nothing from the kit — use `ctx["fr"]` if you need a helper.
 
+## `OVERLAY.md` — the *Owner reach* table
+
+The kit decides `findings[].audience` by **reach** (SKILL.md § *Audience split*), and the generic
+plane table only knows RootCause planes. `OVERLAY.md` adds a section `## Owner reach` that names the
+project's concrete owner surfaces — the admin dashboard, master data, source-system configuration,
+policy calls — and, opposite it, what is developer-only. Two columns, one row per surface, written
+so the judging LLM can look at a finding and say "owner" or "technical" without guessing. Without
+this section the LLM falls back to the generic table and the owner half degrades into a diluted copy
+of the technical one.
+
 ## `ledger.md`
 
 A markdown table the judging LLM subtracts before writing findings — the disposition of patterns

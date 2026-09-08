@@ -64,7 +64,9 @@ open "$OUT/technical.html" "$OUT/owner.html"                      # read both ha
 ```
 
 Delivery to the owner is project-specific: a wrapper skill in the brain (e.g. `fleet-report-dentai`)
-attaches `owner.html` to a ticket.
+attaches `owner.html` to a ticket. **Every delivered report title starts with `🌅`** —
+`🌅 Dagrapport <display_name> <D>` — so the daily reports are identifiable at a glance in a ticket
+list or inbox and a wrapper can find yesterday's by prefix. One emoji, fleet-wide, never per project.
 
 `evidence.json` is the raw tier — grep it, never read it whole. Copy `kpis.json` and `manifest.json`
 verbatim into `report.json` (all keys, including `raw` and `owner_lang`); never retype a counter.
@@ -146,7 +148,24 @@ line (cache diverged/dirty, or a channel not `current` for 24 h+) means the brai
 production is not the brain on `main` — put it in the technical "fix today" list with the
 `brain-publish` route, even when the day's runs look fine (the code Thomas is testing is not live).
 
-## Audience split
+## Audience split — by reach, not by severity
+
+`findings[].audience` answers one question: **who can act on this?** The owner half is not a softer
+copy of the technical half; it is the list of things the owner can change or decide without a
+developer. The technical half is everything that needs code, infra or a debugger.
+
+| Owner can act | Technical |
+|---|---|
+| business / policy decisions (`human_policy`), context only the owner knows (`human_context`) | code in the product repo (`project_code`), the host (`host`), the action executor (`action_plane`) |
+| what the brain *says* or *decides*: playbooks, routing, wording of a note (`brain_content`, `tenant_brain`, `persona`, `settings`) — as a decision to take or approve, not an edit to make | brain *scripts* (`brain_script`), mirror freshness (`mirror`), capture gaps, lost runs |
+| the product's own admin surfaces the owner maintains: tenant/practice configuration, master data, data mismatches between the product and the source system | anything whose fix is a commit |
+
+Rule of thumb: a finding is `owner` when the owner would say "I can fix that" or "that is my call";
+`technical` when the honest answer is "PJ has to change code"; `both` when the owner must decide
+*and* a developer must build. The owner half still carries the English prompt for every finding, so
+"owner" never means "no prompt". Each overlay's `OVERLAY.md` names the concrete owner surfaces for
+its project (see [overlay.md](overlay.md) § *Owner reach*) — read that table before assigning
+`audience`, it beats the generic one above.
 
 - Technical half and **all prompts**: English. Owner half: owner language, standing on its own —
   with the English prompt accordions attached (copy button on the page, plain `<pre>` in the e-mail
@@ -188,5 +207,7 @@ contract · [`rc-fleet`](../rc-fleet/SKILL.md) interactive triage when you have 
 
 ## Iteration log
 
+- **2026-09-08** — audience = reach (owner surfaces per overlay), `🌅` title prefix for delivered
+  reports.
 - **2026-09-07** — built (collect/correlate/drill/schema/validate/render + overlays). First
   real runs: dentai, kampadmin (+kampadmin-support), pro-backup, momentum-tools on 09-03 / 09-04.
