@@ -82,6 +82,14 @@ way `/kb` renders it, verbatim after trimming per-line trailing whitespace — *
 found, or found twice, is an error naming the anchor. No anchor + empty body = title/keywords-only
 edit; no anchor + body = whole body replaced. `create` with an anchor is an error.
 
+## Body markdown — write it in the round-trip canon
+
+The host renders the body to provider HTML; the next `/kb` sync renders that HTML back to markdown,
+and anchors must match *that* text. So write bodies the way `/kb` files look: `- ` bullets,
+`**bold**` / `*italic*`, ATX headings, one line per paragraph (no soft wraps), an image alone on
+its own line. **Not supported** (lossy on the way back, so an anchor can never target it): GFM
+tables, `~~strikethrough~~`, raw HTML — use lists or a heading-per-row instead of a table.
+
 ## Manual kinds
 
 `op: manual` (and a card with no `op`) is **not applyable** — the verb refuses in one line. Merge and
