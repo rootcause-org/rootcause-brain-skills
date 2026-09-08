@@ -74,7 +74,8 @@ folded into the previous customer turn as `[koos: …]`; the agent's clarifier p
 Split chats (Help Scout Beacon opens five conversations for one salon) and identical mails from one
 sender within an hour merge into one conversation (`tags: merged:<id>`). The collector pre-tags
 obvious noise as a *suggested* `not_kb` (`calendar_invite · no_reply_sender · test ·
-duplicate_outreach · empty · internal_tenant · repeated_prompt · bare_url · error_paste`): override
+duplicate_outreach · empty · internal_tenant · repeated_prompt · bare_url · error_paste · alert_mail ·
+ticket_type`): override
 it when the text says otherwise, never skip the line. Help-centre URLs a human pasted in a reply
 become `linked_articles`: proof the content exists and discoverability failed.
 

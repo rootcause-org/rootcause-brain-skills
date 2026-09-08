@@ -43,8 +43,9 @@ route: kb                            # kb | brain (really a brain fix; rendered 
 flags: [contradiction]               # optional, rewrite/merge only
 seed_reply: hs:3438828375            # optional; the conversation whose HUMAN reply seeds the text
 edit:                                # rewrite only, exactly one key, verbatim from raw/articles/A22.md
-  old: |
+  old: |                             # block scalar: the text lines sit 4 spaces in (2 for edit, 2 more for old)
     Je kan een cabine niet sluiten terwijl ze in gebruik is.
+  # after: "## Toestellen"           # single line: quote it, no block scalar needed
 evidence:
   - conversation_id: hs:3438828375
     quote: kan ik een cabine sluiten terwijl ze gebruikt wordt

@@ -21,6 +21,7 @@ from typing import Any
 
 BODY_LIMIT, REPLY_LIMIT, LATER_LIMIT, LATER_MAX = 12000, 3000, 800, 12
 MERGE_WINDOW_MIN = 60  # Beacon splits one chat; one runs thread can retrigger on the same mail
+TICKET_MERGE_WINDOW_MIN = 3 * 24 * 60  # the same ticket submitted twice a couple of days apart
 _ARTICLE_ID = re.compile(r"/articles?/([0-9a-f]{24}|\d+)")
 _PATH_ID = re.compile(r"/([0-9a-f]{24}|\d+)-")
 HS_URL = "https://secure.helpscout.net/conversation/{cid}/{number}/"
@@ -52,6 +53,9 @@ GREETINGS = {"hallo", "hoi", "hey", "hi", "hello", "dag", "goeiemorgen", "goedem
              "goeiedag", "goedemiddag", "goedenavond", "bonjour", "salut", "hola"}
 _NO_REPLY = re.compile(r"(?i)(noreply|no-reply|donotreply|mailer-daemon|notifications@)")
 _TEST = re.compile(r"(?i)\b(test(je)?|hgh|ping)\b")
+# Monitoring mail routed to the support inbox: Sentry, uptime pings, CI. Never a customer question.
+_ALERT = re.compile(r"(?i)(sentry\.io/|\[sentry\]|uptimerobot|statuscake|betteruptime|pagerduty|is down\b|"
+                    r"github\.com/.+/actions/runs/)")
 _BOT_SENDER = re.compile(r"(?i)(operator\+[^@]*@intercom\.io|^fin@|noreply|no-reply|bot@)")
 _INVITE_BODY = re.compile(r"(?i)(a new event has been scheduled|view event in calendly|invitee time zone"
                           r"|event name:.*\n.*invitee)")
@@ -148,6 +152,8 @@ def noise_reason(subject: Any, sender: Any, first_message: str, has_ics: bool = 
         return "no_reply_sender"
     if len(words(first_message)) <= 6 and _TEST.search(first_message):
         return "test"
+    if _ALERT.search(str(subject or "")) or _ALERT.search(first_message[:400]):
+        return "alert_mail"
     return None
 
 
@@ -210,7 +216,8 @@ def merge_duplicates(conversations: list[dict[str, Any]]) -> list[dict[str, Any]
     for conv in sorted(conversations, key=lambda c: str(c["created_at"])):
         key = _merge_key(conv)
         twin = next((c for c in reversed(out)
-                     if _merge_key(c) == key and (_gap(c, conv) or 1e9) <= MERGE_WINDOW_MIN), None)
+                     if _merge_key(c) == key and (_gap(c, conv) or 1e9) <= (
+                         TICKET_MERGE_WINDOW_MIN if conv.get("channel") == "ticket" else MERGE_WINDOW_MIN)), None)
         if twin is not None:
             twin["tags"] = twin["tags"] + [f"merged:{conv['id']}"]
             continue
