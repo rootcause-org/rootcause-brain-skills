@@ -1,135 +1,108 @@
-# `suggestions.json` — the one file you write
+# The files you write
 
-Source of truth: `scripts/schema.py`. Unknown keys are rejected, on this file **and** on
-`evidence.json`. Validate before you render:
+All inside `$OUT` (the collect output directory). `validate.py $OUT` checks them against
+`evidence.json` and `raw/articles/`, prints one line per problem prefixed with the file
+(`suggestions/S3.md: edit.old: not found verbatim in raw/articles/A22.md`), and when clean assembles
+`suggestions.json` (the internal contract, `scripts/schema.py`) for `render.py`. Fix the one file an
+error names; never regenerate everything. `warn:` lines are steering, not failure. Report chrome is
+English; titles, texts and quotes stay in the customer's language.
 
-```bash
-uv run scripts/validate.py <dir>/suggestions.json        # evidence.json is picked up next to it
-uv run scripts/render.py   <dir>/suggestions.json        # validates again → report.html + learnings.md
+## `classification.tsv` (pass 1)
+
+```
+# evidence_sha256 <the sha collect printed>
+conversation_id	verdict	topics	article_ids
+run:3de6cda0	recipe	inschrijvingen-filteren	A41
+run:7b1e02aa	answered	moni-plaats	A12,A13
+hs:3438363160	not_kb	-	-
 ```
 
-Each error is one JSON path (`suggestions[3].evidence[1].quote: …`) — patch that path, never
-regenerate the file. `warn:` lines are steering, not failure. Report chrome is English; your
-titles, texts and quotes stay in the customer's language.
+- Every `evidence.conversations[].id`, exactly once.
+- `verdict`: `answered` · `partial` · `missing` · `wrong_title` · `recipe` · `not_kb` · `uncertain`.
+- `topics`: comma-separated cluster slugs, first = primary; required unless `not_kb` (`-` allowed).
+  `topics` is the join key: a suggestion's score and its "N conversations" come from the rows that
+  list its topic.
+- `article_ids`: the `evidence.articles[].id`s you judged against (may be `-`).
+- The first line binds the file to the `evidence.json` it was written against; a re-collect changes
+  the sha and the validator prints the current one.
 
-## Root
+The validator accepts this file alone ("pass 1: classification only") so you can checkpoint before
+drilling bodies.
 
-| Path | Type | Rules |
-|---|---|---|
-| `schema_version` | int | `1` |
-| `evidence_sha256` | str | the sha256 `collect.py` printed for this `evidence.json`; the validator re-hashes the file bytes and refuses a stale pairing |
-| `headline` | str | one sentence for the help-centre owner |
-| `classification[]` | list | **every** conversation in `evidence.conversations`, exactly once |
-| `suggestions[]` | list | one per cluster; ranking is computed, never typed |
-| `learnings[]` | 0–5 | what this run taught about the skill |
+## `suggestions/S<n>.md` (pass 2), one file per suggestion
 
-## `classification[]`
+```markdown
+---
+kind: rewrite                        # new | rewrite | retitle | add_alias | merge | delete
+topic: cabine-toestel-koppelen       # a slug from classification.tsv
+title: Cabines en toestellen koppelen
+target_articles: [A22]
+route: kb                            # kb | brain (really a brain fix; rendered with a badge)
+flags: [contradiction]               # optional, rewrite/merge only
+seed_reply: hs:3438828375            # optional; the conversation whose HUMAN reply seeds the text
+edit:                                # rewrite only, exactly one key, verbatim from raw/articles/A22.md
+  old: |
+    Je kan een cabine niet sluiten terwijl ze in gebruik is.
+evidence:
+  - conversation_id: hs:3438828375
+    quote: kan ik een cabine sluiten terwijl ze gebruikt wordt
+  - conversation_id: hs:3438363160
+    quote: Nele boekt mijn twee cabines dubbel
+---
+## Why
+Twee salons dachten dat een cabine sluiten hun lopende afspraken zou wissen. Het artikel zegt
+alleen dat het niet kan, niet wat er dan wel gebeurt.
+
+## Edit
+Je kan een cabine sluiten terwijl ze in gebruik is. Bestaande afspraken blijven staan; nieuwe
+online reservaties kiezen automatisch een andere cabine.
+```
 
 | Field | Rules |
 |---|---|
-| `conversation_id` | an `evidence.conversations[].id` (`hs:…`, `run:…`), unique |
-| `verdict` | `answered` \| `partial` \| `missing` \| `wrong_title` \| `not_kb` \| `uncertain` |
-| `article_ids[]` | the `evidence.articles[].id`s you judged against (may be empty) |
-| `topics[]` | short cluster slugs (`["boekingshorizon"]`), shared with every conversation in the cluster. At least one unless `verdict` is `not_kb`; **first = primary** |
+| file name | `S1.md`, `S2.md`, … (the id) |
+| `kind` | cheapest edit that closes the gap |
+| `topic` | must appear in some classification row |
+| `title` | proposed title (`retitle`), or the article's title as it will read |
+| `target_articles` | `home: kb` article ids. `new`: none · `rewrite` / `retitle` / `add_alias` / `delete`: exactly 1 · `merge`: 2+ |
+| `destination` | `merge` (one of the targets, survives) and `delete` (another existing article) only |
+| `edit` | `rewrite` only. `old:` a verbatim block of the current body that `## Edit` replaces, or `after:` / `before:` a verbatim line (must occur exactly once) that `## Edit` is inserted at. Forbidden on other kinds |
+| `aliases` | `add_alias`: search phrases to add, none already on the article |
+| `flags` | `[contradiction]` when two live articles disagree |
+| `route` | `kb` or `brain` |
+| `seed_reply` | a conversation whose reply has provenance `human`; `draft` and `bot` are refused |
+| `evidence` | 1 to 5 `{conversation_id, quote}`; the conversation has a `url` and is classified `partial` / `missing` / `wrong_title` / `recipe` / `uncertain`; the quote is a verbatim substring of that conversation's customer text (`first_message`, `first_raw`, later `[customer]` turns); only case and whitespace are normalised. Agent and `unknown` turns are refused |
+| `## Why` | one paragraph, the owner's reason |
+| `## Edit` | the markdown pasted into the help centre: the body (`new`, `merge`), the replacement or inserted block (`rewrite`). Absent for `retitle`, `add_alias`, `delete` |
 
-`topics` is the join key: a suggestion's score and its "N conversations" line come from the
-classifications listing that topic. Cluster first, then suggest.
+Retitle: the new `title` must differ from the current one. Contradiction: say in `## Why` which
+article the humans confirm as right.
 
-One thread often carries two questions — list both slugs and the conversation counts once for each
-topic, so neither signal is dropped. The old singular `topic` key is refused with
-`classification[3].topic: unknown key — use topics: [..]`.
+### Voice checks the validator runs
 
-`evidence.conversations[].noise` is the **collector's** pre-tag (`{verdict: not_kb, reason:
-calendar_invite | no_reply_sender | test | duplicate_outreach | empty}`). It is a hint, not a
-verdict: you may classify the conversation any way the text supports. The reason renders as the
-"noise hint" column in the detail table.
+Error: an em dash (U+2014) in `title`, `why`, `## Edit`, `aliases`, `headline.txt` or `learnings.md`
+(the line prints; rewrite the passage). Warn: a spaced en dash (` – `), an ellipsis character (`…`),
+an emoji. `edit.old` / `after` / `before` and quotes are verbatim source text and are exempt.
 
-## `suggestions[]`
+## `headline.txt`
 
-| Field | Rules |
-|---|---|
-| `id` | `S1`, `S2`, … |
-| `kind` | `new` \| `rewrite` \| `retitle` \| `merge` \| `delete` \| `add_alias` — cheapest edit that closes the gap |
-| `topic` | one slug; must appear in some `classification[].topics` |
-| `title` | proposed title (for `rewrite`/`add_alias`: the article's title as it will read) |
-| `target_articles[]` | `evidence.articles[].id`s, **`home: kb` only** — brain documents are never a public suggestion |
-| `destination` | surviving/redirect article, `merge` and `delete` only |
-| `section` | the section to replace, `rewrite` only |
-| `text` | the proposed body, verbatim as it should be pasted |
-| `aliases[]` | search phrases to add, `add_alias` only |
-| `why` | one line, the owner's reason |
-| `route` | `kb` (edit the help centre) or `brain` (really a brain fix — rendered with a badge) |
-| `evidence[]` | 1–5 `{conversation_id, quote}` — see below (1 conversation warns, 2+ is a pattern) |
-| `seed_reply` | conversation whose **human** reply seeds the article, or `null` (`draft` and `bot` provenance are refused) |
+One sentence for the owner. Required once a suggestion exists; a partial or unavailable feed is
+named here.
 
-### Kind rules
+## `learnings.md`
 
-| kind | targets | also required | refused when |
-|---|---|---|---|
-| `new` | none | `text` | any `target_articles` |
-| `rewrite` | exactly 1 | `section` + `text` | 0 or 2+ targets |
-| `retitle` | exactly 1 | `title` | `title` equals the article's current title (case/whitespace-insensitive) |
-| `add_alias` | exactly 1 | `aliases` non-empty | an alias already sits on the article or equals its title |
-| `merge` | ≥ 2 | `destination` ∈ `target_articles`, `text` | destination outside the targets |
-| `delete` | exactly 1 | `destination` = another existing article | destination missing or equal to the target |
+Zero to five bullets: `- <target>: <observation> -> <proposed change>`, target one of `rubric`,
+`recipe`, `normaliser`, `validator`, `render`.
 
-### `evidence[]`
+## Computed for you, never typed
 
-- `conversation_id` must exist, have a non-null `url` (a conversation without one cannot back a
-  suggestion), and be classified `partial`, `missing`, `wrong_title` or `uncertain`.
-- `quote` must be a **verbatim** substring of that conversation's *customer* text: `first_message`
-  \+ `first_raw` (the raw opening turn, present when a later turn was picked as the question) +
-  later turns with `role: customer`. Only whitespace and case are normalised; do not fix typos, do
-  not translate, do not stitch two sentences together.
-- Turns with `role: agent` or `role: unknown` are **not** customer words — a quote that only matches
-  one is refused with `matches only an unknown-role/agent turn in run:… (quote customer turns only)`.
-  `unknown` means the collector could not resolve the sender; treat it as vendor text.
+Rank and score (distinct conversations in the topic weighted missing 3 · partial 2 · recipe 2 ·
+wrong_title 1 · uncertain 1; ties go to the cheaper kind), the summary tiles, the per-tenant table,
+the top topics, and the per-card bot block (`replypen: helpcenter/v1` front matter with the
+provider-native article handles plus your `## Edit` text) that the markdown tab and its copy button
+carry.
 
-## `learnings[]`
+## Worked example
 
-`{observation, proposed_change, target}` with `target` ∈ `rubric` | `recipe` | `normaliser` |
-`validator` | `render`. Rendered into `learnings.md` for the skill's iteration log.
-
-## What the validator guarantees
-
-Every conversation classified exactly once · every id (conversation, article, destination,
-seed_reply) resolves · evidence hash matches the evidence file · quotes are real customer words
-(never an agent or unknown-role turn) ·
-seed replies are human, never drafts · targets are public KB articles · kind rules above ·
-`schema_version`/enums/limits. Soft warnings: more than 10 suggestions, a suggestion resting on one
-conversation, a partial/unavailable feed, a partial KB inventory.
-
-Computed for you — do not type them: rank and score (distinct conversations in the topic weighted
-`missing` 3, `partial` 2, `wrong_title` 1, `uncertain` 1; ties go to the cheaper kind), the tiles
-(scanned, how-to, answered, partial, missing, wrong-title, uncertain, not-KB) and the top unanswered
-topics. A conversation with two topics counts once in each.
-
-## Worked example (synthetic; the real one is `fixtures/suggestions.json`)
-
-```json
-{
- "schema_version": 1,
- "evidence_sha256": "3663db08dff1d3c44d9aa27050f3992d12fdb57d6dbcfb1309dc7b91371a39bf",
- "headline": "Vier bewerkingen sluiten de gaten die klanten deze week zelf moesten navragen.",
- "classification": [
-  {"conversation_id": "hs:1001", "verdict": "missing", "article_ids": [], "topics": ["boekingshorizon"]},
-  {"conversation_id": "hs:1004", "verdict": "not_kb", "article_ids": [], "topics": []},
-  {"conversation_id": "hs:1006", "verdict": "answered", "article_ids": ["A1"], "topics": ["openingsuren", "feestdagen"]}
- ],
- "suggestions": [
-  {"id": "S1", "kind": "new", "topic": "boekingshorizon",
-   "title": "Agenda openzetten voor een volgend jaar",
-   "target_articles": [], "destination": null, "section": null,
-   "text": "Ga naar Instellingen > Agenda > Boekingshorizon en zet de horizon op 18 maanden.",
-   "aliases": [], "why": "Geen artikel legt uit hoe je een volgend kalenderjaar openzet.",
-   "route": "kb",
-   "evidence": [{"conversation_id": "hs:1001", "quote": "Hoe zet ik mijn agenda open voor 2027?"}],
-   "seed_reply": "hs:1001"}
- ],
- "learnings": [
-  {"observation": "Chatgesprekken bevatten vaak twee vragen in één blok.",
-   "proposed_change": "Splits chatberichten op vraagteken voor het clusteren.",
-   "target": "normaliser"}
- ]
-}
-```
+`fixtures/out/` is a complete, validating set (every kind, one contradiction, one insert) against
+`fixtures/evidence.json` and `fixtures/raw/articles/`.

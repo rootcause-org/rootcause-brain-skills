@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import html as html_mod
 import re
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -121,7 +122,7 @@ def _moment(value: Any) -> datetime | None:
 
 
 def is_boilerplate(text: str) -> bool:
-    """Bot greetings, flow prompts and canned closers — dropped from the conversation entirely."""
+    """Bot greetings, flow prompts and canned closers, dropped from the conversation entirely."""
     tokens = words(text)
     # Only short turns: "out of office" inside a 50-word follow-up is context, not an auto-reply.
     if len(tokens) <= 40 and any(phrase in text.lower() for phrase in BOILERPLATE):
@@ -197,14 +198,19 @@ def merge_split_chats(conversations: list[dict[str, Any]]) -> list[dict[str, Any
     return out
 
 
+def _merge_key(conv: dict[str, Any]) -> tuple[str, str, str]:
+    """Chat has no sender, so the tenant keeps two organisations asking the same thing apart."""
+    return (str(conv.get("customer") or ""), str(conv.get("tenant") or ""),
+            " ".join(conv["first_message"].split()))
+
+
 def merge_duplicates(conversations: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """One inbound mail can trigger several runs: same sender + byte-identical question, one hour."""
     out: list[dict[str, Any]] = []
     for conv in sorted(conversations, key=lambda c: str(c["created_at"])):
-        key = (str(conv.get("customer") or ""), " ".join(conv["first_message"].split()))
+        key = _merge_key(conv)
         twin = next((c for c in reversed(out)
-                     if (str(c.get("customer") or ""), " ".join(c["first_message"].split())) == key
-                     and (_gap(c, conv) or 1e9) <= MERGE_WINDOW_MIN), None)
+                     if _merge_key(c) == key and (_gap(c, conv) or 1e9) <= MERGE_WINDOW_MIN), None)
         if twin is not None:
             twin["tags"] = twin["tags"] + [f"merged:{conv['id']}"]
             continue
@@ -226,6 +232,34 @@ def tag_duplicate_outreach(conversations: list[dict[str, Any]]) -> None:
     for conv in conversations:
         if conv.get("noise") is None and len(seen[" ".join(conv["first_message"].split())]) > 1:
             conv["noise"] = {"verdict": "not_kb", "reason": "duplicate_outreach"}
+
+
+_BARE_URL = re.compile(r"^\s*<?https?://\S+>?\s*$")
+_ERROR_PASTE = re.compile(
+    r"(?i)^\s*(traceback\b|\w*(error|exception)\s*[:(]|[a-z]\w*::\w|status\s+[45]\d\d\b|"
+    r"http\s*[45]\d\d\b|\{\s*\"error\"|<!doctype|internal server error)")
+REPEATED_PROMPT_MIN = 3
+
+
+def tag_noise(conversations: list[dict[str, Any]], skip_tenants: list[str] | None = None) -> None:
+    """Pre-tags the judge should not spend reading budget on. It may still override any of them."""
+    skip = {str(t).strip() for t in skip_tenants or [] if str(t).strip()}
+    repeated = Counter(" ".join(c["first_message"].split()) for c in conversations)
+    for conv in conversations:
+        first = conv["first_message"]
+        reason = None
+        if str(conv.get("tenant") or "") in skip:
+            reason = "internal_tenant"  # operator probes and demos, not customers
+        elif conv.get("noise"):
+            continue
+        elif repeated[" ".join(first.split())] >= REPEATED_PROMPT_MIN:
+            reason = "repeated_prompt"
+        elif _BARE_URL.match(first):
+            reason = "bare_url"
+        elif _ERROR_PASTE.match(first) and "?" not in first:
+            reason = "error_paste"
+        if reason:
+            conv["noise"] = {"verdict": "not_kb", "reason": reason}
 
 
 def link_articles(conversations: list[dict[str, Any]], articles: list[dict[str, Any]]) -> None:
@@ -298,14 +332,65 @@ def address(value: Any) -> str:
     return (match.group(0) if match else str(value or "")).strip().strip("<>").lower()
 
 
+CLARIFIER_ANSWER = "User selected:"
+_CLARIFIER_PROMPT = re.compile(r"(?m)^Questions asked \(set\b")
+
+
+def _fold_clarifiers(turns: list[tuple[str, str, Any]]) -> list[tuple[str, str, Any]]:
+    """The clarifier form is one turn in the model's eyes, not a question and an answer.
+
+    `User selected: doel=x` is what the customer clicked in the form the previous turn asked about:
+    it belongs to that customer turn. The form itself is scaffolding: it is appended to the agent's
+    answer (or is the whole turn), so cut it off rather than dropping a real answer with it.
+    """
+    out: list[tuple[str, str, Any]] = []
+    for role, text, by in turns:
+        if role == "agent":
+            found = _CLARIFIER_PROMPT.search(text)
+            text = text[:found.start()].rstrip() if found else text
+            if not text:
+                continue
+        if role == "customer" and text.startswith(CLARIFIER_ANSWER):
+            picked = text[len(CLARIFIER_ANSWER):].strip()
+            last = next((i for i in range(len(out) - 1, -1, -1) if out[i][0] == "customer"), None)
+            if last is not None and picked:
+                out[last] = (out[last][0], f"{out[last][1]} [koos: {picked}]", out[last][2])
+            continue
+        out.append((role, text, by))
+    return out
+
+
+def chat_conversation(header: dict[str, Any]) -> dict[str, Any] | None:
+    """A chat session: every inbound turn is the customer, every outbound one is our agent.
+
+    No sender is carried on a chat turn, so there is nothing to attribute a human to: the reply is
+    always the model's live answer (`provenance: draft`).
+    """
+    prior = [m for m in header.get("prior_messages") or [] if isinstance(m, dict)]
+    turns = [("agent" if m.get("is_inbound") is False else "customer", clean(m.get("body")), None)
+             for m in prior]
+    turns.append(("customer", clean(header.get("question")), None))
+    draft = clean(header.get("draft"), REPLY_LIMIT)
+    if draft:
+        turns.append(("agent", draft, None))
+    return build(
+        f"run:{str(header.get('run_id') or '')[:8]}",
+        (header.get("metadata") or {}).get("run_url"), "chat",
+        str(header.get("created_at") or ""), header.get("topic"), None, [],
+        _fold_clarifiers(turns), "draft", tenant=header.get("tenant") or None,
+    )
+
+
 def trace_conversation(header: dict[str, Any],
                        mailbox_domains: frozenset[str] = frozenset()) -> dict[str, Any] | None:
     """First JSONL record of `rc run trace --stream` -> conversation (draft = the reply).
 
     `is_inbound` is *delivery direction*, not authorship: a sibling vendor cc'd on the thread also
-    arrives inbound. Only the originating sender and our own mailbox domains are provable — the rest
+    arrives inbound. Only the originating sender and our own mailbox domains are provable, the rest
     is `unknown`, and the validator refuses customer quotes from unknown turns.
     """
+    if str(header.get("kind") or "") == "chat":
+        return chat_conversation(header)
     prior = [m for m in header.get("prior_messages") or [] if isinstance(m, dict)]
     origin = next((address(m.get("sender")) for m in prior if m.get("is_inbound") is not False), "")
     # An opaque chat contact id is the same person as the e-mail they hand over later in the widget.
@@ -343,20 +428,40 @@ def _cell(value: Any, limit: int = 140) -> str:
     return clip(" ".join(str(value or "").split()), limit).replace("\t", " ") or "-"
 
 
+TSV_LINE_MAX, FIRST_MAX = 200, 110
+
+
+def first_sentence(text: Any) -> str:
+    """The question in one line: the first sentence, or the head of it when there is no stop."""
+    flat = " ".join(str(text or "").split())
+    cut = re.search(r"[.?!]\s", flat)
+    return clip(flat[:cut.end() - 1] if cut else flat, FIRST_MAX)
+
+
 def write_tsvs(evidence: dict[str, Any]) -> tuple[str, str]:
-    """The read-whole tier: one line per conversation and per article, no bodies."""
-    convs = [["id", "date", "channel", "tenant", "subject", "first_sentence", "n_later", "reply",
-              "linked", "noise"]]
+    """The read-whole tier: one line per conversation and per article, no bodies.
+
+    Conversation lines stay under TSV_LINE_MAX so 500 of them are ~25k tokens: that is the judge's
+    pass-1 budget. Article lines carry the full keyword/alias vocabulary, which is what makes
+    `wrong_title` findable, so they are not clipped.
+    """
+    convs = [["id", "date", "tenant", "ch", "first", "turns", "reply", "linked", "noise"]]
     for c in evidence.get("conversations") or []:
-        convs.append([c["id"], str(c.get("created_at"))[:10], c["channel"], c.get("tenant") or "-",
-                      _cell(c.get("subject"), 80), _cell(c["first_message"]),
-                      str(len(c.get("later") or [])), (c.get("reply") or {}).get("provenance", "-"),
-                      ",".join(c.get("linked_articles") or []) or "-",
-                      (c.get("noise") or {}).get("reason", "-")])
-    arts = [["id", "title", "collection", "audience", "keywords", "aliases", "path"]]
+        row = [c["id"], str(c.get("created_at"))[:10], _cell(c.get("tenant"), 20), c["channel"],
+               first_sentence(c["first_message"]).replace("\t", " ") or "-",
+               str(len(c.get("later") or [])), (c.get("reply") or {}).get("provenance", "-"),
+               ",".join(c.get("linked_articles") or []) or "-",
+               (c.get("noise") or {}).get("reason", "-")]
+        overflow = len("\t".join(row)) - TSV_LINE_MAX
+        if overflow > 0:
+            row[4] = clip(row[4], max(20, len(row[4]) - overflow - 2))
+        convs.append(row)
+    arts = [["id", "title", "collection", "collection_id", "audience", "keywords", "aliases",
+             "path"]]
     for a in evidence.get("articles") or []:
         arts.append([a["id"], _cell(a.get("title"), 100), _cell(a.get("collection"), 40),
-                     _cell(a.get("audience"), 20), ", ".join(a.get("keywords") or []) or "-",
+                     _cell(a.get("collection_id"), 40), _cell(a.get("audience"), 20),
+                     ", ".join(a.get("keywords") or []) or "-",
                      ", ".join(a.get("aliases") or []) or "-", a.get("path") or "-"])
     return ("\n".join("\t".join(row) for row in convs) + "\n",
             "\n".join("\t".join(row) for row in arts) + "\n")
@@ -379,7 +484,7 @@ def write_digest(evidence: dict[str, Any]) -> str:
     coverage = " · ".join(f"{c.get('feed')}={c.get('status')}({c.get('retained')}/{c.get('scanned')})"
                           for c in evidence.get("coverage") or [])
     reasons = [f"{c['feed']}: {c['reason']}" for c in evidence.get("coverage") or [] if c.get("reason")]
-    out = [f"# Help centre evidence — {evidence.get('project')}"
+    out = [f"# Help centre evidence: {evidence.get('project')}"
            + (f" / {evidence['tenant']}" if evidence.get("tenant") else ""), "",
            f"window {str(window.get('start'))[:16]} → {str(window.get('end'))[:16]} "
            f"({window.get('days')}d) · source {evidence.get('source')} · {len(convs)} conversations "

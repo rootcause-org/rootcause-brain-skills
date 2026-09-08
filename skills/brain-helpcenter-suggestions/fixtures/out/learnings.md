@@ -1,0 +1,2 @@
+- rubric: Beheerders vragen data die ze zelf uit een filter kunnen halen -> een verdict recipe herkent die vraag als how-to gat
+- normaliser: Antwoorden op het keuzeformulier komen als aparte beurt binnen -> vouw ze in de vorige klantbeurt

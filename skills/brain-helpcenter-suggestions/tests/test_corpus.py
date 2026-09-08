@@ -1,4 +1,4 @@
-"""Normaliser tests for `brain-helpcenter-suggestions`. Synthetic data only — never real customers.
+"""Normaliser tests for `brain-helpcenter-suggestions`. Synthetic data only, never real customers.
 
     cd skills/brain-helpcenter-suggestions && uv run --with pytest --no-project pytest tests -q
 """
@@ -206,11 +206,114 @@ def test_tsv_and_digest_tiers():
                               "collection": "Algemeen", "audience": "customer",
                               "keywords": ["feestdag"]}]}
     convs_tsv, articles_tsv = corpus.write_tsvs(evidence)
-    assert convs_tsv.splitlines()[0].split("\t")[:4] == ["id", "date", "channel", "tenant"]
-    assert convs_tsv.splitlines()[1].split("\t")[3] == "yes_events"
-    assert articles_tsv.splitlines()[1].split("\t")[3] == "customer"
+    assert convs_tsv.splitlines()[0].split("\t") == [
+        "id", "date", "tenant", "ch", "first", "turns", "reply", "linked", "noise"]
+    assert convs_tsv.splitlines()[1].split("\t")[2] == "yes_events"
+    assert articles_tsv.splitlines()[0].split("\t")[3] == "collection_id"
+    assert articles_tsv.splitlines()[1].split("\t")[4] == "customer"
     digest = corpus.write_digest(evidence)
     assert "demo / yes_events" in digest and "[customer|opener] Monitoren" in digest
+
+
+def test_tsv_lines_stay_readable_whole():
+    """500 lines must fit the judge's pass-1 budget: one sentence per conversation, no bodies."""
+    long_one = corpus.build("run:deadbeef", None, "chat", "2026-09-02T10:00:00Z", None, None, [],
+                            [("customer", "Ik heb een heel lange vraag. " * 40, None)])
+    evidence = {"conversations": [long_one], "articles": []}
+    lines = corpus.write_tsvs(evidence)[0].splitlines()
+    assert all(len(line) <= corpus.TSV_LINE_MAX for line in lines)
+    # the first sentence, not the whole wall of text
+    assert lines[1].split("\t")[4] == "Ik heb een heel lange vraag."
+
+
+
+
+# ---------------------------------------------------------------- chat sessions
+
+
+def chat_header() -> dict:
+    return json.loads((FIXTURES / "trace_header_chat.json").read_text(encoding="utf-8"))
+
+
+def test_chat_roles_and_clarifier_fold():
+    """Chat turns carry no sender: inbound is the customer, outbound is us, the reply is a draft."""
+    conv = corpus.trace_conversation(chat_header())
+    assert conv["channel"] == "chat" and conv["tenant"] == "lbv"
+    assert conv["id"] == "run:3de6cda0" and conv["url"] == "https://app.example/runs/3de6cda0"
+    assert conv["first_message"].startswith("ik moet voor de verzekeraar een lijst")
+    assert conv["reply"]["provenance"] == "draft" and conv["reply"]["by"] is None
+    assert conv["reply"]["text"].startswith("Dag, ik heb de lijst opgesteld")
+    turns = [t["text"] for t in conv["later"]]
+    # the clarifier form is scaffolding, but it rides along on a real answer: cut it, keep the answer
+    assert "Questions asked" not in json.dumps(conv)
+    assert turns[0] == ("kan je die lijst aanmaken in KA bij inschrijvingen? "
+                        "[koos: doel=saved_filter; weergave=all_statuses]")
+    assert turns[1] == "Wil je een opgeslagen lijst of een tag?"
+    assert turns[-1].startswith("Ik kan geen opgeslagen filterlijst")
+    assert all(t["role"] != "unknown" for t in conv["later"])
+
+
+def test_chat_orphan_clarifier_answer_is_not_a_question():
+    header = chat_header()
+    header["prior_messages"] = []
+    assert corpus.trace_conversation(header) is None
+
+
+def test_session_grouping_takes_the_last_run_and_the_earliest_date():
+    rows = [
+        {"run_id": "r2", "session_id": "s1", "thread_id": "s1", "kind": "chat",
+         "created_at": "2026-09-07T15:19:13Z"},
+        {"run_id": "r1", "session_id": "s1", "thread_id": "s1", "kind": "chat",
+         "created_at": "2026-09-07T15:02:00Z"},
+        {"run_id": "r3", "kind": "email", "created_at": "2026-09-06T08:00:00Z"},
+    ]
+    picked = sorted(collect.sessions(rows), key=lambda p: p["run_id"])
+    assert [p["run_id"] for p in picked] == ["r2", "r3"]
+    # the whole transcript lives in the last run, but the conversation started earlier
+    assert picked[0] == {"run_id": "r2", "created_at": "2026-09-07T15:02:00Z", "kind": "chat",
+                         "runs": 2}
+
+
+def test_other_runs_feed_counts_what_we_did_not_read():
+    rows = [{"kind": "analysis", "outcome": "failed"}] * 3 + [{"kind": "analysis"}, {"kind": "mcp"}]
+    feed = collect.other_runs_feed(rows)
+    assert feed["feed"] == "other_runs" and feed["retained"] == 0
+    assert feed["reason"] == "4 analysis runs, 3 failed · 1 mcp runs, not part of this corpus"
+
+
+# ---------------------------------------------------------------- noise pre-tags
+
+
+def chat(cid, text, tenant=None):
+    return corpus.build(cid, None, "chat", "2026-09-02T10:00:00Z", None, None, [],
+                        [("customer", text, None)], "draft", tenant=tenant)
+
+
+def test_chat_noise_pretags():
+    convs = [chat("c1", "hoe verwijder ik een monitor uit de lijst?", "demo"),
+             chat("c2", "https://kampadmin.be/admin/inschrijvingen?filter=42"),
+             chat("c3", "NoMethodError: undefined method `each' for nil at line 42"),
+             chat("c4", "hoeveel inschrijvingen zijn er deze week in totaal genomen?"),
+             chat("c5", "hoeveel inschrijvingen zijn er deze week in totaal genomen?"),
+             chat("c6", "hoeveel inschrijvingen zijn er deze week in totaal genomen?"),
+             chat("c7", "waar vind ik het overzicht van de wachtlijst per activiteit?")]
+    corpus.tag_noise(convs, ["demo", "base"])
+    assert [(c["noise"] or {}).get("reason") for c in convs] == [
+        "internal_tenant", "bare_url", "error_paste", "repeated_prompt", "repeated_prompt",
+        "repeated_prompt", None]
+
+
+def test_internal_tenant_overrides_an_earlier_pretag():
+    conv = chat("c1", "test", "demo")
+    assert conv["noise"]["reason"] == "test"
+    corpus.tag_noise([conv], ["demo"])
+    assert conv["noise"]["reason"] == "internal_tenant"
+
+
+def test_error_paste_with_a_question_is_a_real_question():
+    conv = chat("c1", "Error: 500 op de inschrijvingenpagina, wat moet ik nu doen?")
+    corpus.tag_noise([conv], [])
+    assert conv["noise"] is None
 
 
 # ---------------------------------------------------------------- P0: inventory + tenant plumbing
@@ -223,8 +326,48 @@ algemeen/3164619-feestdag.md · Gaat het kamp door op een feestdag? · feestdag,
 inschrijven/3164700-annuleren.md · Hoe annuleer ik? · annuleren · Annuleren en terugbetaling. · collection: Inschrijven
 """
 
+BODIES_ARTIFACT = """@@ /kb/tenant/intercom/algemeen/3164619-feestdag.md
+---
+title: Gaat het kamp door op een feestdag?
+provider: intercom
+id: "3164619"
+url: https://faq.example.be/nl/articles/3164619-feestdag
+collection: Algemeen
+locale: nl
+section: "6983603"
+status: published
+updated_at: 2025-02-21T13:51:56Z
+---
 
-def fake_workspace(monkeypatch, index_text=INDEX_ARTIFACT, count=2):
+# Gaat het kamp door op een feestdag?
+
+Nee, als er een officiele feestdag in een kampweek valt is er geen kamp.
+@@ /kb/tenant/intercom/inschrijven/3164700-annuleren.md
+---
+title: Hoe annuleer ik?
+provider: intercom
+id: "3164700"
+collection_id: "555"
+locale: nl
+status: published
+---
+
+# Hoe annuleer ik?
+
+Via je account.
+"""
+
+
+def test_frontmatter_handles_intercom_sections_and_quoted_ids():
+    blocks = collect.at_blocks(BODIES_ARTIFACT)
+    first = collect.parse_frontmatter(blocks["/kb/tenant/intercom/algemeen/3164619-feestdag.md"])
+    assert first["id"] == "3164619" and first["provider"] == "intercom"
+    assert first["section"] == "6983603" and "body" not in first
+    assert collect.parse_frontmatter(["no frontmatter here"]) == {}
+
+
+def fake_workspace(monkeypatch, index_text=INDEX_ARTIFACT, bodies=BODIES_ARTIFACT, count=2,
+                   find_stderr=""):
     """Record every rc argv; serve the console envelopes and artifacts the inventory expects."""
     seen: list[list[str]] = []
 
@@ -232,10 +375,16 @@ def fake_workspace(monkeypatch, index_text=INDEX_ARTIFACT, count=2):
         seen.append(list(argv))
         script = argv[-1]
         if "file" in argv and "get" in argv:
+            remote = argv[argv.index("get") + 1]
             Path(argv[argv.index("--out") + 1]).write_text(
-                index_text if "hc-index" in argv[-3] else "", encoding="utf-8")
+                index_text if "hc-index" in remote else bodies if "hc-bodies" in remote else "",
+                encoding="utf-8")
             return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
         if script.startswith("find /kb"):
+            tenantless = "--tenant" not in argv
+            if find_stderr and tenantless:
+                return type("R", (), {"returncode": 0, "stderr": "", "stdout": json.dumps(
+                    {"exit_code": 1, "stdout": "", "stderr": find_stderr})})()
             out = "/kb/tenant/intercom/INDEX.md\n/kb/knowledgeowl/INDEX.md\n"
         elif "hc-index.txt" in script:
             out = f"## /kb/tenant/intercom {count}\n"
@@ -248,15 +397,24 @@ def fake_workspace(monkeypatch, index_text=INDEX_ARTIFACT, count=2):
     return seen
 
 
-def test_inventory_tenant_scope_and_paths(monkeypatch, tmp_path):
+def test_inventory_tenant_scope_paths_and_bodies(monkeypatch, tmp_path):
     seen = fake_workspace(monkeypatch)
     articles, kb = collect.inventory(tmp_path, tmp_path, "yes_events")
     assert kb["root"] == "/kb/tenant/intercom" and kb["status"] == "complete"
+    assert kb["scope"] == "tenant" and kb["provider"] == "intercom"
+    assert kb["base_url"] == "https://faq.example.be"
     # provider comes from the path, not from the INDEX header comment (which says kb/intercom/)
     assert [a["path"] for a in articles] == [
         "/kb/tenant/intercom/algemeen/3164619-feestdag.md",
         "/kb/tenant/intercom/inschrijven/3164700-annuleren.md"]
     assert articles[0]["audience"] == "customer" and articles[0]["title"].startswith("Gaat het kamp")
+    # provider-native handles the bot block needs, straight from the frontmatter
+    assert (articles[0]["provider_id"], articles[0]["collection_id"], articles[0]["parent_type"]) \
+        == ("3164619", "6983603", "section")
+    assert (articles[1]["collection_id"], articles[1]["parent_type"]) == ("555", None)
+    # every kb article body lands verbatim: the anchor source the validator checks `edit.old` against
+    body = (tmp_path / "articles" / "A1.md").read_text(encoding="utf-8")
+    assert body.startswith("---\ntitle: Gaat het kamp") and "officiele feestdag" in body
     # --tenant rides on every console call, and only on console calls
     console_calls = [a for a in seen if a[:3] == ["rc", "dev", "console"]]
     assert console_calls and all(a[3:5] == ["--tenant", "yes_events"] for a in console_calls)
@@ -264,10 +422,35 @@ def test_inventory_tenant_scope_and_paths(monkeypatch, tmp_path):
 
 
 def test_inventory_project_scope_skips_tenant_kbs(monkeypatch, tmp_path):
+    """kampadmin-support: several tenants, one project help centre, one report."""
     fake_workspace(monkeypatch, index_text=INDEX_ARTIFACT.replace("/kb/tenant/intercom",
-                                                                  "/kb/knowledgeowl"))
+                                                                  "/kb/knowledgeowl"),
+                   bodies=BODIES_ARTIFACT.replace("/kb/tenant/intercom", "/kb/knowledgeowl"))
     _, kb = collect.inventory(tmp_path, tmp_path, None)
-    assert kb["root"] == "/kb/knowledgeowl"
+    assert kb["root"] == "/kb/knowledgeowl" and kb["scope"] == "project"
+
+
+def test_kb_scope_decided_by_the_mount():
+    both = ["/kb/knowledgeowl/INDEX.md", "/kb/tenant/intercom/INDEX.md"]
+    assert collect.kb_scope(both, "yes_events") == ("tenant", ["/kb/tenant/intercom/INDEX.md"])
+    assert collect.kb_scope(both, None) == ("project", ["/kb/knowledgeowl/INDEX.md"])
+    # a tenant asking for a help centre that is only mounted project-wide still gets the project one
+    assert collect.kb_scope(["/kb/knowledgeowl/INDEX.md"], "lbv")[0] == "project"
+    with pytest.raises(SystemExit) as exc:  # tenant KBs only, no --tenant: no single help centre
+        collect.kb_scope(["/kb/tenant/intercom/INDEX.md"], None)
+    assert exc.value.code == 2
+
+
+def test_console_tenant_is_inferred_when_the_project_refuses_tenantless_calls(monkeypatch, tmp_path):
+    """kampadmin-support serves a project KB but answers 403 TENANT_REQUIRED without a tenant."""
+    seen = fake_workspace(monkeypatch, index_text=INDEX_ARTIFACT.replace("/kb/tenant/intercom",
+                                                                         "/kb/knowledgeowl"),
+                          bodies=BODIES_ARTIFACT.replace("/kb/tenant/intercom", "/kb/knowledgeowl"),
+                          find_stderr="403 TENANT_REQUIRED: this project requires a tenant")
+    _, kb = collect.inventory(tmp_path, tmp_path, None, "lbv")
+    assert kb["scope"] == "project" and "console scoped to tenant lbv" in kb["reason"]
+    assert kb["status"] == "complete"  # an inferred tenant is a note, not missing coverage
+    assert ["rc", "dev", "console", "--tenant", "lbv"] == seen[1][:5]
 
 
 def test_empty_inventory_is_a_hard_exit(monkeypatch, tmp_path):
@@ -283,8 +466,8 @@ def test_partial_inventory_needs_a_real_file_count(monkeypatch, tmp_path):
     assert kb["status"] == "partial" and "2 indexed vs 9 .md on disk" in kb["reason"]
 
 
-def test_tenant_required(monkeypatch, tmp_path):
-    from collections import Counter
+def test_days_is_capped(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["collect.py", "--days", "365"])
     with pytest.raises(SystemExit) as exc:
-        collect.require_tenant(Counter({"lbv": 104, "yes_events": 64}))
+        collect.parse_args()
     assert exc.value.code == 2

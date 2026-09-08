@@ -99,13 +99,11 @@ Only these are first-class:
 - `brain-simulate` — replay representative real inbound cases through `rc ask --simulation`, grade
   each draft against the human's historical reply, render an HTML report with run links and
   copy-paste steering prompts; re-run with `--ref dev/<branch>` and diff.
-- `brain-helpcenter-suggestions` — one window of real customer questions held against the public
-  help-centre inventory: Python collects (runs / Help Scout connector / harvest dump + `/kb` index),
-  the model classifies and clusters, Python validates every quote and link and renders one
-  `report.html` of ranked KB edits for the help-centre owner.
-- `brain-helpcenter-publish` — the write path back: an approved `replypen: helpcenter/v1` block is
-  applied to the live help centre with `rc project knowledge article apply|get` (dry-run first,
-  draft by default, `--publish` only on the owner's say-so), followed by a `/kb` resync.
+- `brain-helpcenter-suggestions` — one window of real customer questions (email runs, in-app chat
+  runs, Help Scout) held against the public help-centre inventory: Python collects the corpus and
+  every article body, the model classifies in two passes and writes one small markdown file per
+  suggestion, Python validates every quote and anchor and renders one `report.html` of ranked,
+  anchored KB edits for the help-centre owner, with a bot-readable block per card.
 - `prod-console` — direct guarded production primitives through `rc dev console capabilities`,
   `rc dev console database`, `rc dev console bash`, and `rc dev console action`.
 - `rc-script-wrapper` — deterministic local Python/shell wrappers around `rc`, including complete

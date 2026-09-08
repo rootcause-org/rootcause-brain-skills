@@ -1,0 +1,43 @@
+{
+ "_comment": "Anonymised shape of a `kind: chat` trace header (first `rc run trace --stream` record). Chat turns carry no sender, the session lives in prior_messages, and the clarifier form arrives as an agent `Questions asked (set …)` turn answered by a customer `User selected: …` turn.",
+ "kind": "chat",
+ "run_id": "3de6cda0-0000-4000-8000-000000000000",
+ "session_id": "396553c7-0000-4000-8000-000000000000",
+ "thread_id": "396553c7-0000-4000-8000-000000000000",
+ "created_at": "2026-09-07T15:19:13Z",
+ "tenant": "lbv",
+ "topic": null,
+ "question": "User selected: doel=saved_filter; weergave=all_statuses",
+ "draft": "Ik kan geen opgeslagen filterlijst rechtstreeks aanmaken vanuit deze chat. Je kunt wel in **Inschrijvingen** filteren op de drie periodes en daarna alle statussen meenemen.",
+ "metadata": {
+  "run_url": "https://app.example/runs/3de6cda0"
+ },
+ "prior_messages": [
+  {
+   "sender": "",
+   "sent_at": "",
+   "is_inbound": true,
+   "run_id": "d0058597-0000-4000-8000-000000000000",
+   "body": "ik moet voor de verzekeraar een lijst maken met alle leden van het voorbije sporttraject - dat zijn alle unieke kinderen die deelgenomen hebben - met hun status. kan je me die lijst bezorgen?"
+  },
+  {
+   "sender": "",
+   "sent_at": "",
+   "is_inbound": false,
+   "body": "Dag, ik heb de lijst opgesteld met **4.372 unieke kinderen** die een bevestigde inschrijving hadden. Ik heb zowel Excel als CSV toegevoegd."
+  },
+  {
+   "sender": "",
+   "sent_at": "",
+   "is_inbound": true,
+   "run_id": "17825608-0000-4000-8000-000000000000",
+   "body": "kan je die lijst aanmaken in KA bij inschrijvingen?"
+  },
+  {
+   "sender": "",
+   "sent_at": "",
+   "is_inbound": false,
+   "body": "Wil je een opgeslagen lijst of een tag?\n\nQuestions asked (set qs_17825608):\n- doel: Wat bedoel je precies met de lijst aanmaken bij Inschrijvingen? Options: Een opgeslagen/filterlijst maken [saved_filter]; De kinderen taggen [tag]\n- weergave: Welke inschrijvingen moeten zichtbaar zijn? Options: Alleen bevestigde [confirmed_only]; Alle statussen [all_statuses]"
+  }
+ ]
+}

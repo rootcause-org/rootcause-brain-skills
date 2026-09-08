@@ -1,4 +1,4 @@
 interface:
   display_name: "Brain Dev: Help-centre suggestions"
-  short_description: "What customers asked vs what the help centre says — ranked KB edits with evidence"
-  default_prompt: "Use $brain-helpcenter-suggestions to collect the last week of customer questions and the help-centre inventory, judge the gaps, and render the ranked suggestions report for the help-centre owner."
+  short_description: "What customers asked vs what the help centre says: ranked, anchored KB edits with evidence"
+  default_prompt: "Use $brain-helpcenter-suggestions to collect the last 60 days of customer questions and the help-centre inventory, classify in two passes, write the anchored suggestions, and render the report for the help-centre owner."

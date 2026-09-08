@@ -1,0 +1,319 @@
+{
+ "classification": [
+  {
+   "article_ids": [],
+   "conversation_id": "run:1a2b3c4d",
+   "topics": [
+    "inschrijvingen-filteren"
+   ],
+   "verdict": "recipe"
+  },
+  {
+   "article_ids": [],
+   "conversation_id": "run:b4c5d6e7",
+   "topics": [
+    "inschrijvingen-filteren"
+   ],
+   "verdict": "recipe"
+  },
+  {
+   "article_ids": [
+    "A2"
+   ],
+   "conversation_id": "run:2b3c4d5e",
+   "topics": [
+    "cabine-sluiten"
+   ],
+   "verdict": "partial"
+  },
+  {
+   "article_ids": [
+    "A2"
+   ],
+   "conversation_id": "hs:3438828375",
+   "topics": [
+    "cabine-sluiten"
+   ],
+   "verdict": "partial"
+  },
+  {
+   "article_ids": [
+    "A3"
+   ],
+   "conversation_id": "run:3c4d5e6f",
+   "topics": [
+    "facturen-archief"
+   ],
+   "verdict": "wrong_title"
+  },
+  {
+   "article_ids": [
+    "A4"
+   ],
+   "conversation_id": "run:4d5e6f70",
+   "topics": [
+    "online-boeken-knop"
+   ],
+   "verdict": "uncertain"
+  },
+  {
+   "article_ids": [
+    "A1"
+   ],
+   "conversation_id": "run:5e6f7081",
+   "topics": [
+    "openingsuren-feestdagen"
+   ],
+   "verdict": "partial"
+  },
+  {
+   "article_ids": [],
+   "conversation_id": "run:6f708192",
+   "topics": [
+    "openingsuren-feestdagen"
+   ],
+   "verdict": "missing"
+  },
+  {
+   "article_ids": [
+    "A6",
+    "A7"
+   ],
+   "conversation_id": "run:70819aa3",
+   "topics": [
+    "cabine-duplicaten"
+   ],
+   "verdict": "partial"
+  },
+  {
+   "article_ids": [
+    "A8"
+   ],
+   "conversation_id": "run:8192a3b4",
+   "topics": [
+    "verouderde-iframe"
+   ],
+   "verdict": "partial"
+  },
+  {
+   "article_ids": [],
+   "conversation_id": "run:92a3b4c5",
+   "topics": [],
+   "verdict": "not_kb"
+  },
+  {
+   "article_ids": [
+    "A1"
+   ],
+   "conversation_id": "run:a3b4c5d6",
+   "topics": [
+    "openingsuren"
+   ],
+   "verdict": "answered"
+  }
+ ],
+ "evidence_sha256": "707e83046d9df14e124fedc8e5763be1f4376772b72a1d6cf246786e652cf865",
+ "headline": "Vier gaten kosten support elke week tijd: een gefilterde lijst inschrijvingen, het sluiten van een cabine, een dag volledig sluiten en twee cabine-artikels die elkaar tegenspreken.",
+ "learnings": [
+  {
+   "observation": "Beheerders vragen data die ze zelf uit een filter kunnen halen",
+   "proposed_change": "een verdict recipe herkent die vraag als how-to gat",
+   "target": "rubric"
+  },
+  {
+   "observation": "Antwoorden op het keuzeformulier komen als aparte beurt binnen",
+   "proposed_change": "vouw ze in de vorige klantbeurt",
+   "target": "normaliser"
+  }
+ ],
+ "schema_version": 2,
+ "suggestions": [
+  {
+   "aliases": [],
+   "destination": null,
+   "edit": null,
+   "evidence": [
+    {
+     "conversation_id": "run:1a2b3c4d",
+     "quote": "maak een admin url die de inschrijvingen filtert op deze week"
+    },
+    {
+     "conversation_id": "run:b4c5d6e7",
+     "quote": "een lijst maken van de last-minute inschrijvingen van deze maand"
+    }
+   ],
+   "flags": [],
+   "id": "S1",
+   "kind": "new",
+   "route": "kb",
+   "seed_reply": null,
+   "target_articles": [],
+   "text": "Je kan elke lijst inschrijvingen filteren en die filter bewaren als link.\n\n1. Ga naar **Inschrijvingen** en klik op **Filter**.\n2. Kies een periode en een locatie.\n3. Klik op **Bewaren als link**. De link houdt de filter vast, ook volgende week.\n\nDeel de link met een externe beheerder: die ziet enkel de gefilterde lijst.",
+   "title": "Zelf een gefilterde lijst inschrijvingen maken",
+   "topic": "inschrijvingen-filteren",
+   "why": "Beheerders vragen elke week opnieuw om een lijst die ze zelf in twee klikken kunnen maken. De help legt de filters wel uit per scherm, maar nergens staat hoe je een filter bewaart of deelt als link."
+  },
+  {
+   "aliases": [],
+   "destination": null,
+   "edit": {
+    "after": null,
+    "before": null,
+    "old": "Je kan een cabine niet sluiten terwijl ze in gebruik is.\n"
+   },
+   "evidence": [
+    {
+     "conversation_id": "run:2b3c4d5e",
+     "quote": "kan ik een cabine sluiten terwijl er nog een afspraak in staat"
+    },
+    {
+     "conversation_id": "hs:3438828375",
+     "quote": "kan ik een cabine sluiten terwijl ze gebruikt wordt"
+    }
+   ],
+   "flags": [
+    "contradiction"
+   ],
+   "id": "S2",
+   "kind": "rewrite",
+   "route": "kb",
+   "seed_reply": "hs:3438828375",
+   "target_articles": [
+    "A2"
+   ],
+   "text": "Je sluit een cabine zodra de lopende afspraak verplaatst of geannuleerd is. Ga naar **Instellingen > Cabines**, klik de cabine aan en zet ze op **inactief**. Oude afspraken blijven zichtbaar in de agenda.",
+   "title": "Cabines beheren",
+   "topic": "cabine-sluiten",
+   "why": "Het artikel zegt dat sluiten onmogelijk is zolang de cabine in gebruik is, maar support legt telkens uit dat het wel kan zodra de lopende afspraak verplaatst is. Twee klanten kregen daardoor een ander antwoord dan de help."
+  },
+  {
+   "aliases": [],
+   "destination": null,
+   "edit": {
+    "after": "## Uitzonderingen",
+    "before": null,
+    "old": null
+   },
+   "evidence": [
+    {
+     "conversation_id": "run:5e6f7081",
+     "quote": "hoe zet ik andere openingsuren op een feestdag"
+    },
+    {
+     "conversation_id": "run:6f708192",
+     "quote": "waar ik een dag helemaal sluit"
+    }
+   ],
+   "flags": [],
+   "id": "S3",
+   "kind": "rewrite",
+   "route": "kb",
+   "seed_reply": null,
+   "target_articles": [
+    "A1"
+   ],
+   "text": "Wil je een dag helemaal sluiten, kies dan dezelfde dag als begin en einde en laat de uren leeg. De dag verdwijnt uit online boeken en de agenda toont ze als gesloten.",
+   "title": "Openingsuren instellen",
+   "topic": "openingsuren-feestdagen",
+   "why": "De uitleg over uitzonderingen gaat over een periode met andere uren. Klanten zoeken iets anders: een enkele dag volledig sluiten voor een feestdag of een brugdag."
+  },
+  {
+   "aliases": [
+    "facturen van vorig jaar",
+    "factuurarchief"
+   ],
+   "destination": null,
+   "edit": null,
+   "evidence": [
+    {
+     "conversation_id": "run:3c4d5e6f",
+     "quote": "waar vind ik mijn facturen van vorig jaar"
+    }
+   ],
+   "flags": [],
+   "id": "S4",
+   "kind": "add_alias",
+   "route": "kb",
+   "seed_reply": null,
+   "target_articles": [
+    "A3"
+   ],
+   "text": null,
+   "title": "Facturatie",
+   "topic": "facturen-archief",
+   "why": "Het artikel beschrijft de datumfilter wel, maar niemand zoekt op het woord facturatie. Klanten typen de woorden van hun boekhouder."
+  },
+  {
+   "aliases": [],
+   "destination": null,
+   "edit": null,
+   "evidence": [
+    {
+     "conversation_id": "run:4d5e6f70",
+     "quote": "online boeken werkt niet meer op mijn website"
+    }
+   ],
+   "flags": [],
+   "id": "S5",
+   "kind": "retitle",
+   "route": "kb",
+   "seed_reply": null,
+   "target_articles": [
+    "A4"
+   ],
+   "text": null,
+   "title": "Online boeken op je eigen website",
+   "topic": "online-boeken-knop",
+   "why": "Klanten noemen het online boeken, niet de boekingsmodule. Met de huidige titel vinden ze het artikel niet terug wanneer de knop stukgaat."
+  },
+  {
+   "aliases": [],
+   "destination": "A6",
+   "edit": null,
+   "evidence": [
+    {
+     "conversation_id": "run:70819aa3",
+     "quote": "er staan twee artikels over cabines in de help en ze spreken elkaar tegen"
+    }
+   ],
+   "flags": [
+    "contradiction"
+   ],
+   "id": "S6",
+   "kind": "merge",
+   "route": "kb",
+   "seed_reply": null,
+   "target_articles": [
+    "A6",
+    "A7"
+   ],
+   "text": "Bij de behandeling kies je onderaan **toegestane cabines**. De agenda plant de behandeling enkel in die cabines.\n\nStaat een medewerker vast in een cabine, dan geldt de doorsnede: enkel cabines die zowel bij de behandeling als bij de medewerker horen.",
+   "title": "Cabines koppelen aan behandelingen",
+   "topic": "cabine-duplicaten",
+   "why": "Twee artikels beschrijven dezelfde instelling en geven een tegengesteld antwoord: het ene laat de behandeling de cabine bepalen, het andere de medewerker. Een klant merkte dat zelf op."
+  },
+  {
+   "aliases": [],
+   "destination": "A4",
+   "edit": null,
+   "evidence": [
+    {
+     "conversation_id": "run:8192a3b4",
+     "quote": "de iframe-uitleg in de help werkt niet meer"
+    }
+   ],
+   "flags": [],
+   "id": "S7",
+   "kind": "delete",
+   "route": "kb",
+   "seed_reply": null,
+   "target_articles": [
+    "A8"
+   ],
+   "text": null,
+   "title": "Boekingsmodule via iframe plaatsen",
+   "topic": "verouderde-iframe",
+   "why": "De iframe-methode werkt sinds versie 8 niet meer. Wie ze volgt, krijgt een leeg kader op de eigen site. Het artikel over de boekingsmodule vervangt ze volledig."
+  }
+ ]
+}

@@ -4,7 +4,8 @@
    "aliases": [],
    "area": null,
    "audience": "customer",
-   "collection": "Agenda",
+   "collection": null,
+   "collection_id": "col-agenda",
    "deprecated": false,
    "home": "kb",
    "id": "A1",
@@ -12,7 +13,13 @@
     "openingsuren",
     "feestdagen"
    ],
+   "locale": "nl",
+   "number": "11",
+   "parent_type": "collection",
    "path": "uncategorized/openingsuren-instellen.md",
+   "provider": "helpscout",
+   "provider_id": "6a5a2fdba9c25bdda6596301",
+   "status": "published",
    "summary": "Openingsuren en uitzonderingen per vestiging instellen.",
    "title": "Openingsuren instellen",
    "updated_at": "2026-04-18",
@@ -24,7 +31,8 @@
    ],
    "area": null,
    "audience": "customer",
-   "collection": "Agenda",
+   "collection": null,
+   "collection_id": "col-agenda",
    "deprecated": false,
    "home": "kb",
    "id": "A2",
@@ -32,17 +40,24 @@
     "cabine",
     "ruimte"
    ],
+   "locale": "nl",
+   "number": "19",
+   "parent_type": "collection",
    "path": "uncategorized/cabines-beheren.md",
+   "provider": "helpscout",
+   "provider_id": "6a5a2fdba9c25bdda6596302",
+   "status": "published",
    "summary": "Cabines aanmaken, hernoemen en aan een vestiging koppelen.",
    "title": "Cabines beheren",
-   "updated_at": "2026-02-02",
+   "updated_at": "2026-04-18",
    "url": "https://help.salonsoft.example/article/cabines-beheren"
   },
   {
    "aliases": [],
    "area": null,
    "audience": "customer",
-   "collection": "Boekhouding",
+   "collection": null,
+   "collection_id": "col-boekhouding",
    "deprecated": false,
    "home": "kb",
    "id": "A3",
@@ -50,17 +65,24 @@
     "factuur",
     "btw"
    ],
+   "locale": "nl",
+   "number": "24",
+   "parent_type": "collection",
    "path": "uncategorized/facturatie.md",
+   "provider": "helpscout",
+   "provider_id": "6a5a2fdba9c25bdda6596303",
+   "status": "published",
    "summary": "Facturen maken, filteren en exporteren.",
    "title": "Facturatie",
-   "updated_at": "2026-06-30",
+   "updated_at": "2026-04-18",
    "url": "https://help.salonsoft.example/article/facturatie"
   },
   {
    "aliases": [],
    "area": null,
    "audience": "customer",
-   "collection": "Online boeken",
+   "collection": null,
+   "collection_id": "col-online",
    "deprecated": false,
    "home": "kb",
    "id": "A4",
@@ -68,10 +90,16 @@
     "widget",
     "website"
    ],
+   "locale": "nl",
+   "number": "31",
+   "parent_type": "collection",
    "path": "uncategorized/online-boekingsmodule.md",
+   "provider": "helpscout",
+   "provider_id": "6a5a2fdba9c25bdda6596304",
+   "status": "published",
    "summary": "De boekingsmodule op je eigen website plaatsen.",
    "title": "Online boekingsmodule",
-   "updated_at": "2025-11-09",
+   "updated_at": "2026-04-18",
    "url": "https://help.salonsoft.example/article/online-boekingsmodule"
   },
   {
@@ -79,175 +107,425 @@
    "area": null,
    "audience": "internal",
    "collection": null,
+   "collection_id": null,
    "deprecated": false,
    "home": "brain",
    "id": "A5",
    "keywords": [],
+   "locale": null,
+   "number": null,
+   "parent_type": null,
    "path": "knowledge/agenda-limieten.md",
+   "provider": null,
+   "provider_id": null,
+   "status": null,
    "summary": "Interne notities over boekingshorizon.",
    "title": "Agenda limieten (intern)",
    "updated_at": null,
    "url": null
+  },
+  {
+   "aliases": [],
+   "area": null,
+   "audience": "customer",
+   "collection": null,
+   "collection_id": "col-agenda",
+   "deprecated": false,
+   "home": "kb",
+   "id": "A6",
+   "keywords": [
+    "cabine",
+    "behandeling"
+   ],
+   "locale": "nl",
+   "number": "44",
+   "parent_type": "collection",
+   "path": "uncategorized/cabines-koppelen.md",
+   "provider": "helpscout",
+   "provider_id": "6a5a2fdba9c25bdda6596306",
+   "status": "published",
+   "summary": "Welke behandeling in welke cabine mag doorgaan.",
+   "title": "Cabines koppelen aan behandelingen",
+   "updated_at": "2026-05-02",
+   "url": "https://help.salonsoft.example/article/cabines-koppelen"
+  },
+  {
+   "aliases": [],
+   "area": null,
+   "audience": "customer",
+   "collection": null,
+   "collection_id": "col-agenda",
+   "deprecated": false,
+   "home": "kb",
+   "id": "A7",
+   "keywords": [
+    "cabine",
+    "medewerker"
+   ],
+   "locale": "nl",
+   "number": "45",
+   "parent_type": "collection",
+   "path": "uncategorized/cabine-instellingen-medewerker.md",
+   "provider": "helpscout",
+   "provider_id": "6a5a2fdba9c25bdda6596307",
+   "status": "published",
+   "summary": "Oudere uitleg over cabines per medewerker.",
+   "title": "Cabine-instellingen per medewerker",
+   "updated_at": "2025-03-11",
+   "url": "https://help.salonsoft.example/article/cabine-instellingen-medewerker"
+  },
+  {
+   "aliases": [],
+   "area": null,
+   "audience": "customer",
+   "collection": null,
+   "collection_id": "col-online",
+   "deprecated": false,
+   "home": "kb",
+   "id": "A8",
+   "keywords": [
+    "iframe",
+    "insluiten"
+   ],
+   "locale": "nl",
+   "number": "12",
+   "parent_type": "collection",
+   "path": "uncategorized/boekingsmodule-iframe.md",
+   "provider": "helpscout",
+   "provider_id": "6a5a2fdba9c25bdda6596308",
+   "status": "published",
+   "summary": "Verouderde iframe-instructies voor de boekingsmodule.",
+   "title": "Boekingsmodule via iframe plaatsen",
+   "updated_at": "2024-08-20",
+   "url": "https://help.salonsoft.example/article/boekingsmodule-iframe"
   }
  ],
  "collected_at": "2026-09-08T09:12:44Z",
  "conversations": [
   {
-   "channel": "email",
-   "created_at": "2026-09-01T08:14:00Z",
-   "customer": "Ellen",
-   "first_message": "Hoe zet ik mijn agenda open voor 2027? Klanten willen nu al boeken voor januari maar ik kan enkel dit jaar selecteren.",
-   "first_raw": "Hallo,\n\nIk heb een vraagje over de agenda.\n\nEllen",
-   "id": "hs:1001",
-   "later": [],
-   "noise": null,
-   "reply": {
-    "by": "Marie",
-    "provenance": "human",
-    "text": "Dag Ellen, je opent een nieuw jaar via Instellingen > Agenda > Boekingshorizon: zet de horizon op 18 maanden en 2027 verschijnt automatisch."
-   },
-   "subject": "Agenda 2027",
-   "tags": [],
-   "tenant": null,
-   "truncated": false,
-   "url": "https://secure.helpscout.net/conversation/1001/1/"
-  },
-  {
    "channel": "chat",
-   "created_at": "2026-09-02T11:40:00Z",
-   "customer": "Lotte",
-   "first_message": "hoi, hoe kan ik een cabine koppelen aan een behandeling? ik heb 3 cabines maar de pedicure mag enkel in cabine 2",
+   "created_at": "2026-08-14T09:12:00Z",
+   "customer": null,
+   "first_message": "maak een admin url die de inschrijvingen filtert op deze week en locatie Gent",
    "first_raw": null,
-   "id": "hs:1002",
+   "id": "run:1a2b3c4d",
    "later": [
     {
      "role": "customer",
-     "text": "en kan dat ook per medewerker?"
-    },
+     "text": "en kan ik die link bewaren voor volgende week? [koos: periode=rollend]"
+    }
+   ],
+   "linked_articles": [],
+   "noise": null,
+   "reply": {
+    "by": null,
+    "provenance": "draft",
+    "text": "Hier is de link: /admin/inschrijvingen?week=huidig&locatie=gent"
+   },
+   "subject": null,
+   "tags": [],
+   "tenant": "lbv",
+   "truncated": false,
+   "url": "https://app.rootcause.example/runs/1a2b3c4d"
+  },
+  {
+   "channel": "chat",
+   "created_at": "2026-08-27T14:41:00Z",
+   "customer": null,
+   "first_message": "kan je een lijst maken van de last-minute inschrijvingen van deze maand per locatie",
+   "first_raw": null,
+   "id": "run:b4c5d6e7",
+   "later": [],
+   "linked_articles": [],
+   "noise": null,
+   "reply": {
+    "by": null,
+    "provenance": "draft",
+    "text": "Ik heb de lijst opgehaald, 42 inschrijvingen."
+   },
+   "subject": null,
+   "tags": [],
+   "tenant": "lbv",
+   "truncated": false,
+   "url": "https://app.rootcause.example/runs/b4c5d6e7"
+  },
+  {
+   "channel": "chat",
+   "created_at": "2026-08-15T10:02:00Z",
+   "customer": null,
+   "first_message": "kan ik een cabine sluiten terwijl er nog een afspraak in staat, of moet die eerst weg",
+   "first_raw": null,
+   "id": "run:2b3c4d5e",
+   "later": [],
+   "linked_articles": [],
+   "noise": null,
+   "reply": {
+    "by": null,
+    "provenance": "draft",
+    "text": "Je sluit de cabine via Instellingen > Cabines."
+   },
+   "subject": null,
+   "tags": [],
+   "tenant": "heyo",
+   "truncated": false,
+   "url": "https://app.rootcause.example/runs/2b3c4d5e"
+  },
+  {
+   "channel": "chat",
+   "created_at": "2026-08-16T11:20:00Z",
+   "customer": null,
+   "first_message": "kan ik een cabine sluiten terwijl ze gebruikt wordt door een collega",
+   "first_raw": null,
+   "id": "hs:3438828375",
+   "later": [
+    {
+     "role": "customer",
+     "text": "en blijven de oude afspraken dan zichtbaar"
+    }
+   ],
+   "linked_articles": [
+    "A2"
+   ],
+   "noise": null,
+   "reply": {
+    "by": "Marie-Lore",
+    "provenance": "human",
+    "text": "Dag Nele, je kan de cabine sluiten zodra de lopende afspraak verplaatst is. Ga naar Instellingen > Cabines, klik de cabine aan en zet ze op inactief."
+   },
+   "subject": null,
+   "tags": [],
+   "tenant": "lbv",
+   "truncated": false,
+   "url": "https://secure.helpscout.net/conversation/3438828375/12/"
+  },
+  {
+   "channel": "chat",
+   "created_at": "2026-08-18T08:35:00Z",
+   "customer": null,
+   "first_message": "waar vind ik mijn facturen van vorig jaar, mijn boekhouder vraagt ze op",
+   "first_raw": null,
+   "id": "run:3c4d5e6f",
+   "later": [],
+   "linked_articles": [
+    "A3"
+   ],
+   "noise": null,
+   "reply": {
+    "by": null,
+    "provenance": "draft",
+    "text": "Je vindt ze onder Boekhouding > Facturen."
+   },
+   "subject": null,
+   "tags": [],
+   "tenant": "heyo",
+   "truncated": false,
+   "url": "https://app.rootcause.example/runs/3c4d5e6f"
+  },
+  {
+   "channel": "chat",
+   "created_at": "2026-08-19T16:05:00Z",
+   "customer": null,
+   "first_message": "online boeken werkt niet meer op mijn website, de knop doet niets",
+   "first_raw": null,
+   "id": "run:4d5e6f70",
+   "later": [],
+   "linked_articles": [],
+   "noise": null,
+   "reply": {
+    "by": null,
+    "provenance": "draft",
+    "text": "Kan je de pagina eens delen waar de knop staat?"
+   },
+   "subject": null,
+   "tags": [],
+   "tenant": "lbv",
+   "truncated": false,
+   "url": "https://app.rootcause.example/runs/4d5e6f70"
+  },
+  {
+   "channel": "chat",
+   "created_at": "2026-08-21T09:44:00Z",
+   "customer": null,
+   "first_message": "hoe zet ik andere openingsuren op een feestdag, de gewone uren blijven staan",
+   "first_raw": null,
+   "id": "run:5e6f7081",
+   "later": [],
+   "linked_articles": [
+    "A1"
+   ],
+   "noise": null,
+   "reply": {
+    "by": null,
+    "provenance": "draft",
+    "text": "Dat doe je via de uitzonderingen in de agenda-instellingen."
+   },
+   "subject": null,
+   "tags": [],
+   "tenant": "heyo",
+   "truncated": false,
+   "url": "https://app.rootcause.example/runs/5e6f7081"
+  },
+  {
+   "channel": "chat",
+   "created_at": "2026-08-24T13:10:00Z",
+   "customer": null,
+   "first_message": "de brugdag van volgende week moet dicht maar ik vind nergens waar ik een dag helemaal sluit",
+   "first_raw": null,
+   "id": "run:6f708192",
+   "later": [],
+   "linked_articles": [],
+   "noise": null,
+   "reply": {
+    "by": null,
+    "provenance": "draft",
+    "text": "Ik zoek het even op voor je."
+   },
+   "subject": null,
+   "tags": [],
+   "tenant": "lbv",
+   "truncated": false,
+   "url": "https://app.rootcause.example/runs/6f708192"
+  },
+  {
+   "channel": "chat",
+   "created_at": "2026-08-25T15:22:00Z",
+   "customer": null,
+   "first_message": "er staan twee artikels over cabines in de help en ze spreken elkaar tegen, welke klopt",
+   "first_raw": null,
+   "id": "run:70819aa3",
+   "later": [
     {
      "role": "unknown",
      "text": "Ik stuur je zo een schermafbeelding van de cabine-instellingen door."
     }
    ],
-   "noise": null,
-   "reply": {
-    "by": "Marie",
-    "provenance": "human",
-    "text": "Dag Lotte, bij de behandeling zelf kies je onderaan 'toegestane cabines' en vink je enkel cabine 2 aan."
-   },
-   "subject": "Cabines",
-   "tags": [],
-   "tenant": null,
-   "truncated": false,
-   "url": "https://secure.helpscout.net/conversation/1002/2/"
-  },
-  {
-   "channel": "email",
-   "created_at": "2026-09-03T15:05:00Z",
-   "customer": "Sofie",
-   "first_message": "Waar vind ik mijn facturen van vorig jaar? Mijn boekhouder vraagt de facturen van 2025 en ik zie enkel de laatste drie maanden staan.",
-   "first_raw": null,
-   "id": "hs:1003",
-   "later": [],
-   "noise": null,
-   "reply": {
-    "by": "Karel",
-    "provenance": "human",
-    "text": "Dag Sofie, klik in Facturatie op de filter rechtsboven en zet het jaar op 2025."
-   },
-   "subject": "Facturen",
-   "tags": [],
-   "tenant": null,
-   "truncated": false,
-   "url": "https://secure.helpscout.net/conversation/1003/3/"
-  },
-  {
-   "channel": "email",
-   "created_at": "2026-09-04T09:20:00Z",
-   "customer": "Michel",
-   "first_message": "Kunnen jullie ons klantenbestand van 4200 klanten voor ons importeren? We hebben een export uit ons oude pakket.",
-   "first_raw": null,
-   "id": "hs:1004",
-   "later": [],
-   "noise": {
-    "reason": "duplicate_outreach",
-    "verdict": "not_kb"
-   },
-   "reply": {
-    "by": "Marie",
-    "provenance": "human",
-    "text": "Dag Michel, dat doen we graag voor je, ik plan het in voor volgende week."
-   },
-   "subject": "Import klanten",
-   "tags": [],
-   "tenant": null,
-   "truncated": false,
-   "url": "https://secure.helpscout.net/conversation/1004/4/"
-  },
-  {
-   "channel": "chat",
-   "created_at": "2026-09-05T13:31:00Z",
-   "customer": "Nathalie",
-   "first_message": "online boeken werkt niet meer op mijn website, de knop doet niks meer sinds gisteren",
-   "first_raw": null,
-   "id": "hs:1005",
-   "later": [],
+   "linked_articles": [
+    "A6",
+    "A7"
+   ],
    "noise": null,
    "reply": {
     "by": null,
     "provenance": "draft",
-    "text": "Dag Nathalie, ik bekijk het even en kom bij je terug."
+    "text": "Ik geef het door aan het support-team."
    },
-   "subject": "Online boeken",
+   "subject": null,
    "tags": [],
-   "tenant": null,
+   "tenant": "heyo",
    "truncated": false,
-   "url": "https://secure.helpscout.net/conversation/1005/5/"
+   "url": "https://app.rootcause.example/runs/70819aa3"
   },
   {
-   "channel": "email",
-   "created_at": "2026-09-06T07:55:00Z",
-   "customer": "Ilse",
-   "first_message": "Hoe stel ik mijn openingsuren in voor de feestdagen?",
+   "channel": "chat",
+   "created_at": "2026-08-26T10:15:00Z",
+   "customer": null,
+   "first_message": "de iframe-uitleg in de help werkt niet meer, ik krijg een leeg kader op mijn site",
    "first_raw": null,
-   "id": "hs:1006",
+   "id": "run:8192a3b4",
    "later": [],
+   "linked_articles": [
+    "A8"
+   ],
    "noise": null,
    "reply": {
-    "by": "Karel",
-    "provenance": "human",
-    "text": "Dag Ilse, via Instellingen > Openingsuren > Uitzonderingen voeg je de feestdagen toe."
+    "by": null,
+    "provenance": "draft",
+    "text": "De iframe-methode is vervangen door de boekingsmodule."
    },
-   "subject": "Openingsuren",
+   "subject": null,
    "tags": [],
-   "tenant": null,
+   "tenant": "lbv",
    "truncated": false,
-   "url": "https://secure.helpscout.net/conversation/1006/6/"
+   "url": "https://app.rootcause.example/runs/8192a3b4"
+  },
+  {
+   "channel": "chat",
+   "created_at": "2026-08-28T07:01:00Z",
+   "customer": null,
+   "first_message": "test",
+   "first_raw": null,
+   "id": "run:92a3b4c5",
+   "later": [],
+   "linked_articles": [],
+   "noise": {
+    "reason": "repeated_prompt: dezelfde vraag komt 6 keer voor",
+    "verdict": "not_kb"
+   },
+   "reply": {
+    "by": null,
+    "provenance": "draft",
+    "text": "Waarmee kan ik je helpen?"
+   },
+   "subject": null,
+   "tags": [],
+   "tenant": "lbv",
+   "truncated": false,
+   "url": "https://app.rootcause.example/runs/92a3b4c5"
+  },
+  {
+   "channel": "chat",
+   "created_at": "2026-08-29T12:30:00Z",
+   "customer": null,
+   "first_message": "hoe stel ik mijn openingsuren in voor de zomervakantie",
+   "first_raw": null,
+   "id": "run:a3b4c5d6",
+   "later": [],
+   "linked_articles": [
+    "A1"
+   ],
+   "noise": null,
+   "reply": {
+    "by": null,
+    "provenance": "draft",
+    "text": "Via Instellingen > Openingsuren kan je een periode met andere uren toevoegen."
+   },
+   "subject": null,
+   "tags": [],
+   "tenant": "heyo",
+   "truncated": false,
+   "url": "https://app.rootcause.example/runs/a3b4c5d6"
   }
  ],
  "coverage": [
   {
-   "feed": "helpscout:support@salonsoft.example",
-   "reason": "9 conversations in window: 6 kept · 2 spam folder · 1 no customer text",
-   "retained": 6,
-   "scanned": 9,
+   "feed": "chat_runs",
+   "reason": "18 chatgesprekken in het venster: 12 behouden, 4 zonder klantvraag, 2 van interne tenants",
+   "retained": 12,
+   "scanned": 18,
+   "status": "complete"
+  },
+  {
+   "feed": "other_runs",
+   "reason": "350 analysis runs, 317 mislukt, geen deel van dit corpus",
+   "retained": 0,
+   "scanned": 350,
+   "status": "complete"
+  },
+  {
+   "feed": "kb",
+   "reason": "8 INDEX-artikels gelezen onder /kb/helpscout",
+   "retained": 8,
+   "scanned": 8,
    "status": "complete"
   }
  ],
  "kb": {
-  "articles": 4,
+  "articles": 7,
+  "base_url": "https://help.salonsoft.example",
   "brain_docs": 1,
+  "provider": "helpscout",
   "reason": null,
   "root": "/kb/helpscout",
+  "scope": "project",
   "status": "complete"
  },
  "project": "salonsoft",
  "schema_version": 1,
- "source": "helpscout",
+ "source": "runs",
  "tenant": null,
  "window": {
-  "days": 8,
+  "days": 60,
   "end": "2026-09-08T09:12:44Z",
-  "start": "2026-08-31T00:00:00Z"
+  "start": "2026-07-10T00:00:00Z"
  }
 }
