@@ -89,6 +89,10 @@ and anchors must match *that* text. So write bodies the way `/kb` files look: `-
 `**bold**` / `*italic*`, ATX headings, one line per paragraph (no soft wraps), an image alone on
 its own line. **Not supported** (lossy on the way back, so an anchor can never target it): GFM
 tables, `~~strikethrough~~`, raw HTML — use lists or a heading-per-row instead of a table.
+**Intercom headings:** Intercom stores the top heading level you use as `#` (a body whose largest
+heading is `##` comes back with `#`/`##`). The host promotes the levels the same way before it
+diffs, so re-applying is still a no-op — but write Intercom bodies with `#` as the top level so the
+block you keep matches what `get` returns.
 
 ## Manual kinds
 
