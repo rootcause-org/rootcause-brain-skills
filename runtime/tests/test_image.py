@@ -89,7 +89,7 @@ class SizeLadder(ImageTest):
                 image.generate("a red bicycle", aspect=aspect, step=step)
                 form = self._form()
                 self.assertIn(f"{w}x{h}", form, f"{aspect}/{step}")
-                self.assertIn("low" if step == "preview" else "medium", form)
+                self.assertIn("low" if step == "preview" else "high", form)
 
     @responses.activate
     def test_default_out_path_is_slugified_prompt(self):
@@ -126,13 +126,13 @@ class Styles(ImageTest):
 
 class Refine(ImageTest):
     @responses.activate
-    def test_derives_aspect_sends_base_first_at_medium(self):
+    def test_derives_aspect_sends_base_first_at_high(self):
         self._broker()
         base = self._base(size=(736, 928))  # 4:5 preview
         out = image.refine(str(base))
         form = self._form()
         self.assertIn("1024x1280", form)  # 4:5 final
-        self.assertIn("medium", form)
+        self.assertIn("high", form)
         self.assertIn("Recreate this exact image", form)
         self.assertIn(b'name="image"; filename="poster-preview.png"', responses.calls[0].request.body)
         self.assertEqual(out, str(self.outbox / "poster-final.png"))
