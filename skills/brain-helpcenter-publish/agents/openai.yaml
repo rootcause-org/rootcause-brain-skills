@@ -1,0 +1,4 @@
+interface:
+  display_name: "Brain Dev: Help-centre publish"
+  short_description: "Apply an approved help-centre suggestion block to Help Scout / Intercom"
+  default_prompt: "Use $brain-helpcenter-publish to apply an approved `replypen: helpcenter/v1` block to the project's help centre — dry-run first, then write the article as a draft and confirm the /kb resync."

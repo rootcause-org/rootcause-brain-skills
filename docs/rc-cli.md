@@ -59,6 +59,10 @@ rc project database ls
 rc project database get <DSN_ENV>
 rc project database set <DSN_ENV> description="..."
 rc project database controls get <DSN_ENV>
+rc project connection ls
+rc project connection add integration_key=<key> label=<label> tier=write token=<token>
+rc project knowledge article apply <file.md> [--dry-run] [--publish]
+rc project knowledge article get <provider> <article-id>
 rc auth login
 rc auth status
 rc self update
@@ -374,6 +378,34 @@ rc dev console bash run 'rg -n -i "invoice|payment|refund" /kb /brain/knowledge 
 ```
 
 For KB title/frontmatter indexes, see [knowledge-base.md](knowledge-base.md).
+
+## Help Centre Articles
+
+Writing back to the project's public help centre (Help Scout Docs, Intercom; KnowledgeOwl not yet).
+The input is a `replypen: helpcenter/v1` markdown block — produced by
+[`brain-helpcenter-suggestions`](../skills/brain-helpcenter-suggestions/SKILL.md), applied by
+[`brain-helpcenter-publish`](../skills/brain-helpcenter-publish/SKILL.md). Requires `rc` >= 1.26.0 and
+a one-time write grant:
+
+```bash
+rc project connection add integration_key=helpscout_docs label=help-center tier=write token=<token>
+rc project connection ls                                  # the row shows `tier: write`
+```
+
+`integration_key` is `helpscout_docs` (Docs API key) or `intercom` (token with Articles write).
+Write-tier connections are host-only: they are never injected into a run workspace.
+
+```bash
+rc project knowledge article apply ./article.md --dry-run   # prints op/changes + the provider request
+rc project knowledge article apply ./article.md             # real write; create/update lands as a draft
+rc project knowledge article apply ./article.md --publish   # change or publish the LIVE article
+rc project knowledge article get helpscout <article-id>     # read back as a fresh `op: update` block
+rc --tenant <slug> project knowledge article apply ./article.md   # one help centre per tenant
+```
+
+`apply` is a **side effect** ([side-effects.md](side-effects.md)); `--dry-run` and `get` are read-only.
+A no-op block reports `changed: false` and sends nothing. Every real write lands an
+`helpcenter.article.update` row in `rc fleet actions` and queues a `/kb` resync.
 
 Prefer `rc dev console database` and `rc dev console bash` for debugging, tool parity, and "does this script/query work?" loops.
 They run the production primitive directly and return faster than `rc ask`, which adds the LLM wrapper
