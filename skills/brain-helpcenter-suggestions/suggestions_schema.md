@@ -27,7 +27,7 @@ titles, texts and quotes stay in the customer's language.
 
 | Field | Rules |
 |---|---|
-| `conversation_id` | an `evidence.conversations[].id` (`hs:…`, `run:…`, `harvest:C…`), unique |
+| `conversation_id` | an `evidence.conversations[].id` (`hs:…`, `run:…`), unique |
 | `verdict` | `answered` \| `partial` \| `missing` \| `wrong_title` \| `not_kb` \| `uncertain` |
 | `article_ids[]` | the `evidence.articles[].id`s you judged against (may be empty) |
 | `topics[]` | short cluster slugs (`["boekingshorizon"]`), shared with every conversation in the cluster. At least one unless `verdict` is `not_kb`; **first = primary** |
@@ -75,7 +75,7 @@ verdict: you may classify the conversation any way the text supports. The reason
 
 ### `evidence[]`
 
-- `conversation_id` must exist, have a non-null `url` (harvest corpora have none — they cannot back a
+- `conversation_id` must exist, have a non-null `url` (a conversation without one cannot back a
   suggestion), and be classified `partial`, `missing`, `wrong_title` or `uncertain`.
 - `quote` must be a **verbatim** substring of that conversation's *customer* text: `first_message`
   \+ `first_raw` (the raw opening turn, present when a later turn was picked as the question) +

@@ -110,7 +110,7 @@ class Evidence(_M):
     tenant: str | None = None
     collected_at: str
     window: Window
-    source: Literal["email_runs", "helpscout", "harvest"]
+    source: Literal["email_runs", "helpscout"]
     coverage: list[Feed] = []
     kb: Kb
     conversations: list[Conversation]
@@ -301,10 +301,6 @@ def score(suggestion: Suggestion, classification: list[Classification]) -> int:
     return sum(WEIGHT.get(v, 0) for v in seen.values())
 
 
-def conversations_for(suggestion: Suggestion, classification: list[Classification]) -> list[Classification]:
-    return [c for c in classification if suggestion.topic in c.topics]
-
-
 def rank(suggestions: list[Suggestion], classification: list[Classification]) -> list[tuple[int, Suggestion, int]]:
     """(rank, suggestion, score) — score desc, then cheapest kind, then id."""
     ordered = sorted(
@@ -346,9 +342,6 @@ _HINTS = {
 }
 
 
-_RENAMED = {"topic": "use topics: [..] (a list of cluster slugs, first is primary)"}
-
-
 def _location(loc: tuple[Any, ...]) -> str:
     out = ""
     for part in loc:
@@ -365,11 +358,8 @@ def _excerpt(value: Any, limit: int = 80) -> str:
 
 def _format_error(error: dict[str, Any]) -> str:
     loc = tuple(error.get("loc", ()))
-    key = loc[-1] if loc else ""
     msg = str(error.get("msg", "")).removeprefix("Value error, ")
     kind = str(error.get("type", ""))
-    if kind == "extra_forbidden" and key in _RENAMED:
-        return f"{_location(loc)}: unknown key — {_RENAMED[key]}"
     loc = _location(loc)
     tail = f" ({_HINTS[kind]})" if kind in _HINTS else ""
     got = _excerpt(error.get("input"))

@@ -4,8 +4,7 @@
 # ///
 """Collect one window of customer questions + the help-centre inventory into `evidence.json`.
 
-    uv run skills/brain-helpcenter-suggestions/scripts/collect.py --days 8 [--tenant SLUG]
-        [--out DIR] [--corpus dump.txt]
+    uv run skills/brain-helpcenter-suggestions/scripts/collect.py --days 8 [--tenant SLUG] [--out DIR]
 
 One report = one help centre = one owner: a project whose runs carry tenants must be collected per
 tenant (`--tenant`), and the inventory is then the tenant's own `/kb/tenant/**` help centre.
@@ -75,7 +74,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--days", type=int, default=7, help="window length in days (default 7)")
     parser.add_argument("--tenant", help="tenant slug: filters runs and scopes /kb to that tenant")
     parser.add_argument("--out", help="output directory (default .rootcause/helpcenter/<end date>)")
-    parser.add_argument("--corpus", help="harvest dump.txt to read instead of a live source")
     return parser.parse_args()
 
 
@@ -84,16 +82,16 @@ def cover(feed: str, status: str, scanned: int, retained: int, reason: str | Non
             "reason": clip(reason, 300) or None}
 
 
-def console(brain_root: Path, script: str, tenant: str | None = None) -> dict[str, Any]:
-    """`rc dev console bash run` envelope: {stdout, stderr, exit_code, stdout_truncated}.
+def _rc_console(brain_root: Path, tenant: str | None, *args: str) -> subprocess.CompletedProcess:
+    """`--tenant` goes ONLY on console calls: RC_TENANT would also scope `rc fleet runs` to nothing."""
+    argv = ["rc", "dev", "console"] + (["--tenant", tenant] if tenant else []) + list(args)
+    return subprocess.run(argv, capture_output=True, text=True, timeout=CONSOLE_TIMEOUT, cwd=brain_root)
 
-    `--tenant` is a global flag and goes ONLY on console calls: exporting RC_TENANT would also scope
-    `rc fleet runs`, which returns nothing for a tenant.
-    """
-    argv = ["rc", "dev", "console"] + (["--tenant", tenant] if tenant else [])
+
+def console(brain_root: Path, script: str, tenant: str | None = None) -> dict[str, Any]:
+    """`rc dev console bash run` envelope: {stdout, stderr, exit_code, stdout_truncated}."""
     try:
-        done = subprocess.run(argv + ["bash", "run", "-o", "json", "--raw-output", script],
-                              capture_output=True, text=True, timeout=CONSOLE_TIMEOUT, cwd=brain_root)
+        done = _rc_console(brain_root, tenant, "bash", "run", "-o", "json", "--raw-output", script)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return {"exit_code": -1, "stderr": f"{type(exc).__name__}: {exc}", "stdout": ""}
     docs = [d for d in json_objects(done.stdout) if isinstance(d, dict) and "exit_code" in d]
@@ -103,9 +101,7 @@ def console(brain_root: Path, script: str, tenant: str | None = None) -> dict[st
 
 def spill(brain_root: Path, target: Path, remote: str, tenant: str | None = None) -> str:
     """Fetch a workspace artifact the console wrote (stdout caps at 64 KiB, files do not)."""
-    argv = ["rc", "dev", "console"] + (["--tenant", tenant] if tenant else [])
-    done = subprocess.run(argv + ["file", "get", remote, "--out", str(target)],
-                          capture_output=True, text=True, timeout=CONSOLE_TIMEOUT, cwd=brain_root)
+    done = _rc_console(brain_root, tenant, "file", "get", remote, "--out", str(target))
     if done.returncode != 0 or not target.exists():
         return ""
     return target.read_text(encoding="utf-8", errors="replace")
@@ -215,14 +211,6 @@ def from_helpscout(brain_root: Path, raw_dir: Path, start: datetime, end: dateti
     return conversations, coverage
 
 
-def from_corpus(path: Path, start: datetime, end: datetime):
-    parsed = corpus.dump_conversations(path.read_text(encoding="utf-8", errors="replace"))
-    kept = [c for c in parsed if corpus.in_window(c["created_at"], start, end)]
-    corpus.tag_duplicate_outreach(kept)
-    return kept, cover("harvest", "complete", len(parsed), len(kept),
-                       "no conversation urls in a dump export")
-
-
 # ------------------------------------------------------------------ inventory
 
 
@@ -329,8 +317,6 @@ def mailboxes(rc: Rc) -> list[dict]:
 
 
 def pick_source(rc: Rc, brain_root: Path, raw_dir: Path, args, start, end):
-    if args.corpus:
-        return "harvest", *from_corpus(Path(args.corpus).expanduser(), start, end)
     payload = rc.json("fleet", "runs", "--days", str(args.days), "--kind", "email")
     rows = [r for r in ((payload.get("runs") if isinstance(payload, dict) else payload) or [])
             if isinstance(r, dict) and corpus.in_window(r.get("created_at"), start, end)]
@@ -347,7 +333,7 @@ def pick_source(rc: Rc, brain_root: Path, raw_dir: Path, args, start, end):
         return "helpscout", *from_helpscout(brain_root, raw_dir, start, end)
     print(f"no email runs in the window and no helpscout mailbox (providers: "
           f"{', '.join(providers) or 'none'}). v1 reads email runs or Help Scout only "
-          f"— harvest this mailbox and pass the export with --corpus dump.txt (recipe in SKILL.md).",
+          f"— a recipe for this provider still has to be written (say so in learnings).",
           file=sys.stderr)
     raise SystemExit(2)
 

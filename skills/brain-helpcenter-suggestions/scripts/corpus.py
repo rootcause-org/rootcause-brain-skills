@@ -4,7 +4,7 @@
 # ///
 """Pure normalisers for `brain-helpcenter-suggestions`: provider payload -> one conversation shape.
 
-    from corpus import helpscout_conversations, trace_conversation, dump_conversations, write_digest
+    from corpus import helpscout_conversations, trace_conversation, write_digest
 
 Every entry point returns the `evidence.json` `conversations[]` contract (see suggestions_schema.md):
 id, url, channel, tenant, created_at, subject, customer, first_message, first_raw, reply, later[],
@@ -254,7 +254,7 @@ def link_articles(conversations: list[dict[str, Any]], articles: list[dict[str, 
 
 
 def helpscout_conversations(page_json: Any) -> list[dict[str, Any]]:
-    """Accepts the raw API page (`_embedded.conversations[]`) and the flattened harvest list."""
+    """Accepts the raw API page (`_embedded.conversations[]`) and a flattened list of the same objects."""
     items = (((page_json.get("_embedded") or {}).get("conversations")) or []
              if isinstance(page_json, dict) else page_json or [])
     built = (_helpscout_one(c) for c in items if isinstance(c, dict))
@@ -334,57 +334,6 @@ def trace_conversation(header: dict[str, Any],
     if conv and conv.get("reply") and _BOT_SENDER.search(address(conv["reply"].get("by"))):
         conv["reply"]["provenance"] = "bot"  # the mailbox's AI assistant, never a seed
     return conv
-
-
-_DUMP_HEAD = re.compile(r"^#{3,}\s*(\S+)\s*\|(.*)$")
-_DUMP_TURN = re.compile(r"^\[([a-z]+)(?:\|([^\]]*))?\]\s?(.*)$")
-
-
-def dump_conversations(text: str) -> list[dict[str, Any]]:
-    """The `dump.txt` block format produced by a harvest run. No provider URLs exist there."""
-    out: list[dict[str, Any]] = []
-    head: dict[str, Any] | None = None
-    turns: list[tuple[str, str, str | None]] = []
-    skipping = False  # inside a dropped `[note|…]` block: its continuation lines go too
-
-    def flush() -> None:
-        built = head and build(
-            head["id"], None, head["channel"], head["created_at"], head["subject"],
-            next((by for role, _, by in turns if role == "customer"), None), head["tags"],
-            [(r, clean(t), b) for r, t, b in turns])
-        if built:
-            out.append(built)
-
-    for line in str(text or "").splitlines():
-        header = _DUMP_HEAD.match(line)
-        if header:
-            flush()
-            head, turns, skipping = _dump_header(header.group(1), header.group(2)), [], False
-            continue
-        turn = _DUMP_TURN.match(line)
-        if turn and head:
-            kind = turn.group(1)
-            skipping = kind in DROP_THREADS
-            if not skipping:
-                turns.append(("customer" if kind == "customer" else "agent",
-                              turn.group(3), turn.group(2) or None))
-        elif turns and head and line.strip() and not skipping:
-            role, body, by = turns[-1]
-            turns[-1] = (role, f"{body}\n{line}", by)
-    flush()
-    return out
-
-
-def _dump_header(cid: str, rest: str) -> dict[str, Any]:
-    parts = [p.strip() for p in rest.split("|")]
-    fields = {p.split("=", 1)[0]: p.split("=", 1)[1] for p in parts if "=" in p}
-    when = next((p for p in parts if re.match(r"^\d{4}-\d{2}-\d{2}", p)), "")
-    subject = fields.get("subj", "")
-    return {"id": f"harvest:{cid}",
-            "channel": "chat" if parts and parts[0] == "chat" else "email",
-            "created_at": when.split(" ")[0].strip(),
-            "subject": None if subject in ("", "None") else subject,
-            "tags": [t.strip() for t in fields.get("tags", "").strip("[]").split(",") if t.strip()]}
 
 
 # ------------------------------------------------------------------ output tiers

@@ -27,7 +27,7 @@ gitignored `.rootcause/` — the report carries customer snippets and tokenized 
 cd ~/code/rootcause-org/rootcause-brain-<project>
 HC="$PWD/.agents/skills/brain-helpcenter-suggestions"
 
-uv run "$HC/scripts/collect.py" --days 9              # N calendar days ending today · --out DIR · --corpus dump.txt
+uv run "$HC/scripts/collect.py" --days 9              # N calendar days ending today · --tenant SLUG · --out DIR
 uv run "$HC/scripts/collect.py" --days 8 --tenant yes_events   # tenant-scoped project: one tenant per run
 OUT="$PWD/.rootcause/helpcenter/<window-end-date>[-<tenant>]"  # last line of the collect summary
 cat "$OUT/conversations.tsv" "$OUT/articles.tsv"       # tier 0 — read whole; copy the evidence sha
@@ -56,11 +56,11 @@ the sha the validator binds `suggestions.json` to; the validator's error line pr
 |---|---|---|---|---|
 | `email_runs` | the project has email runs in the window (`rc fleet runs --kind email`) | `rc run trace --stream` header: inbound `question`, agent `draft`, prior messages; roles from sender vs mailbox domains, `unknown` when neither (a sibling vendor, a CC) | tokenized run URL (human view) | `draft` — the agent's proposal, **not** a human answer; `human` when a mailbox reply precedes it |
 | `helpscout` | no runs, a Help Scout mailbox is watched (`rc project mailbox ls`) | `lib.api get helpscout /conversations?embed=threads` paged in the prod workspace, spilled to `/tmp/rootcause-out` and fetched with `rc dev console file get` (console stdout caps at 64 KiB) | `secure.helpscout.net/conversation/<id>/<number>/` | `human` — the real reply (`bot` when the mailbox AI assistant answered) |
-| `harvest` | `--corpus dump.txt` (a `brain-harvest` style dump) | block format `##### C1 \| … ` / `[customer\|…]` / `[message\|…]` | none → those conversations can be classified but **cannot back a suggestion** | `human` |
 
-Recipes to add when a project needs them (say so in `learnings`): Intercom conversations
-(`python -m lib.connectors.intercom list conversation …`, ten-page cap by default, no guessed inbox
-URLs), Gmail/IMAP watched mailboxes without runs. `rc project mailbox harvest` refuses Help Scout.
+No runs and no Help Scout mailbox → collect exits 2. Recipes still to write (say so in `learnings`):
+Intercom conversations (`python -m lib.connectors.intercom …`), Gmail/IMAP mailboxes without runs.
+A `brain-harvest` dump is not a source: it carries no conversation URLs, so nothing in it can back a
+suggestion.
 
 **Roles are derived, not trusted.** `is_inbound` is delivery direction: a sibling vendor cc'd on the
 thread also arrives inbound. A `later[]` turn is `customer` only when the sender matches the thread's
@@ -171,8 +171,8 @@ this file's iteration log and the code; project quirks stay in the brain's notes
 [suggestions_schema.md](suggestions_schema.md) the one file you write · [`brain-fleet-report`](../brain-fleet-report/SKILL.md)
 the same collect → judge → render pattern for a day of runs · [`rc-debug`](../rc-debug/SKILL.md) one
 run in full · [`rc-script-wrapper`](../rc-script-wrapper/SKILL.md) console artifacts and typed failures ·
-[`prod-console`](../prod-console/SKILL.md) `/kb` and connector reads · [`brain-harvest`](../brain-harvest/SKILL.md)
-where a `dump.txt` corpus comes from · [docs/knowledge-base.md](../../docs/knowledge-base.md).
+[`prod-console`](../prod-console/SKILL.md) `/kb` and connector reads ·
+[docs/knowledge-base.md](../../docs/knowledge-base.md).
 
 ## Iteration log
 

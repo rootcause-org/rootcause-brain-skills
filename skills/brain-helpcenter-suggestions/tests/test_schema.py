@@ -197,7 +197,7 @@ CASES = [
     ("unclassified conversation", _m_unclassified, "classification:", "hs:1006"),
     ("duplicate classification", _m_duplicate_classification, "classification[6].conversation_id:", "exactly once"),
     ("topics required", _m_topics_missing, "classification[0].topics:", "not_kb"),
-    ("old topic key", _m_old_topic_key, "classification[3].topic:", "use topics: [..]"),
+    ("old topic key", _m_old_topic_key, "classification[3].topic:", "unknown key"),
     ("unknown-role quote", _m_unknown_role_quote, "suggestions[1].evidence[0].quote:", "unknown-role/agent turn in hs:1002"),
     ("new takes no target", _m_new_with_target, "suggestions[0].target_articles:", "no target"),
     ("rewrite needs section", _m_rewrite_no_section, "suggestions[1].section:", "section to replace"),

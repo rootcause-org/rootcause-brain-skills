@@ -78,23 +78,6 @@ Tweede regel van dezelfde vraag.
 """
 
 
-def test_dump_parse():
-    convs = corpus.dump_conversations(DUMP)
-    assert [c["id"] for c in convs] == ["harvest:C1", "harvest:C2", "harvest:C3"]
-    assert convs[0]["url"] is None and convs[0]["subject"] is None
-    assert convs[0]["reply"]["text"] == "Dat kan via de prijslijst."
-    assert convs[0]["later"] == [{"role": "customer", "text": "gevonden, dank"}]
-    second = convs[1]
-    assert second["channel"] == "chat" and second["tags"] == ["boekingen"]
-    assert second["subject"] == "Re: agenda" and second["customer"] == "Davy"
-    assert second["first_message"].endswith("Tweede regel van dezelfde vraag.")
-    assert "doe jij" not in json.dumps(second)  # notes dropped
-    assert convs[2]["reply"] is None
-
-
-# ---------------------------------------------------------------- P0: role labels on a trace
-
-
 def trace_header() -> dict:
     return json.loads((FIXTURES / "trace_header.json").read_text(encoding="utf-8"))
 
