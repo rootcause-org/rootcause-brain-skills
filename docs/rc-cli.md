@@ -180,6 +180,11 @@ This writes `.rootcause/debug/<run8>-<project>.{md,jsonl}` by default. Read the 
 with `jq`. Use [`rc-debug`](../skills/rc-debug/SKILL.md) for the analysis-first workflow and
 [docs/run-trace-model.md](run-trace-model.md) for the mental model.
 
+A pasted run link works with **no login and no profile** — the `?t=` token is the credential:
+`rc run debug 'https://app.replypen.com/runs/<id>?t=<token>'` writes the same two artifacts. A chat
+share link goes through `rc run session 'https://app.replypen.com/s/<token>'`, which writes one
+`.rootcause/debug/session-<id>.md` (transcript + the runs behind it, each with its drill command).
+
 ## Dream Evidence
 
 ```bash
