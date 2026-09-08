@@ -58,6 +58,19 @@ BOT_INSTRUCTION = (
     "help-centre canon: '- ' bullets, **bold**, ATX headings, one line per paragraph, no tables, "
     "no strikethrough, no raw HTML. Anchors are verbatim lines of the current article."
 )
+# Providers rc cannot write: say so up front, and name the path that does work.
+BOT_INSTRUCTION_BY_PROVIDER = {
+    "knowledgeowl": (
+        "Apply this edit to the help centre. rc cannot write KnowledgeOwl (`UNSUPPORTED_PROVIDER`): use "
+        "the KnowledgeOwl API/MCP connection available in your project. In the KampAdmin repo that is the "
+        "`knowledge-owl` skill: `get <id> --format html --output /tmp/a.html`, splice the edit at the "
+        "anchor in that HTML, `update <id> --html-file /tmp/a.html --version-note '...'` (dry run), then "
+        "re-run with `--apply` and the printed guards. `id` below is KnowledgeOwl's article id; `url` "
+        "carries the slug. The body is markdown in the help-centre canon: '- ' bullets, **bold**, ATX "
+        "headings, one line per paragraph, no tables, no strikethrough, no raw HTML. Anchors are verbatim "
+        "lines of the current article."
+    ),
+}
 OP_BY_KIND = {"new": "create", "rewrite": "update", "retitle": "update",
               "add_alias": "update", "merge": "manual", "delete": "manual"}
 MARKED_CDN = "https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"
@@ -315,7 +328,8 @@ def bot_block(s, article, kb, destination=None) -> str:
     if op == "create" and "collection_id" not in data:
         front = front.replace("\nstatus:", "\n# collection_id: <pick one, the collection this article belongs to>\nstatus:", 1)
     body = "" if s.kind in ("retitle", "add_alias") else (s.text or "")
-    return f"{BOT_INSTRUCTION}\n\n---\n{front}\n---\n{body.rstrip()}\n"
+    instruction = BOT_INSTRUCTION_BY_PROVIDER.get(str(data.get("provider") or ""), BOT_INSTRUCTION)
+    return f"{instruction}\n\n---\n{front}\n---\n{body.rstrip()}\n"
 
 
 # ------------------------------------------------------------------ edit views

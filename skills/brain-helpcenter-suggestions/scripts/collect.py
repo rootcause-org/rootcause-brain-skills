@@ -455,7 +455,8 @@ def fetch_bodies(brain_root: Path, raw_dir: Path, roots: list[str], articles: li
         section = front.get("section")
         item.update(
             url=front.get("url") or None, provider=front.get("provider") or None,
-            provider_id=front.get("id") or None, number=front.get("number") or None,
+            # KnowledgeOwl's `id` is the url_hash slug (deleted twins share it); `article_id` is its real id.
+            provider_id=front.get("article_id") or front.get("id") or None, number=front.get("number") or None,
             collection_id=front.get("collection_id") or front.get("category_id") or section or None,
             parent_type=("section" if section and not front.get("collection_id") else None),
             locale=front.get("locale") or None, status=front.get("status") or None,

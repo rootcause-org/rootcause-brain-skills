@@ -29,7 +29,7 @@ rc project connection ls        # the row shows `tier: write`
 |---|---|---|
 | Help Scout Docs | `helpscout_docs` | Docs API key — Help Scout **Manage → API keys** (Docs, not Mailbox) |
 | Intercom | `intercom` | Access token with **Articles write** |
-| KnowledgeOwl | `knowledgeowl` | **Not supported yet** — `UNSUPPORTED_PROVIDER`; the owner edits in the UI |
+| KnowledgeOwl | `knowledgeowl` | **Not supported yet** — `UNSUPPORTED_PROVIDER`. KampAdmin: the repo's `knowledge-owl` skill writes it (HTML, dry-run + guards + `--apply`); the suggestion card's bot block already says so and carries KO's `article_id` |
 
 Sealed like an action credential ([docs/secrets.md](../../docs/secrets.md)): never in the brain, never
 in a run — write-tier rows are host-only and are never injected into a workspace. Missing grant ⇒ the
