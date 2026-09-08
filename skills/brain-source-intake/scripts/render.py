@@ -10,6 +10,10 @@ guess where we have one, and one box per question. It is self contained (inline 
 no external URL) so it works from `file://` and travels as an attachment. Chrome is English;
 the customer questions stay in their own language. Everything is escaped: the agent never
 supplies HTML.
+
+`build(data, flavour)` is shared with the sibling `brain-schema-intake` renderer: the flavour
+dict carries the wording, the groups, the tiles, the status pills and any extra evidence
+section, so both intakes render as one page with one copy button.
 """
 
 from __future__ import annotations
@@ -41,7 +45,15 @@ TILES = [
     ("n_a", "n/a",
      "No code or table would answer it: a sales or policy question. Listed for completeness."),
 ]
-STATUS_LABEL = {"found": "found", "ambiguous": "ambiguous", "missing": "missing", "n/a": "n/a"}
+STATUSES = {
+    "found": ("found", "s-found"),
+    "ambiguous": ("ambiguous", "s-ambiguous"),
+    "missing": ("missing", "s-missing"),
+    "n/a": ("n/a", "s-na"),
+}
+INTRO = ("<p>These are the questions your codebase could not answer for us while we were "
+         "building the support brain for it. Roughly fifteen minutes of your time, and one "
+         "button at the end copies every answer in one go.</p>")
 
 CSS = """
 *{box-sizing:border-box}
@@ -99,7 +111,7 @@ button.ghost{background:#fff;color:#33518c;border:1px solid #d3d9e2;padding:9px 
 
 JS = """
 var DATA = JSON.parse(document.getElementById('data').textContent);
-var KEY = 'source-intake:' + DATA.project + ':' + DATA.date;
+var KEY = DATA.kind + ':' + DATA.project + ':' + DATA.date;
 
 function state(){ try { return JSON.parse(localStorage.getItem(KEY)) || {v:{},a:{}}; }
   catch (e) { return {v:{},a:{}}; } }
@@ -131,7 +143,7 @@ function verdict(id){
 }
 
 function markdown(){
-  var out = ['# Source intake answers: ' + DATA.project + ' (' + DATA.date + ')', ''];
+  var out = ['# ' + DATA.mdtitle, ''];
   var answered = 0;
   DATA.groups.forEach(function(group){
     var rows = DATA.devquestions.filter(function(q){ return q.group === group; });
@@ -184,7 +196,7 @@ document.getElementById('download').onclick = function(){
   var blob = new Blob([built.text], {type: 'text/markdown'});
   var link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  link.download = 'source-intake-' + DATA.project + '-' + DATA.date + '.md';
+  link.download = DATA.kind + '-' + DATA.project + '-' + DATA.date + '.md';
   document.body.appendChild(link); link.click(); document.body.removeChild(link);
   URL.revokeObjectURL(link.href);
   say('Downloaded ' + built.answered + ' answers');
@@ -215,11 +227,11 @@ def repo_line(scan: dict) -> str:
     return " · ".join(parts) or "no repo scanned"
 
 
-def tiles_html(data: dict) -> str:
+def tiles_html(data: dict, flavour: dict) -> str:
     tally = data.get("tally") or {}
     numbers = {"scanned": len(data.get("questions") or []), **tally}
     cells = []
-    for key, label, tip in TILES:
+    for key, label, tip in flavour["tiles"]:
         cells.append(f'<div class="tile" title="{e(tip)}"><b>{numbers.get(key, 0)}</b>'
                      f'<span>{e(label)}</span></div>')
     return '<div class="tiles">' + "".join(cells) + "</div>"
@@ -246,48 +258,71 @@ def card_html(question: dict) -> str:
     return "".join(out)
 
 
-def benchmark_html(data: dict) -> str:
+def benchmark_html(data: dict, flavour: dict) -> str:
     questions = {row["id"]: row.get("question", "") for row in data.get("questions") or []}
     rows = data.get("benchmark") or []
     by_cluster: dict[str, list[dict]] = {}
     for row in rows:
         by_cluster.setdefault(row.get("cluster") or "(none)", []).append(row)
-    body = ["<table><tr><th>cluster</th><th>status</th><th>where</th><th>note</th></tr>"]
+    headers = "".join(f"<th>{e(name)}</th>" for name in flavour["benchmark_headers"])
+    body = [f"<table><tr>{headers}</tr>"]
     for cluster in sorted(by_cluster):
         for row in by_cluster[cluster]:
             status = row.get("status", "")
-            css = "s-na" if status == "n/a" else f"s-{status}"
+            label, css = flavour["statuses"].get(status, (status, "s-na"))
             where = ("<br>".join(e(item) for item in (row.get("where") or []))
                      or '<span class="muted">no locator</span>')
             body.append(
                 f"<tr><td>{e(cluster)}</td>"
-                f'<td><span class="pill {css}">{e(STATUS_LABEL.get(status, status))}</span></td>'
+                f'<td><span class="pill {css}">{e(label)}</span></td>'
                 f'<td class="loc">{where}</td>'
                 f'<td>{e(row.get("note"))}'
                 f'<div class="muted">{e(row.get("id"))}: '
                 f'{e(questions.get(row.get("id"), ""))}</div></td></tr>')
     body.append("</table>")
-    return ("<details><summary>Where each question would be grounded (benchmark)</summary>"
+    return (f"<details><summary>{e(flavour['benchmark_title'])}</summary>"
             + "".join(body) + "</details>")
 
 
-def proposal_html(data: dict) -> str:
+def proposal_html(data: dict, flavour: dict) -> str:
     files = data.get("proposal") or {}
     if not files:
         return ""
     inner = []
     for name in sorted(files, key=lambda n: (n != "INDEX.md", n)):
         inner.append(f"<details><summary>{e(name)}</summary><pre>{e(files[name])}</pre></details>")
-    return ("<details><summary>Proposed codebase map (skills/codebase/)</summary>"
+    return (f"<details><summary>{e(flavour['proposal_title'])}</summary>"
             + "".join(inner) + "</details>")
 
 
-def build(data: dict) -> str:
+DEFAULT_FLAVOUR = {
+    "kind": "source-intake",
+    "title": "Source intake",
+    "intro": INTRO,
+    "groups": GROUPS,
+    "tiles": TILES,
+    "statuses": STATUSES,
+    "benchmark_title": "Where each question would be grounded (benchmark)",
+    "benchmark_headers": ("cluster", "status", "where", "note"),
+    "proposal_title": "Proposed codebase map (skills/codebase/)",
+    "stamp": lambda data: repo_line(data.get("scan") or {}),
+    "heading": lambda data, date: f"Source intake \u00b7 {data.get('project')} \u00b7 {date}",
+    "md_subject": lambda data: str(data.get("project") or ""),
+    "extra_sections": (),
+}
+
+
+def build(data: dict, flavour: dict | None = None) -> str:
+    """The whole page. `flavour` carries everything the two intakes word differently."""
+    flavour = {**DEFAULT_FLAVOUR, **(flavour or {})}
     date = str(data.get("collected_at") or "")[:10]
+    groups = list(flavour["groups"])
     payload = {
+        "kind": flavour["kind"],
         "project": data.get("project"),
         "date": date,
-        "groups": [key for key, _ in GROUPS],
+        "mdtitle": f"{flavour['title']} answers: {flavour['md_subject'](data)} ({date})",
+        "groups": [key for key, _ in groups],
         "devquestions": [{"id": q.get("id"), "group": q.get("group"),
                           "question": q.get("question"), "proposal": q.get("proposal") or ""}
                          for q in data.get("devquestions") or []],
@@ -295,7 +330,7 @@ def build(data: dict) -> str:
     embedded = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
 
     sections = []
-    for key, label in GROUPS:
+    for key, label in groups:
         rows = [q for q in data.get("devquestions") or [] if q.get("group") == key]
         if not rows:
             continue
@@ -303,24 +338,22 @@ def build(data: dict) -> str:
                         + "".join(card_html(q) for q in rows) + "</section>")
 
     headline = "".join(f"<p>{e(line)}</p>" for line in data.get("headline") or [])
-    intro = ("<p>These are the questions your codebase could not answer for us while we were "
-             "building the support brain for it. Roughly fifteen minutes of your time, and one "
-             "button at the end copies every answer in one go.</p>")
+    evidence = [benchmark_html(data, flavour), proposal_html(data, flavour),
+                *flavour["extra_sections"]]
 
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Source intake {e(data.get('project'))}</title>
+<title>{e(flavour['title'])} {e(data.get('project'))}</title>
 <style>{CSS}</style></head>
 <body><div class="wrap">
-<h1>Source intake · {e(data.get('project'))} · {e(date)}</h1>
-<p class="stamp">{e(repo_line(data.get('scan') or {}))}</p>
-<div class="lede">{headline}{intro}</div>
-{tiles_html(data)}
+<h1>{e(flavour['heading'](data, date))}</h1>
+<p class="stamp">{e(flavour['stamp'](data))}</p>
+<div class="lede">{headline}{flavour['intro']}</div>
+{tiles_html(data, flavour)}
 {''.join(sections)}
 <section><h2>Evidence</h2>
-{benchmark_html(data)}
-{proposal_html(data)}
+{chr(10).join(evidence)}
 </section>
 </div>
 <div class="bar">

@@ -1,0 +1,9 @@
+id	group	question	proposal	evidence
+D1	tenant	Is `user_id` the salon (tenant) key everywhere, and is `users` one row per salon or one row per login?	(?) user_id is the tenant key on every table but users, and users is one row per salon	tenant-model;users
+D2	entities	Is `remarks` really the point of sale ticket header, and not a free text note on an appointment?	(?) remarks is the ticket header, remarks.total is the ticket amount	pos-ticket;remarks
+D3	entities	Which table holds the end customer? We see `agenda.customer_id` but no table it points to.		agenda.customer_id
+D4	settings	Is `settings` one row per salon, and is `settings.reminder_time` the hour the reminder leaves?	(?) settings is one row per salon and reminder_time is the send hour	reminder-settings;settings.reminder_time
+D5	queues	Is `reminder_jobs` the queue that actually sends, and does `already_sent` mean delivered or only handed to the mail server?	(?) already_sent is set when the job was handed over, not on delivery	reminder-delivery;reminder_jobs.already_sent
+D6	conventions	Does `agenda.deleted` mean the row is gone for the salon, and does anything ever hard delete an appointment?	(?) deleted is a soft delete and nothing removes the row	deletion;agenda.deleted
+D7	conventions	`agenda` uses `created_at` and `remarks` uses `time_added`. Is that a legacy versus new split we can rely on?		remarks.time_added
+D8	ownership	Which tables does the new app own and which are still written by the legacy app only?		logging;agenda

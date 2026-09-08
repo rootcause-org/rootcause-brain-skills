@@ -1,0 +1,2 @@
+We read the schema of the staging database only, so row counts are indicative and no production values were touched.
+Eight questions below block the most support answers. A sentence or a table name is enough for each.

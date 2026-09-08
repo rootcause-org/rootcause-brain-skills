@@ -1,0 +1,4 @@
+interface:
+  display_name: "Brain Dev: Schema intake"
+  short_description: "Turn a readable grounding database into a proposed brain map, a question benchmark, and a dev questionnaire"
+  default_prompt: "Use $brain-schema-intake to probe the grounding database, hold the last 60 days of real customer questions against it, write the proposed skills/databases/ map plus the benchmark and the dev questionnaire, and render the report for the customer's developer."

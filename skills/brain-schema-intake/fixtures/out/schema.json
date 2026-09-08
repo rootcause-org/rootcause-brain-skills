@@ -1,0 +1,721 @@
+{
+ "engine": "mysql",
+ "version": "5.6.51-log",
+ "database": "salonx_staging",
+ "db": "staging",
+ "project": "salonx",
+ "collected_at": "2026-09-08T06:12:00+00:00",
+ "tenant_candidates": [
+  {
+   "column": "user_id",
+   "tables": 6
+  },
+  {
+   "column": "agenda_id",
+   "tables": 2
+  },
+  {
+   "column": "customer_id",
+   "tables": 1
+  }
+ ],
+ "tables": [
+  {
+   "table": "users",
+   "schema": "",
+   "type": "BASE TABLE",
+   "engine": "InnoDB",
+   "rows": 520,
+   "data_length": 262144,
+   "index_length": 65536,
+   "comment": "salon accounts, one row per salon",
+   "create_time": "2016-03-04 10:12:00",
+   "update_time": "2026-09-07 22:41:00"
+  },
+  {
+   "table": "settings",
+   "schema": "",
+   "type": "BASE TABLE",
+   "engine": "InnoDB",
+   "rows": 520,
+   "data_length": 131072,
+   "index_length": 65536,
+   "comment": "",
+   "create_time": "2016-03-04 10:12:00",
+   "update_time": "2026-09-07 22:41:00"
+  },
+  {
+   "table": "agenda",
+   "schema": "",
+   "type": "BASE TABLE",
+   "engine": "InnoDB",
+   "rows": 184000,
+   "data_length": 41943040,
+   "index_length": 12582912,
+   "comment": "",
+   "create_time": "2016-03-04 10:12:00",
+   "update_time": "2026-09-07 22:41:00"
+  },
+  {
+   "table": "remarks",
+   "schema": "",
+   "type": "BASE TABLE",
+   "engine": "InnoDB",
+   "rows": 92000,
+   "data_length": 20971520,
+   "index_length": 6291456,
+   "comment": "POS ticket header, not a free text note",
+   "create_time": "2016-03-04 10:12:00",
+   "update_time": "2026-09-07 22:41:00"
+  },
+  {
+   "table": "reminder_jobs",
+   "schema": "",
+   "type": "BASE TABLE",
+   "engine": "InnoDB",
+   "rows": 12000,
+   "data_length": 2097152,
+   "index_length": 1048576,
+   "comment": "",
+   "create_time": "2016-03-04 10:12:00",
+   "update_time": "2026-09-07 22:41:00"
+  },
+  {
+   "table": "logging",
+   "schema": "",
+   "type": "BASE TABLE",
+   "engine": "InnoDB",
+   "rows": 900000,
+   "data_length": 314572800,
+   "index_length": 41943040,
+   "comment": "",
+   "create_time": "2016-03-04 10:12:00",
+   "update_time": "2026-09-07 22:41:00"
+  },
+  {
+   "table": "v_agenda_today",
+   "schema": "",
+   "type": "VIEW",
+   "engine": "InnoDB",
+   "rows": 0,
+   "data_length": 0,
+   "index_length": 0,
+   "comment": "",
+   "create_time": "2016-03-04 10:12:00",
+   "update_time": "2026-09-07 22:41:00"
+  }
+ ],
+ "columns": [
+  {
+   "table": "users",
+   "column": "id",
+   "position": 1,
+   "type": "int(11)",
+   "nullable": "NO",
+   "default": null,
+   "key": "PRI",
+   "extra": "auto_increment",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "users",
+   "column": "email",
+   "position": 2,
+   "type": "varchar(255)",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "users",
+   "column": "active",
+   "position": 3,
+   "type": "tinyint(1)",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "users",
+   "column": "created_at",
+   "position": 4,
+   "type": "datetime",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "settings",
+   "column": "id",
+   "position": 1,
+   "type": "int(11)",
+   "nullable": "NO",
+   "default": null,
+   "key": "PRI",
+   "extra": "auto_increment",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "settings",
+   "column": "user_id",
+   "position": 2,
+   "type": "int(11)",
+   "nullable": "YES",
+   "default": null,
+   "key": "UNI",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "settings",
+   "column": "reminder_time",
+   "position": 3,
+   "type": "time",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "settings",
+   "column": "reminder_enabled",
+   "position": 4,
+   "type": "tinyint(1)",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "settings",
+   "column": "created_at",
+   "position": 5,
+   "type": "datetime",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "agenda",
+   "column": "id",
+   "position": 1,
+   "type": "int(11)",
+   "nullable": "NO",
+   "default": null,
+   "key": "PRI",
+   "extra": "auto_increment",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "agenda",
+   "column": "user_id",
+   "position": 2,
+   "type": "int(11)",
+   "nullable": "YES",
+   "default": null,
+   "key": "MUL",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "agenda",
+   "column": "customer_id",
+   "position": 3,
+   "type": "int(11)",
+   "nullable": "YES",
+   "default": null,
+   "key": "MUL",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "agenda",
+   "column": "start_time",
+   "position": 4,
+   "type": "datetime",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "agenda",
+   "column": "status",
+   "position": 5,
+   "type": "varchar(16)",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "agenda",
+   "column": "deleted",
+   "position": 6,
+   "type": "tinyint(1)",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "agenda",
+   "column": "created_at",
+   "position": 7,
+   "type": "datetime",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "remarks",
+   "column": "id",
+   "position": 1,
+   "type": "int(11)",
+   "nullable": "NO",
+   "default": null,
+   "key": "PRI",
+   "extra": "auto_increment",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "remarks",
+   "column": "user_id",
+   "position": 2,
+   "type": "int(11)",
+   "nullable": "YES",
+   "default": null,
+   "key": "MUL",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "remarks",
+   "column": "agenda_id",
+   "position": 3,
+   "type": "int(11)",
+   "nullable": "YES",
+   "default": null,
+   "key": "MUL",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "remarks",
+   "column": "total",
+   "position": 4,
+   "type": "decimal(10,2)",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "remarks",
+   "column": "state",
+   "position": 5,
+   "type": "varchar(16)",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "remarks",
+   "column": "time_added",
+   "position": 6,
+   "type": "int(11)",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "reminder_jobs",
+   "column": "id",
+   "position": 1,
+   "type": "int(11)",
+   "nullable": "NO",
+   "default": null,
+   "key": "PRI",
+   "extra": "auto_increment",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "reminder_jobs",
+   "column": "user_id",
+   "position": 2,
+   "type": "int(11)",
+   "nullable": "YES",
+   "default": null,
+   "key": "MUL",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "reminder_jobs",
+   "column": "agenda_id",
+   "position": 3,
+   "type": "int(11)",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "reminder_jobs",
+   "column": "already_sent",
+   "position": 4,
+   "type": "tinyint(1)",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "reminder_jobs",
+   "column": "sent_at",
+   "position": 5,
+   "type": "datetime",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "reminder_jobs",
+   "column": "created_at",
+   "position": 6,
+   "type": "datetime",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "logging",
+   "column": "id",
+   "position": 1,
+   "type": "int(11)",
+   "nullable": "NO",
+   "default": null,
+   "key": "PRI",
+   "extra": "auto_increment",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "logging",
+   "column": "user_id",
+   "position": 2,
+   "type": "int(11)",
+   "nullable": "YES",
+   "default": null,
+   "key": "MUL",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "logging",
+   "column": "message",
+   "position": 3,
+   "type": "text",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "logging",
+   "column": "created_at",
+   "position": 4,
+   "type": "datetime",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "v_agenda_today",
+   "column": "id",
+   "position": 1,
+   "type": "int(11)",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "v_agenda_today",
+   "column": "user_id",
+   "position": 2,
+   "type": "int(11)",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  },
+  {
+   "table": "v_agenda_today",
+   "column": "start_time",
+   "position": 3,
+   "type": "datetime",
+   "nullable": "YES",
+   "default": null,
+   "key": "",
+   "extra": "",
+   "comment": "",
+   "schema": ""
+  }
+ ],
+ "keys": [
+  {
+   "table": "agenda",
+   "constraint": "fk_agenda_user",
+   "column": "user_id",
+   "position": 1,
+   "referenced_table": "users",
+   "referenced_column": "id",
+   "type": "FOREIGN KEY"
+  },
+  {
+   "table": "remarks",
+   "constraint": "fk_remarks_agenda",
+   "column": "agenda_id",
+   "position": 1,
+   "referenced_table": "agenda",
+   "referenced_column": "id",
+   "type": "FOREIGN KEY"
+  },
+  {
+   "table": "settings",
+   "constraint": "PRIMARY",
+   "column": "id",
+   "position": 1,
+   "referenced_table": "",
+   "referenced_column": "",
+   "type": "PRIMARY KEY"
+  }
+ ],
+ "indexes": [
+  {
+   "table": "settings",
+   "index": "uniq_settings_user",
+   "non_unique": 0,
+   "seq": 1,
+   "column": "user_id"
+  },
+  {
+   "table": "agenda",
+   "index": "idx_agenda_user_start",
+   "non_unique": 1,
+   "seq": 1,
+   "column": "user_id"
+  },
+  {
+   "table": "agenda",
+   "index": "idx_agenda_user_start",
+   "non_unique": 1,
+   "seq": 2,
+   "column": "start_time"
+  },
+  {
+   "table": "remarks",
+   "index": "idx_remarks_user",
+   "non_unique": 1,
+   "seq": 1,
+   "column": "user_id"
+  },
+  {
+   "table": "users",
+   "index": "PRIMARY",
+   "non_unique": 0,
+   "seq": 1,
+   "column": "id"
+  },
+  {
+   "table": "settings",
+   "index": "PRIMARY",
+   "non_unique": 0,
+   "seq": 1,
+   "column": "id"
+  },
+  {
+   "table": "agenda",
+   "index": "PRIMARY",
+   "non_unique": 0,
+   "seq": 1,
+   "column": "id"
+  },
+  {
+   "table": "remarks",
+   "index": "PRIMARY",
+   "non_unique": 0,
+   "seq": 1,
+   "column": "id"
+  },
+  {
+   "table": "reminder_jobs",
+   "index": "PRIMARY",
+   "non_unique": 0,
+   "seq": 1,
+   "column": "id"
+  },
+  {
+   "table": "logging",
+   "index": "PRIMARY",
+   "non_unique": 0,
+   "seq": 1,
+   "column": "id"
+  }
+ ],
+ "profiles": [
+  {
+   "table": "agenda",
+   "column": "status",
+   "values": [
+    {
+     "v": "open",
+     "c": 128800
+    },
+    {
+     "v": "done",
+     "c": 46000
+    },
+    {
+     "v": "cancelled",
+     "c": 9200
+    }
+   ]
+  },
+  {
+   "table": "agenda",
+   "column": "deleted",
+   "values": [
+    {
+     "v": "0",
+     "c": 180320
+    },
+    {
+     "v": "1",
+     "c": 3680
+    }
+   ]
+  },
+  {
+   "table": "remarks",
+   "column": "state",
+   "values": [
+    {
+     "v": "paid",
+     "c": 82800
+    },
+    {
+     "v": "open",
+     "c": 9200
+    }
+   ]
+  },
+  {
+   "table": "settings",
+   "column": "reminder_enabled",
+   "values": [
+    {
+     "v": "1",
+     "c": 470
+    },
+    {
+     "v": "0",
+     "c": 50
+    }
+   ]
+  }
+ ],
+ "counts": [
+  {
+   "table": "settings",
+   "rows": 520,
+   "tenants": 520
+  },
+  {
+   "table": "reminder_jobs",
+   "rows": 11840,
+   "tenants": 486
+  },
+  {
+   "table": "remarks",
+   "rows": 91755,
+   "tenants": 502
+  }
+ ],
+ "budget": {
+  "queries": 41,
+  "seconds": 18.4,
+  "skipped": [
+   {
+    "table": "logging",
+    "column": "message",
+    "reason": "OperationalError: query timed out"
+   }
+  ]
+ }
+}

@@ -109,6 +109,12 @@ Only these are first-class:
   against code and DB (found / ambiguous / missing), a self-contained `report.html` questionnaire
   for the customer's developer with one copy-as-markdown button, and the answers written back as a
   `skills/codebase/` map plus routing rows.
+- `brain-schema-intake` — a grounding database that became readable turned into brain knowledge:
+  a bounded schema probe run on the box (`rc dev console database query` refuses MySQL), a benchmark
+  of real customer questions into answer-from-data / knowledge / both / human, a self-contained
+  `report.html` questionnaire for the customer's developer, and the answers written back as
+  `skills/databases/<db>.md`. The database twin of `brain-source-intake`, sharing its validator
+  helpers and HTML renderer.
 - `prod-console` — direct guarded production primitives through `rc dev console capabilities`,
   `rc dev console database`, `rc dev console bash`, and `rc dev console action`.
 - `rc-script-wrapper` — deterministic local Python/shell wrappers around `rc`, including complete
@@ -133,6 +139,8 @@ Ships here:
   read-only collection over public `rc`, strict suggestion schema, HTML report);
 - the source-intake engine in `skills/brain-source-intake/scripts/` (bounded repo scan, question
   benchmark, validator, HTML questionnaire);
+- the schema-intake engine in `skills/brain-schema-intake/scripts/` (remote schema probe, reduction
+  to `schema.md`, validator over tables and columns, HTML questionnaire);
 - public-API skills over `rc`;
 - `rootcause-runtime` (`runtime/lib`);
 - workspace Dockerfile/image.

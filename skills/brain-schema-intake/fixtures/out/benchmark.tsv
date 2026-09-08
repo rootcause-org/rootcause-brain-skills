@@ -1,0 +1,9 @@
+id	cluster	verdict	where	note
+Q1	booking-state	db	agenda.status;agenda.deleted	the row carries both the cancelled state and the soft delete flag
+Q2	reminder-delivery	db	reminder_jobs.already_sent;reminder_jobs.sent_at	one row per planned reminder, with the moment it left
+Q3	reminder-settings	both	settings.reminder_time	the row holds the hour, the customer still needs the rule around it
+Q4	pos-ticket	db	remarks;remarks.state	remarks is the ticket header despite the name
+Q5	pricing	kb		a sales question, no row would answer it
+Q6	refunds	human		money leaves the account, a person decides
+Q7	deletion	both	agenda.deleted	the flag says what happened, the policy around hard delete does not live in the data
+Q8	tenant-model	kb		a permissions explanation, not a lookup

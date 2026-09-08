@@ -154,6 +154,7 @@ benchmark tally is in the brain's notes with a date, so the next intake measures
 [docs/mirrors.md](../../docs/mirrors.md) declaring a local checkout as a mirror ·
 [docs/brain-model.md](../../docs/brain-model.md) routing rows and the source map convention ·
 [`prod-console`](../prod-console/SKILL.md) console drills and `database schema` ·
+[`brain-schema-intake`](../brain-schema-intake/SKILL.md) the database twin, which reuses this skill's validator helpers and renderer ·
 [`brain-website-scout`](../brain-website-scout/SKILL.md) the same scout then synthesise shape for a website.
 
 ## Iteration log
