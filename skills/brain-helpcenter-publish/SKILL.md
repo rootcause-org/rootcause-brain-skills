@@ -29,11 +29,22 @@ rc project connection ls        # the row shows `tier: write`
 |---|---|---|
 | Help Scout Docs | `helpscout_docs` | Docs API key — Help Scout **Manage → API keys** (Docs, not Mailbox) |
 | Intercom | `intercom` | Access token with **Articles write** |
-| KnowledgeOwl | `knowledgeowl` | **Not supported yet** — `UNSUPPORTED_PROVIDER`. KampAdmin: the repo's `knowledge-owl` skill writes it (HTML, dry-run + guards + `--apply`); the suggestion card's bot block already says so and carries KO's `article_id` |
+| KnowledgeOwl | `knowledgeowl` | Authoring API key (KO **Settings → API**; the same key the `/kb` sync uses is fine — the write row exists so write authority is an explicit, revocable grant). Block `id` = KO's 24-hex `article_id`, never the slug |
 
 Sealed like an action credential ([docs/secrets.md](../../docs/secrets.md)): never in the brain, never
 in a run — write-tier rows are host-only and are never injected into a workspace. Missing grant ⇒ the
 verb refuses with `NO_WRITE_GRANT` and names the exact `rc project connection add …` line above.
+
+## Scopes and where you run it
+
+A real `apply` needs the bearer scope `knowledge:write` (or an admin session); `--dry-run` and `get`
+work with the read scope, so a read-only cloud token still gets the full preview. Mint one:
+`rc project token mint email=<you> scope="read config:read knowledge:write" --project <project>`.
+Outside a brain checkout (a customer repo, a cloud session) pass `--profile <name>` / `RC_PROFILE` —
+rc refuses with the known profile names instead of guessing `default`.
+
+Placeholders: a body still holding `[[pad: …]]` / `[[…]]` from the suggestion card is refused on a
+real apply (dry-run only warns) — the owner fills them in first.
 
 ## Recipe
 
@@ -114,7 +125,7 @@ telling the owner grounding is current.
 `INVALID_BLOCK` (parse/validate — the message is the one-line reason; an unknown front-matter key is a
 typo, not a feature) · `ARTICLE_NOT_FOUND` (wrong `id`/provider, or the article was deleted) ·
 `PUBLISHED_ARTICLE` (re-run with `--publish`) · `NO_WRITE_GRANT` (add the connection above) ·
-`UNSUPPORTED_PROVIDER` (KnowledgeOwl) · `PROVIDER_ERROR` (upstream — retry once, then report; do not
+`PROVIDER_ERROR` (upstream — retry once, then report; do not
 loop). Needs `rc` ≥ 1.26.0.
 
 ## Close-out

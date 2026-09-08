@@ -381,7 +381,7 @@ For KB title/frontmatter indexes, see [knowledge-base.md](knowledge-base.md).
 
 ## Help Centre Articles
 
-Writing back to the project's public help centre (Help Scout Docs, Intercom; KnowledgeOwl not yet).
+Writing back to the project's public help centre (Help Scout Docs, Intercom, KnowledgeOwl). A real `apply` needs scope `knowledge:write`; `--dry-run`/`get` work with read.
 The input is a `replypen: helpcenter/v1` markdown block — produced by
 [`brain-helpcenter-suggestions`](../skills/brain-helpcenter-suggestions/SKILL.md), applied by
 [`brain-helpcenter-publish`](../skills/brain-helpcenter-publish/SKILL.md). Requires `rc` >= 1.26.0 and
