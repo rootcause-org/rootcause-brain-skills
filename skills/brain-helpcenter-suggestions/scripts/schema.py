@@ -187,7 +187,7 @@ NOT_CANON = (
     (re.compile(r"^\s*\|.*\|\s*$", re.M), "a GFM table"),
     (re.compile(r"~~[^~\n]+~~"), "strikethrough"),
     (re.compile(r"</?[a-zA-Z][^>\n]*>"), "raw HTML"),
-    (re.compile(r"^\s*[*+]\s+\S", re.M), "a '*' or '+' bullet (use '- ')"),
+    (re.compile(r"^\s*[*+]\s+(?![*+\s]*$)\S", re.M), "a '*' or '+' bullet (use '- ')"),  # `* * *` is a thematic break
     (re.compile(r"^[^\n#>\-\d|\s][^\n]*\n[^\n#>\-\d|\s]", re.M), "a soft-wrapped paragraph (one line per paragraph)"),
 )
 
@@ -197,8 +197,10 @@ def _norm(text: str) -> str:
 
 
 def _norm_body(text: str) -> str:
-    """Line endings unified, trailing spaces per line dropped. Nothing else: anchors are verbatim."""
-    return "\n".join(line.rstrip() for line in text.replace("\r\n", "\n").split("\n"))
+    """Line endings unified, NBSP (KnowledgeOwl bodies are full of them) read as a space, trailing
+    spaces per line dropped. Nothing else: anchors are verbatim."""
+    text = text.replace("\r\n", "\n").replace("\u00a0", " ")
+    return "\n".join(line.rstrip() for line in text.split("\n"))
 
 
 def strip_frontmatter(text: str) -> str:
@@ -228,6 +230,18 @@ def _passage(value: str, marker: str) -> str:
     return value
 
 
+def _outside_fences(text: str) -> str:
+    """Fenced code blocks are verbatim by nature; the canon check reads the prose between them."""
+    out, fenced = [], False
+    for line in text.split("\n"):
+        if line.strip().startswith("```"):
+            fenced = not fenced
+            out.append("")
+            continue
+        out.append("" if fenced else line)
+    return "\n".join(out)
+
+
 def _prose_fields(s: Suggestion) -> list[tuple[str, str]]:
     fields = [("title", s.title), ("why", s.why)]
     if s.text:
@@ -253,8 +267,9 @@ def _prose_problems(prefix: str, field: str, value: str, source: str | None) -> 
     if hit:
         warns.append(f"{p}: emoji {hit.group()!r}{_line_of(_passage(value, hit.group()), source)} - the help centre articles do not use them")
     if field == "text":
+        prose = _outside_fences(value)
         for pattern, what in NOT_CANON:
-            found = pattern.search(value)
+            found = pattern.search(prose)
             if found:
                 warns.append(f"{p}: {what}{_line_of(found.group().split(chr(10))[0], source)} - not in the help-centre markdown canon "
                              "('- ' bullets, **bold**, ATX headings, one line per paragraph, no tables/strikethrough/HTML); the publisher would mangle it")
@@ -301,8 +316,8 @@ def _cross(sug: Suggestions, ev: Evidence, evidence_path: Path, articles_dir: Pa
         elif c.conversation_id in seen:
             out.append(f"{p}.conversation_id: duplicate {c.conversation_id!r} (classify each conversation exactly once)")
         seen.setdefault(c.conversation_id, c)
-        if c.verdict != "not_kb" and not c.topics:
-            out.append(f"{p}.topics: required unless verdict is not_kb (short cluster slugs, first is primary)")
+        if c.verdict in GAP_VERDICTS and c.verdict != "uncertain" and not c.topics:
+            out.append(f"{p}.topics: required for a gap verdict ({c.verdict}); short cluster slugs, first is primary")
         for j, a in enumerate(c.article_ids):
             if a not in arts:
                 out.append(f"{p}.article_ids[{j}]: unknown {a!r} (use an evidence.articles[].id)")

@@ -19,7 +19,9 @@ hs:3438363160	not_kb	-	-
 
 - Every `evidence.conversations[].id`, exactly once.
 - `verdict`: `answered` · `partial` · `missing` · `wrong_title` · `recipe` · `not_kb` · `uncertain`.
-- `topics`: comma-separated cluster slugs, first = primary; required unless `not_kb` (`-` allowed).
+- `topics`: comma-separated cluster slugs, first = primary; required for `partial` / `missing` /
+  `wrong_title` / `recipe`, optional (`-`) for `answered`, `uncertain`, `not_kb`. An `answered` row
+  with a topic still counts toward that topic's conversations.
   `topics` is the join key: a suggestion's score and its "N conversations" come from the rows that
   list its topic.
 - `article_ids`: the `evidence.articles[].id`s you judged against (may be `-`).
@@ -61,6 +63,7 @@ online reservaties kiezen automatisch een andere cabine.
 | Field | Rules |
 |---|---|
 | file name | `S1.md`, `S2.md`, … (the id) |
+| YAML | quote any string that holds `:` or `#` (`quote: "zodra ik de code ingeef: reeds opgebruikt"`); multi-line `old:` as a block scalar (`old: \|`) |
 | `kind` | cheapest edit that closes the gap |
 | `topic` | must appear in some classification row |
 | `title` | proposed title (`retitle`), or the article's title as it will read |

@@ -87,19 +87,22 @@ not answer a customer question.
 
 **Pass 1, from the tsv only** (500 lines ≈ 25k tokens: that is the budget). One verdict per
 conversation, every conversation, with `topics[]` (a thread often carries two questions; first =
-primary). Write `classification.tsv`, run the validator, and you have a checkpoint.
+primary). A line whose opener says nothing ("Hey.", "al nieuws?") is read in the digest by id
+before it gets a verdict. Write `classification.tsv`, run the validator, and you have a checkpoint.
 
 - `answered`: an article answers the question as asked (the human may even have linked it).
 - `partial`: an article covers the topic but misses the asked point (a condition, an exception, a
   second screen).
 - `missing`: no article; the human answered by hand.
 - `wrong_title`: the content exists but neither title, keywords nor aliases contain the customer's
-  words. A discoverability hypothesis: say what the customer typed and propose those words.
+  words. A discoverability hypothesis: say what the customer typed and propose those words as an
+  `add_alias` (or a `retitle` when the title itself misleads).
 - `recipe`: the customer asked for data or an action they could have done themselves in the product
   ("maak een lijst van inschrijvingen deze week op locatie X", "rapport last-minute
   inschrijvingen") and no article teaches that self-service path. On an admin or power-user channel
   this is the main gap; it backs `new`/`rewrite` like `partial` does. A one-off data pull with no
-  reusable path stays `not_kb`.
+  reusable path stays `not_kb`; a request where part of the path is self-service and the customer
+  also asked how it works is `missing` or `partial`.
 - `not_kb`: do-it-for-me with no self-service path, billing disputes, bugs, feature requests,
   end customers at the wrong address, pricing, tests and internal chatter, acknowledgements.
 - `uncertain`: not decidable from the line and the digest. Classify, never suggest from it.
@@ -109,13 +112,15 @@ on, not by the symptom named ("Nele double-books my two cabines", "the reminder 
 wrong toestel" and "can I close a ruimte in use" are one cluster). One suggestion per cluster; the
 slug goes in `topics[]` of every row it covers and in the suggestion's `topic`. Then:
 
+0. **Twins first.** `articles.tsv` marks same-title articles (`dup`): the same article shipped
+   under two collections drifts apart; diff the twins before targeting one.
 1. **Cheapest edit first.** `add_alias` / `retitle` when the answer exists; `rewrite` when it is
    partial; `new` only when nothing covers it; `merge` only when two articles visibly confused
    customers; `delete` only with a destination and a reason.
 2. **Anchor every rewrite** in the current body (`raw/articles/<Aid>.md`): `edit.old` is the
    verbatim block you replace, or `edit.after` / `edit.before` the verbatim line you insert at. The
-   validator checks the anchor exists (once). Open the body before you write; the index summary
-   proves nothing.
+   validator checks the anchor exists (once). Copy anchor lines out of the file (non-breaking
+   spaces and all). Open the body before you write; the index summary proves nothing.
 3. **Rank is computed**, never typed: distinct conversations in the topic × how badly the KB fails
    (missing 3 · partial 2 · recipe 2 · wrong_title 1). One-conversation topics only warn.
 4. **Seed text from the human reply** (`seed_reply`) when it was a good, reusable answer. The
@@ -125,8 +130,8 @@ slug goes in `topics[]` of every row it covers and in the suggestion's `topic`. 
 5. **Quotes are verbatim customer words**: a contiguous substring of `first_message`, `first_raw` or
    a later `[customer]` turn, original language, PII-free by choice of substring.
 6. **Contradictions count.** Two live articles that disagree are a `rewrite` with
-   `flags: [contradiction]`, even when no customer named the contradiction; say which one the
-   humans confirm as right.
+   `flags: [contradiction]`; the customer need not have named the contradiction, any conversation
+   in that topic is the evidence. Say which article the humans confirm as right.
 7. **Route** `brain` when the KB is fine and the agent ignored it: hand those to
    [`brain-dream-cycle`](../brain-dream-cycle/SKILL.md).
 
@@ -134,6 +139,9 @@ Stop drilling when more detail would not change the edit. Judge time on 60 to 90
 under 30 minutes: bodies only for the top clusters.
 
 ## Voice: write as the owner writes
+
+`## Why` is one paragraph for the owner: the gap and what customers said. Never type the count of
+conversations in it; the card prints the computed one.
 
 Every proposal must be indistinguishable from the existing articles' author. Before writing any
 edit, read two or three articles of that help centre in full and mirror them: je/u, sentence length,
@@ -146,7 +154,9 @@ these rules, non-negotiable (the validator hard-fails the first one):
 - No closing sentence that repeats the paragraph, no "in short", no summary line.
 - No hedging filler (could potentially, in some cases it may) and no staged run-up (let's look
   at, here's what you need to know, the real question is).
-- No emoji, no arrows, no bold labels with colons on every list item, no title case in headings.
+- No emoji, no arrows as decoration, no bold labels with colons on every list item, no title case
+  in headings. Menu paths follow the articles' own convention (`Instellingen → Agenda` when that is
+  how the owner writes them).
 - Concrete over abstract: name the screen, the button, the field, the number. "Klik op
   **Instellingen** en dan **Agenda**" beats "configure your calendar settings".
 - Plain verbs: is, has, opens, shows. Not serves as, features, boasts, enables, ensures.
@@ -182,13 +192,13 @@ where the owner already works (ticket, chat), never by committing it.
 
 ## Meta-learning
 
-`learnings.md`, 0 to 5 bullets, `- <target>: <observation> -> <proposed change>` with target rubric
+`learnings.md` (never shown to the owner), 0 to 5 bullets, `- <target>: <observation> -> <proposed change>` with target rubric
 / recipe / normaliser / validator / render. Promote the reusable, anonymised ones into this file's
 iteration log and the code; project quirks stay in the brain's notes.
 
 ## More
 
-[suggestions_schema.md](suggestions_schema.md) the files you write · `brain-helpcenter-publish` (kit skill, v0.9.4)
+[suggestions_schema.md](suggestions_schema.md) the files you write · [`brain-helpcenter-publish`](../brain-helpcenter-publish/SKILL.md)
 applies a card's bot block through `rc project knowledge article apply` · [`brain-fleet-report`](../brain-fleet-report/SKILL.md)
 the same collect → judge → render pattern for a day of runs · [`rc-debug`](../rc-debug/SKILL.md) one run in full ·
 [`prod-console`](../prod-console/SKILL.md) `/kb` and connector reads · [docs/knowledge-base.md](../../docs/knowledge-base.md).

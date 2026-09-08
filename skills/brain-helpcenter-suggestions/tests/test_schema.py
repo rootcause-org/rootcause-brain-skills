@@ -201,7 +201,7 @@ CASES = [
     ("non-verbatim quote", _m_not_verbatim, "suggestions[0].evidence[0].quote:", "copy an unchanged substring"),
     ("unclassified conversation", _m_unclassified, "classification:", "run:a3b4c5d6"),
     ("duplicate classification", _m_duplicate_classification, "classification[12].conversation_id:", "exactly once"),
-    ("topics required", _m_topics_missing, "classification[0].topics:", "not_kb"),
+    ("topics required", _m_topics_missing, "classification[0].topics:", "gap verdict"),
     ("old topic key", _m_old_topic_key, "classification[3].topic:", "unknown key"),
     ("unknown-role quote", _m_unknown_role_quote, "suggestions[5].evidence[0].quote:", "unknown-role/agent turn in run:70819aa3"),
     ("new takes no target", _m_new_with_target, "suggestions[0].target_articles:", "no target"),

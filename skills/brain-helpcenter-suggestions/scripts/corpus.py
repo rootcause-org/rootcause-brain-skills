@@ -457,12 +457,21 @@ def write_tsvs(evidence: dict[str, Any]) -> tuple[str, str]:
             row[4] = clip(row[4], max(20, len(row[4]) - overflow - 2))
         convs.append(row)
     arts = [["id", "title", "collection", "collection_id", "audience", "keywords", "aliases",
-             "path"]]
+             "dup", "path"]]
+    # The same article shipped under two collections drifts apart over time (kampadmin-support:
+    # `{{.uitschrijven}}` in one copy only). Name the twins so the judge diffs them on purpose.
+    by_title: dict[str, list[str]] = {}
     for a in evidence.get("articles") or []:
+        if a.get("home") == "kb":
+            by_title.setdefault(" ".join(str(a.get("title") or "").lower().split()), []).append(a["id"])
+    for a in evidence.get("articles") or []:
+        twins = [i for i in by_title.get(" ".join(str(a.get("title") or "").lower().split()), [])
+                 if i != a["id"]] if a.get("home") == "kb" else []
         arts.append([a["id"], _cell(a.get("title"), 100), _cell(a.get("collection"), 40),
                      _cell(a.get("collection_id"), 40), _cell(a.get("audience"), 20),
                      ", ".join(a.get("keywords") or []) or "-",
-                     ", ".join(a.get("aliases") or []) or "-", a.get("path") or "-"])
+                     ", ".join(a.get("aliases") or []) or "-",
+                     ",".join(twins) or "-", a.get("path") or "-"])
     return ("\n".join("\t".join(row) for row in convs) + "\n",
             "\n".join("\t".join(row) for row in arts) + "\n")
 

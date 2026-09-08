@@ -488,9 +488,12 @@ def render_html(sug, ev, articles_dir: Path | None = None) -> str:
     multi_tenant = len({c.tenant for c in ev.conversations if c.tenant}) > 1
     scope = f"{ev.project} · {ev.tenant}" if ev.tenant else ev.project
 
+    dates = sorted(c.created_at[:10] for c in ev.conversations if c.created_at)
+    # The window is what was asked; the conversations are what the sources still held.
+    span = f"conversations from {e(dates[0])} to {e(dates[-1])}" if dates else "no conversations"
     body = [
         f"<h1>{e(scope)}: help centre suggestions</h1>",
-        f'<p class="stamp">{e(ev.window.start[:10])} → {e(ev.window.end[:10])} ({ev.window.days} days) · '
+        f'<p class="stamp">{ev.window.days}-day window ending {e(ev.window.end[:10])}, {span} · '
         f"source {e(ev.source)} · KB {e(ev.kb.status)} ({ev.kb.articles} articles, {e(ev.kb.scope)} scope"
         f"{', ' + e(ev.kb.root) if ev.kb.root else ''})<br>{e(cov)}</p>",
         f'<div class="lede">{e(sug.headline)}</div>' if sug.headline else "",
@@ -508,10 +511,9 @@ def render_html(sug, ev, articles_dir: Path | None = None) -> str:
     )
     body.append(f"<section><h2>Suggested edits ({len(sug.suggestions)})</h2>{cards or '<p>No suggestions.</p>'}</section>")
     body.append(_classification_table(sug, convs_by_id, arts, multi_tenant))
-    learn = "".join(f"<li><b>{e(l.observation)}</b> → {e(l.proposed_change)} ({e(l.target)})</li>" for l in sug.learnings)
+    # learnings.md is for the skill's maintainers, not the owner: it stays out of the report.
     body.append(
-        '<div class="footer"><h2>Notes</h2>'
-        + (f"<ul>{learn}</ul>" if learn else "<p>No learnings recorded.</p>")
+        '<div class="footer">'
         + f"<p>Coverage: {e(cov)}. KB: {e(ev.kb.status)}, {ev.kb.articles} articles, "
         f"{ev.kb.brain_docs} brain documents. Collected {e(ev.collected_at)} from {e(ev.source)}.</p></div>"
     )
