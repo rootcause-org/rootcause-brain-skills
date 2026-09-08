@@ -51,6 +51,9 @@ CODE_EXT = {
     "html", "erb", "haml", "env", "sh", "conf", "cfg", "prisma", "graphql", "proto", "ru",
 }
 NON_CODE_PREFIXES = ("docs/", "doc/", "tests/", "test/", "spec/", "fixtures/", "examples/")
+VENDORED_SEGMENTS = {"libraries", "third_party", "lib", "plugins"}  # a manifest here is a vendored package
+FRAMEWORK_CORE = ("system/",)  # CodeIgniter ships its core in the repo; never an area candidate
+EXCLUDED_PREFIXES: set[str] = set()  # vendored package roots of the current repo, filled by analyse()
 ASSET_EXT = {
     "png", "jpg", "jpeg", "gif", "svg", "ico", "webp", "bmp", "tiff", "woff", "woff2", "ttf",
     "eot", "otf", "pdf", "zip", "gz", "bz2", "xz", "tar", "rar", "7z", "mp3", "mp4", "mov",
@@ -127,7 +130,10 @@ def is_asset(rel: str) -> bool:
 def is_code(rel: str) -> bool:
     """Name-based area rules and the vendor grep only look at source-shaped files outside docs/tests."""
     name = rel.rsplit("/", 1)[-1]
-    if rel.lower().startswith(NON_CODE_PREFIXES):
+    low = rel.lower()
+    if low.startswith(NON_CODE_PREFIXES) or low.startswith(FRAMEWORK_CORE):
+        return False
+    if any(rel.startswith(prefix) for prefix in EXCLUDED_PREFIXES):
         return False
     return ext_of(rel) in CODE_EXT or name in ENV_OK or name in ("crontab", "Procfile", "artisan", "Gemfile")
 
@@ -518,12 +524,15 @@ def table_files(repo, areas_paths: list[str]) -> list[str]:
     """Repo-relative files under the model and migration area entries, capped."""
     picked: list[str] = []
     rels = repo["rels"]
+    # An area lists at most MAX_AREA_ITEMS files; the table mapping wants the whole directory.
+    dirs: list[str] = []
     for path in areas_paths:
         inner = path[len(f"/mirrors/{repo['name']}/"):]
-        if inner.endswith("/"):
-            picked.extend(rel for rel in rels if rel.startswith(inner))
-        elif inner in repo["relset"]:
-            picked.append(inner)
+        directory = inner if inner.endswith("/") else inner.rpartition("/")[0] + "/"
+        if directory not in dirs:
+            dirs.append(directory)
+    for directory in dirs:
+        picked.extend(rel for rel in rels if rel.startswith(directory) and is_code(rel))
     seen: list[str] = []
     for rel in picked:
         if rel not in seen and not is_asset(rel):
@@ -552,7 +561,10 @@ def scan_tables(repos: list[dict], names: list[str]) -> list[dict]:
         guess = ""
         declare = re.compile(
             r"""(?:\$table\s*=\s*|ORM\\Table\(\s*name\s*[:=]\s*|table_name\s*=\s*"""
-            r"""|__tablename__\s*=\s*)['"]""" + re.escape(table) + r"""['"]""")
+            r"""|__tablename__\s*=\s*"""
+            r"""|->(?:get|get_where|from|insert|insert_batch|update|update_batch|delete|join"""
+            r"""|count_all_results|count_all|truncate|replace)\(\s*)['"]""" + re.escape(table)
+            + r"""['"]|\b(?:from|join|into|update)\s+`?""" + re.escape(table) + r"""`?\b""", re.I)
         word = re.compile(r"\b" + re.escape(table) + r"\b")
         keys = {_key(table), _key(singular(table)), _key(singular(table) + "s")}
         for repo, files, contents in per_repo:
@@ -701,6 +713,11 @@ def analyse(repo: dict) -> None:
     repo["relset"] = set(rels)
     repo["files"] = len(rels)
     found = app_dirs(repo["relset"])
+    vendored = {app for app in found if set(app.split("/")) & VENDORED_SEGMENTS}
+    EXCLUDED_PREFIXES.clear()
+    EXCLUDED_PREFIXES.update(app + "/" for app in vendored)
+    found = {app: markers for app, markers in found.items() if app not in vendored}
+    repo["vendored"] = sorted(vendored)
     if not found:
         found = {"": set()}
     kept, nested = prune_frontend(found)

@@ -49,7 +49,7 @@ cat "$OUT/scan.md" "$OUT/questions.tsv" "$OUT/tables.tsv"        # the read-whol
 # write $OUT/proposal/*.md, benchmark.tsv, devquestions.tsv, headline.txt (intake_schema.md)
 uv run "$SI/scripts/validate.py" "$OUT"                          # exit 1 + one line per problem, per file
 uv run "$SI/scripts/render.py" "$OUT/intake.json"                # → report.html
-open "$OUT/report.html"
+open "$OUT/report.html"                            # hand over the file path, never a localhost URL
 ```
 
 Local clone beats listing: line counts, manifests and the table mapping need file contents. In

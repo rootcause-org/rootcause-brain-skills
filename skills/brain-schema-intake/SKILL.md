@@ -47,7 +47,7 @@ cat "$OUT/schema.md" "$OUT/questions.tsv"          # the read-whole tier
 # write $OUT/proposal/<db>.md, benchmark.tsv, devquestions.tsv, headline.txt (intake_schema.md)
 uv run "$SI/scripts/validate.py" "$OUT"            # exit 1 + one line per problem, per file
 uv run "$SI/scripts/render.py" "$OUT/intake.json"  # -> report.html
-open "$OUT/report.html"
+open "$OUT/report.html"                            # hand over the file path, never a localhost URL
 ```
 
 `rc dev console database query` refuses MySQL today, so `collect.py` runs Python on the box through
