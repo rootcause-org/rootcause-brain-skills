@@ -1,0 +1,94 @@
+{
+  "page": {"number": 1, "size": 25, "totalElements": 3, "totalPages": 1},
+  "_embedded": {
+    "conversations": [
+      {
+        "id": 111,
+        "number": 11,
+        "type": "chat",
+        "status": "closed",
+        "subject": null,
+        "createdAt": "2026-09-02T09:00:00Z",
+        "source": {"type": "beacon-v2", "via": "customer"},
+        "tags": [],
+        "primaryCustomer": {"id": 1, "first": "SalonLies", "last": "", "email": "info@salonlies.be"},
+        "_embedded": {
+          "threads": [
+            {
+              "id": "t3",
+              "type": "message",
+              "createdAt": "2026-09-02T09:12:00Z",
+              "createdBy": {"id": 9, "type": "user", "first": "Marie-Lore"},
+              "body": "<p>Dag Lies</p><p>Dat kan via Prijslijst &gt; Reminders.</p>"
+            },
+            {
+              "id": "t2",
+              "type": "beaconchat",
+              "createdAt": "2026-09-02T09:05:00Z",
+              "createdBy": {"id": 1, "type": "customer", "first": "SalonLies"},
+              "body": "Hoe pas ik de bevestigingsmail aan?<br><br>Met vriendelijke groeten<br>Lies"
+            },
+            {
+              "id": "t1",
+              "type": "note",
+              "createdAt": "2026-09-02T09:04:00Z",
+              "createdBy": {"id": 8, "type": "user", "first": "Michel"},
+              "body": "<strong>Technical Information</strong><table><tr><td>IP</code></tr></table>"
+            },
+            {
+              "id": "t4",
+              "type": "lineitem",
+              "createdAt": "2026-09-02T09:20:00Z",
+              "createdBy": {"id": 9, "type": "user", "first": "Marie-Lore"},
+              "body": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 222,
+        "number": 22,
+        "type": "email",
+        "status": "active",
+        "subject": "Re: cadeaubon",
+        "createdAt": "2026-09-03T14:00:00Z",
+        "source": {"type": "email", "via": "customer"},
+        "tags": [{"id": 5, "tag": "bonnen"}],
+        "primaryCustomer": {"id": 2, "first": "Joris", "last": "Peeters", "email": "joris@example.be"},
+        "_embedded": {
+          "threads": [
+            {
+              "id": "u1",
+              "type": "customer",
+              "createdAt": "2026-09-03T14:00:00Z",
+              "createdBy": {"id": 2, "type": "customer", "first": "Joris"},
+              "body": "Waar vind ik mijn cadeaubon terug in de webshop?\n\nOp 1 sep schreef Marie-Lore:\n> eerdere mail"
+            }
+          ]
+        }
+      },
+      {
+        "id": 333,
+        "number": 33,
+        "type": "email",
+        "status": "closed",
+        "subject": "oude vraag",
+        "createdAt": "2026-08-01T08:00:00Z",
+        "source": {"type": "email", "via": "customer"},
+        "tags": [],
+        "primaryCustomer": {"id": 3, "first": "Ann", "last": "", "email": "ann@example.be"},
+        "_embedded": {
+          "threads": [
+            {
+              "id": "v1",
+              "type": "customer",
+              "createdAt": "2026-08-01T08:00:00Z",
+              "createdBy": {"id": 3, "type": "customer", "first": "Ann"},
+              "body": "Vraag van buiten het venster"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

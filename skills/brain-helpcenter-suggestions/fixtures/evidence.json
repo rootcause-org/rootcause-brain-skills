@@ -1,0 +1,221 @@
+{
+ "articles": [
+  {
+   "aliases": [],
+   "area": null,
+   "collection": "Agenda",
+   "deprecated": false,
+   "home": "kb",
+   "id": "A1",
+   "keywords": [
+    "openingsuren",
+    "feestdagen"
+   ],
+   "path": "uncategorized/openingsuren-instellen.md",
+   "summary": "Openingsuren en uitzonderingen per vestiging instellen.",
+   "title": "Openingsuren instellen",
+   "updated_at": "2026-04-18",
+   "url": "https://help.salonsoft.example/article/openingsuren-instellen"
+  },
+  {
+   "aliases": [
+    "cabines"
+   ],
+   "area": null,
+   "collection": "Agenda",
+   "deprecated": false,
+   "home": "kb",
+   "id": "A2",
+   "keywords": [
+    "cabine",
+    "ruimte"
+   ],
+   "path": "uncategorized/cabines-beheren.md",
+   "summary": "Cabines aanmaken, hernoemen en aan een vestiging koppelen.",
+   "title": "Cabines beheren",
+   "updated_at": "2026-02-02",
+   "url": "https://help.salonsoft.example/article/cabines-beheren"
+  },
+  {
+   "aliases": [],
+   "area": null,
+   "collection": "Boekhouding",
+   "deprecated": false,
+   "home": "kb",
+   "id": "A3",
+   "keywords": [
+    "factuur",
+    "btw"
+   ],
+   "path": "uncategorized/facturatie.md",
+   "summary": "Facturen maken, filteren en exporteren.",
+   "title": "Facturatie",
+   "updated_at": "2026-06-30",
+   "url": "https://help.salonsoft.example/article/facturatie"
+  },
+  {
+   "aliases": [],
+   "area": null,
+   "collection": "Online boeken",
+   "deprecated": false,
+   "home": "kb",
+   "id": "A4",
+   "keywords": [
+    "widget",
+    "website"
+   ],
+   "path": "uncategorized/online-boekingsmodule.md",
+   "summary": "De boekingsmodule op je eigen website plaatsen.",
+   "title": "Online boekingsmodule",
+   "updated_at": "2025-11-09",
+   "url": "https://help.salonsoft.example/article/online-boekingsmodule"
+  },
+  {
+   "aliases": [],
+   "area": null,
+   "collection": null,
+   "deprecated": false,
+   "home": "brain",
+   "id": "A5",
+   "keywords": [],
+   "path": "knowledge/agenda-limieten.md",
+   "summary": "Interne notities over boekingshorizon.",
+   "title": "Agenda limieten (intern)",
+   "updated_at": null,
+   "url": null
+  }
+ ],
+ "collected_at": "2026-09-08T09:12:44Z",
+ "conversations": [
+  {
+   "channel": "email",
+   "created_at": "2026-09-01T08:14:00Z",
+   "customer": "Ellen",
+   "first_message": "Hallo,\n\nHoe zet ik mijn agenda open voor 2027? Klanten willen nu al boeken voor januari maar ik kan enkel dit jaar selecteren.\n\nEllen",
+   "id": "hs:1001",
+   "later": [],
+   "reply": {
+    "by": "Marie",
+    "provenance": "human",
+    "text": "Dag Ellen, je opent een nieuw jaar via Instellingen > Agenda > Boekingshorizon: zet de horizon op 18 maanden en 2027 verschijnt automatisch."
+   },
+   "subject": "Agenda 2027",
+   "tags": [],
+   "truncated": false,
+   "url": "https://secure.helpscout.net/conversation/1001/1/"
+  },
+  {
+   "channel": "chat",
+   "created_at": "2026-09-02T11:40:00Z",
+   "customer": "Lotte",
+   "first_message": "hoi, hoe kan ik een cabine koppelen aan een behandeling? ik heb 3 cabines maar de pedicure mag enkel in cabine 2",
+   "id": "hs:1002",
+   "later": [
+    {
+     "role": "customer",
+     "text": "en kan dat ook per medewerker?"
+    }
+   ],
+   "reply": {
+    "by": "Marie",
+    "provenance": "human",
+    "text": "Dag Lotte, bij de behandeling zelf kies je onderaan 'toegestane cabines' en vink je enkel cabine 2 aan."
+   },
+   "subject": "Cabines",
+   "tags": [],
+   "truncated": false,
+   "url": "https://secure.helpscout.net/conversation/1002/2/"
+  },
+  {
+   "channel": "email",
+   "created_at": "2026-09-03T15:05:00Z",
+   "customer": "Sofie",
+   "first_message": "Waar vind ik mijn facturen van vorig jaar? Mijn boekhouder vraagt de facturen van 2025 en ik zie enkel de laatste drie maanden staan.",
+   "id": "hs:1003",
+   "later": [],
+   "reply": {
+    "by": "Karel",
+    "provenance": "human",
+    "text": "Dag Sofie, klik in Facturatie op de filter rechtsboven en zet het jaar op 2025."
+   },
+   "subject": "Facturen",
+   "tags": [],
+   "truncated": false,
+   "url": "https://secure.helpscout.net/conversation/1003/3/"
+  },
+  {
+   "channel": "email",
+   "created_at": "2026-09-04T09:20:00Z",
+   "customer": "Michel",
+   "first_message": "Kunnen jullie ons klantenbestand van 4200 klanten voor ons importeren? We hebben een export uit ons oude pakket.",
+   "id": "hs:1004",
+   "later": [],
+   "reply": {
+    "by": "Marie",
+    "provenance": "human",
+    "text": "Dag Michel, dat doen we graag voor je, ik plan het in voor volgende week."
+   },
+   "subject": "Import klanten",
+   "tags": [],
+   "truncated": false,
+   "url": "https://secure.helpscout.net/conversation/1004/4/"
+  },
+  {
+   "channel": "chat",
+   "created_at": "2026-09-05T13:31:00Z",
+   "customer": "Nathalie",
+   "first_message": "online boeken werkt niet meer op mijn website, de knop doet niks meer sinds gisteren",
+   "id": "hs:1005",
+   "later": [],
+   "reply": {
+    "by": null,
+    "provenance": "draft",
+    "text": "Dag Nathalie, ik bekijk het even en kom bij je terug."
+   },
+   "subject": "Online boeken",
+   "tags": [],
+   "truncated": false,
+   "url": "https://secure.helpscout.net/conversation/1005/5/"
+  },
+  {
+   "channel": "email",
+   "created_at": "2026-09-06T07:55:00Z",
+   "customer": "Ilse",
+   "first_message": "Hoe stel ik mijn openingsuren in voor de feestdagen?",
+   "id": "hs:1006",
+   "later": [],
+   "reply": {
+    "by": "Karel",
+    "provenance": "human",
+    "text": "Dag Ilse, via Instellingen > Openingsuren > Uitzonderingen voeg je de feestdagen toe."
+   },
+   "subject": "Openingsuren",
+   "tags": [],
+   "truncated": false,
+   "url": "https://secure.helpscout.net/conversation/1006/6/"
+  }
+ ],
+ "coverage": [
+  {
+   "feed": "helpscout:support@salonsoft.example",
+   "reason": null,
+   "retained": 6,
+   "scanned": 9,
+   "status": "complete"
+  }
+ ],
+ "kb": {
+  "articles": 4,
+  "brain_docs": 1,
+  "reason": null,
+  "status": "complete"
+ },
+ "project": "salonsoft",
+ "schema_version": 1,
+ "source": "helpscout",
+ "window": {
+  "days": 8,
+  "end": "2026-09-08T09:12:44Z",
+  "start": "2026-08-31T00:00:00Z"
+ }
+}

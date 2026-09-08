@@ -99,6 +99,10 @@ Only these are first-class:
 - `brain-simulate` — replay representative real inbound cases through `rc ask --simulation`, grade
   each draft against the human's historical reply, render an HTML report with run links and
   copy-paste steering prompts; re-run with `--ref dev/<branch>` and diff.
+- `brain-helpcenter-suggestions` — one window of real customer questions held against the public
+  help-centre inventory: Python collects (runs / Help Scout connector / harvest dump + `/kb` index),
+  the model classifies and clusters, Python validates every quote and link and renders one
+  `report.html` of ranked KB edits for the help-centre owner.
 - `prod-console` — direct guarded production primitives through `rc dev console capabilities`,
   `rc dev console database`, `rc dev console bash`, and `rc dev console action`.
 - `rc-script-wrapper` — deterministic local Python/shell wrappers around `rc`, including complete
@@ -119,6 +123,8 @@ Ships here:
   `rc`, plus schema/validate/render);
 - the simulate engine in `skills/brain-simulate/scripts/` (case normalization, `rc ask --simulation`
   replay, judge bundles, HTML/markdown report);
+- the help-centre engine in `skills/brain-helpcenter-suggestions/scripts/` (corpus normalisers,
+  read-only collection over public `rc`, strict suggestion schema, HTML report);
 - public-API skills over `rc`;
 - `rootcause-runtime` (`runtime/lib`);
 - workspace Dockerfile/image.
