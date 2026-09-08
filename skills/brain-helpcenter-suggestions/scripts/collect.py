@@ -5,7 +5,7 @@
 """Collect one window of customer questions + the help-centre inventory into `evidence.json`.
 
     uv run skills/brain-helpcenter-suggestions/scripts/collect.py --days 60 \
-        [--tenant SLUG] [--skip-tenant SLUG ...] [--out DIR]
+        [--tenant SLUG] [--skip-tenant SLUG ...] [--kind email|chat|analysis ...] [--out DIR]
 
 One report = one help centre, decided by the **mount**, not by the presence of tenants: a tenant KB
 under `/kb/tenant/**` plus `--tenant` gives a per-tenant report, otherwise every project-level KB is
@@ -56,7 +56,10 @@ MAX_DAYS = 120
 CONSOLE_TIMEOUT = 300
 TRACE_TIMEOUT = 120
 OUT = "/tmp/rootcause-out"
-CORPUS_KINDS = ("email", "chat")
+CORPUS_KINDS = ("email", "chat", "analysis")
+# `analysis` runs are Embassy support tickets: an admin filing one is an admin who did not find
+# the article. Named in the coverage line so the reader knows which feed that is.
+KIND_LABEL = {"analysis": "analysis runs (Embassy tickets)"}
 # A trace header is ~200 KB, almost all of it prompt scaffolding we never read. Keep the corpus bits.
 HEADER_DROP = ("bootstrap_turn", "system_prompt", "prompt_sections", "manifest_blocks",
                "tenant_settings", "tenant_settings_current", "guards", "grounding_sources", "notes")
@@ -87,7 +90,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-tenant", action="append", default=[], metavar="SLUG",
                         help="tenant whose conversations are internal traffic (repeatable)")
     parser.add_argument("--out", help="output directory (default .rootcause/helpcenter/<end date>)")
+    parser.add_argument("--kind", action="append", choices=list(CORPUS_KINDS), metavar="KIND",
+                        help=f"run kind to read ({'|'.join(CORPUS_KINDS)}, repeatable, default all)")
     args = parser.parse_args()
+    args.kind = tuple(dict.fromkeys(args.kind or CORPUS_KINDS))
     if args.days > MAX_DAYS:
         parser.error(f"--days {args.days}: the window is capped at {MAX_DAYS} days "
                      "(one trace call per session, and older traffic answers a different product)")
@@ -221,7 +227,8 @@ def sessions(rows: list[dict]) -> list[dict[str, Any]]:
 
 def from_runs(rc: Rc, brain_root: Path, raw_dir: Path, rows: list[dict], start: datetime,
               end: datetime, tenant: str | None, skip_tenants: list[str],
-              domains: frozenset[str], simulations: int) -> tuple[list[dict], list[dict], Counter]:
+              domains: frozenset[str], simulations: int,
+              kinds: tuple[str, ...] = CORPUS_KINDS) -> tuple[list[dict], list[dict], Counter]:
     """Header per session, in parallel. Returns conversations, coverage feeds, tenant counts."""
     picked = sessions(rows)
 
@@ -257,7 +264,7 @@ def from_runs(rc: Rc, brain_root: Path, raw_dir: Path, rows: list[dict], start: 
     corpus.tag_noise(conversations, skip_tenants)
 
     feeds = []
-    for kind in CORPUS_KINDS:
+    for kind in kinds:
         runs_of_kind = [r for r in rows if str(r.get("kind") or "") == kind]
         if not runs_of_kind:
             continue
@@ -276,7 +283,8 @@ def from_runs(rc: Rc, brain_root: Path, raw_dir: Path, rows: list[dict], start: 
             parts.append(f"text only from {oldest[:10]} on")
         feeds.append(cover(f"{kind}_runs", "complete" if len(seen) == len(mine) else "partial",
                            len(runs_of_kind), len(convs),
-                           f"{len(runs_of_kind)} {kind} runs in window: "
+                           f"{len(runs_of_kind)} {KIND_LABEL.get(kind, kind + ' runs')}"
+                           " in window: "
                            + " · ".join(p for p in parts if p and not p.startswith("0 "))))
     for conv in conversations:
         conv.pop("_kind", None)
@@ -519,28 +527,30 @@ def mailboxes(rc: Rc) -> list[dict]:
 
 
 def pick_source(rc: Rc, brain_root: Path, raw_dir: Path, args, start, end):
-    """One `rc fleet runs` call: email + chat are the corpus, the other kinds only get counted."""
+    """One `rc fleet runs` call: `--kind` decides the corpus, the other kinds only get counted."""
+    kinds = tuple(getattr(args, "kind", None) or CORPUS_KINDS)
     payload = rc.json("fleet", "runs", "--days", str(args.days))
     rows = [r for r in ((payload.get("runs") if isinstance(payload, dict) else payload) or [])
             if isinstance(r, dict) and corpus.in_window(r.get("created_at"), start, end)]
-    corpus_rows = [r for r in rows if str(r.get("kind") or "") in CORPUS_KINDS
+    corpus_rows = [r for r in rows if str(r.get("kind") or "") in kinds
                    and not r.get("simulation")]
-    others = other_runs_feed([r for r in rows if str(r.get("kind") or "") not in CORPUS_KINDS])
+    others = other_runs_feed([r for r in rows if str(r.get("kind") or "") not in kinds])
     boxes = mailboxes(rc)
     if corpus_rows:
         # our own addresses: an `is_inbound` turn from one of these domains is still an agent
         domains = frozenset(str(b.get("email_address") or "").lower().rpartition("@")[2]
                             for b in boxes) - {""}
-        simulations = sum(1 for r in rows if str(r.get("kind") or "") in CORPUS_KINDS
+        simulations = sum(1 for r in rows if str(r.get("kind") or "") in kinds
                           and r.get("simulation"))
         convs, feeds, tenants = from_runs(rc, brain_root, raw_dir, corpus_rows, start, end,
-                                          args.tenant, args.skip_tenant, domains, simulations)
+                                          args.tenant, args.skip_tenant, domains, simulations,
+                                          kinds)
         return "runs", convs, feeds + [others], tenants
     providers = sorted({str(b.get("provider") or "") for b in boxes})
     if "helpscout" in providers:
         convs, feeds = from_helpscout(brain_root, raw_dir, start, end, args.skip_tenant)
         return "helpscout", convs, feeds + [others], Counter()
-    print(f"no email or chat runs in the window and no helpscout mailbox (providers: "
+    print(f"no {'/'.join(kinds)} runs in the window and no helpscout mailbox (providers: "
           f"{', '.join(providers) or 'none'}). v1 reads runs or Help Scout only "
           f": a recipe for this provider still has to be written (say so in learnings).",
           file=sys.stderr)

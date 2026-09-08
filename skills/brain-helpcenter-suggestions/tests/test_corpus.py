@@ -259,6 +259,84 @@ def test_chat_orphan_clarifier_answer_is_not_a_question():
     assert corpus.trace_conversation(header) is None
 
 
+# ---------------------------------------------------------------- Embassy support tickets
+
+
+def ticket_header() -> dict:
+    return json.loads((FIXTURES / "trace_header_ticket.json").read_text(encoding="utf-8"))
+
+
+def test_ticket_normaliser():
+    """`kind: analysis` is a markdown ticket: title, filer, tenant, type/priority tags, draft reply."""
+    conv = corpus.trace_conversation(ticket_header())
+    assert conv["channel"] == "ticket" and conv["tenant"] == "duinvos"
+    assert conv["id"] == "run:9c4b21ef" and conv["url"] == "https://app.example/runs/9c4b21ef"
+    assert conv["subject"] == "bevestigingsmail met verkeerde datum"
+    assert conv["customer"] == "Nadia"  # first name only, never the address
+    assert conv["tags"] == ["ticket_type:question", "priority:low"]
+    assert conv["noise"] is None
+    assert "@" not in json.dumps(conv) and "Ticket ID" not in json.dumps(conv)
+    assert conv["first_message"].startswith("In de bevestigingsmail van de zomerstage")
+    assert "Metadata" not in conv["first_message"]
+    # the discussion splits on the dated name headers; the later turn stays a customer turn
+    assert [t["role"] for t in conv["later"]] == ["customer"]
+    assert conv["later"][0]["text"] == ("Ondertussen gevonden bij de activiteit zelf, "
+                                        "maar geldt dat ook voor de wachtlijstmail?")
+    assert conv["reply"]["provenance"] == "draft" and conv["reply"]["by"] is None
+    assert conv["reply"]["text"].startswith("Dag Nadia")
+
+
+def test_ticket_turn_header_variants():
+    """Real tickets decorate the header and put the name on either side of the date."""
+    assert corpus._ticket_turns("**Sylvie 27/08/2026**\nHallo, dit is de vraag.") == [
+        "Hallo, dit is de vraag."]
+    assert corpus._ticket_turns("### Lies 28/08\neen vraag\n\n2/9 - Lies\nen een tweede") == [
+        "een vraag", "en een tweede"]
+    # prose that merely mentions a date is not a header
+    assert corpus._ticket_turns("Ik kom op 26/08 langs bij jullie kantoor.") == [
+        "Ik kom op 26/08 langs bij jullie kantoor."]
+
+
+def test_ticket_without_turn_headers_is_one_turn():
+    header = ticket_header()
+    header["question"] = header["question"].replace("2/9 - Nadia\n\n", "").replace(
+        "### 03/09/26 Nadia\n\n", "")
+    conv = corpus.trace_conversation(header)
+    assert conv["later"] == []
+    assert conv["first_message"].startswith("In de bevestigingsmail")
+
+
+@pytest.mark.parametrize("kind,noise", [("question", None), ("config", None),
+                                        ("feedback", "ticket_type"), ("request", "ticket_type")])
+def test_ticket_type_decides_the_noise_pretag(kind, noise):
+    """A feature wish is never closed by an article; a usage or config question can be."""
+    header = ticket_header()
+    header["question"] = header["question"].replace("Type: question (Gebruiksvraag)",
+                                                    f"Type: {kind} (Iets)")
+    conv = corpus.trace_conversation(header)
+    assert (conv["noise"] or {}).get("reason") == noise
+    assert conv["tags"][0] == f"ticket_type:{kind}"
+
+
+def test_ticket_falls_back_to_the_metadata_tenant():
+    header = ticket_header()
+    header["tenant"] = None
+    assert corpus.trace_conversation(header)["tenant"] == "duinvos"
+
+
+def test_kind_selection_filters_the_corpus(monkeypatch):
+    """`--kind` picks the feeds; everything else is only counted in `other_runs`."""
+    monkeypatch.setattr(sys, "argv", ["collect.py", "--kind", "analysis"])
+    assert collect.parse_args().kind == ("analysis",)
+    monkeypatch.setattr(sys, "argv", ["collect.py"])
+    assert collect.parse_args().kind == collect.CORPUS_KINDS == ("email", "chat", "analysis")
+    rows = [{"kind": "email"}, {"kind": "chat"}, {"kind": "analysis"}, {"kind": "mcp"}]
+    kinds = ("analysis",)
+    assert [r for r in rows if r["kind"] in kinds] == [{"kind": "analysis"}]
+    feed = collect.other_runs_feed([r for r in rows if r["kind"] not in kinds])
+    assert feed["reason"] == "1 email runs · 1 chat runs · 1 mcp runs, not part of this corpus"
+
+
 def test_session_grouping_takes_the_last_run_and_the_earliest_date():
     rows = [
         {"run_id": "r2", "session_id": "s1", "thread_id": "s1", "kind": "chat",

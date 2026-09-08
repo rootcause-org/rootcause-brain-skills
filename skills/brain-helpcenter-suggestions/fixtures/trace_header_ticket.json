@@ -1,0 +1,20 @@
+{
+ "_comment": "Anonymised shape of a `kind: analysis` trace header: an Embassy support ticket. The question is a markdown ticket document (`# Support Ticket:` / `## Metadata` bullets / `## Discussion` free text, whose turns may be separated by a dated name header), prior_messages is empty, and `draft` is the agent's reply.",
+ "kind": "analysis",
+ "scenario": "email",
+ "run_id": "9c4b21ef-0000-4000-8000-000000000000",
+ "session_id": "support_ticket-11111111-0000-4000-8000-000000000000",
+ "thread_id": "analysis-22222222-0000-4000-8000-000000000000",
+ "created_at": "2026-09-02T09:11:00Z",
+ "tenant": "duinvos",
+ "topic": "Bevestigingsmail met verkeerde begindatum",
+ "question": "# Support Ticket: bevestigingsmail met verkeerde datum\n\n## Metadata\n- Ticket ID: `11111111-0000-4000-8000-000000000000`\n- Tenant: `duinvos`\n- Type: question (Gebruiksvraag)\n- Priority: low (Laag)\n- Status: open (Open)\n- Created by: Nadia (nadia@duinvos.example) (is super admin)\n- Created at: 02/09/2026 09:11\n- KampAdmin Staff Responsible: Not assigned yet\n\n## Discussion\n2/9 - Nadia\n\nIn de bevestigingsmail van de zomerstage staat de verkeerde begindatum. Waar kan ik die tekst zelf aanpassen?\n\nIk heb al gezocht bij mailsjablonen en bij vertalingen, maar ik vind de mail niet terug.\n\nGroeten,\n\nNadia\n\n### 03/09/26 Nadia\n\nOndertussen gevonden bij de activiteit zelf, maar geldt dat ook voor de wachtlijstmail?",
+ "draft": "Dag Nadia,\n\nDe begindatum in die mail komt van de activiteit zelf, niet van het sjabloon. Pas de periode aan bij de activiteit en de bevestigingsmail volgt automatisch.",
+ "prior_messages": null,
+ "metadata": {
+  "iterations": 5,
+  "outcome": "replied",
+  "support_ticket_id": "11111111-0000-4000-8000-000000000000",
+  "run_url": "https://app.example/runs/9c4b21ef"
+ }
+}

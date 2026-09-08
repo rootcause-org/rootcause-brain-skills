@@ -70,7 +70,7 @@ class Noise(_M):
 class Conversation(_M):
     id: str
     url: str | None = None
-    channel: Literal["email", "chat"]
+    channel: Literal["email", "chat", "ticket"]
     created_at: str
     tenant: str | None = None
     subject: str | None = None

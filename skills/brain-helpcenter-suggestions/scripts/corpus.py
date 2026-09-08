@@ -381,6 +381,82 @@ def chat_conversation(header: dict[str, Any]) -> dict[str, Any] | None:
     )
 
 
+# ------------------------------------------------------------------ Embassy support tickets
+
+_TICKET_TITLE = re.compile(r"(?m)^#\s*Support Ticket:\s*(.+?)\s*$")
+_TICKET_SECTION = re.compile(r"(?m)^##\s+(.+?)\s*$")
+_TICKET_ROW = re.compile(r"(?m)^\s*[-*]\s*([^:]{1,40}):\s*(.*)$")
+# A discussion turn header: a short line with a date and (before or after it) the poster's name,
+# under any markdown decoration. `26/8 - Marjan`, `### 26/08/26 Koen`, `**Sylvie 27/08/2026**`.
+# Most tickets have none at all, and then the discussion is one turn.
+_TICKET_NAME = r"[^\W\d_][\w.'-]*(?:\s+[^\W\d_][\w.'-]*)?"
+_TICKET_DATE = r"\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?"
+_TICKET_TURN = re.compile(rf"^(?:{_TICKET_NAME}\s+)?{_TICKET_DATE}(?:\s*[-–—:]?\s*{_TICKET_NAME})?$")
+TICKET_TURN_MAX = 40
+TICKET_NOT_KB_TYPES = {"feedback", "request"}  # feature wishes, never a help-centre gap
+
+
+def _ticket_sections(question: str) -> dict[str, str]:
+    """`## <name>` -> its body, for the markdown ticket the Embassy renders into `question`."""
+    heads = list(_TICKET_SECTION.finditer(question))
+    return {h.group(1).strip().lower(): question[h.end():(heads[i + 1].start()
+                                                          if i + 1 < len(heads) else len(question))]
+            for i, h in enumerate(heads)}
+
+
+def _ticket_meta(body: str) -> dict[str, str]:
+    return {k.strip().lower(): v.strip().strip("`").strip()
+            for k, v in _TICKET_ROW.findall(body or "")}
+
+
+def _first_word(value: str) -> str:
+    """`low (Laag)` -> `low`; `Marjan (marjan@x.be) (is super admin)` -> `Marjan`."""
+    return (words(str(value or "").partition("(")[0]) or [""])[0]
+
+
+def _ticket_turns(discussion: str) -> list[str]:
+    """The discussion split on dated turn headers; unsplit when there are none."""
+    chunks, current = [], []
+    for line in discussion.splitlines():
+        bare = line.strip().strip("#*_ ").strip()
+        if len(bare) <= TICKET_TURN_MAX and _TICKET_TURN.match(bare):
+            chunks.append(current)
+            current = []
+            continue
+        current.append(line)
+    chunks.append(current)
+    return [text for text in (clean("\n".join(c)) for c in chunks) if text]
+
+
+def ticket_conversation(header: dict[str, Any]) -> dict[str, Any] | None:
+    """An Embassy support ticket (`kind: analysis`): the question is a markdown ticket document.
+
+    The admin who files a ticket is exactly the person who should have found a help-centre article,
+    so the discussion is the customer turn and the agent's `draft` is the reply. Feature wishes
+    (`feedback`, `request`) are pre-tagged noise: no article closes them.
+    """
+    question = str(header.get("question") or "")
+    sections = _ticket_sections(question)
+    meta = _ticket_meta(sections.get("metadata", ""))
+    found = _TICKET_TITLE.search(question)
+    title = found.group(1) if found else header.get("topic")
+    ticket_type, priority = _first_word(meta.get("type")), _first_word(meta.get("priority"))
+    tags = [f"ticket_type:{ticket_type}"] if ticket_type else []
+    tags += [f"priority:{priority}"] if priority else []
+    turns = [("customer", text, None) for text in _ticket_turns(sections.get("discussion", ""))]
+    draft = clean(header.get("draft"), REPLY_LIMIT)
+    conv = build(
+        f"run:{str(header.get('run_id') or '')[:8]}",
+        (header.get("metadata") or {}).get("run_url"), "ticket",
+        str(header.get("created_at") or ""), title, _first_word(meta.get("created by")), tags,
+        turns + ([("agent", draft, None)] if draft else []), "draft",
+        tenant=str(header.get("tenant") or meta.get("tenant") or "") or None,
+    )
+    if conv and ticket_type in TICKET_NOT_KB_TYPES:
+        conv["noise"] = conv.get("noise") or {"verdict": "not_kb", "reason": "ticket_type"}
+    return conv
+
+
 def trace_conversation(header: dict[str, Any],
                        mailbox_domains: frozenset[str] = frozenset()) -> dict[str, Any] | None:
     """First JSONL record of `rc run trace --stream` -> conversation (draft = the reply).
@@ -391,6 +467,9 @@ def trace_conversation(header: dict[str, Any],
     """
     if str(header.get("kind") or "") == "chat":
         return chat_conversation(header)
+    if str(header.get("kind") or "") == "analysis" \
+            or str(header.get("question") or "").lstrip().startswith("# Support Ticket"):
+        return ticket_conversation(header)
     prior = [m for m in header.get("prior_messages") or [] if isinstance(m, dict)]
     origin = next((address(m.get("sender")) for m in prior if m.get("is_inbound") is not False), "")
     # An opaque chat contact id is the same person as the e-mail they hand over later in the widget.

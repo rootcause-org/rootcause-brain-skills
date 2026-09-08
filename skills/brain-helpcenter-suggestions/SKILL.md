@@ -30,6 +30,7 @@ HC="$PWD/.agents/skills/brain-helpcenter-suggestions"
 
 uv run "$HC/scripts/collect.py" --days 60                       # default 60, max 120 · --tenant SLUG · --out DIR
 uv run "$HC/scripts/collect.py" --days 90 --skip-tenant demo    # chat project: pre-tag operator tenants as noise
+uv run "$HC/scripts/collect.py" --days 90 --kind analysis        # one channel only (default: email + chat + analysis); repeatable
 OUT="$PWD/.rootcause/helpcenter/<window-end-date>[-<tenant>]"    # last line of the collect summary
 
 cat "$OUT/conversations.tsv"                    # pass 1 reads this whole (one line per conversation, ≤ 200 chars)
@@ -55,6 +56,7 @@ validator's error prints the current one).
 | Source | When | Corpus | Link | Reply provenance |
 |---|---|---|---|---|
 | `runs` (email + chat) | the project has `email` or `chat` runs in the window | one `rc run trace --stream` header per session (the last run: its `prior_messages[]` is the whole thread); roles from sender vs mailbox domains, `unknown` when neither; chat: inbound = customer | tokenized run URL | email: `draft` unless a mailbox reply precedes it (`human`); chat: always `draft` (the agent answered live) |
+| `runs` (analysis = Embassy support tickets) | the project has `analysis` runs in the window | the header `question` is a markdown ticket (`# Support Ticket:` / `## Metadata` / `## Discussion`); the discussion is the customer turn (split on dated name headers), tags `ticket_type:` + `priority:` | tokenized run URL | always `draft`; `ticket_type:feedback` and `ticket_type:request` are pre-tagged noise (feature wishes) |
 | `helpscout` | no runs, a Help Scout mailbox is watched | `lib.api get helpscout /conversations?embed=threads` paged in the prod workspace, spilled to a file | `secure.helpscout.net/conversation/<id>/<number>/` | `human` (`bot` when the mailbox AI assistant answered) |
 
 No runs and no Help Scout mailbox: collect exits 2. Recipes still to write (say so in `learnings`):
@@ -183,6 +185,10 @@ Then these rules, non-negotiable (the validator hard-fails the first one):
 
 - **Creation-window bias.** Conversations are selected on `created_at`; follow-ups on older threads
   are not in the corpus. Say so when a topic looks thin.
+- **Pick the channel where the help centre should have been read.** On KampAdmin the dashboard
+  chat is a data-request channel and rarely consults the KB; the Embassy support tickets
+  (`--kind analysis`) are where an admin should have found the article first. Say in the
+  headline which channel the report covers.
 - **Trace payloads expire.** Email run headers older than about two weeks come back without
   `question` or `prior_messages` (kampadmin, 2026-09-08: a clean cutoff 14 days back); chat runs
   kept about a month. Collect drops them as `no message payload left in the trace` and prints
@@ -194,7 +200,7 @@ Then these rules, non-negotiable (the validator hard-fails the first one):
   classifying, and look for the self-service path (`recipe`) before writing `not_kb`.
 - **Absence of questions proves nothing** about an article being unused: never `delete` from silence.
 - **Coverage first.** A partial or unavailable feed goes into `headline.txt`. The `other_runs`
-  coverage line names run kinds outside the corpus (analysis runs and their failures): quote it,
+  coverage line names run kinds outside the corpus (whatever `--kind` left out): quote it,
   it is for the operator, not the owner.
 
 ## Privacy
