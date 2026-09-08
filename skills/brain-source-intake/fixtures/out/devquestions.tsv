@@ -1,0 +1,7 @@
+id	group	question	proposal	evidence
+D1	architecture	Which requests still hit the CodeIgniter app and which the Laravel app? Is there a routing rule, or is it per URL prefix?	(?) /mirrors/app/legacy/index.php serves everything and forwards only the newer paths to the Laravel app	booking-visibility;/mirrors/app/legacy/index.php
+D2	where	Which mailer actually sends the appointment reminder today?	(?) the Laravel ReminderMail replaced the CodeIgniter Mailer library, and the library is dead code	mail-delivery
+D3	where	Which scheduler runs in production: the Laravel job or the CodeIgniter cron controller?		reminders
+D4	db	Is `users` the salon (tenant) table? Where does the end customer live?	(?) users = salon logins, and the end customer is denormalised onto the booking row	db:users;db:bookings
+D5	db	Is there any invoice table, or does billing live outside this codebase?		invoices
+D6	conventions	Is there an export feature at all, or do customers ask support for a spreadsheet?		exports

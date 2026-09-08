@@ -1,0 +1,9 @@
+id	cluster	status	where	note
+Q1	booking-visibility	found	/mirrors/app/app/app/Models/Booking.php:isOnlineBookable	one model decides whether a slot is offered online
+Q2	mail-delivery	ambiguous	/mirrors/app/app/app/Mail/ReminderMail.php;/mirrors/app/legacy/application/libraries/Mailer.php	the legacy library and the Laravel mailable both still exist
+Q3	invoices	missing		no invoice model, no invoice table, only a mail class name
+Q4	pricing	n/a		a sales question, no code or table would answer it
+Q5	booking-visibility	found	/mirrors/app/legacy/application/models/Booking_model.php;db:bookings.status	cancellation state lives on the booking row
+Q6	reminders	ambiguous	/mirrors/app/app/app/Jobs/SendReminder.php;/mirrors/app/legacy/application/controllers/cron/Reminders.php	two schedulers, we cannot tell which one runs in production
+Q7	tenant-model	found	db:users	one row per salon login, per the model naming
+Q8	exports	missing		nothing that writes a spreadsheet in either app

@@ -104,6 +104,11 @@ Only these are first-class:
   every article body, the model classifies in two passes and writes one small markdown file per
   suggestion, Python validates every quote and anchor and renders one `report.html` of ranked,
   anchored KB edits for the help-centre owner, with a bot-readable block per card.
+- `brain-source-intake` — a customer codebase that became readable (source mirror or local clone)
+  turned into brain knowledge: a bounded orientation scan, a benchmark of real customer questions
+  against code and DB (found / ambiguous / missing), a self-contained `report.html` questionnaire
+  for the customer's developer with one copy-as-markdown button, and the answers written back as a
+  `skills/codebase/` map plus routing rows.
 - `prod-console` — direct guarded production primitives through `rc dev console capabilities`,
   `rc dev console database`, `rc dev console bash`, and `rc dev console action`.
 - `rc-script-wrapper` — deterministic local Python/shell wrappers around `rc`, including complete
@@ -126,6 +131,8 @@ Ships here:
   replay, judge bundles, HTML/markdown report);
 - the help-centre engine in `skills/brain-helpcenter-suggestions/scripts/` (corpus normalisers,
   read-only collection over public `rc`, strict suggestion schema, HTML report);
+- the source-intake engine in `skills/brain-source-intake/scripts/` (bounded repo scan, question
+  benchmark, validator, HTML questionnaire);
 - public-API skills over `rc`;
 - `rootcause-runtime` (`runtime/lib`);
 - workspace Dockerfile/image.

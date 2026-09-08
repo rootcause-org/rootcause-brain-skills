@@ -1,0 +1,270 @@
+{
+ "project": "salonx",
+ "repos": [
+  {
+   "apps": [
+    {
+     "areas": {
+      "config": [
+       {
+        "lines": 0,
+        "path": "/mirrors/app/app/.env.example"
+       },
+       {
+        "lines": 0,
+        "path": "/mirrors/app/app/config/mail.php"
+       },
+       {
+        "lines": 0,
+        "path": "/mirrors/app/app/config/queue.php"
+       }
+      ],
+      "entry": [
+       {
+        "lines": 0,
+        "path": "/mirrors/app/app/public/index.php"
+       },
+       {
+        "lines": 0,
+        "path": "/mirrors/app/app/artisan"
+       }
+      ],
+      "frontend": [
+       {
+        "lines": 1,
+        "path": "/mirrors/app/app/resources/views/"
+       }
+      ],
+      "jobs": [
+       {
+        "lines": 0,
+        "path": "/mirrors/app/app/app/Console/Kernel.php"
+       },
+       {
+        "lines": 0,
+        "path": "/mirrors/app/app/app/Jobs/SendReminder.php"
+       },
+       {
+        "lines": 0,
+        "path": "/mirrors/app/app/config/queue.php"
+       }
+      ],
+      "mail": [
+       {
+        "lines": 0,
+        "path": "/mirrors/app/app/app/Mail/InvoiceMail.php"
+       },
+       {
+        "lines": 0,
+        "path": "/mirrors/app/app/app/Mail/ReminderMail.php"
+       },
+       {
+        "lines": 0,
+        "path": "/mirrors/app/app/config/mail.php"
+       }
+      ],
+      "migrations": [
+       {
+        "lines": 2,
+        "path": "/mirrors/app/app/database/migrations/"
+       }
+      ],
+      "models": [
+       {
+        "lines": 0,
+        "path": "/mirrors/app/app/app/Models/Booking.php"
+       },
+       {
+        "lines": 0,
+        "path": "/mirrors/app/app/app/Models/Treatment.php"
+       }
+      ],
+      "routes": [
+       {
+        "lines": 0,
+        "path": "/mirrors/app/app/routes/api.php"
+       },
+       {
+        "lines": 0,
+        "path": "/mirrors/app/app/routes/web.php"
+       }
+      ],
+      "tests": [
+       {
+        "lines": 1,
+        "path": "/mirrors/app/app/tests/"
+       }
+      ]
+     },
+     "deps": [],
+     "ext_tally": {
+      ".": {
+       "(none)": 1,
+       "example": 1,
+       "json": 1
+      },
+      "app": {
+       "php": 6
+      },
+      "config": {
+       "php": 2
+      },
+      "database": {
+       "php": 2
+      },
+      "public": {
+       "php": 1
+      },
+      "resources": {
+       "php": 1
+      },
+      "routes": {
+       "php": 2
+      },
+      "tests": {
+       "php": 1
+      }
+     },
+     "frameworks": [
+      {
+       "marker": "artisan",
+       "name": "laravel"
+      },
+      {
+       "marker": "composer.json",
+       "name": "php"
+      }
+     ],
+     "integrations": [],
+     "markers": [
+      "artisan",
+      "composer.json"
+     ],
+     "root": "/mirrors/app/app"
+    },
+    {
+     "areas": {
+      "config": [
+       {
+        "lines": 0,
+        "path": "/mirrors/app/legacy/application/config/config.php"
+       },
+       {
+        "lines": 0,
+        "path": "/mirrors/app/legacy/application/config/routes.php"
+       },
+       {
+        "lines": 0,
+        "path": "/mirrors/app/legacy/application/config/database.php"
+       }
+      ],
+      "entry": [
+       {
+        "lines": 0,
+        "path": "/mirrors/app/legacy/index.php"
+       }
+      ],
+      "jobs": [
+       {
+        "lines": 0,
+        "path": "/mirrors/app/legacy/application/controllers/cron/Reminders.php"
+       }
+      ],
+      "mail": [
+       {
+        "lines": 0,
+        "path": "/mirrors/app/legacy/application/libraries/Mailer.php"
+       }
+      ],
+      "migrations": [
+       {
+        "lines": 1,
+        "path": "/mirrors/app/legacy/application/migrations/"
+       }
+      ],
+      "models": [
+       {
+        "lines": 0,
+        "path": "/mirrors/app/legacy/application/models/User_model.php"
+       },
+       {
+        "lines": 0,
+        "path": "/mirrors/app/legacy/application/models/Salon_model.php"
+       },
+       {
+        "lines": 0,
+        "path": "/mirrors/app/legacy/application/models/Booking_model.php"
+       }
+      ],
+      "routes": [
+       {
+        "lines": 0,
+        "path": "/mirrors/app/legacy/application/config/routes.php"
+       }
+      ]
+     },
+     "deps": [],
+     "ext_tally": {
+      ".": {
+       "php": 1
+      },
+      "application": {
+       "php": 9,
+       "sql": 1
+      },
+      "system": {
+       "php": 1
+      }
+     },
+     "frameworks": [
+      {
+       "marker": "application/config/config.php",
+       "name": "codeigniter"
+      },
+      {
+       "marker": "application/config/config.php",
+       "name": "php"
+      }
+     ],
+     "integrations": [],
+     "markers": [
+      "application/config/config.php"
+     ],
+     "root": "/mirrors/app/legacy"
+    }
+   ],
+   "files": 30,
+   "mode": "listing",
+   "name": "app",
+   "root": "/mirrors/app",
+   "truncated": false
+  }
+ ],
+ "scanned_at": "2026-09-08",
+ "tables": [
+  {
+   "guess": "/mirrors/app/app/app/Models/Booking.php",
+   "mentions": 0,
+   "model_files": [],
+   "table": "bookings"
+  },
+  {
+   "guess": "/mirrors/app/app/app/Models/Treatment.php",
+   "mentions": 0,
+   "model_files": [],
+   "table": "treatments"
+  },
+  {
+   "guess": "/mirrors/app/legacy/application/models/User_model.php",
+   "mentions": 0,
+   "model_files": [],
+   "table": "users"
+  },
+  {
+   "guess": "",
+   "mentions": 0,
+   "model_files": [],
+   "table": "invoices"
+  }
+ ]
+}

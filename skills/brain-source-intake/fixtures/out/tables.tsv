@@ -1,0 +1,6 @@
+table	model_files	mentions	guess
+bookings		0	/mirrors/app/app/app/Models/Booking.php
+treatments		0	/mirrors/app/app/app/Models/Treatment.php
+users		0	/mirrors/app/legacy/application/models/User_model.php
+# unmatched (1)
+invoices		0	

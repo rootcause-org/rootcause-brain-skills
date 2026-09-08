@@ -1,0 +1,2 @@
+Listing mode: we read the file names of both apps, never the file contents, so every path below is a candidate and not a proof.
+The two open questions that block the most answers are the mailer and the scheduler.
