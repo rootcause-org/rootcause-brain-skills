@@ -88,7 +88,11 @@ content — never commit these files into the brain.
 | no effective change | `changed: false` — nothing sent, no resync, no audit row | same |
 
 Anchors (update only, exactly one): `old:` replaces that verbatim block in the current body, `after:` /
-`before:` splice the body around that verbatim line. Matching is against the current body rendered the
+`before:` splice the body around that verbatim line. An anchored edit is surgical: the host splices the
+provider's stored HTML at byte level, so call-outs, image sizing and every untouched byte survive, and
+`old:` with an empty body removes the block (insert → revert leaves the article byte-identical). Only a
+whole-body block (no anchor) re-renders the article through markdown — dry-run warns when that would
+drop provider-specific formatting. Matching is against the current body rendered the
 way `/kb` renders it, verbatim after trimming per-line trailing whitespace — **no fuzzy apply**: not
 found, or found twice, is an error naming the anchor. No anchor + empty body = title/keywords-only
 edit; no anchor + body = whole body replaced. `create` with an anchor is an error.
