@@ -171,4 +171,10 @@ benchmark tally is in the brain's notes with a date, so the next intake measures
   query` refuses MySQL, `lib.db.tables()` in the workspace does not. A mirror view carries no `.git`,
   so ages come from the local clone only. Run it after `brain-schema-intake` and keep the `db` group
   to code-versus-column questions; the schema intake already asks the semantics.
+- **2026-09-08 second run: iBeauty NG** (Symfony 7.4 monorepo, fetched as a tarball from the prod
+  mirror with `rc dev console bash run 'tar czf /tmp/rootcause-out/x.tgz ...'` + `file get`, since
+  no local clone existed; 1663 files, 15 minutes). Scanner fix: Doctrine entities live per module
+  (`src/<Module>/Entity/`), now a models area rule (13 → 42 tables matched). Judging a second app
+  against the same corpus: mark the other app's clusters `n/a` with a note, so the questionnaire
+  only carries this app's boundaries and bridges.
 - **2026-09-08** built (scan/questions/validate/render, fixture tests).

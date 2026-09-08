@@ -382,6 +382,8 @@ def _rule_hits(app_rels: list[str]) -> dict[str, list[tuple[int, str]]]:
             hits["models"].append((0, rel))
         elif prefix:
             hits["models"].append((1 + model_prefixes.index(prefix), rel))
+        elif "/Entity/" in "/" + rel or "/Entities/" in "/" + rel or "/Model/" in "/" + rel:
+            hits["models"].append((6, rel))  # Doctrine per-module entities (src/<Module>/Entity/)
         elif name.endswith(".model.ts"):
             hits["models"].append((7, rel))
         elif re.fullmatch(r"app/[A-Z][A-Za-z0-9]*\.php", rel):
