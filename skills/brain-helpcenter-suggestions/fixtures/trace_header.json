@@ -1,0 +1,43 @@
+{
+ "_comment": "Anonymised shape of the first `rc run trace --stream` record. Modelled on a real thread where a sibling vendor is cc'd and answers: its reply arrives with is_inbound=true but is NOT the customer.",
+ "run_id": "53ff0f29-0000-4000-8000-000000000000",
+ "thread_id": "1a03cc0d9f99e510",
+ "created_at": "2026-09-01T06:07:36Z",
+ "topic": "Power Sync sheets missing",
+ "tenant": null,
+ "question": "Kind Regards\n\nSam Vendor\n\nOffice: +00 (0)00 000 0000",
+ "draft": "Good day Sam,\n\nThe two sheets are no longer linked to an active sync.",
+ "metadata": {"run_url": "https://app.example/runs/53ff0f29"},
+ "prior_messages": [
+  {
+   "sender": "service IT <service@customer.example>",
+   "is_inbound": true,
+   "sent_at": "2026-08-26T06:27:32Z",
+   "to": ["info@vendor.example", "info@sibling.example"],
+   "cc": ["colleague <colleague@customer.example>"],
+   "body": "Hi there\n\nPlease direct this with urgency to the relevant support team. Two Power Sync sheets that generated our Podio reports are missing from the toolbox since last week."
+  },
+  {
+   "sender": "Sibling Tools <info@sibling.example>",
+   "is_inbound": true,
+   "sent_at": "2026-08-26T07:28:56Z",
+   "to": ["service IT <service@customer.example>", "info@vendor.example"],
+   "body": "Those two Google Sheets are not shown in the Power Sync toolbox because the toolbox does not discover existing files in Google Drive."
+  },
+  {
+   "sender": "service IT <service@customer.example>",
+   "is_inbound": true,
+   "sent_at": "2026-08-27T06:54:31Z",
+   "to": ["Sibling Tools <info@sibling.example>"],
+   "cc": ["info@vendor.example"],
+   "body": "Please provide an update on this. Also, how would the API pricing changes affect the operation of our account?"
+  },
+  {
+   "sender": "Vendor <info@vendor.example>",
+   "is_inbound": false,
+   "sent_at": "2026-08-28T20:58:35Z",
+   "to": ["service IT <service@customer.example>"],
+   "body": "Good day\n\nNo, you do not need to send this request to a different address. This thread has reached the right support channel for the Power Sync toolbox."
+  }
+ ]
+}

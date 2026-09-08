@@ -3,7 +3,9 @@
   {
    "article_ids": [],
    "conversation_id": "hs:1001",
-   "topic": "boekingshorizon",
+   "topics": [
+    "boekingshorizon"
+   ],
    "verdict": "missing"
   },
   {
@@ -11,7 +13,10 @@
     "A2"
    ],
    "conversation_id": "hs:1002",
-   "topic": "cabine-per-behandeling",
+   "topics": [
+    "cabine-per-behandeling",
+    "cabine-per-medewerker"
+   ],
    "verdict": "partial"
   },
   {
@@ -19,13 +24,15 @@
     "A3"
    ],
    "conversation_id": "hs:1003",
-   "topic": "facturen-archief",
+   "topics": [
+    "facturen-archief"
+   ],
    "verdict": "wrong_title"
   },
   {
    "article_ids": [],
    "conversation_id": "hs:1004",
-   "topic": null,
+   "topics": [],
    "verdict": "not_kb"
   },
   {
@@ -33,7 +40,9 @@
     "A4"
    ],
    "conversation_id": "hs:1005",
-   "topic": "online-boeken-knop",
+   "topics": [
+    "online-boeken-knop"
+   ],
    "verdict": "uncertain"
   },
   {
@@ -41,11 +50,13 @@
     "A1"
    ],
    "conversation_id": "hs:1006",
-   "topic": "openingsuren",
+   "topics": [
+    "openingsuren"
+   ],
    "verdict": "answered"
   }
  ],
- "evidence_sha256": "3663db08dff1d3c44d9aa27050f3992d12fdb57d6dbcfb1309dc7b91371a39bf",
+ "evidence_sha256": "e127e79f0ca5c1529cfa94667e13789bf03d2adc2b4aa58226fec68c3d52923d",
  "headline": "Vier bewerkingen sluiten de gaten die klanten deze week zelf moesten navragen: boekingshorizon, cabines per behandeling, facturen van vorig jaar en de vindbaarheid van de boekingsmodule.",
  "learnings": [
   {

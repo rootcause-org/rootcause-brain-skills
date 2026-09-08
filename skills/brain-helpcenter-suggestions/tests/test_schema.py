@@ -60,8 +60,33 @@ def test_render_html(tmp_path: Path) -> None:
         assert s.title in html
     for c in ev.conversations:
         assert c.url and c.url in html
-    assert "<script>" in html
+    assert "<script>" in html and "button class=\"copy\"" in html
+    assert "noise hint" in html and "duplicate_outreach" in html          # collector pre-tag column
+    assert "2 spam folder" in html                                        # coverage reason string
     assert "Chatgesprekken" in render.render_learnings(sug, ev)
+
+
+def test_render_shows_tenant(tmp_path: Path, pair) -> None:
+    ev, sug = pair
+    ev["tenant"] = "yes_events"
+    for c in ev["conversations"]:
+        c["tenant"] = "yes_events"
+    sp, ep = _write(tmp_path, ev, sug)
+    s, v = load(sp, ep)
+    assert "yes_events — help centre suggestions" in render.render_html(s, v)
+
+
+def test_topics_are_multi_valued(tmp_path: Path, pair) -> None:
+    """A conversation listed under two topics feeds the score of both suggestions."""
+    ev, sug = pair
+    by_id = {c["conversation_id"]: c for c in sug["classification"]}
+    by_id["hs:1003"]["topics"] = ["facturen-archief", "boekingshorizon"]   # wrong_title, weight 1
+    sp, ep = _write(tmp_path, ev, sug)
+    assert validation_errors(sp, ep) == []
+    s, v = load(sp, ep)
+    scores = {sg.id: sc for _, sg, sc in rank(s.suggestions, s.classification)}
+    assert scores["S1"] == 4 and scores["S3"] == 1                        # missing 3 + wrong_title 1
+    assert dict(summary(v, s)["top_topics"])["boekingshorizon"] == 2
 
 
 def test_render_refuses_and_keeps_existing(tmp_path: Path, pair) -> None:
@@ -108,8 +133,18 @@ def _m_duplicate_classification(ev, sug):
     sug["classification"].append(copy.deepcopy(sug["classification"][0]))
 
 
-def _m_topic_missing(ev, sug):
-    sug["classification"][0]["topic"] = None
+def _m_topics_missing(ev, sug):
+    sug["classification"][0]["topics"] = []
+
+
+def _m_old_topic_key(ev, sug):
+    c = sug["classification"][3]
+    c["topic"] = c.pop("topics")
+
+
+def _m_unknown_role_quote(ev, sug):
+    """hs:1002 carries an unknown-role later turn — its words are not the customer's."""
+    sug["suggestions"][1]["evidence"][0]["quote"] = "een schermafbeelding van de cabine-instellingen"
 
 
 def _m_new_with_target(ev, sug):
@@ -161,7 +196,9 @@ CASES = [
     ("non-verbatim quote", _m_not_verbatim, "suggestions[0].evidence[0].quote:", "copy an unchanged substring"),
     ("unclassified conversation", _m_unclassified, "classification:", "hs:1006"),
     ("duplicate classification", _m_duplicate_classification, "classification[6].conversation_id:", "exactly once"),
-    ("topic required", _m_topic_missing, "classification[0].topic:", "not_kb"),
+    ("topics required", _m_topics_missing, "classification[0].topics:", "not_kb"),
+    ("old topic key", _m_old_topic_key, "classification[3].topic:", "use topics: [..]"),
+    ("unknown-role quote", _m_unknown_role_quote, "suggestions[1].evidence[0].quote:", "unknown-role/agent turn in hs:1002"),
     ("new takes no target", _m_new_with_target, "suggestions[0].target_articles:", "no target"),
     ("rewrite needs section", _m_rewrite_no_section, "suggestions[1].section:", "section to replace"),
     ("retitle same title", _m_retitle_same_title, "suggestions[3].title:", "current title"),

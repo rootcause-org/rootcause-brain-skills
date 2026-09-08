@@ -3,6 +3,7 @@
   {
    "aliases": [],
    "area": null,
+   "audience": "customer",
    "collection": "Agenda",
    "deprecated": false,
    "home": "kb",
@@ -22,6 +23,7 @@
     "cabines"
    ],
    "area": null,
+   "audience": "customer",
    "collection": "Agenda",
    "deprecated": false,
    "home": "kb",
@@ -39,6 +41,7 @@
   {
    "aliases": [],
    "area": null,
+   "audience": "customer",
    "collection": "Boekhouding",
    "deprecated": false,
    "home": "kb",
@@ -56,6 +59,7 @@
   {
    "aliases": [],
    "area": null,
+   "audience": "customer",
    "collection": "Online boeken",
    "deprecated": false,
    "home": "kb",
@@ -73,6 +77,7 @@
   {
    "aliases": [],
    "area": null,
+   "audience": "internal",
    "collection": null,
    "deprecated": false,
    "home": "brain",
@@ -91,9 +96,11 @@
    "channel": "email",
    "created_at": "2026-09-01T08:14:00Z",
    "customer": "Ellen",
-   "first_message": "Hallo,\n\nHoe zet ik mijn agenda open voor 2027? Klanten willen nu al boeken voor januari maar ik kan enkel dit jaar selecteren.\n\nEllen",
+   "first_message": "Hoe zet ik mijn agenda open voor 2027? Klanten willen nu al boeken voor januari maar ik kan enkel dit jaar selecteren.",
+   "first_raw": "Hallo,\n\nIk heb een vraagje over de agenda.\n\nEllen",
    "id": "hs:1001",
    "later": [],
+   "noise": null,
    "reply": {
     "by": "Marie",
     "provenance": "human",
@@ -101,6 +108,7 @@
    },
    "subject": "Agenda 2027",
    "tags": [],
+   "tenant": null,
    "truncated": false,
    "url": "https://secure.helpscout.net/conversation/1001/1/"
   },
@@ -109,13 +117,19 @@
    "created_at": "2026-09-02T11:40:00Z",
    "customer": "Lotte",
    "first_message": "hoi, hoe kan ik een cabine koppelen aan een behandeling? ik heb 3 cabines maar de pedicure mag enkel in cabine 2",
+   "first_raw": null,
    "id": "hs:1002",
    "later": [
     {
      "role": "customer",
      "text": "en kan dat ook per medewerker?"
+    },
+    {
+     "role": "unknown",
+     "text": "Ik stuur je zo een schermafbeelding van de cabine-instellingen door."
     }
    ],
+   "noise": null,
    "reply": {
     "by": "Marie",
     "provenance": "human",
@@ -123,6 +137,7 @@
    },
    "subject": "Cabines",
    "tags": [],
+   "tenant": null,
    "truncated": false,
    "url": "https://secure.helpscout.net/conversation/1002/2/"
   },
@@ -131,8 +146,10 @@
    "created_at": "2026-09-03T15:05:00Z",
    "customer": "Sofie",
    "first_message": "Waar vind ik mijn facturen van vorig jaar? Mijn boekhouder vraagt de facturen van 2025 en ik zie enkel de laatste drie maanden staan.",
+   "first_raw": null,
    "id": "hs:1003",
    "later": [],
+   "noise": null,
    "reply": {
     "by": "Karel",
     "provenance": "human",
@@ -140,6 +157,7 @@
    },
    "subject": "Facturen",
    "tags": [],
+   "tenant": null,
    "truncated": false,
    "url": "https://secure.helpscout.net/conversation/1003/3/"
   },
@@ -148,8 +166,13 @@
    "created_at": "2026-09-04T09:20:00Z",
    "customer": "Michel",
    "first_message": "Kunnen jullie ons klantenbestand van 4200 klanten voor ons importeren? We hebben een export uit ons oude pakket.",
+   "first_raw": null,
    "id": "hs:1004",
    "later": [],
+   "noise": {
+    "reason": "duplicate_outreach",
+    "verdict": "not_kb"
+   },
    "reply": {
     "by": "Marie",
     "provenance": "human",
@@ -157,6 +180,7 @@
    },
    "subject": "Import klanten",
    "tags": [],
+   "tenant": null,
    "truncated": false,
    "url": "https://secure.helpscout.net/conversation/1004/4/"
   },
@@ -165,8 +189,10 @@
    "created_at": "2026-09-05T13:31:00Z",
    "customer": "Nathalie",
    "first_message": "online boeken werkt niet meer op mijn website, de knop doet niks meer sinds gisteren",
+   "first_raw": null,
    "id": "hs:1005",
    "later": [],
+   "noise": null,
    "reply": {
     "by": null,
     "provenance": "draft",
@@ -174,6 +200,7 @@
    },
    "subject": "Online boeken",
    "tags": [],
+   "tenant": null,
    "truncated": false,
    "url": "https://secure.helpscout.net/conversation/1005/5/"
   },
@@ -182,8 +209,10 @@
    "created_at": "2026-09-06T07:55:00Z",
    "customer": "Ilse",
    "first_message": "Hoe stel ik mijn openingsuren in voor de feestdagen?",
+   "first_raw": null,
    "id": "hs:1006",
    "later": [],
+   "noise": null,
    "reply": {
     "by": "Karel",
     "provenance": "human",
@@ -191,6 +220,7 @@
    },
    "subject": "Openingsuren",
    "tags": [],
+   "tenant": null,
    "truncated": false,
    "url": "https://secure.helpscout.net/conversation/1006/6/"
   }
@@ -198,7 +228,7 @@
  "coverage": [
   {
    "feed": "helpscout:support@salonsoft.example",
-   "reason": null,
+   "reason": "9 conversations in window: 6 kept · 2 spam folder · 1 no customer text",
    "retained": 6,
    "scanned": 9,
    "status": "complete"
@@ -208,11 +238,13 @@
   "articles": 4,
   "brain_docs": 1,
   "reason": null,
+  "root": "/kb/helpscout",
   "status": "complete"
  },
  "project": "salonsoft",
  "schema_version": 1,
  "source": "helpscout",
+ "tenant": null,
  "window": {
   "days": 8,
   "end": "2026-09-08T09:12:44Z",

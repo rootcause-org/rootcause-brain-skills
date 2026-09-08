@@ -30,10 +30,19 @@ titles, texts and quotes stay in the customer's language.
 | `conversation_id` | an `evidence.conversations[].id` (`hs:…`, `run:…`, `harvest:C…`), unique |
 | `verdict` | `answered` \| `partial` \| `missing` \| `wrong_title` \| `not_kb` \| `uncertain` |
 | `article_ids[]` | the `evidence.articles[].id`s you judged against (may be empty) |
-| `topic` | short cluster slug (`boekingshorizon`), shared by every conversation in the cluster. Required unless `verdict` is `not_kb` |
+| `topics[]` | short cluster slugs (`["boekingshorizon"]`), shared with every conversation in the cluster. At least one unless `verdict` is `not_kb`; **first = primary** |
 
-`topic` is the join key: a suggestion's score and its "N conversations" line come from the
-classifications carrying the same topic. Cluster first, then suggest.
+`topics` is the join key: a suggestion's score and its "N conversations" line come from the
+classifications listing that topic. Cluster first, then suggest.
+
+One thread often carries two questions — list both slugs and the conversation counts once for each
+topic, so neither signal is dropped. The old singular `topic` key is refused with
+`classification[3].topic: unknown key — use topics: [..]`.
+
+`evidence.conversations[].noise` is the **collector's** pre-tag (`{verdict: not_kb, reason:
+calendar_invite | no_reply_sender | test | duplicate_outreach | empty}`). It is a hint, not a
+verdict: you may classify the conversation any way the text supports. The reason renders as the
+"noise hint" column in the detail table.
 
 ## `suggestions[]`
 
@@ -41,7 +50,7 @@ classifications carrying the same topic. Cluster first, then suggest.
 |---|---|
 | `id` | `S1`, `S2`, … |
 | `kind` | `new` \| `rewrite` \| `retitle` \| `merge` \| `delete` \| `add_alias` — cheapest edit that closes the gap |
-| `topic` | must equal a `classification[].topic` |
+| `topic` | one slug; must appear in some `classification[].topics` |
 | `title` | proposed title (for `rewrite`/`add_alias`: the article's title as it will read) |
 | `target_articles[]` | `evidence.articles[].id`s, **`home: kb` only** — brain documents are never a public suggestion |
 | `destination` | surviving/redirect article, `merge` and `delete` only |
@@ -51,7 +60,7 @@ classifications carrying the same topic. Cluster first, then suggest.
 | `why` | one line, the owner's reason |
 | `route` | `kb` (edit the help centre) or `brain` (really a brain fix — rendered with a badge) |
 | `evidence[]` | 1–5 `{conversation_id, quote}` — see below (1 conversation warns, 2+ is a pattern) |
-| `seed_reply` | conversation whose **human** reply seeds the article, or `null` |
+| `seed_reply` | conversation whose **human** reply seeds the article, or `null` (`draft` and `bot` provenance are refused) |
 
 ### Kind rules
 
@@ -68,9 +77,13 @@ classifications carrying the same topic. Cluster first, then suggest.
 
 - `conversation_id` must exist, have a non-null `url` (harvest corpora have none — they cannot back a
   suggestion), and be classified `partial`, `missing`, `wrong_title` or `uncertain`.
-- `quote` must be a **verbatim** substring of that conversation's *customer* text
-  (`first_message` + later turns with `role: customer`). Only whitespace and case are normalised;
-  do not fix typos, do not translate, do not stitch two sentences together.
+- `quote` must be a **verbatim** substring of that conversation's *customer* text: `first_message`
+  \+ `first_raw` (the raw opening turn, present when a later turn was picked as the question) +
+  later turns with `role: customer`. Only whitespace and case are normalised; do not fix typos, do
+  not translate, do not stitch two sentences together.
+- Turns with `role: agent` or `role: unknown` are **not** customer words — a quote that only matches
+  one is refused with `matches only an unknown-role/agent turn in run:… (quote customer turns only)`.
+  `unknown` means the collector could not resolve the sender; treat it as vendor text.
 
 ## `learnings[]`
 
@@ -80,7 +93,8 @@ classifications carrying the same topic. Cluster first, then suggest.
 ## What the validator guarantees
 
 Every conversation classified exactly once · every id (conversation, article, destination,
-seed_reply) resolves · evidence hash matches the evidence file · quotes are real customer words ·
+seed_reply) resolves · evidence hash matches the evidence file · quotes are real customer words
+(never an agent or unknown-role turn) ·
 seed replies are human, never drafts · targets are public KB articles · kind rules above ·
 `schema_version`/enums/limits. Soft warnings: more than 10 suggestions, a suggestion resting on one
 conversation, a partial/unavailable feed, a partial KB inventory.
@@ -88,7 +102,7 @@ conversation, a partial/unavailable feed, a partial KB inventory.
 Computed for you — do not type them: rank and score (distinct conversations in the topic weighted
 `missing` 3, `partial` 2, `wrong_title` 1, `uncertain` 1; ties go to the cheaper kind), the tiles
 (scanned, how-to, answered, partial, missing, wrong-title, uncertain, not-KB) and the top unanswered
-topics.
+topics. A conversation with two topics counts once in each.
 
 ## Worked example (synthetic; the real one is `fixtures/suggestions.json`)
 
@@ -98,9 +112,9 @@ topics.
  "evidence_sha256": "3663db08dff1d3c44d9aa27050f3992d12fdb57d6dbcfb1309dc7b91371a39bf",
  "headline": "Vier bewerkingen sluiten de gaten die klanten deze week zelf moesten navragen.",
  "classification": [
-  {"conversation_id": "hs:1001", "verdict": "missing", "article_ids": [], "topic": "boekingshorizon"},
-  {"conversation_id": "hs:1004", "verdict": "not_kb", "article_ids": [], "topic": null},
-  {"conversation_id": "hs:1006", "verdict": "answered", "article_ids": ["A1"], "topic": "openingsuren"}
+  {"conversation_id": "hs:1001", "verdict": "missing", "article_ids": [], "topics": ["boekingshorizon"]},
+  {"conversation_id": "hs:1004", "verdict": "not_kb", "article_ids": [], "topics": []},
+  {"conversation_id": "hs:1006", "verdict": "answered", "article_ids": ["A1"], "topics": ["openingsuren", "feestdagen"]}
  ],
  "suggestions": [
   {"id": "S1", "kind": "new", "topic": "boekingshorizon",
