@@ -143,10 +143,23 @@ under 30 minutes: bodies only for the top clusters.
 `## Why` is one paragraph for the owner: the gap and what customers said. Never type the count of
 conversations in it; the card prints the computed one.
 
-Every proposal must be indistinguishable from the existing articles' author. Before writing any
-edit, read two or three articles of that help centre in full and mirror them: je/u, sentence length,
-heading style, numbered steps or prose, bold for UI labels or not, how they open and close. Then
-these rules, non-negotiable (the validator hard-fails the first one):
+Every proposal must be indistinguishable from the existing articles' author. Three voice sources,
+read in this order before writing any edit; the earlier one wins on conflict:
+
+1. **A help-centre voice file in the brain**, when it exists: `notes/helpcenter-tone-of-voice.md`
+   at the root of the checkout you run from (project brain for a project KB, tenant brain
+   `rootcause-brain-<project>-tenant-<slug>` for a tenant KB). It is the owner's own description of
+   how their docs read and it beats everything below. Keep it out of runs (`.replypenignore`): docs
+   voice is not mail voice.
+2. **The persona of the level you report on**, via `rc`: `rc project settings behavior get -o json`
+   (`persona.*`) for a project KB, `rc project tenant settings get <slug>` for a tenant KB. It
+   describes mail, not articles, so take vocabulary, je/u, forbidden words and product names from
+   it, never its length, greeting or sign-off rules.
+3. **Two or three live articles** of that help centre, read in full, always: je/u, sentence length,
+   heading style, numbered steps or prose, bold for UI labels or not, how they open and close, how
+   menu paths are written. When only these exist, they are the whole voice.
+
+Then these rules, non-negotiable (the validator hard-fails the first one):
 
 - No em dashes, no en dashes as connectors. Choose a comma, a period, a colon or parentheses.
 - No "it's not X, it's Y" and no reversed "X rather than Y" when nobody claimed X.
@@ -205,6 +218,11 @@ the same collect → judge → render pattern for a day of runs · [`rc-debug`](
 
 ## Iteration log
 
+- **2026-09-08 voice sources.** iBeauty handed over their docs tone-of-voice (docs write
+  `Instellingen → Werkschema's` and Goed-om-te-weten blocks; their mail persona writes lowercase
+  slash paths and never uses blocks). Voice now has three ranked sources: brain file
+  `notes/helpcenter-tone-of-voice.md` (run-hidden) · persona of the reported level via `rc` ·
+  mirrored articles. First instance: rootcause-brain-ibeauty.
 - **2026-09-08 round 3** (PJ feedback + kampadmin-support 90-day pull). Chat recipe: one trace per
   session (last run), inbound = customer, provenance `draft`, clarifier forms folded; `runs` source
   covers email + chat; `--days` 60/120; header-only cache (`raw/hdr-*.json`, 9 scaffolding keys
