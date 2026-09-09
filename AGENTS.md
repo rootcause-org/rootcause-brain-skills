@@ -90,6 +90,8 @@ Only these are first-class:
   homes.
 - `brain-website-scout` — local broad public-site mapping and Firecrawl capture, then per-topic
   synthesis into a progressive-disclosure brain; raw pages stay gitignored.
+- `source-routing` — question digest, trace-backed document usage, provider-neutral routing proposals,
+  and reviewed prefer/avoid imports for large document sources.
 - `brain-ask` — last-mile prod/test run validation with `rc ask`.
 - `rc-debug` — one run/thread/session trace; inspect/propose/stop before edits.
 - `rc-health` — stale mirrors and dead-lettered runs.
