@@ -9,10 +9,24 @@ import math
 import json
 from pathlib import Path
 import sys
+from urllib.parse import urlsplit, parse_qs
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'brain-fleet-report/scripts'))
 from fr_common import Rc, find_brain_root, load_overlay, project_name, parallel, day_bounds, tzinfo
 from drill import fetch_run
+
+
+def conversation_url(rid, records):
+    """Keep only API-issued access links for this run; never fabricate a tokenless link."""
+    for row in records:
+        for candidate in (row.get('run_url'), row.get('share_url'), (row.get('metadata') or {}).get('run_url')):
+            if not isinstance(candidate, str):
+                continue
+            url = urlsplit(candidate)
+            if (url.scheme == 'https' and url.netloc == 'app.replypen.com'
+                    and url.path == f'/runs/{rid}' and parse_qs(url.query).get('t')):
+                return candidate
+    return None
 
 
 def collect(rc, base, days, only_feedback, now, start=None, end=None):
@@ -66,10 +80,14 @@ def collect(rc, base, days, only_feedback, now, start=None, end=None):
     def rank(rid):
         return (rid not in feedback, min((d.get('similarity', 1) for d in by_run.get(rid, [])), default=1), rid)
     def fetch(rid):
-        return {'run_id': rid, 'url': f'https://app.replypen.com/runs/{rid}',
+        detail = fetch_run(rc, base, rid)
+        records = [detail.get('show', {}), detail.get('header', {}), feedback.get(rid) or {}]
+        # Link metadata is useful even when --only-feedback excludes the delta content.
+        records += [d for d in evidence.get('deltas', []) if d.get('related_run_id') == rid]
+        return {'run_id': rid, 'url': conversation_url(rid, records),
                 'feedback': feedback.get(rid), 'deltas': by_run.get(rid, []),
                 'learning_allowed': rid in eligible or (rid not in feedback and bool(by_run.get(rid))),
-                'detail': fetch_run(rc, base, rid)}
+                'detail': detail}
     items = parallel(sorted(ids, key=rank), fetch)
     warnings += [f"Read incomplete: {r.get('feed', 'run')}" for r in rc.errors]
     scores = [f['score'] for f in feedback.values() if f.get('score') is not None]

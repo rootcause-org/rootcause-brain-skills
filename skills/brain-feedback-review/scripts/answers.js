@@ -8,7 +8,8 @@ function markdown(data, answers = {}) {
     for (const q of item.questions) {
       const a = answers[q.id] || {};
       const choice = q.options.find(o => o.value === a.choice);
-      const ref = `[${t("gesprek", "conversation")}](${item.url})`;
+      const ref = (item.url ? `[${t("gesprek", "conversation")}](${item.url})` : t('gespreklink niet beschikbaar', 'conversation link unavailable')) +
+        (item.availability_note ? ` (${line(item.availability_note)})` : '');
       if (!choice) { pending.push(`- ${line(q.text)} — ${ref}`); continue; }
       if (choice.effect === 'fine') { unchanged.push(`- ${line(q.text)} — ${ref}`); continue; }
       if (choice.effect === 'defer' || !item.learning_allowed || (choice.scope === 'customer' && (!data.tenant || !line(a.detail)))) {

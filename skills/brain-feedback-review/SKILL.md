@@ -32,15 +32,16 @@ brain, settings, feedback rows or customer data.
 2. **Judge.** Explicit feedback first, consequential live deltas second. Read `detail.header`,
    `detail.show`, `detail.thread`, and trace steps for question, proposed draft and visible sources.
    Use full paired delta bodies when present; `bodies_scrubbed` means unavailable, never reconstruct
-   a quote from `delta_description`. Shadow means independent human answer, not an edited draft;
+   a quote from `delta_description`. Missing proposal/sent/source details are null, never placeholder
+   prose; explain the gap once in `availability_note`. No empty accordions or requests to grade
+   an unavailable answer. This note also travels with the markdown evidence reference. Shadow means independent human answer, not an edited draft;
    preserve that distinction. A positive shadow verdict is not a request to copy its wording.
 3. **Questionnaire.** Aim for ten minutes: group repeats; account for omitted evidence. Each card
    has a short inbound question, proposed vs sent text (collapsed), score/comment, consulted sources
    only when actually visible, and 1–3 closed questions with optional detail. Do not invent the
    correct answer or preselect confirmations. Ask only what changes a decision: general rule vs
    one customer, preferred wording, or a named source to prefer/avoid. Use score-only cases for
-   “fine / explain the miss”, not inferred policy. No run ids, technical trace prose, tokenized links,
-   customer identities or raw contact details in owner prose. Business contact aliases necessary
+   “fine / explain the miss”, not inferred policy. No run ids, technical trace prose, customer identities or raw contact details in owner prose. Business contact aliases necessary
    for an explicit rule may appear in its proposed learning; avoid one-off customer facts.
 4. **Progress.** Read the previous same-scope, same-length report when present. Compare feedback
    count, score distribution (with denominator), paired-delta coverage and recurrence of the same
@@ -74,3 +75,8 @@ new daily findings section. Run the collector over the requested window, judge/r
 and copy `report.html` beside the fleet owner report as `feedback-review.html`. Deliver both files
 so the relative link works; each still opens independently. A weekly fleet report uses
 `brain-fleet-report/scripts/collect.py --days 7`; its `--date` is the last included day.
+
+Conversation links: copy the API-issued URL, including `?t=`, verbatim into HTML and markdown.
+The collector checks run identity and keeps the issued token, including link metadata from deltas
+in feedback-only mode. No issued access link means no clickable conversation link; never invent one.
+Keep these reports and their exports private to the intended owner. Do not commit tokens to the brain.

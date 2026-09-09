@@ -84,6 +84,30 @@ class ReviewTests(unittest.TestCase):
             self.assertIn('## Confirmed lessons',export({}))
             self.assertNotIn('Bevestigde lessen',export({}))
 
+    def test_missing_details_and_signed_links(self):
+        collector=module('review_links',ROOT/'skills/brain-feedback-review/scripts/collect.py')
+        url='https://app.replypen.com/runs/example?t=issued-test-token'
+        self.assertEqual(collector.conversation_url('example',[{'metadata':{'run_url':url}}]),url)
+        self.assertIsNone(collector.conversation_url('other',[{'run_url':url}]))
+        self.assertIsNone(collector.conversation_url('example',[{'run_url':url.split('?')[0]}]))
+        item={'url':url,'learning_allowed':True,'question':'Question','feedback':'Score 4',
+              'proposed':None,'sent':'','availability_note':'Only feedback preserved.','questions':[]}
+        data={'project':'example','tenant':'','owner':'Owner','period':'week','lang':'en','coverage_note':'Partial','items':[item]}
+        html=review.build(data)
+        self.assertNotIn('<details>',html)
+        self.assertIn('href="'+url+'"',html)
+        item['sent']='Actual human answer'
+        self.assertEqual(review.build(data).count('<details>'),1)
+        item['questions']=[{'id':'one','text':'Keep this rule?','options':[]}]
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'review.json';path.write_text(json.dumps(data))
+            md=subprocess.check_output(['node',str(ROOT/'skills/brain-feedback-review/scripts/answers.js'),str(path)],text=True)
+            self.assertIn(url,md)
+            self.assertIn('Only feedback preserved.',md)
+            self.assertNotIn('Actual human answer',md)
+        item['url']=None
+        self.assertNotIn('>Open conversation',review.build(data))
+
     def test_unsafe_markup_is_inert(self):
         data={'project':'example','tenant':'','owner':'Owner','period':'week','lang':'nl','coverage_note':'</script><script>alert(1)</script>',
               'items':[]}

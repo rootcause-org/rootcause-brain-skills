@@ -28,11 +28,15 @@ def validate(data, evidence):
         assert item['run_id'] not in used, 'duplicate item'
         used.add(item['run_id'])
         ref = refs[item['run_id']]
-        assert item['url'] == ref['url'], 'use canonical evidence link'
+        assert item.get('url') == ref.get('url'), 'preserve the issued evidence link including its token'
         assert item['learning_allowed'] == ref['learning_allowed'], 'preserve learning exclusion'
         assert 1 <= len(item['questions']) <= 3
-        for field in ('question', 'proposed', 'sent', 'feedback', 'sources'):
+        for field in ('question', 'feedback'):
             assert isinstance(item[field], str) and item[field], field
+        for field in ('proposed', 'sent', 'sources'):
+            assert item.get(field) is None or isinstance(item[field], str), field
+        if any(not (item.get(field) or '').strip() for field in ('proposed', 'sent', 'sources')):
+            assert (item.get('availability_note') or '').strip(), 'explain missing evidence once'
         for q in item['questions']:
             assert q['id'] not in seen and re.fullmatch(r'[a-z0-9-]+', q['id'])
             seen.add(q['id'])
@@ -63,9 +67,12 @@ def build(data):
         for q in item['questions']:
             opts = ''.join(f'<label><input type="radio" name="{e(q["id"])}" value="{e(o["value"])}"> {e(o["label"])}</label>' for o in q['options'])
             qs.append(f'<fieldset><legend>{e(q["text"])}</legend>{opts}<textarea data-detail="{e(q["id"])}" aria-label="{e(q["text"])} — {t("Toelichting", "Details")}" placeholder="{t("Toelichting (optioneel; verplicht bij alleen deze klant)", "Details (optional; required for this customer only)")}"></textarea></fieldset>')
-        details = ''.join(f'<details><summary>{label}</summary><div class="excerpt">{e(item[key])}</div></details>' for key,label in [('proposed',t('Voorstel ReplyPen','ReplyPen proposal')),('sent',t('Wat de mens verstuurde','Human sent')),('sources',t('Geraadpleegde bronnen','Consulted sources'))])
+        details = ''.join(f'<details><summary>{label}</summary><div class="excerpt">{e(item[key])}</div></details>' for key,label in [('proposed',t('Voorstel ReplyPen','ReplyPen proposal')),('sent',t('Wat de mens verstuurde','Human sent')),('sources',t('Geraadpleegde bronnen','Consulted sources'))] if (item.get(key) or '').strip())
+        availability = f'<p class="muted">{e(item["availability_note"])}</p>' if item.get('availability_note') else ''
+        link = (f'<a href="{e(item["url"])}" target="_blank" rel="noreferrer">{t("Open gesprek", "Open conversation")} ↗</a>'
+                if item.get('url') else f'<small>{t("Gespreklink niet beschikbaar", "Conversation link unavailable")}</small>')
         badge = '' if item['learning_allowed'] else f'<p class="badge">{t("Alleen beoordelen: dit voorbeeld is niet beschikbaar als leermateriaal. Antwoorden worden niet als wijziging geëxporteerd.", "Review only: this example is excluded from learning. Answers will not authorize changes.")}</p>'
-        cards.append(f'<article><small>{i} / {len(data["items"])}</small><h2>{e(item["question"])}</h2><p class="excerpt">{e(item["feedback"])}</p>{badge}{details}<a href="{e(item["url"])}" target="_blank" rel="noreferrer">{t("Open gesprek", "Open conversation")} ↗</a>{"".join(qs)}</article>')
+        cards.append(f'<article><small>{i} / {len(data["items"])}</small><h2>{e(item["question"])}</h2><p class="excerpt">{e(item["feedback"])}</p>{badge}{availability}{details}{link}{"".join(qs)}</article>')
     payload = json.dumps(data,ensure_ascii=False).replace('<','\\u003c').replace('>','\\u003e').replace('&','\\u0026')
     exporter = Path(__file__).with_name('answers.js').read_text()
     js = '''const data=JSON.parse(document.getElementById('data').textContent);
