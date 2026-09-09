@@ -84,6 +84,11 @@ query Orders($first: Int!, $after: String, $query: String) {
         tags
         cancelledAt
         cancelReason
+        fulfillments(first: 3) {
+          status
+          updatedAt
+          trackingInfo { company number url }
+        }
       }
     }
     pageInfo {
@@ -124,6 +129,12 @@ def _order_node(node: dict) -> dict:
 
     ship = node.get("shippingAddress") or {}
 
+    tracking = []
+    for f in node.get("fulfillments") or []:
+        for t in f.get("trackingInfo") or []:
+            tracking.append({"company": t.get("company"), "number": t.get("number"), "url": t.get("url"),
+                             "status": f.get("status"), "updated_at": f.get("updatedAt")})
+
     return {
         "id": node.get("id"),
         "name": node.get("name"),
@@ -139,6 +150,7 @@ def _order_node(node: dict) -> dict:
         "tags": node.get("tags") or [],
         "cancelled_at": node.get("cancelledAt"),
         "cancel_reason": node.get("cancelReason"),
+        "tracking": tracking,
     }
 
 
@@ -184,7 +196,7 @@ query CustomerByEmail($query: String!) {
         email
         phone
         numberOfOrders
-        totalSpentV2 { amount currencyCode }
+        amountSpent { amount currencyCode }
         tags
         createdAt
         state
@@ -202,7 +214,7 @@ query CustomerById($id: ID!) {
     email
     phone
     numberOfOrders
-    totalSpentV2 { amount currencyCode }
+    amountSpent { amount currencyCode }
     tags
     createdAt
     state
@@ -214,7 +226,7 @@ query CustomerById($id: ID!) {
 def _customer_node(node: dict) -> dict:
     total = ""
     try:
-        t = node.get("totalSpentV2") or {}
+        t = node.get("amountSpent") or {}
         total = f"{t['amount']} {t['currencyCode']}"
     except (KeyError, TypeError):
         pass
@@ -333,6 +345,8 @@ def orders_to_markdown(orders: list[dict], shop: str) -> str:
         lines.append(f"- Total: {o.get('total') or '—'}")
         lines.append(f"- Customer: {o.get('customer_email') or '—'} {o.get('customer_name') or ''}".rstrip())
         lines.append(f"- Created: {o.get('created_at') or '—'}")
+        for t in o.get("tracking") or []:
+            lines.append(f"- Tracking: {t.get('company') or '?'} {t.get('number') or ''} {t.get('url') or ''} ({t.get('status') or '?'})".rstrip())
         if o.get("cancelled_at"):
             lines.append(f"- **Cancelled**: {o['cancel_reason'] or ''} at {o['cancelled_at']}")
         items = o.get("line_items") or []
