@@ -185,6 +185,10 @@ A pasted run link works with **no login and no profile** — the `?t=` token is 
 share link goes through `rc run session 'https://app.replypen.com/s/<token>'`, which writes one
 `.rootcause/debug/session-<id>.md` (transcript + the runs behind it, each with its drill command).
 
+Refused (`UNKNOWN_RUN`/404, or not logged in)? Since rc 1.27.2 the error carries a `hint:` line (a
+`hint` field in `-o json`) — a bare id you cannot see is indistinguishable from no login, so rerun
+with the full link, or `--share-token <token>` (`rc run debug|thread|trace` all take it).
+
 ## Dream Evidence
 
 ```bash
