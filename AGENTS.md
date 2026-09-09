@@ -50,7 +50,7 @@ Keep these planes explicit in every skill, template, and brain edit:
   scripts and the injected `lib.db`, `lib.cloudwatch`, `lib.http`, `lib.fs`, `lib.connectors`,
   `lib.api`, `lib.mcp`, and `lib.image` capabilities available for that project/run.
   (`lib.image` — cheap preview → refine-from-preview image generation over the broker's `image`
-  mount, saving to `/tmp/outbox`; absent mount ⇒ one clear "not enabled" sentence.)
+  mount, saving to `/tmp/outbox`; absent mount ⇒ one clear "not enabled" sentence. Cost model + ladder decisions: `docs/image-generation.md`.)
 
 Never put `rc ...` command guidance in committed project-brain content. Describe the project-specific
 evidence or decision; keep laptop-side control-plane steps in this kit's local skills/docs.

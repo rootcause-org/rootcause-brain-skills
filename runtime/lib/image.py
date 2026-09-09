@@ -45,9 +45,8 @@ MAX_REFS = 8  # host cap: 8 `image` parts per request
 _RETRY_STATUS = frozenset({502, 503, 504})
 
 # aspect → (preview size, final size). All edges are multiples of 16 and ≥ 655k pixels (the
-# provider's minimum pixel budget); preview ⇒ quality low, final ⇒ quality high. On gpt-image-2.5
-# "high" spends the output tokens gpt-image-2 "medium" did (~$0.05 at 1024²), so the ladder's cost
-# is unchanged; xhigh/max exist but cost 2×/4× for detail a social visual never shows.
+# provider's minimum pixel budget); preview ⇒ quality low, final ⇒ quality medium. Cost is set by
+# the quality tier, barely by pixels — see docs/image-generation.md for the formula and the why.
 LADDER: dict[str, dict[str, tuple[int, int]]] = {
     "1:1": {"preview": (816, 816), "final": (1024, 1024)},
     "4:5": {"preview": (736, 928), "final": (1024, 1280)},
@@ -56,7 +55,7 @@ LADDER: dict[str, dict[str, tuple[int, int]]] = {
     "3:1": {"preview": (1440, 480), "final": (3072, 1024)},
 }
 STEPS = ("preview", "final")
-_QUALITY = {"preview": "low", "final": "high"}
+_QUALITY = {"preview": "low", "final": "medium"}
 
 _RECREATE = (
     "Recreate this exact image at higher resolution and detail. Keep the composition, subjects, "
