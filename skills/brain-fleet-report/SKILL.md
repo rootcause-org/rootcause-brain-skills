@@ -211,3 +211,14 @@ contract · [`rc-fleet`](../rc-fleet/SKILL.md) interactive triage when you have 
   reports.
 - **2026-09-07** — built (collect/correlate/drill/schema/validate/render + overlays). First
   real runs: dentai, kampadmin (+kampadmin-support), pro-backup, momentum-tools on 09-03 / 09-04.
+
+## Weekly focus and feedback review
+
+`collect.py --days 7 --date YYYY-MM-DD` collects one continuous seven-calendar-day focus ending on
+that date, plus context workdays preceding the first focus day. Output directory gains `-7d` to avoid
+overwriting daily evidence. All focus KPIs, axes, traces, draft fates and cluster counts cover those
+seven days. Copy `window.focus_days` with the manifest into `report.json`; the rendered period spans
+the full window. `drill.py --date YYYY-MM-DD-7d` reads that directory. Daily default remains one day.
+
+If `[feedback_review].enabled`, follow [brain-feedback-review](../brain-feedback-review/SKILL.md)
+on the configured cadence and deliver its sibling HTML. Daily reports stay concise.

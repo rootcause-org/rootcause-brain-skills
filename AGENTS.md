@@ -96,6 +96,8 @@ Only these are first-class:
 - `rc-debug` — one run/thread/session trace; inspect/propose/stop before edits.
 - `rc-health` — stale mirrors and dead-lettered runs.
 - `rc-fleet` — recent fleet and recurring failure patterns.
+- `brain-feedback-review` — weekly owner questionnaire from feedback and sent deltas; confirmed answers
+  copy into Brain-changes, no automatic learning or delivery.
 - `brain-fleet-report` — the daily two-audience fleet report: Python collects and renders a day of
   evidence, the model judges it into ranked actionables (technical EN + owner NL).
 - `brain-simulate` — replay representative real inbound cases through `rc ask --simulation`, grade

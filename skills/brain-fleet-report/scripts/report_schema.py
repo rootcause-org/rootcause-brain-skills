@@ -213,6 +213,7 @@ class FeedCoverage(_Model):
 
 class Window(_Model):
     focus: IsoDate
+    focus_days: list[IsoDate] = Field(default_factory=list)
     context_days: list[IsoDate] = Field(default_factory=list)
 
 
@@ -240,6 +241,7 @@ class Manifest(_Model):
     coverage: list[FeedCoverage] = Field(default_factory=list)
     excluded: dict[str, int] = Field(default_factory=dict)
     owner_lang: str | None = None
+    feedback_review: dict = Field(default_factory=dict)
     ledger_md: bool | None = None
     raw: ManifestRaw | None = None
 

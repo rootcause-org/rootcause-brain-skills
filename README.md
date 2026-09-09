@@ -61,6 +61,7 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 | `rc-debug` | One run/thread/session to trace/debug/index/JSONL drilldown; analysis-first before edits. |
 | `rc-health` | Stale mirrors plus dead-lettered runs. |
 | `rc-fleet` | Recent fleet digest plus recurring failure patterns. |
+| [`brain-feedback-review`](skills/brain-feedback-review/SKILL.md) | Weekly owner questionnaire; confirmed answers copy into Brain-changes. |
 | [`brain-fleet-report`](skills/brain-fleet-report/SKILL.md) | Daily two-audience fleet report for one project: collect a day of evidence, judge it into ranked actionables with copy-paste prompts, render the technical (EN) and owner (NL) halves. |
 | [`brain-simulate`](skills/brain-simulate/SKILL.md) | Replay ~10 representative real inbound cases through `rc ask --simulation`, grade each draft against the human's real reply (content, routing, tone, format, safety), render a self-contained HTML report with run links and copy-paste steering prompts; diff a `dev/<branch>` brain against `main`. |
 | [`brain-helpcenter-suggestions`](skills/brain-helpcenter-suggestions/SKILL.md) | A window of real customer questions (email runs, chat runs, Help Scout) vs the public help centre: collect the corpus and every `/kb` article body, classify and cluster the gaps, render a ranked, evidence-backed edit list (new / rewrite / retitle / merge / delete / add-alias), each edit anchored in the current article, with verbatim quotes, a link per conversation and a bot-readable block per card. |

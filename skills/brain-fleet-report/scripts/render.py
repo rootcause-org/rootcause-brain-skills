@@ -595,7 +595,7 @@ def _context_table(report: Report, lang: str) -> str:
     rows = ""
     for day in report.kpis.context_days + [report.kpis.focus]:
         focus = day.date == report.date
-        name = long_date(day.date, lang)
+        name = period_label(report, lang) if focus else long_date(day.date, lang)
         label = f"<b>{e(name)}</b>" if focus else e(name)
         rows += (
             "<tr>"
@@ -660,6 +660,12 @@ def _page(title: str, lang: str, body: str, with_js: bool) -> str:
     )
 
 
+def period_label(report, lang):
+    days = report.window.focus_days
+    end = long_date(report.date, lang)
+    return f"{long_date(min(days), lang)} – {end}" if len(days) > 1 else end
+
+
 def _header(report: Report, lang: str, title: str, kicker: str | None = None) -> str:
     strings = STR[lang]
     return (
@@ -668,14 +674,14 @@ def _header(report: Report, lang: str, title: str, kicker: str | None = None) ->
         f'<h1 style="margin-top:8px">{e(title)}</h1>'
         f'<div class="stamp">{e(strings["generated"])} '
         f'{e(stamp(report.generated_at, lang))} · {e(strings["runs_of"])} '
-        f'{e(long_date(report.date, lang))} · {e(report.report_id)}</div>'
+        f'{e(period_label(report, lang))} · {e(report.report_id)}</div>'
         "</header>"
     )
 
 
 def render_technical_html(report: Report) -> str:
     strings = STR["en"]
-    title = f"{' + '.join(report.coverage.projects)} — {long_date(report.date, 'en')}"
+    title = f"{' + '.join(report.coverage.projects)} — {period_label(report, 'en')}"
     body = [_header(report, "en", title)]
 
     if report.is_quiet():
@@ -782,8 +788,14 @@ def render_technical_html(report: Report) -> str:
 def render_owner_html(report: Report) -> str:
     lang = owner_lang(report)
     strings = STR[lang]
-    title = f"{' + '.join(report.coverage.projects)} — {long_date(report.date, lang)}"
+    title = f"{' + '.join(report.coverage.projects)} — {period_label(report, lang)}"
     body = [_header(report, lang, title, kicker=strings["owner_kicker"])]
+    review = report.coverage.feedback_review
+    if review.get('enabled') and (review.get('cadence', 'weekly') == 'daily-lite' or len(report.window.focus_days) > 1):
+        # Sibling attachment; no local absolute path or executable URL on the owner surface.
+        body.append('<div class="note"><a href="feedback-review.html">' +
+                    ('Feedbackreview invullen (±10 minuten)' if lang == 'nl' else 'Complete feedback review (about 10 minutes)') + '</a></div>')
+
 
     findings = [f for f in report.findings_sorted() if f.audience in ("owner", "both")]
     with_prompts = {f.id for f in findings if f.prompt}
@@ -903,7 +915,7 @@ def render_email_html(report: Report, half: str) -> str:
     technical = half == "technical"
     lang = "en" if technical else owner_lang(report)
     strings = STR[lang]
-    title = f"{' + '.join(report.coverage.projects)} — {long_date(report.date, lang)}"
+    title = f"{' + '.join(report.coverage.projects)} — {period_label(report, lang)}"
     if technical:
         headline = report.technical.headline
         tldr = report.technical.tldr
@@ -1002,7 +1014,7 @@ def render_txt(report: Report, half: str) -> str:
     technical = half == "technical"
     lang = "en" if technical else owner_lang(report)
     strings = STR[lang]
-    title = f"{' + '.join(report.coverage.projects)} — {long_date(report.date, lang)}"
+    title = f"{' + '.join(report.coverage.projects)} — {period_label(report, lang)}"
     lines = [title, "=" * min(len(title), 72), ""]
     if technical:
         lines.append(report.technical.headline)

@@ -106,3 +106,17 @@ rc.json(*ctx["rc_args"], "dev", "console", "database", "query", "DENTAI_DSN", sq
 `rc_args` already carries `--project` and `--tenant`, so the query is tenant-scoped by the server
 ([`prod-console`](../prod-console/SKILL.md)). Keep such a drill cheap — a handful of queries per run,
 never a per-day sweep.
+
+## Optional owner feedback ritual
+
+```toml
+[feedback_review]
+enabled = true
+cadence = "weekly" # or "daily-lite"
+```
+
+Run [brain-feedback-review](../brain-feedback-review/SKILL.md) over the same requested window.
+Copy its self-contained `report.html` alongside `owner.html` as `feedback-review.html`; hand over
+both attachments. The owner page links it for multi-day reports, or every report with `daily-lite`.
+With `daily-lite`, generate and attach the questionnaire every day; do not render a link-only delivery.
+The setting selects the report workflow; it does not itself schedule a job or apply answers.

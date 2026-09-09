@@ -2,7 +2,7 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Collect one focus day (+ 4 workdays of context) of fleet evidence for `brain-fleet-report`.
+"""Collect one focus period (+ 4 workdays of context) of fleet evidence for `brain-fleet-report`.
 
     uv run skills/brain-fleet-report/scripts/collect.py --date 2026-09-04
 
@@ -264,12 +264,12 @@ def enrich_runs(rc: Rc, member: str, runs: list[dict[str, Any]], focus: date, tz
     base = ["--project", member, "--scope", "project"]
 
     def want_show(run: dict[str, Any]) -> bool:
-        return is_flagged(run) or local_day(run.get("created_at"), tz) == focus
+        return is_flagged(run) or local_day(run.get("created_at"), tz) in cfg["focus_days"]
 
     def want_thread(run: dict[str, Any]) -> bool:
         # Every focus run, draft or not: a lost/errored run is only judgeable against its thread
         # (the customer may have been answered five hours later by a re-processed run).
-        return local_day(run.get("created_at"), tz) == focus or bool(
+        return local_day(run.get("created_at"), tz) in cfg["focus_days"] or bool(
             (run.get("learning") or {}).get("sent_delta") or (run.get("learning") or {}).get("feedback")
         )
 
@@ -279,7 +279,7 @@ def enrich_runs(rc: Rc, member: str, runs: list[dict[str, Any]], focus: date, tz
     seen = {run_key(r) for r in traced}
     room = max(0, cfg["max_traces"] - len(traced))
     traced += [r for r in runs
-               if local_day(r.get("created_at"), tz) == focus and run_key(r) not in seen][:room]
+               if local_day(r.get("created_at"), tz) in cfg["focus_days"] and run_key(r) not in seen][:room]
 
     def do_show(run: dict[str, Any]) -> None:
         payload = rc.json(*base, "run", "show", str(run.get("run_id"))) or {}
@@ -430,6 +430,17 @@ RECOVERED_OUTCOMES = {"answered", "replied", "drafted", "sent"}
 KIND_ORDER = {"run_error": 0, "action_failure": 1, "capture_gap": 2, "sql": 3, "usage": 4}
 
 
+def focus_dates(ev):
+    return set(ev['window'].get('focus_days') or [ev['window']['focus']])
+
+
+def count_period(days, runs, actions, events, deltas, feedback, tz):
+    if isinstance(days, date):
+        days = [days]
+    blocks = [count_day(day, runs, actions, events, deltas, feedback, tz) for day in days]
+    return {'date': max(days).isoformat(), **{k: sum(b[k] for b in blocks) for k in KPI_KEYS}}
+
+
 def rank(clusters: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Yesterday first. A signature that did not fire on D is history, however ugly it looks."""
 
@@ -462,16 +473,16 @@ def exclusion_lines(ev: dict[str, Any]) -> list[str]:
     if not excluded:
         return []
     focus_iso = ev["window"]["focus"]
-    window_days = len(ev["window"]["context_days"]) + 1
+    window_days = len(ev["window"]["context_days"]) + len(focus_dates(ev))
     runs = ev["runs"]
-    focus_runs = [r for r in runs if r.get("day") == focus_iso]
+    focus_runs = [r for r in runs if r.get("day") in focus_dates(ev)]
     focus_excluded = sum(1 for r in focus_runs if r.get("excluded_reason"))
     detail = ", ".join(f"{k} {v}" for k, v in sorted(excluded.items(), key=lambda i: -i[1]))
     total = sum(excluded.values())
     return [
         f"Excluded as non-customer traffic — window ({window_days} days): {detail} = {total} "
         f"(`kind:console` runs are a separate plane and are not in the {len(runs)} runs below)",
-        f"Excluded — focus day {focus_iso}: {focus_excluded} of {len(focus_runs)} runs "
+        f"Excluded — focus period {min(focus_dates(ev))} → {max(focus_dates(ev))}: {focus_excluded} of {len(focus_runs)} runs "
         f"({len(focus_runs) - focus_excluded} counted; that is the denominator for every cluster)",
     ]
 
@@ -503,8 +514,8 @@ def build_digest(ev: dict[str, Any], tz) -> str:
     focus = date.fromisoformat(ev["window"]["focus"])
     kpis = ev["kpis"]
     out: list[str] = [
-        f"# Fleet digest · {ev['report_id']} · {focus.isoformat()} ({focus.strftime('%A')})",
-        f"Focus {ev['window']['focus']} · context {', '.join(ev['window']['context_days'])} "
+        f"# Fleet digest · {ev['report_id']} · {min(focus_dates(ev))} → {max(focus_dates(ev))}",
+        f"Focus {min(focus_dates(ev))} → {max(focus_dates(ev))} · context {', '.join(ev['window']['context_days'])} "
         f"({ev['timezone']}) · generated {ev['generated_at'][:16]}",
         "",
         "**Copy `kpis.json` verbatim into report.json — never retype counters.**",
@@ -608,18 +619,18 @@ def build_digest(ev: dict[str, Any], tz) -> str:
     def listable(run: dict[str, Any]) -> bool:
         return not run.get("excluded_reason") or bool(run.get("error"))
 
-    focus_all = [r for r in ev["runs"] if r.get("day") == ev["window"]["focus"]]
+    focus_all = [r for r in ev["runs"] if r.get("day") in focus_dates(ev)]
     focus_runs = [r for r in focus_all if listable(r)]
     focus_excluded = sum(1 for r in focus_all if r.get("excluded_reason"))
     shown_excluded = sum(1 for r in focus_runs if r.get("excluded_reason"))
-    out += ["", f"## Focus-day runs ({len(focus_runs)} shown of {len(focus_all)} collected; "
+    out += ["", f"## Focus-period runs ({len(focus_runs)} shown of {len(focus_all)} collected; "
                 f"{focus_excluded} excluded as noise, of which {shown_excluded} still shown "
                 f"because the run itself errored — marked `excl:`)"]
     for run in sorted(focus_runs, key=lambda r: str(r.get("created_at")))[:60]:
         out.append(run_line(run, tz))
     if len(focus_runs) > 60:
         out.append(f"- … {len(focus_runs) - 60} more in runs.jsonl")
-    ctx_all = [r for r in ev["runs"] if r.get("day") != ev["window"]["focus"] and r.get("flagged")]
+    ctx_all = [r for r in ev["runs"] if r.get("day") not in focus_dates(ev) and r.get("flagged")]
     flagged_ctx = [r for r in ctx_all if listable(r)]
     if flagged_ctx:
         out += ["", f"## Context-day flagged runs ({len(flagged_ctx)} of {len(ctx_all)}; "
@@ -652,7 +663,7 @@ def build_digest(ev: dict[str, Any], tz) -> str:
 
 
 def delta_section(ev: dict[str, Any], tz) -> list[str]:
-    """One line per real human edit, focus day first, with the tenant/channel it happened on.
+    """One line per real human edit, focus period first, with the tenant/channel it happened on.
 
     A delta only becomes actionable once you know *who* edited: `factual, sim 0.28` says nothing,
     `de-kies · factual · sim 0.28` points at a tenant brain.
@@ -671,14 +682,14 @@ def delta_section(ev: dict[str, Any], tz) -> list[str]:
             similarity = float(delta.get("similarity"))
         except (TypeError, ValueError):
             similarity = 1.0
-        return (delta.get("day") != focus_iso, bool(delta.get("shadow")), similarity)
+        return (delta.get("day") not in focus_dates(ev), bool(delta.get("shadow")), similarity)
 
     bodies_left = 8  # the bodies are the bulk of the section; the rest is one line each
     out = [f"## Human edits ({len(live)} live, {len(shadow)} shadow of which "
            f"{len(interesting) - len(live)} non-equivalent, "
            f"{len(ev['deltas']) - len(deltas)} cosmetic dropped)"]
     for delta in sorted(interesting, key=sort_key)[:25]:
-        focus_day = delta.get("day") == focus_iso
+        focus_day = delta.get("day") in focus_dates(ev)
         key = run8(delta.get("related_run_id"))
         # A delta is dated by the *edit*, not by the run: three FOCUS deltas can point at runs that
         # are not in the focus-run list at all.
@@ -704,7 +715,7 @@ def feedback_section(ev: dict[str, Any], tz) -> list[str]:
     if not ev["feedback"]:
         return []
     focus_iso = ev["window"]["focus"]
-    window = set(ev["window"]["context_days"]) | {focus_iso}
+    window = set(ev["window"]["context_days"]) | focus_dates(ev)
     oldest = min(window)
 
     def when(item: dict[str, Any]) -> str:
@@ -712,8 +723,8 @@ def feedback_section(ev: dict[str, Any], tz) -> list[str]:
         return moment.isoformat() if moment else "?"
 
     dated = [(when(item), item) for item in ev["feedback"]]
-    focus = [row for row in dated if row[0] == focus_iso]
-    recent = [row for row in dated if row[0] != focus_iso and row[0] >= oldest]
+    focus = [row for row in dated if row[0] in focus_dates(ev)]
+    recent = [row for row in dated if row[0] not in focus_dates(ev) and row[0] >= oldest]
     older = sorted([row for row in dated if row[0] < oldest], key=lambda row: row[0], reverse=True)
 
     # Which member and which run kind a score sits on is what turns a list of comments into a
@@ -781,9 +792,10 @@ def run_line(run: dict[str, Any], tz, with_date: bool = False) -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--date", help="focus day YYYY-MM-DD (default: yesterday, project tz)")
+    parser.add_argument("--date", help="focus period YYYY-MM-DD (default: yesterday, project tz)")
     parser.add_argument("--project", action="append", default=[], help="member project (repeatable)")
     parser.add_argument("--report-id", help="override the overlay report id")
+    parser.add_argument("--days", type=int, default=1, help="calendar days in focus, ending on --date")
     parser.add_argument("--context-days", type=int, default=4, help="workdays of context before D")
     parser.add_argument("--max-traces", type=int, default=80)
     parser.add_argument("--refresh", action="store_true", help="ignore the raw cache")
@@ -811,13 +823,16 @@ def main() -> int:
     report_id = args.report_id or str(overlay.get("report_id") or members[0])
 
     focus = date.fromisoformat(args.date) if args.date else yesterday(tz)
-    context = workdays_before(focus, max(0, args.context_days))
-    days = [*context, focus]
+    if args.days < 1:
+        raise SystemExit('--days must be positive')
+    focus_days = [focus - timedelta(days=i) for i in reversed(range(args.days))]
+    context = workdays_before(focus_days[0], max(0, args.context_days))
+    days = [*context, *focus_days]
     start, _ = day_bounds(days[0], tz)
     _, end = day_bounds(focus, tz)
 
     report_root = brain_root / ".rootcause" / "fleet-report" / report_id
-    out_dir = Path(args.out_dir) if args.out_dir else report_root / focus.isoformat()
+    out_dir = Path(args.out_dir) if args.out_dir else report_root / (focus.isoformat() if args.days == 1 else f"{focus.isoformat()}-{args.days}d")
     (out_dir / "raw").mkdir(parents=True, exist_ok=True)
     rc = Rc(raw_dir=out_dir / "raw", cwd=brain_root, refresh=args.refresh, offline=args.offline)
 
@@ -829,6 +844,7 @@ def main() -> int:
         "pattern_days": max(7, (datetime.now(tz).date() - days[0]).days + 1),
         "lookback_days": (datetime.now(tz).date() - days[0]).days + 1,
         "max_traces": args.max_traces,
+        "focus_days": set(focus_days),
     }
 
     members_data = [
@@ -958,10 +974,11 @@ def main() -> int:
         run["notes_flag"] = any("👀" in str(n.get("body")) for n in run.get("notes") or [])
 
     # ---------------- clusters + recurrence
-    ledger_path = report_root / "state" / "ledger.json"
+    ledger_path = report_root / "state" / ("ledger.json" if args.days == 1 else f"ledger-{args.days}d.json")
     ledger = load_ledger(ledger_path)
     focus_iso = focus.isoformat()
-    clusters = build_clusters(runs, actions, events, http, ledger, focus_iso, tz)
+    focus_isos = {d.isoformat() for d in focus_days}
+    clusters = build_clusters(runs, actions, events, http, ledger, focus_isos, tz)
     updated = dict(ledger)
     for cluster in clusters:
         updated[cluster["signature"]] = cluster["recurrence"]
@@ -969,14 +986,14 @@ def main() -> int:
 
     # ---------------- kpis
     kpis = {
-        "focus": count_day(focus, runs, actions, events, deltas, feedback, tz),
+        "focus": count_period(focus_days, runs, actions, events, deltas, feedback, tz),
         "context_days": [count_day(day, runs, actions, events, deltas, feedback, tz) for day in context],
-        "per_axis": per_axis_blocks(runs, actions, events, deltas, feedback, focus, tz, len(members) > 1),
+        "per_axis": per_axis_blocks(runs, actions, events, deltas, feedback, focus_days, tz, len(members) > 1),
     }
 
     draft_fate: dict[str, dict[str, int]] = {}
     for run in runs:
-        if run.get("day") != focus_iso or run.get("excluded_reason"):
+        if run.get("day") not in focus_isos or run.get("excluded_reason"):
             continue
         counts = draft_fate.setdefault(run.get("axis_key") or "-", {})
         counts[str(run.get("human_outcome"))] = counts.get(str(run.get("human_outcome")), 0) + 1
@@ -996,12 +1013,13 @@ def main() -> int:
     manifest = {
         "report_id": report_id,
         "projects": members,
-        "window": {"focus": focus_iso, "context_days": [d.isoformat() for d in context]},
+        "window": {"focus": focus_iso, "focus_days": sorted(focus_isos), "context_days": [d.isoformat() for d in context]},
         "generated_at": datetime.now(UTC).isoformat(),
         "rc_version": rc_version(brain_root),
         "coverage": coverage,
         "excluded": dict(excluded_counter),
         "owner_lang": owner_lang,
+        "feedback_review": overlay.get("feedback_review", {}),
         "ledger_md": has_ledger_md,
         "raw": {
             "path": str(raw_dir.relative_to(out_dir)),
@@ -1022,6 +1040,7 @@ def main() -> int:
         "excluded": dict(excluded_counter),
         "overlay_problems": overlay.problems,
         "owner_lang": owner_lang,
+        "feedback_review": overlay.get("feedback_review", {}),
         "ledger_md": has_ledger_md,
         "kpis": kpis,
         "clusters": clusters,
@@ -1071,7 +1090,7 @@ def main() -> int:
     focus_kpi = kpis["focus"]
     print(
         f"{report_id} {focus_iso} · {len(members)} project(s) · {len(runs)} runs "
-        f"({focus_kpi['counted']} counted on D) · {len(clusters)} clusters · "
+        f"({focus_kpi['counted']} counted in focus) · {len(clusters)} clusters · "
         f"{len(deltas)} deltas · {len(feedback)} feedback · {rc.calls} rc calls · "
         f"{len(rc.errors)} collect errors · {digest.count(chr(10))} digest lines · "
         f"raw {manifest['raw']['mb']} MB{' (pruned)' if args.prune_raw else ''} · "
@@ -1105,7 +1124,7 @@ def per_axis_blocks(runs, actions, events, deltas, feedback, focus, tz, by_membe
     run_ids_by_key = {key: {run_key(r) for r in group} for key, group in groups.items()}
     for (axis, key), group in sorted(groups.items(), key=lambda item: -len(item[1])):
         ids = run_ids_by_key[(axis, key)]
-        block = count_day(
+        block = count_period(
             focus, group,
             [a for a in actions if str(a.get("run_id")) in ids],
             [e for e in events if str(e.get("run_id")) in ids],
@@ -1125,7 +1144,7 @@ def per_axis_blocks(runs, actions, events, deltas, feedback, focus, tz, by_membe
             members[str(run.get("member"))].append(run)
         for member, group in members.items():
             ids = {run_key(r) for r in group}
-            block = count_day(
+            block = count_period(
                 focus, group,
                 [a for a in actions if str(a.get("member")) == member],
                 [e for e in events if str(e.get("run_id")) in ids],
@@ -1164,7 +1183,7 @@ def build_clusters(runs, actions, events, http, ledger, focus_iso: str, tz) -> l
             if run_id and str(run_id) not in entry["excluded_runs"]:
                 entry["excluded_runs"].append(str(run_id))
         else:
-            if day == focus_iso:
+            if day in ({focus_iso} if isinstance(focus_iso, str) else focus_iso):
                 entry["focus_count"] += 1
             else:
                 entry["context_count"] += 1
