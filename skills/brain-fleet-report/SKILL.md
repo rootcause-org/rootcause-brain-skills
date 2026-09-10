@@ -63,6 +63,23 @@ uv run "$FR/scripts/prompt_compose.py" "$OUT/report.json" --finding F3   # check
 open "$OUT/technical.html" "$OUT/owner.html"                      # read both halves locally
 ```
 
+## Three deliverables, not two
+
+`technical.html` and `owner.html` are files. The third deliverable is the **spawn list**: the short
+bullet list you write in your own answer, in the turn that produced them, so the operator can turn
+findings into separate coding threads without opening the report first.
+
+- One bullet per finding worth acting on today (`high` and the `medium` ones with a prompt), ranked;
+  five at most. Zero is a valid spawn list on a quiet day.
+- Each bullet: what is wrong in one clause, then **the direction you would take** — "expose
+  `activity_name` on the scoped projection", not "investigate the schema guesses" — then the repo and
+  the skill that should do the work.
+- No run ids, no file dumps, no numbers the operator did not ask for. The full prompt already lives
+  in the report for whoever picks the bullet up.
+
+Close the answer with the two html paths. A finding that is a decision for the owner, not work for a
+coding agent, does not belong in the spawn list.
+
 Delivery to the owner is project-specific: a wrapper skill in the brain (e.g. `fleet-report-dentai`)
 attaches `owner.html` to a ticket. **Every delivered report title starts with `🌅`** —
 `🌅 Dagrapport <display_name> <D>` — so the daily reports are identifiable at a glance in a ticket
@@ -215,7 +232,7 @@ contract · [`rc-fleet`](../rc-fleet/SKILL.md) interactive triage when you have 
 ## Iteration log
 
 - **2026-09-10** — action funnel: proposal outcomes, estimated human acceptance, per-axis totals.
-
+- **2026-09-10** — third deliverable: the in-answer spawn list next to the two html files.
 - **2026-09-08** — audience = reach (owner surfaces per overlay), `🌅` title prefix for delivered
   reports.
 - **2026-09-07** — built (collect/correlate/drill/schema/validate/render + overlays). First
