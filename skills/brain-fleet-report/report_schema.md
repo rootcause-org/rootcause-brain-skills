@@ -25,6 +25,7 @@ copyable accordion with owner-language chrome, so the owner can pass one to a co
 | `generated_at` | str | ISO timestamp with offset |
 | `window` | obj | `{focus, context_days[]}` — copy from `manifest.window` |
 | `kpis` | obj | **copy `kpis.json` verbatim** (warn if it differs) |
+| `kpis.action_funnel` | obj? | **copy verbatim**: `{focus: {rows, total}, context: {rows, total}, per_axis: [{axis, key, rows, total}], rule: {reviewer_confirmed_after_s, stale_after_h}}`; per-axis covers focus only. Rows/totals carry `action_id`, `proposed_total`, `succeeded`, `failed`, `superseded`, `canceled`, `executing`, `pending`, `stale`, `human_confirmed`, `auto`, `acceptance_rate` (0–1, null with no denominator). `proposed_total` counts all rows in the execution-or-proposal day bucket. |
 | `coverage` | obj | **copy `manifest.json` verbatim** — every key of it, including `raw`, `owner_lang` and `ledger_md` (the round-trip is tested; if it does not validate, that is a kit bug, not yours) |
 | `findings[]` | ≤ 20 | see below; rank by customer impact, drop the rest |
 | `technical` | obj | English half (PJ) |

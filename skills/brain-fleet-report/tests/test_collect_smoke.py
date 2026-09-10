@@ -322,7 +322,7 @@ def test_excluded_runs_are_counted_not_listed_unless_they_errored():
     loud = _digest_run(run_id="2" * 32, excluded_reason="kind:prompt", error="run: boom")
     real = _digest_run(run_id="3" * 32)
     digest = collect.build_digest(_digest_evidence([quiet, loud, real]), TZ)
-    body = digest.split("## Focus-day runs")[1]
+    body = digest.split("## Focus-period runs")[1]
     assert "11111111" not in body
     assert "22222222" in body and "excl:kind:prompt" in body
     assert "33333333" in body
@@ -420,3 +420,58 @@ def test_excluded_runs_do_not_feed_cluster_counts():
     # recurrence facts are echoed onto the cluster so a report copies instead of transcribing
     assert cluster["state"] == cluster["recurrence"]["state"] == "new"
     assert cluster["first_seen"] == cluster["recurrence"]["first_seen"]
+
+
+def test_action_funnel_statuses_boundaries_and_execution_day():
+    now = fr.parse_ts('2026-09-10T22:00:00Z')
+    actions = [
+        {'action_id': 'change', 'status': status, 'proposed_at': '2026-09-09T09:59:59Z'}
+        for status in ('failed', 'superseded', 'canceled', 'executing', 'proposed')
+    ] + [
+        {'action_id': 'change', 'status': 'proposed', 'proposed_at': '2026-09-09T10:00:00Z'},
+        # Exactly 120 seconds remains auto; 121 is reviewer-confirmed.
+        {'action_id': 'change', 'status': 'succeeded', 'proposed_at': '2026-09-09T12:00:00Z',
+         'executed_at': '2026-09-09T12:02:00Z'},
+        {'action_id': 'change', 'status': 'succeeded', 'proposed_at': '2026-09-09T12:00:00Z',
+         'executed_at': '2026-09-09T12:02:01Z'},
+        # Proposal in context, execution in focus: counts once, in focus (Brussels midnight).
+        {'action_id': 'later', 'status': 'succeeded', 'proposed_at': '2026-09-08T20:00:00Z',
+         'executed_at': '2026-09-08T22:00:00Z'},
+        {'action_id': 'context', 'status': 'canceled', 'proposed_at': '2026-09-08T12:00:00Z'},
+        {'action_id': 'outside', 'status': 'failed', 'proposed_at': '2026-09-07T12:00:00Z'},
+    ]
+    window = {'focus': '2026-09-09', 'context_days': ['2026-09-08']}
+    funnel = collect.build_action_funnel(actions, [], window, tz=TZ, now=now)
+    row = funnel['focus']['rows'][0]
+    assert row == dict(action_id='change', proposed_total=8, succeeded=2, failed=1,
+                       superseded=1, canceled=1, executing=1, pending=1, stale=1,
+                       human_confirmed=1, auto=1, acceptance_rate=0.2)
+    assert funnel['focus']['total']['proposed_total'] == 9
+    assert funnel['focus']['total']['acceptance_rate'] == 0.33
+    assert funnel['context']['total']['proposed_total'] == 1
+    assert funnel['context']['rows'][0]['action_id'] == 'context'
+    legacy = collect.count_day(date(2026, 9, 9), [], actions, [], [], [], TZ)
+    assert funnel['focus']['total']['succeeded'] == legacy['actions_ok']
+    assert row['pending'] + row['stale'] == legacy['actions_proposed']
+    empty = collect.build_action_funnel([], [], window, tz=TZ, now=now)
+    assert empty['focus']['rows'] == []
+    assert empty['focus']['total']['acceptance_rate'] is None
+    weekly = collect.build_action_funnel(actions, [], {**window, 'focus_days': ['2026-09-08', '2026-09-09'],
+                                                      'context_days': []}, tz=TZ, now=now)
+    assert weekly['focus']['total']['proposed_total'] == 10
+
+
+def test_action_funnel_axes_join_run_id_not_tenant_uuid():
+    runs = [{'run_id': 'r1', 'axis': 'tenant', 'axis_key': 'clinic', 'member': 'one'},
+            {'run_id': 'r2', 'axis': 'channel', 'axis_key': 'email', 'member': 'two'}]
+    actions = [{'run_id': run['run_id'], 'member': run['member'], 'tenant_id': 'opaque-uuid',
+                'action_id': 'change', 'status': 'succeeded', 'proposed_at': '2026-09-09T12:00:00Z',
+                'executed_at': '2026-09-09T12:00:01Z'} for run in runs]
+    actions.append({**actions[0], 'run_id': 'uncollected'})
+    funnel = collect.build_action_funnel(actions, runs, {'focus': '2026-09-09'}, tz=TZ)
+    axes = {(a['axis'], a['key']): a['total'] for a in funnel['per_axis']}
+    assert axes[('tenant', 'clinic')]['proposed_total'] == 1
+    assert axes[('channel', 'email')]['auto'] == 1
+    assert axes[('member', 'one')]['proposed_total'] == 2
+    assert funnel['focus']['total']['proposed_total'] == 3
+    assert funnel['focus']['total']['acceptance_rate'] is None

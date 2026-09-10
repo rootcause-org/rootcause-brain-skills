@@ -352,3 +352,50 @@ def test_prompt_word_warning_names_the_longest_field(sample):
     finding.prompt.proposed_change = " ".join(["word"] * 300)
     warnings = [w for w in soft_warnings(fat) if f"findings[{finding.id}].prompt:" in w]
     assert warnings and "proposed_change" in warnings[0], warnings
+
+
+def test_action_funnel_round_trip_and_strict_fields(sample):
+    from report_schema import ActionFunnel, Kpis
+    collected = json.loads((FIXTURES / 'sample_kpis.json').read_text())
+    assert sample.kpis.model_dump()['action_funnel'] == collected['action_funnel']
+    assert Kpis.model_validate(collected).model_dump()['action_funnel'] == collected['action_funnel']
+    assert not [w for w in soft_warnings(sample, FIXTURES / 'sample_kpis.json') if w.startswith('kpis:')]
+    bad = copy.deepcopy(collected['action_funnel'])
+    bad['focus']['rows'][0]['typo'] = 1
+    with pytest.raises(ValueError):
+        ActionFunnel.model_validate(bad)
+
+
+def test_action_funnel_all_surfaces_and_owner_axis_filter(tmp_path, sample):
+    report = sample.model_copy(deep=True)
+    extra = report.kpis.action_funnel.per_axis[0].model_copy(deep=True)
+    extra.axis, extra.key = 'channel', 'private-channel'
+    report.kpis.action_funnel.per_axis.append(extra)
+    for lang in ('en', 'nl'):
+        report.coverage.owner_lang = lang
+        render_all(report, tmp_path)
+        for name in ('technical.html', 'owner.html', 'technical.email.html', 'owner.email.html',
+                     'technical.txt', 'owner.txt'):
+            text = (tmp_path / name).read_text()
+            owner = name.startswith('owner')
+            assert ('VOORGESTELDE ACTIES' if owner and lang == 'nl' else 'ACTION FUNNEL') in text.upper()
+            assert ('door assistent bevestigd' if owner and lang == 'nl' else 'Reviewer-confirmed') in text
+            assert ('geannuleerd' if owner and lang == 'nl' else 'Canceled') in text
+            assert '120 s' in text and '36' in text
+            assert ('private-channel' in text) == (not owner)
+            if name.endswith('.html'):
+                assert 'id="action-funnel"' in text
+        html = (tmp_path / 'technical.html').read_text()
+        assert html.index('id="kpis"') < html.index('id="action-funnel"') < html.index('id="context"')
+
+
+def test_empty_and_legacy_action_funnels(tmp_path):
+    report = load_report(QUIET)
+    render_all(report, tmp_path)
+    for name in ('technical.html', 'owner.html'):
+        text = (tmp_path / name).read_text()
+        section = text.split('id="action-funnel"', 1)[1].split('</section>', 1)[0]
+        assert '<table' not in section
+    report.kpis.action_funnel = None
+    render_all(report, tmp_path)
+    assert 'id="action-funnel"' not in (tmp_path / 'technical.html').read_text()

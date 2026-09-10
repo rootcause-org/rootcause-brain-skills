@@ -203,5 +203,183 @@
       "deltas_shadow": 0,
       "feedback": 0
     }
-  ]
+  ],
+  "action_funnel": {
+    "focus": {
+      "rows": [
+        {
+          "action_id": "update_record",
+          "proposed_total": 15,
+          "succeeded": 9,
+          "failed": 2,
+          "superseded": 0,
+          "canceled": 0,
+          "executing": 0,
+          "pending": 4,
+          "stale": 0,
+          "human_confirmed": 4,
+          "auto": 5,
+          "acceptance_rate": 0.67
+        }
+      ],
+      "total": {
+        "action_id": "total",
+        "proposed_total": 15,
+        "succeeded": 9,
+        "failed": 2,
+        "superseded": 0,
+        "canceled": 0,
+        "executing": 0,
+        "pending": 4,
+        "stale": 0,
+        "human_confirmed": 4,
+        "auto": 5,
+        "acceptance_rate": 0.67
+      }
+    },
+    "context": {
+      "rows": [
+        {
+          "action_id": "update_record",
+          "proposed_total": 34,
+          "succeeded": 23,
+          "failed": 2,
+          "superseded": 0,
+          "canceled": 0,
+          "executing": 0,
+          "pending": 0,
+          "stale": 9,
+          "human_confirmed": 0,
+          "auto": 23,
+          "acceptance_rate": 0.0
+        }
+      ],
+      "total": {
+        "action_id": "total",
+        "proposed_total": 34,
+        "succeeded": 23,
+        "failed": 2,
+        "superseded": 0,
+        "canceled": 0,
+        "executing": 0,
+        "pending": 0,
+        "stale": 9,
+        "human_confirmed": 0,
+        "auto": 23,
+        "acceptance_rate": 0.0
+      }
+    },
+    "per_axis": [
+      {
+        "axis": "tenant",
+        "key": "lbv",
+        "rows": [
+          {
+            "action_id": "update_record",
+            "proposed_total": 11,
+            "succeeded": 6,
+            "failed": 2,
+            "superseded": 0,
+            "canceled": 0,
+            "executing": 0,
+            "pending": 3,
+            "stale": 0,
+            "human_confirmed": 3,
+            "auto": 3,
+            "acceptance_rate": 0.6
+          }
+        ],
+        "total": {
+          "action_id": "total",
+          "proposed_total": 11,
+          "succeeded": 6,
+          "failed": 2,
+          "superseded": 0,
+          "canceled": 0,
+          "executing": 0,
+          "pending": 3,
+          "stale": 0,
+          "human_confirmed": 3,
+          "auto": 3,
+          "acceptance_rate": 0.6
+        }
+      },
+      {
+        "axis": "tenant",
+        "key": "yes_events",
+        "rows": [
+          {
+            "action_id": "update_record",
+            "proposed_total": 4,
+            "succeeded": 3,
+            "failed": 0,
+            "superseded": 0,
+            "canceled": 0,
+            "executing": 0,
+            "pending": 1,
+            "stale": 0,
+            "human_confirmed": 1,
+            "auto": 2,
+            "acceptance_rate": 1.0
+          }
+        ],
+        "total": {
+          "action_id": "total",
+          "proposed_total": 4,
+          "succeeded": 3,
+          "failed": 0,
+          "superseded": 0,
+          "canceled": 0,
+          "executing": 0,
+          "pending": 1,
+          "stale": 0,
+          "human_confirmed": 1,
+          "auto": 2,
+          "acceptance_rate": 1.0
+        }
+      },
+      {
+        "axis": "tenant",
+        "key": "circolito",
+        "rows": [],
+        "total": {
+          "action_id": "total",
+          "proposed_total": 0,
+          "succeeded": 0,
+          "failed": 0,
+          "superseded": 0,
+          "canceled": 0,
+          "executing": 0,
+          "pending": 0,
+          "stale": 0,
+          "human_confirmed": 0,
+          "auto": 0,
+          "acceptance_rate": null
+        }
+      },
+      {
+        "axis": "tenant",
+        "key": "s_sport",
+        "rows": [],
+        "total": {
+          "action_id": "total",
+          "proposed_total": 0,
+          "succeeded": 0,
+          "failed": 0,
+          "superseded": 0,
+          "canceled": 0,
+          "executing": 0,
+          "pending": 0,
+          "stale": 0,
+          "human_confirmed": 0,
+          "auto": 0,
+          "acceptance_rate": null
+        }
+      }
+    ],
+    "rule": {
+      "reviewer_confirmed_after_s": 120,
+      "stale_after_h": 36
+    }
+  }
 }

@@ -70,6 +70,8 @@ list or inbox and a wrapper can find yesterday's by prefix. One emoji, fleet-wid
 
 `evidence.json` is the raw tier — grep it, never read it whole. Copy `kpis.json` and `manifest.json`
 verbatim into `report.json` (all keys, including `raw` and `owner_lang`); never retype a counter.
+The collector also writes `kpis.action_funnel`: focus/context action tables and focus per-axis totals;
+all six outputs show the focus funnel.
 Clusters in `evidence.json` carry `first_seen`/`last_seen`/`state` — copy those into
 `findings[].recurrence` instead of transcribing digest prose.
 
@@ -98,6 +100,11 @@ Focus = day `D`. Context = the 4 workdays before it, for recurrence only. Every 
 - **Actions**: `proposed` = recorded, never executed — a stale `proposed` pile is a finding, not a
   failure. Classify a failure as infra (RootCause machinery — report, do not edit the brain) or
   domain (the action's own refusal) before proposing anything.
+- **Action funnel**: bucket by `executed_at or proposed_at`; stale = proposed >36 h at collection.
+  With no confirmation field, reviewer-confirmed is a heuristic: succeeded >120 s after proposal;
+  other successes are auto (fast human confirmations can be misclassified). Acceptance is a
+  status snapshot, not a proposal cohort: human / (human + failed + superseded + canceled + stale).
+  `superseded` = the assistant chose a different action than proposed, not a failure.
 - **Bash corpus**: exit `-1` = timeout, exit `64` = the context re-read guard, `rg`/`grep` exit 1 =
   noise. `usage:` lines are brain-script flag errors and are usually a brain-content fix.
 - **`error_message` is server-truncated (~80 chars)**; the manifest says how many. Do not extrapolate
@@ -206,6 +213,8 @@ contract · [`rc-fleet`](../rc-fleet/SKILL.md) interactive triage when you have 
 [docs/side-effects.md](../../docs/side-effects.md).
 
 ## Iteration log
+
+- **2026-09-10** — action funnel: proposal outcomes, estimated human acceptance, per-axis totals.
 
 - **2026-09-08** — audience = reach (owner surfaces per overlay), `🌅` title prefix for delivered
   reports.

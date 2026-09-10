@@ -422,6 +422,86 @@ def count_day(
     return block
 
 
+ACTION_FUNNEL_RULE = {"reviewer_confirmed_after_s": 120, "stale_after_h": 36}
+ACTION_FUNNEL_COUNTS = (
+    "proposed_total", "succeeded", "failed", "superseded", "canceled", "executing",
+    "pending", "stale", "human_confirmed", "auto",
+)
+
+
+def build_action_funnel(actions, runs, window, *, tz, now=None, axes=None):
+    """Status snapshot, bucketed exactly like count_day; axes cover the focus period only."""
+    now = now or datetime.now(UTC)
+    focus = set(window.get("focus_days") or [window["focus"]])
+    context = set(window.get("context_days") or [])
+
+    def table(items, days):
+        rows = {}
+        for action in items:
+            day = local_day(action.get("executed_at") or action.get("proposed_at"), tz)
+            if day is None or day.isoformat() not in days:
+                continue
+            key = str(action.get("action_id") or "unknown")
+            row = rows.setdefault(key, {"action_id": key, **dict.fromkeys(ACTION_FUNNEL_COUNTS, 0)})
+            row["proposed_total"] += 1
+            status = action.get("status")
+            proposed = parse_ts(action.get("proposed_at"))
+            executed = parse_ts(action.get("executed_at"))
+            if status == "proposed":
+                stale = proposed and now - proposed > timedelta(hours=ACTION_FUNNEL_RULE["stale_after_h"])
+                row["stale" if stale else "pending"] += 1
+            elif status in {"succeeded", "failed", "superseded", "canceled", "executing"}:
+                row[status] += 1
+            if status == "succeeded":
+                human = proposed and executed and (executed - proposed).total_seconds() > ACTION_FUNNEL_RULE["reviewer_confirmed_after_s"]
+                row["human_confirmed" if human else "auto"] += 1
+        total = {"action_id": "total", **{k: sum(r[k] for r in rows.values()) for k in ACTION_FUNNEL_COUNTS}}
+        ordered = sorted(rows.values(), key=lambda r: (-r["proposed_total"], r["action_id"]))
+        for row in [*ordered, total]:
+            denominator = sum(row[k] for k in ("human_confirmed", "failed", "superseded", "canceled", "stale"))
+            row["acceptance_rate"] = round(row["human_confirmed"] / denominator, 2) if denominator else None
+        return {"rows": ordered, "total": total}
+
+    groups = defaultdict(set)
+    for run in runs:
+        groups[(run.get("axis", "channel"), run.get("axis_key") or "?")].add(run_key(run))
+    members = {str(r.get("member")) for r in runs}
+    if axes is None:
+        axes = [{"axis": axis, "key": key} for axis, key in sorted(groups)]
+        if len(members) > 1:
+            axes += [{"axis": "member", "key": member} for member in sorted(members)]
+    per_axis = []
+    for axis in axes:
+        kind, key = axis["axis"], axis["key"]
+        items = [a for a in actions if (str(a.get("member")) == key if kind == "member"
+                 else str(a.get("run_id")) in groups[(kind, key)])]
+        per_axis.append({"axis": kind, "key": key, **table(items, focus)})
+    return {"focus": table(actions, focus), "context": table(actions, context),
+            "per_axis": per_axis, "rule": dict(ACTION_FUNNEL_RULE)}
+
+
+def action_funnel_digest(funnel):
+    rule = funnel["rule"]
+    out = ["", "## Action funnel", "",
+           f"Focus period · reviewer-confirmed heuristic: execution > {rule['reviewer_confirmed_after_s']} s "
+           f"after proposal; stale > {rule['stale_after_h']} h at collection. "
+           "Bucket: executed_at or proposed_at; acceptance excludes auto and pending.", ""]
+    if not funnel["focus"]["rows"]:
+        return out + ["No actions in the focus period."]
+    fields = ("proposed_total", "human_confirmed", "auto", "failed", "superseded", "canceled", "executing", "pending", "stale", "acceptance_rate")
+    out += ["| action_id | proposed | ✓ human | ✓ auto | ✗ failed | superseded | canceled | executing | pending | stale | acceptance |",
+            "|---|---|---|---|---|---|---|---|---|---|---|"]
+    for row in [*funnel["focus"]["rows"], funnel["focus"]["total"]]:
+        values = ["—" if row[k] is None else str(row[k]) for k in fields]
+        out.append("| " + str(row["action_id"]).replace("|", "\\|") + " | " + " | ".join(values) + " |")
+    for axis in funnel["per_axis"]:
+        row = axis["total"]
+        if row["proposed_total"]:
+            out.append(f"- {axis['axis']} `{axis['key']}`: " + ", ".join(
+                f"{k}={row[k]}" for k in fields if row[k] or k == "acceptance_rate"))
+    return out
+
+
 # ------------------------------------------------------------------------ digest
 
 
@@ -572,6 +652,9 @@ def build_digest(ev: dict[str, Any], tz) -> str:
                 f"{row['actions_ok']}/{row['actions_failed']}/{row['actions_proposed']} | "
                 f"{row['run_errors']}+{row['bash_real_errors']} |"
             )
+
+    if kpis.get("action_funnel"):
+        out += action_funnel_digest(kpis["action_funnel"])
 
     out += ["", "## Clusters (ranked; recurrence vs the context days)"]
     clusters = rank(ev["clusters"])
@@ -990,6 +1073,12 @@ def main() -> int:
         "context_days": [count_day(day, runs, actions, events, deltas, feedback, tz) for day in context],
         "per_axis": per_axis_blocks(runs, actions, events, deltas, feedback, focus_days, tz, len(members) > 1),
     }
+
+    kpis["action_funnel"] = build_action_funnel(
+        actions, runs, {"focus": focus_iso, "focus_days": sorted(focus_isos),
+                        "context_days": [d.isoformat() for d in context]},
+        tz=tz, axes=kpis["per_axis"],
+    )
 
     draft_fate: dict[str, dict[str, int]] = {}
     for run in runs:

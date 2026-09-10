@@ -197,7 +197,45 @@ class AxisKpis(Counters):
     mode: MailboxMode | None = None
 
 
+class ActionFunnelRow(_Model):
+    action_id: NonEmpty
+    proposed_total: int = Field(ge=0)
+    succeeded: int = Field(ge=0)
+    failed: int = Field(ge=0)
+    superseded: int = Field(ge=0)
+    canceled: int = Field(ge=0)
+    executing: int = Field(ge=0)
+    pending: int = Field(ge=0)
+    stale: int = Field(ge=0)
+    human_confirmed: int = Field(ge=0)
+    auto: int = Field(ge=0)
+    acceptance_rate: float | None = Field(ge=0, le=1)
+
+
+class ActionFunnelTable(_Model):
+    rows: list[ActionFunnelRow]
+    total: ActionFunnelRow
+
+
+class ActionFunnelAxis(ActionFunnelTable):
+    axis: Literal["tenant", "channel", "member"]
+    key: NonEmpty
+
+
+class ActionFunnelRule(_Model):
+    reviewer_confirmed_after_s: int = Field(ge=0)
+    stale_after_h: int = Field(ge=0)
+
+
+class ActionFunnel(_Model):
+    focus: ActionFunnelTable
+    context: ActionFunnelTable
+    per_axis: list[ActionFunnelAxis]
+    rule: ActionFunnelRule
+
+
 class Kpis(_Model):
+    action_funnel: ActionFunnel | None = None
     focus: DayKpis
     context_days: list[DayKpis] = Field(default_factory=list)
     per_axis: list[AxisKpis] = Field(default_factory=list)

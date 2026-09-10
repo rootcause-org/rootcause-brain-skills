@@ -301,6 +301,9 @@ details[open] summary::before{{transform:rotate(90deg)}}
 .rec{{margin-top:12px;font-size:14.5px;padding-left:12px;border-left:2px solid {ACCENT}}}
 .rec b{{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:{ACCENT};display:block}}
 .tablewrap{{overflow-x:auto}}
+#action-funnel th{{white-space:normal;font-size:9px;letter-spacing:0}}
+#action-funnel td:first-child{{overflow-wrap:anywhere;min-width:120px;max-width:180px}}
+#action-funnel .card + .card{{margin-top:12px}}
 table{{width:100%;border-collapse:collapse;font-size:13px}}
 th,td{{text-align:right;padding:8px 4px;border-top:1px solid {BORDER};white-space:nowrap}}
 th{{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:{MUTED};font-weight:700;
@@ -583,6 +586,78 @@ def _kpi_table(report: Report, lang: str) -> str:
     )
 
 
+_FUNNEL_FIELDS = ("proposed_total", "human_confirmed", "auto", "failed", "superseded",
+                  "canceled", "executing", "pending", "stale", "acceptance_rate")
+_FUNNEL_LABELS = {
+    "en": ("Proposed", "Reviewer-confirmed", "Automatic", "Failed", "Superseded",
+           "Canceled", "Executing", "Awaiting confirmation", "Stale", "Acceptance"),
+    "nl": ("Voorgesteld", "door assistent bevestigd", "automatisch", "mislukt", "vervangen",
+           "geannuleerd", "in uitvoering", "wacht op bevestiging", "verlopen", "Acceptatie"),
+}
+
+
+def _action_funnel_content(report, lang, *, owner=False):
+    """One set of labels and values for HTML, email and text."""
+    funnel = report.kpis.action_funnel
+    title = "Voorgestelde acties" if lang == "nl" else "Action funnel"
+    if funnel is None:
+        return title, "", []
+    if not funnel.focus.rows:
+        return title, ("Geen acties in deze periode." if lang == "nl" else "No actions in the focus period."), []
+    rule = funnel.rule
+    note = (
+        f"Heuristiek: door assistent bevestigd bij uitvoering > {rule.reviewer_confirmed_after_s} s "
+        f"na voorstel; verlopen na > {rule.stale_after_h} uur bij verzameling. "
+        "Periode op uitvoer- of voorsteldatum. Acceptatie sluit automatisch en wachtend uit."
+        if lang == "nl" else
+        f"Reviewer-confirmed heuristic: execution > {rule.reviewer_confirmed_after_s} s after proposal; "
+        f"stale > {rule.stale_after_h} h at collection. Bucket: execution or proposal date. "
+        "Acceptance excludes auto and pending."
+    )
+
+    def values(row):
+        return ["—" if getattr(row, key) is None else
+                f"{row.acceptance_rate:.0%}" if key == "acceptance_rate" else str(getattr(row, key))
+                for key in _FUNNEL_FIELDS]
+
+    total_label = STR[lang]["total"]
+    rows = [[r.action_id, *values(r)] for r in funnel.focus.rows]
+    rows.append([total_label, *values(funnel.focus.total)])
+    tables = [(["Actie" if lang == "nl" else "Action", *_FUNNEL_LABELS[lang]], rows)]
+    axes = [a for a in funnel.per_axis if not owner or a.axis == "tenant"]
+    if axes:
+        rows = [[report.axis_name(a.key), *values(a.total)] for a in axes]
+        tables.append((["Klant" if lang == "nl" else "Tenant" if owner else "Tenant / member / channel",
+                        *_FUNNEL_LABELS[lang]], rows))
+    return title, note, tables
+
+
+def _action_funnel_section(report: Report, lang: str, *, owner=False) -> str:
+    title, note, tables = _action_funnel_content(report, lang, owner=owner)
+    if not note:
+        return ""
+    body = f'<p class="note">{e(note)}</p>'
+    for headers, rows in tables:
+        head = "<tr>" + "".join(f"<th>{e(h)}</th>" for h in headers) + "</tr>"
+        content = "".join("<tr>" + "".join(
+            f'<td data-label="{e(h)}">{e(value)}</td>' for h, value in zip(headers, row)
+        ) + "</tr>" for row in rows)
+        body += (f'<div class="card"><div class="tablewrap"><table><thead>{head}</thead>'
+                 f'<tbody>{content}</tbody></table></div></div>')
+    return _section("action-funnel", title, body)
+
+
+def _action_funnel_text(report, lang, *, owner=False):
+    title, note, tables = _action_funnel_content(report, lang, owner=owner)
+    if not note:
+        return []
+    lines = ["", title.upper(), note]
+    for headers, rows in tables:
+        lines += ["", " | ".join(headers)]
+        lines += [" | ".join(row) for row in rows]
+    return lines
+
+
 def _context_table(report: Report, lang: str) -> str:
     if not report.kpis.context_days:
         return ""
@@ -690,6 +765,7 @@ def render_technical_html(report: Report) -> str:
         body.append(f'<div class="quiet">{e(report.technical.headline)}</div>')
         body.append(_section("coverage", strings["coverage"], _coverage_block(report, "en")))
         body.append(_section("kpis", strings["kpis"], _kpi_table(report, "en")))
+        body.append(_action_funnel_section(report, "en"))
         open_work = report.technical.regressions + report.technical.watch
         if open_work:
             items = "".join(f"<li>{e(v)}</li>" for v in open_work)
@@ -738,6 +814,7 @@ def render_technical_html(report: Report) -> str:
         )
 
     body.append(_section("kpis", strings["kpis"], _kpi_table(report, "en")))
+    body.append(_action_funnel_section(report, "en"))
     context = _context_table(report, "en")
     if context:
         body.append(_section("context", strings["context"], context))
@@ -802,6 +879,8 @@ def render_owner_html(report: Report) -> str:
     if not findings:
         body.append(f'<div class="quiet">{e(report.owner.headline_nl)}</div>')
         body.append(_section("dekking", strings["coverage"], _coverage_block(report, lang)))
+        body.append(_section("cijfers", strings["kpis"], _kpi_table(report, lang)))
+        body.append(_action_funnel_section(report, lang, owner=True))
         body.append(_footer(lang, owner=True))
         return _page(title, lang, "".join(body), with_js=False)
 
@@ -834,6 +913,7 @@ def render_owner_html(report: Report) -> str:
         )
 
     body.append(_section("cijfers", strings["kpis"], _kpi_table(report, lang)))
+    body.append(_action_funnel_section(report, lang, owner=True))
     body.append(
         _section(
             "bevindingen",
@@ -941,6 +1021,11 @@ def render_email_html(report: Report, half: str) -> str:
         )
         blocks += _email_block(strings["tldr"], rows)
 
+    funnel_lines = _action_funnel_text(report, lang, owner=not technical)
+    if funnel_lines:
+        blocks += _email_block(funnel_lines[1], _email_row("", '<pre id="action-funnel" '
+            'style="white-space:pre-wrap;font-size:12px">' + e("\n".join(funnel_lines[2:])) + '</pre>'))
+
     if findings:
         rows = ""
         for finding in findings:
@@ -1046,6 +1131,8 @@ def render_txt(report: Report, half: str) -> str:
         f"{focus.actions_ok}/{focus.actions_failed} {strings['actions_col'].lower()} · "
         f"{focus.run_errors} {strings['errors'].lower()}",
     ]
+
+    lines += _action_funnel_text(report, lang, owner=not technical)
 
     if findings:
         lines += ["", strings["findings"].upper()]

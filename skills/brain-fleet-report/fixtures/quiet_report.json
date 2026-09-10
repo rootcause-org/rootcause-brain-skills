@@ -52,7 +52,48 @@
         "sent_as_proposed": 2
       }
     ],
-    "per_axis": []
+    "per_axis": [],
+    "action_funnel": {
+      "focus": {
+        "rows": [],
+        "total": {
+          "action_id": "total",
+          "proposed_total": 0,
+          "succeeded": 0,
+          "failed": 0,
+          "superseded": 0,
+          "canceled": 0,
+          "executing": 0,
+          "pending": 0,
+          "stale": 0,
+          "human_confirmed": 0,
+          "auto": 0,
+          "acceptance_rate": null
+        }
+      },
+      "context": {
+        "rows": [],
+        "total": {
+          "action_id": "total",
+          "proposed_total": 0,
+          "succeeded": 0,
+          "failed": 0,
+          "superseded": 0,
+          "canceled": 0,
+          "executing": 0,
+          "pending": 0,
+          "stale": 0,
+          "human_confirmed": 0,
+          "auto": 0,
+          "acceptance_rate": null
+        }
+      },
+      "per_axis": [],
+      "rule": {
+        "reviewer_confirmed_after_s": 120,
+        "stale_after_h": 36
+      }
+    }
   },
   "coverage": {
     "report_id": "momentum-tools",
