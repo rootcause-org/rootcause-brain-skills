@@ -184,6 +184,15 @@ ln -s "$TMP/user-skill" "$BRAIN/.agents/skills/brain-debug"
 run_install >"$TMP/retired-user-link.out"
 test "$(readlink "$BRAIN/.agents/skills/brain-debug")" = "$TMP/user-skill"
 
+# Retired questionnaire links disappear even after the kit directory was removed.
+new_brain retired-feedback-review
+mkdir -p "$BRAIN/.agents/skills" "$BRAIN/.claude/skills"
+ln -s "$KIT/skills/brain-feedback-review" "$BRAIN/.agents/skills/brain-feedback-review"
+ln -s "$KIT/skills/brain-feedback-review" "$BRAIN/.claude/skills/brain-feedback-review"
+run_install >"$TMP/retired-feedback-review.out"
+test ! -L "$BRAIN/.agents/skills/brain-feedback-review"
+test ! -L "$BRAIN/.claude/skills/brain-feedback-review"
+
 # Alias-to-fallback transitions replace the managed ignore block; new user content stays visible.
 new_brain transition
 run_install >"$TMP/transition-alias.out"

@@ -1,14 +1,14 @@
 # The per-brain overlay — `<brain>/_internal/fleet-report/`
 
 Everything project-specific lives here; the kit scripts stay generic. Without an overlay the report
-still works: one project, defaults, no project follow-up.
+still works: one project, defaults, no project follow-up. `collect.py`, `drill.py` and
+`correlate.py` accept `--overlay DIR` to reuse a sibling project’s overlay.
 
 ```
 <brain>/_internal/fleet-report/
   config.toml   window, members, noise, repos                (read by fr_common.load_overlay)
   overlay.py    optional hooks, pure stdlib, fail-soft
   OVERLAY.md    guidance for the judging LLM (triage table, repo paths, dig-deeper recipes)
-  ledger.md     human dispositions of known patterns
 ```
 
 **Commit it, but keep it out of runs:** `/_internal/` must be in the brain's `.replypenignore` (it
@@ -19,10 +19,10 @@ already is in most brains). The report output (`.rootcause/`) is gitignored.
 | Key | Meaning |
 |---|---|
 | `report_id` | output dir + `report.json.report_id`; defaults to the project name |
-| `display_name` | human label used in report titles and ticket subjects |
+| `display_name` | human label used in report identity |
 | `timezone` | day boundaries (default `Europe/Brussels`, DST-correct) |
 | `[[members]]` | `project` — one report over 1..n projects; `channel_label` labels the half (read by you, not by the scripts) |
-| `[owner]` | `name`, `email`, `lang` — who the owner half is written for. `lang` (default `nl`) is **load-bearing**: it reaches `manifest.owner_lang`, and `render.py` renders the owner page's chrome, labels and dates in it while `validate.py` skips the Dutch heuristic. The `*_nl` field names stay as they are; they mean "owner language" |
+| `[owner]` | `name`, `email`, `lang` — who the owner half is written for. `lang` (default `nl`) is **load-bearing**: it reaches `manifest.owner_lang`, and `validate.py` skips the Dutch heuristic for other languages. The `*_nl` field names stay as they are; they mean "owner language" |
 | `dev_tenants` | tenant slugs that are test beds, excluded and counted |
 | `noise_topics` | case-insensitive substrings of the run topic that are never support work |
 | `noise_senders` | same, on the sender |
@@ -69,24 +69,11 @@ so the judging LLM can look at a finding and say "owner" or "technical" without 
 this section the LLM falls back to the generic table and the owner half degrades into a diluted copy
 of the technical one.
 
-## `ledger.md`
+## Decision memory
 
-For automatic v2 warnings, put the exact stable signature in the Pattern cell and bold
-`**accepted**` or `**noise**` in Disposition. Prose-only legacy rows still require judgement.
-
-A markdown table the judging LLM subtracts before writing findings — the disposition of patterns
-already understood. (`state/ledger.json` is the *automatic* signature memory; this file is the human
-one.) When the overlay has no `ledger.md`, the digest's coverage line says so.
-
-**A ledger row may never forward-reference the report being written.** "prompted in the 4/9 report"
-is circular the moment the 4/9 report is what you are judging: the row must stand on what already
-happened (a commit, a deploy, a decision), or it is not a disposition.
-
-```markdown
-| Since | Pattern | Disposition | Re-test when |
-|---|---|---|---|
-| 2026-09-04 | Shadow tenants: large sent-deltas because the practice attached a document | benign — the agent cannot produce attachments | an attachment flow exists |
-```
+Postgres review items own dispositions, retest triggers and implementation receipts. The digest includes
+them via `prior.py`; no per-brain ledger. `ledger_import.py <brain> [--dsn DSN] [--write]` migrates
+legacy dispositions once before removing the old file.
 
 ## Two worked examples
 
@@ -108,17 +95,3 @@ rc.json(*ctx["rc_args"], "dev", "console", "database", "query", "DENTAI_DSN", sq
 `rc_args` already carries `--project` and `--tenant`, so the query is tenant-scoped by the server
 ([`prod-console`](../prod-console/SKILL.md)). Keep such a drill cheap — a handful of queries per run,
 never a per-day sweep.
-
-## Optional owner feedback ritual
-
-```toml
-[feedback_review]
-enabled = true
-cadence = "weekly" # or "daily-lite"
-```
-
-Run [brain-feedback-review](../brain-feedback-review/SKILL.md) over the same requested window.
-Copy its self-contained `report.html` alongside `owner.html` as `feedback-review.html`; hand over
-both attachments. The owner page links it for multi-day reports, or every report with `daily-lite`.
-With `daily-lite`, generate and attach the questionnaire every day; do not render a link-only delivery.
-The setting selects the report workflow; it does not itself schedule a job or apply answers.

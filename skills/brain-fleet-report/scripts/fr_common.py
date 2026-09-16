@@ -6,7 +6,7 @@
 
 Nothing here is project-specific: the rc wrapper with its on-disk raw cache, the Brussels day
 window, run/error signature normalisation, the bash-corpus clusterer, privacy reducers, coverage
-records, the recurrence ledger and the overlay loader. Project quirks live in the brain's
+records, queue recurrence and the overlay loader. Project quirks live in the brain's
 `_internal/fleet-report/` overlay (config.toml + optional overlay.py), never here.
 """
 
@@ -657,8 +657,10 @@ class Overlay:
             return default
 
 
-def load_overlay(brain_root: Path) -> Overlay:
-    root = brain_root / "_internal" / "fleet-report"
+def load_overlay(brain_root: Path, override: str | None = None) -> Overlay:
+    root = Path(override).expanduser().resolve() if override else brain_root / "_internal" / "fleet-report"
+    if override and not root.is_dir():
+        raise ValueError(f"Overlay directory does not exist: {root}")
     overlay = Overlay(root=root if root.exists() else None)
     config_path = root / "config.toml"
     if config_path.exists():
@@ -685,26 +687,7 @@ def load_overlay(brain_root: Path) -> Overlay:
     return overlay
 
 
-# ---------------------------------------------------------------------- ledger
-
-
-def load_ledger(path: Path) -> dict[str, dict[str, Any]]:
-    if not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return data.get("signatures", {}) if isinstance(data, dict) else {}
-
-
-def save_ledger(path: Path, signatures: dict[str, dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "updated_at": datetime.now(UTC).isoformat(),
-        "signatures": signatures,
-    }
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+# ------------------------------------------------------------------- recurrence
 
 
 def recurrence(
@@ -717,7 +700,7 @@ def recurrence(
     first_obs: str | None,
     last_obs: str | None,
 ) -> dict[str, Any]:
-    """Fold this window's observations into the persisted ledger entry. Absence != resolution."""
+    """Fold this window's observations into prior queue dates. Absence != resolution."""
     prior = ledger.get(signature) or {}
     first_seen = min([t for t in (prior.get("first_seen"), first_obs) if t], default=first_obs)
     last_seen = max([t for t in (prior.get("last_seen"), last_obs) if t], default=last_obs)

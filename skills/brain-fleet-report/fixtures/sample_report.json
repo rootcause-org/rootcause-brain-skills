@@ -532,7 +532,13 @@
       },
       "status": "new",
       "ask_nl": "Laat de reviewer de ontbrekende inschrijvingslink in deze concepten aanvullen.",
-      "ask_for": "Tobias"
+      "ask_for": "Tobias",
+      "options": [
+        {
+          "label": "Done in dashboard",
+          "instruction": "Complete the requested owner task in the dashboard."
+        }
+      ]
     },
     {
       "id": "F3",
@@ -596,7 +602,13 @@
       },
       "status": "new",
       "ask_nl": "Bevestig dat YES Events geen UiTPAS gebruikt en verwijs ouders naar het eigen sociaal tarief.",
-      "ask_for": "Tobias"
+      "ask_for": "Tobias",
+      "options": [
+        {
+          "label": "Done in dashboard",
+          "instruction": "Complete the requested owner task in the dashboard."
+        }
+      ]
     },
     {
       "id": "F7",
@@ -638,7 +650,17 @@
       },
       "status": "new",
       "ask_nl": "Geldt voor LBV een kosteloze annulering tot zeven of veertien dagen vóór de start?",
-      "ask_for": "Tobias"
+      "ask_for": "Tobias",
+      "options": [
+        {
+          "label": "Seven days",
+          "instruction": "Use a seven-day policy."
+        },
+        {
+          "label": "Fourteen days",
+          "instruction": "Use a fourteen-day policy."
+        }
+      ]
     },
     {
       "id": "F5",

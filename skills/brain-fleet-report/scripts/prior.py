@@ -1,111 +1,83 @@
 #!/usr/bin/env python3
-"""Read prior v2 reports without importing the renderer or its dependencies."""
-
-from __future__ import annotations
-
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["psycopg[binary]>=3.2"]
+# ///
+"""Read queue history from Postgres (including decisions and retest triggers)."""
 import argparse
 import json
-import re
 from pathlib import Path
+import re
 
-DAY_DIR = re.compile(r"^\d{4}-\d{2}-\d{2}(?:-\d+d)?$")
-INHERITED = (
-    "text_en",
-    "text_nl",
-    "ask_nl",
-    "ask_for",
-    "prompt",
-    "impact",
-    "root_cause",
-)
+from queue_db import connect, project_ids
+
+ARCHIVE = re.compile(r'#archived:[0-9a-f-]{36}$')
 
 
-def prior_findings(
-    report_json_path, *, prior_dirs=None, date=None, report_id=None
-) -> dict:
-    path = Path(report_json_path)
-    current_dir = path.parent if path.suffix == ".json" else path
-    date = date or current_dir.name[:10]
-    dirs = (
-        list(prior_dirs)
-        if prior_dirs is not None
-        else list(current_dir.parent.glob("*"))
-    )
-    cadence = re.search(r"-(\d+)d$", current_dir.name)
-    cadence = cadence.group(1) if cadence else "1"
-    latest = {}
-    for directory in sorted(map(Path, dirs), key=lambda p: p.name):
-        if not DAY_DIR.fullmatch(directory.name) or directory.name[:10] >= date:
+def read_prior(conn, projects):
+    ids = project_ids(conn, projects)
+    rows = conn.execute('''SELECT i.*,p.name AS project,s.audience FROM review_items i
+      JOIN review_sessions s ON s.id=i.session_id JOIN projects p ON p.id=s.project_id
+      WHERE s.project_id=ANY(%s::uuid[]) AND s.cadence='queue' AND s.tenant_id IS NULL
+        AND i.signature IS NOT NULL
+      ORDER BY i.last_seen NULLS FIRST,i.position''', (list(ids.values()),)).fetchall()
+    result = {}
+    for row in rows:
+        signature = ARCHIVE.sub('', row['signature'])
+        entry = result.setdefault(signature, {'finding': {}, 'rows': []})
+        entry['rows'].append(row)
+        # Archived generations remain in the table, but cannot override the active payload.
+        if ARCHIVE.search(row['signature']):
             continue
-        prior_cadence = re.search(r"-(\d+)d$", directory.name)
-        if (prior_cadence.group(1) if prior_cadence else "1") != cadence:
-            continue
-        try:
-            data = json.loads((directory / "report.json").read_text())
-            if not isinstance(data, dict) or data.get("schema_version") != 2:
-                continue
-            if report_id and data.get("report_id") != report_id:
-                continue
-            findings = data["findings"]
-            if not isinstance(findings, list) or not all(
-                isinstance(f, dict) for f in findings
-            ):
-                continue
-            for finding in findings:
-                if not all(
-                    finding.get(k)
-                    for k in ("signature", "title", "severity", "status", "audience")
-                ):
-                    continue
-                signature = finding["signature"]
-                old = latest.get(signature)
-                resolved = dict(finding)
-                prompt_date = directory.name[:10]
-                if finding["status"] == "unchanged":
-                    if not old:
-                        continue
-                    resolved.update({k: old["finding"].get(k) for k in INHERITED})
-                    prompt_date = old["prompt_date"]
-                elif not finding.get("impact") or not finding.get("root_cause"):
-                    continue
-                latest[signature] = {
-                    "date": directory.name[:10],
-                    "finding": resolved,
-                    "prompt_date": prompt_date,
-                }
-        except (OSError, ValueError, KeyError, TypeError):
-            continue
-    return latest
+        entry['date'] = str(row['last_seen'])
+        entry['prompt_date'] = str(row['first_seen'])
+        f = entry['finding']
+        f.update(signature=signature, title=row['subject'], severity=row['severity'],
+                 status=row['status'], root_cause={'plane': row['plane'] or 'unknown', 'confidence': 'low'},
+                 impact={'runs': len(row['evidence']), 'threads': 0})
+        if row['audience'] == 'owner':
+            f.update(text_nl=row['body'], ask_nl=row['ask'], ask_for=row['ask_for'], options=row['options'])
+        else:
+            f['text_en'] = row['body']
+        prompt = {k: v for k, v in row['prompt'].items() if k != 'text'}
+        if prompt:
+            f['prompt'] = prompt
+        audiences = {r['audience'] for r in entry['rows'] if not ARCHIVE.search(r['signature'])}
+        f['audience'] = 'both' if len(audiences) == 2 else row['audience']
+    return result
 
 
-def prior_table(findings: dict) -> str:
-    lines = [
-        "## Prior findings (reuse these signatures)",
-        "",
-        "signature | last date | severity | status | audience | title | has prompt",
-        "--- | --- | --- | --- | --- | --- | ---",
-    ]
-    for signature, prior in findings.items():
-        f = prior["finding"]
-        values = [
-            signature,
-            prior["date"],
-            f["severity"],
-            f["status"],
-            f["audience"],
-            f["title"],
-            "yes" if f.get("prompt") else "no",
-        ]
-        lines.append(
-            " | ".join(str(v).replace("|", "\\|").replace("\n", " ") for v in values)
-        )
+def prior_findings(report_json_path=None, *, projects=None, dsn=None, **_):
+    if projects is None:
+        path = Path(report_json_path)
+        path = path if path.suffix == '.json' else path / 'manifest.json'
+        data = json.loads(path.read_text())
+        projects = data.get('coverage', data)['projects']
+    with connect(dsn) as conn:
+        return read_prior(conn, projects)
+
+
+def prior_table(findings):
+    lines = ['## Prior findings (Postgres; reuse signatures)', '',
+             'signature | project | audience | status | decision_label | instruction / retest trigger | first_seen | last_seen | applied receipt | title',
+             '--- | --- | --- | --- | --- | --- | --- | --- | --- | ---']
+    for signature, entry in findings.items():
+        for row in entry['rows']:
+            values = [signature, row['project'], row['audience'], row['status'], row['decision_label'],
+                      row['decision_instruction'], row['first_seen'], row['last_seen'],
+                      json.dumps(row['applied'], ensure_ascii=False, default=str), row['subject']]
+            lines.append(' | '.join(str(v or '').replace('|', '\\|').replace('\n', ' ') for v in values))
     if not findings:
-        lines.append("No prior v2 findings.")
-    return "\n".join(lines) + "\n"
+        lines.append('No prior queue items.')
+    return '\n'.join(lines) + '\n'
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("out_dir", type=Path)
+    parser.add_argument('out_dir', type=Path, nargs='?')
+    parser.add_argument('--project', action='append')
+    parser.add_argument('--dsn')
     args = parser.parse_args()
-    print(prior_table(prior_findings(args.out_dir)))
+    if not args.out_dir and not args.project:
+        parser.error('provide OUT or --project')
+    print(prior_table(prior_findings(args.out_dir, projects=args.project, dsn=args.dsn)))

@@ -538,13 +538,14 @@ def main() -> int:
     target.add_argument("--feedback", action="store_true",
                         help="every score/comment in the window, joined to its run")
     parser.add_argument("--date", help="report day to read/write (default: the latest collected)")
+    parser.add_argument("--overlay", help="shared overlay directory (default: brain _internal/fleet-report)")
     parser.add_argument("--report-id")
     parser.add_argument("--refresh", action="store_true", help="ignore the raw cache")
     parser.add_argument("--offline", action="store_true", help="raw cache only, never call rc")
     args = parser.parse_args()
 
     brain_root = find_brain_root()
-    overlay = load_overlay(brain_root)
+    overlay = load_overlay(brain_root, args.overlay)
     tz = tzinfo(str(overlay.get("timezone", DEFAULT_TZ)))
     report_id = args.report_id or str(overlay.get("report_id") or project_name(brain_root))
     out_dir = report_dir(brain_root, report_id, args.date)

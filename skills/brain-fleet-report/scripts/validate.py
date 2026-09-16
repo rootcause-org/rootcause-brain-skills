@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["pydantic>=2"]
+# dependencies = ["pydantic>=2", "psycopg[binary]>=3"]
 # ///
 """Validate a fleet `report.json`.
 
@@ -41,18 +41,13 @@ def main() -> int:
     parser.add_argument(
         "--evidence", type=Path, help="collector evidence.json (run-id check)"
     )
-    parser.add_argument(
-        "--prior-dir",
-        type=Path,
-        action="append",
-        help="explicit prior report directory (fixtures)",
-    )
+    parser.add_argument("--dsn", help="Postgres DSN; otherwise use the operator SSM tunnel")
     args = parser.parse_args()
 
-    errors = validation_errors(args.report, prior_dirs=args.prior_dir)
+    errors = validation_errors(args.report, dsn=args.dsn)
     report = None
     if not errors:
-        report = load_report(args.report, prior_dirs=args.prior_dir)
+        report = load_report(args.report, dsn=args.dsn)
         if args.evidence and args.evidence.exists():
             errors = evidence_errors(report, args.evidence)
 

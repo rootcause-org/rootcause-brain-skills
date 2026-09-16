@@ -33,6 +33,10 @@ They do **not** have:
 If a workflow is not exposed through public `rc`/API, produce a RootCause support request. Do not leak
 private mechanics into shipped docs or skills.
 
+Exception: `brain-fleet-report` queue persistence is a laptop operator job. Its DB adapter imports
+the operator checkout’s existing support connection via `RC_HOST_CHECKOUT`; external developers
+without that access can test with `--dsn`, but cannot publish production queues.
+
 ## Two Execution Contexts
 
 Keep these planes explicit in every skill, template, and brain edit:
@@ -96,10 +100,8 @@ Only these are first-class:
 - `rc-debug` — one run/thread/session trace; inspect/propose/stop before edits.
 - `rc-health` — stale mirrors and dead-lettered runs.
 - `rc-fleet` — recent fleet and recurring failure patterns.
-- `brain-feedback-review` — weekly owner questionnaire from feedback and sent deltas; confirmed answers
-  copy into Brain-changes, no automatic learning or delivery.
-- `brain-fleet-report` — the daily two-audience fleet report: Python collects and renders a day of
-  evidence, the model judges it into ranked actionables (technical EN + owner NL).
+- `brain-fleet-report` — the daily two-audience fleet report: Python collects a day of evidence;
+  the model judges it into persisted owner/technical review queues.
 - `brain-simulate` — replay representative real inbound cases through `rc ask --simulation`, grade
   each draft against the human's historical reply, render an HTML report with run links and
   copy-paste steering prompts; re-run with `--ref dev/<branch>` and diff.
@@ -135,7 +137,7 @@ Ships here:
 - local brain engine: `brain_run.py`, `brain_test.py`, `brain_projection.py`, `brain_action.py`,
   `brain_dump.py`;
 - the fleet-report engine in `skills/brain-fleet-report/scripts/` (read-only collection over public
-  `rc`, plus schema/validate/render);
+  `rc`, plus schema/validate and operator queue publication);
 - the simulate engine in `skills/brain-simulate/scripts/` (case normalization, `rc ask --simulation`
   replay, judge bundles, HTML/markdown report);
 - the help-centre engine in `skills/brain-helpcenter-suggestions/scripts/` (corpus normalisers,

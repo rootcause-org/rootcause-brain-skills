@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = []
+# dependencies = ["psycopg[binary]>=3.2"]
 # ///
 """Collect one focus period (+ 4 workdays of context) of fleet evidence for `brain-fleet-report`.
 
@@ -47,7 +47,6 @@ from fr_common import (  # noqa: E402
     human_outcome,
     is_false_delta,
     learn_non_names,
-    load_ledger,
     load_overlay,
     local_day,
     normalise_error,
@@ -60,7 +59,6 @@ from fr_common import (  # noqa: E402
     rc_version,
     recurrence,
     reduce_trace_header,
-    save_ledger,
     stamp,
     stderr_last_line,
     tzinfo,
@@ -607,9 +605,6 @@ def build_digest(ev: dict[str, Any], tz) -> str:
         f"Coverage: {len(coverage) - len(degraded)}/{len(coverage)} feeds complete"
         + (" · " + "; ".join(f"{c['feed']}={c['status']}({c.get('reason', '')})" for c in degraded[:8])
            if degraded else "")
-        # The skill tells the judging LLM to subtract the human ledger; when the overlay has none,
-        # say so here instead of leaving it to `ls`.
-        + ("" if ev.get("ledger_md") else " · ledger.md missing (no human dispositions to subtract)")
     )
     if ev.get("overlay_problems"):
         out.append("Overlay problems: " + "; ".join(ev["overlay_problems"][:3]))
@@ -877,6 +872,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--date", help="focus period YYYY-MM-DD (default: yesterday, project tz)")
     parser.add_argument("--project", action="append", default=[], help="member project (repeatable)")
+    parser.add_argument("--overlay", help="shared overlay directory (default: brain _internal/fleet-report)")
     parser.add_argument("--report-id", help="override the overlay report id")
     parser.add_argument("--days", type=int, default=1, help="calendar days in focus, ending on --date")
     parser.add_argument("--context-days", type=int, default=4, help="workdays of context before D")
@@ -887,6 +883,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prune-raw", action="store_true",
                         help="delete raw/ after a successful run (the cache is 10-100x the report)")
     parser.add_argument("--out-dir")
+    parser.add_argument("--dsn", help="local review queue database; default operator SSM tunnel")
     return parser.parse_args()
 
 
@@ -894,7 +891,7 @@ def main() -> int:
     args = parse_args()
     started = time.monotonic()
     brain_root = find_brain_root()
-    overlay = load_overlay(brain_root)
+    overlay = load_overlay(brain_root, args.overlay)
     tz = tzinfo(str(overlay.get("timezone", DEFAULT_TZ)))
     status = auth_status(brain_root)
 
@@ -1056,16 +1053,24 @@ def main() -> int:
                           for a in actions_by_run.get(key, [])]
         run["notes_flag"] = any("👀" in str(n.get("body")) for n in run.get("notes") or [])
 
-    # ---------------- clusters + recurrence
-    ledger_path = report_root / "state" / ("ledger.json" if args.days == 1 else f"ledger-{args.days}d.json")
-    ledger = load_ledger(ledger_path)
+    # Queue rows are the only disposition/recurrence memory. Offline reads a marked cache.
+    from prior import prior_findings, prior_table
+    prior_path = out_dir / "prior.json"
+    if args.offline:
+        prior = json.loads(prior_path.read_text())
+    else:
+        prior = prior_findings(projects=members, dsn=args.dsn)
+        prior_path.write_text(json.dumps(prior, default=str, ensure_ascii=False))
+    ledger = {}
+    for signature, entry in prior.items():
+        first = [str(r['first_seen']) for r in entry['rows'] if r.get('first_seen')]
+        last = [str(r['last_seen']) for r in entry['rows'] if r.get('last_seen')]
+        ledger[signature] = {'first_seen': min(first) if first else None,
+                             'last_seen': max(last) if last else None}
+
     focus_iso = focus.isoformat()
     focus_isos = {d.isoformat() for d in focus_days}
     clusters = build_clusters(runs, actions, events, http, ledger, focus_isos, tz)
-    updated = dict(ledger)
-    for cluster in clusters:
-        updated[cluster["signature"]] = cluster["recurrence"]
-    save_ledger(ledger_path, updated)
 
     # ---------------- kpis
     kpis = {
@@ -1094,9 +1099,8 @@ def main() -> int:
 
     coverage = [c.as_dict() for c in rc.coverage]
     # The owner half is written in the overlay's `[owner].lang` (default nl); it travels through
-    # the manifest so `report.coverage.owner_lang` drives render.py and the validator's heuristic.
+    # the manifest so `report.coverage.owner_lang` drives the validator's heuristic.
     owner_lang = str((overlay.get("owner", {}) or {}).get("lang") or "nl").strip().lower()[:2] or "nl"
-    has_ledger_md = bool(overlay.root and (overlay.root / "ledger.md").exists())
     raw_dir = out_dir / "raw"
     raw_bytes = sum(f.stat().st_size for f in raw_dir.rglob("*") if f.is_file())
     manifest = {
@@ -1108,8 +1112,6 @@ def main() -> int:
         "coverage": coverage,
         "excluded": dict(excluded_counter),
         "owner_lang": owner_lang,
-        "feedback_review": overlay.get("feedback_review", {}),
-        "ledger_md": has_ledger_md,
         "raw": {
             "path": str(raw_dir.relative_to(out_dir)),
             "files": sum(1 for f in raw_dir.rglob("*") if f.is_file()),
@@ -1129,8 +1131,6 @@ def main() -> int:
         "excluded": dict(excluded_counter),
         "overlay_problems": overlay.problems,
         "owner_lang": owner_lang,
-        "feedback_review": overlay.get("feedback_review", {}),
-        "ledger_md": has_ledger_md,
         "kpis": kpis,
         "clusters": clusters,
         "runs": runs,
@@ -1161,10 +1161,10 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001 - correlation is a nice-to-have
             rc.note_error("correlate", "git", f"{type(exc).__name__}: {exc}")
 
-    from prior import prior_findings, prior_table
-
     digest = build_digest(evidence, tz)
-    digest += "\n" + prior_table(prior_findings(out_dir, date=focus_iso, report_id=report_id))
+    digest += "\n" + prior_table(prior)
+    if args.offline:
+        digest += "\nOffline: prior table is a cached Postgres snapshot; refresh before publishing.\n"
     (out_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     (out_dir / "kpis.json").write_text(json.dumps(kpis, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     (out_dir / "evidence.json").write_text(

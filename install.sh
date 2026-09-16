@@ -219,6 +219,8 @@ for old in \
   "$BRAIN/.claude/skills/rc-run" \
   "$BRAIN/.agents/skills/brain-source-intake" \
   "$BRAIN/.claude/skills/brain-source-intake" \
+  "$BRAIN/.agents/skills/brain-feedback-review" \
+  "$BRAIN/.claude/skills/brain-feedback-review" \
   "$BRAIN/.agents/skills/brain-schema-intake" \
   "$BRAIN/.claude/skills/brain-schema-intake"
 do

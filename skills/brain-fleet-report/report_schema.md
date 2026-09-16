@@ -14,15 +14,15 @@ Array order is rank. English technical prose/prompts; owner prose uses `coverage
 | owner | headline_nl ≤220 |
 | meta | Optional signal_note ≤600 |
 
-No TLDR/actions/watch/regressions arrays, tenant sections, good-news sections or custom HTML.
-The lede adds context without repeating cards. Diagnostics own counters, funnel and coverage.
+No separate TLDR/actions/watch/regressions arrays or tenant sections.
+The lede adds context without repeating cards. Collector artifacts own counters, funnel and coverage.
 
 ## Findings
 
 | Field | Contract |
 |---|---|
 | id, signature | F1 etc.; stable collector signature or `<kind>:<slug>` across days |
-| kind | lost_runs, action_failure, script_error, capture_gap, correction, open_feedback, policy_question, regression, watch, pattern, good |
+| kind | lost_runs, action_failure, script_error, capture_gap, correction, open_feedback, policy_question, regression, watch, pattern, path_miss, usage, other, good |
 | audience | technical, owner, both |
 | members | Member project names |
 | scope | level project/member/channel/tenant; tenant required only for tenant, key optional except project; tenant must exist in per_axis |
@@ -38,19 +38,31 @@ The lede adds context without repeating cards. Diagnostics own counters, funnel 
 | ask_nl | ≤300; required owner/both; explicit decision/options or admin task |
 | ask_for | Optional person ≤40 |
 | update_en, update_nl | ≤200; required for relevant audience when changed/unchanged; forbidden for new |
+| options | Required owner/both, including unchanged: 1–4 `{label, instruction}` with nonempty, distinct labels; real policy choices or one `Done in dashboard` task, never generic approval placeholders |
 | prompt | Structured below; required high except owner policy_question |
 
 Planes: host, action_plane, brain_script, brain_content, tenant_brain, persona, settings,
 mirror, project_code, human_policy, human_context, noise, unknown.
 
 `unchanged` forbids impact, root_cause, text_en, text_nl, ask_nl, ask_for and prompt, including null
-values. It requires a prior v2 signature with a prompt or owner ask. The reader resolves chained
-carry-overs, retaining the original prompt date. `changed` requires a prior signature and full fields.
-New/changed require impact and root_cause. `gone` never means resolved.
+values. It requires an active Postgres signature with a prompt or owner ask; the prior row supplies
+inherited fields. `changed` requires a prior signature and full fields. New/changed require impact
+and root_cause. `gone` never means resolved.
 
-Prior reports are earlier dated sibling directories (`YYYY-MM-DD` or `YYYY-MM-DD-Nd`), filtered by
-report_id and cadence (daily never inherits weekly). Reusing a prior signature as `new` is an error. `scripts/prior.py <OUT>` prints the same table appended by collect.py to the digest.
-For fixture rendering/validation pass `--prior-dir fixtures/prior/2026-09-03` explicitly.
+`scripts/prior.py <OUT> [--dsn DSN]` prints the Postgres table also appended to digest.md: status,
+decision/instruction, first/last sighting and applied receipt. Active signatures use changed/unchanged.
+Same-date retries do not increment occurrences again; `new` may retry when every relevant active row
+was last seen on the report date. A decided item's payload stays frozen; sightings/updates still advance.
+Closed accepted/noise requires `changed` with an update explicitly explaining how the retest trigger
+was met (not `new`). Later reopens strictly after the YYYY-MM-DD date in its instruction. Applied
+re-sightings become regressions. Recreated signatures archive the old row as
+`<signature>#archived:<id>`; prior lookup canonicalizes it and retains all history.
+The publisher checks the migrated schema before any write. `--dsn` also works on collect, validate,
+prompt_compose and publish; production uses operator DB access (`RC_HOST_CHECKOUT`). Tests inject
+`prior={}` or a prior snapshot into `load_report`, never silently connect to production.
+
+Publication writes standard technical options; owner options come from the finding. `both` creates
+linked rows; the technical twin waits for the owner decision. Tenant findings stay on project sessions.
 
 ## Prompt
 
@@ -68,16 +80,15 @@ For fixture rendering/validation pass `--prior-dir fixtures/prior/2026-09-03` ex
 Composer emits uppercase task kind/title, start checkout + AGENTS.md, other targets, files, canonical
 runs, diagnosis, optional repro, change/checks/options, completion, decision, boundaries. It excludes
 recurrence and skills. Warns outside 90–260 words and on hedged fixes (“locate”, “consider”, “either”,
-“investigate whether”, “or (b)”, “read the full error”). Production remains read-only; never rc ask or
-confirm actions. Commit; publish only when explicitly required by Change.
+“investigate whether”, “or (b)”, “read the full error”). Investigation never runs rc ask or confirms actions. After a human decision, implementation commits
+AND ships, then verifies production; one bounded retry when not improved (maximum two rounds).
 
-Owner prompt rendering requires **all**: owner/both, fix, brain_content/tenant_brain, and every
+Owner prompt publication requires **all**: owner/both, fix, brain_content/tenant_brain, and every
 resolved target checkout name starts `rootcause-brain-`. Otherwise only the human ask appears. Path
 containment prevents another repo being smuggled through an absolute path or symlink.
 
-Validation warns on accepted/noise ledger rows containing the signature and bold disposition (rows must include the exact signature; prose-only ledgers still require author review), and
-on new titles sharing ≥60% of their significant words with another prior signature. These are
-steering, not proof of identity. Collector KPI/manifest comparisons and evidence-ID checks remain.
+Validation warns on new titles sharing ≥60% of significant words with another prior signature.
+These are steering, not proof of identity. KPI/manifest comparisons and evidence-ID checks remain.
 
 ## Compact example
 
@@ -91,7 +102,9 @@ steering, not proof of identity. Collector KPI/manifest comparisons and evidence
   "evidence": {"run_ids": [], "run_urls": []}, "impact": {"runs": 1, "threads": 1},
   "root_cause": {"plane": "human_policy", "confidence": "high"},
   "text_nl": "De praktijk hanteert een andere termijn dan de huidige instructies.",
-  "ask_nl": "Geldt de termijn van zeven of veertien dagen?", "ask_for": "Eigenaar"
+  "ask_nl": "Geldt de termijn van zeven of veertien dagen?", "ask_for": "Eigenaar",
+  "options": [{"label": "Zeven dagen", "instruction": "Hanteer zeven dagen."},
+              {"label": "Veertien dagen", "instruction": "Hanteer veertien dagen."}]
 }
 ```
 

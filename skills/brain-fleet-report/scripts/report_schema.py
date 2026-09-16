@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["pydantic>=2"]
+# dependencies = ["pydantic>=2", "psycopg[binary]>=3"]
 # ///
 """Pydantic models for `report.json` — the one artefact the LLM writes.
 
-One source of truth for `validate.py`, `render.py` and `prompt_compose.py`.
+One source of truth for `validate.py`, `publish.py` and `prompt_compose.py`.
 Keys and technical content are English; the owner half is Dutch.
 
 Field guide for the LLM: `../report_schema.md`.
@@ -59,6 +59,9 @@ FindingKind = Literal[
     "regression",
     "watch",
     "pattern",
+    "path_miss",
+    "usage",
+    "other",
     "good",
 ]
 
@@ -207,8 +210,6 @@ class Manifest(_Model):
     coverage: list[FeedCoverage] = Field(default_factory=list)
     excluded: dict[str, int] = Field(default_factory=dict)
     owner_lang: str | None = None
-    feedback_review: dict = Field(default_factory=dict)
-    ledger_md: bool | None = None
     raw: ManifestRaw | None = None
 
     def lang(self) -> str:
@@ -325,6 +326,11 @@ class Prompt(_Model):
         return self
 
 
+class Option(_Model):
+    label: Annotated[str, Field(min_length=1, max_length=120)]
+    instruction: Annotated[str, Field(min_length=1, max_length=8192)]
+
+
 class Finding(_Model):
     id: Annotated[str, Field(pattern=r"^F\d{1,3}$")]
     signature: NonEmpty
@@ -346,6 +352,7 @@ class Finding(_Model):
     update_en: str | None = Field(default=None, max_length=200)
     update_nl: str | None = Field(default=None, max_length=200)
     prompt: Prompt | None = None
+    options: list[Option] = Field(default_factory=list, max_length=4)
 
     @model_validator(mode="after")
     def _rules(self) -> Finding:
@@ -355,6 +362,12 @@ class Finding(_Model):
                     f"findings[{self.id}].{name}: required for {self.status}/{self.audience}"
                 )
 
+        if self.audience in ("owner", "both"):
+            require("options")
+        if any(option.label in ("Other", "Skip") for option in self.options):
+            raise ValueError("Other and Skip are reserved host options")
+        if len({option.label for option in self.options}) != len(self.options):
+            raise ValueError("options labels must be unique")
         if any(not TOKENIZED_RUN_URL.match(url) for url in self.evidence.run_urls):
             raise ValueError("evidence.run_urls must be run URLs")
         if self.status == "unchanged":
@@ -464,8 +477,8 @@ class Report(_Model):
             if previous.get("prompt")
             else None
         )
-        inherited["root_cause"] = RootCause.model_validate(previous["root_cause"])
-        inherited["impact"] = Impact.model_validate(previous["impact"])
+        inherited["root_cause"] = RootCause.model_validate(previous["root_cause"]) if previous.get("root_cause") else None
+        inherited["impact"] = Impact.model_validate(previous["impact"]) if previous.get("impact") else None
         return finding.model_copy(update=inherited)
 
     def finding_by_id(self, finding_id: str) -> Finding | None:
@@ -489,7 +502,7 @@ class Report(_Model):
 
 
 # --------------------------------------------------------------------------
-# soft rules (warnings — never block a render)
+# soft rules (warnings — never block publication)
 # --------------------------------------------------------------------------
 
 _NL_WORDS = {
@@ -607,13 +620,6 @@ def _run_ids_in(blob: Any) -> set[str]:
 
 def soft_warnings(report: Report, kpis_path=None, manifest_path=None) -> list[str]:
     out = []
-    ledger = ""
-    if report._source:
-        for parent in report._source.parents:
-            candidate = parent / "_internal/fleet-report/ledger.md"
-            if candidate.exists():
-                ledger = candidate.read_text()
-                break
     for f in report.findings:
         if f.text_en and _looks_dutch(f.text_en):
             out.append(f"findings[{f.id}].text_en: reads as Dutch")
@@ -648,17 +654,12 @@ def soft_warnings(report: Report, kpis_path=None, manifest_path=None) -> list[st
                         out.append(
                             f"findings[{f.id}].prompt.change: fix hedge {phrase!r}; use investigate"
                         )
-        if any(
-            f.signature in row and re.search(r"\*\*(?:accepted|noise)\*\*", row, re.I)
-            for row in ledger.splitlines()
-        ):
-            out.append(f"findings[{f.id}]: ledger says accepted/noise")
         if f.status == "new":
             words = {w for w in re.findall(r"\w+", f.title.lower()) if len(w) > 3}
             for signature, old in report._prior.items():
                 old_words = {
                     w
-                    for w in re.findall(r"\w+", old["finding"]["title"].lower())
+                    for w in re.findall(r"\w+", old["finding"].get("title", "").lower())
                     if len(w) > 3
                 }
                 if (
@@ -723,17 +724,12 @@ def evidence_errors(report: Report, evidence_path: str | Path) -> list[str]:
 # --------------------------------------------------------------------------
 
 
-def compose_prompt(finding: Finding, *, owner: bool = False) -> str:
+def compose_prompt(finding: Finding) -> str:
     prompt = finding.prompt
     if prompt is None:
         return ""
     first = prompt.targets[0]
-    lines = (
-        [f"Paste this into the coding agent of the brain repo {first.repo}.", ""]
-        if owner
-        else []
-    )
-    lines += [
+    lines = [
         f"{prompt.task_kind.upper()}: {finding.title}",
         "",
         f"Start in: {first.repo} — open this checkout, read its AGENTS.md, run everything from its root.",
@@ -756,8 +752,9 @@ def compose_prompt(finding: Finding, *, owner: bool = False) -> str:
     lines += [
         "",
         "Boundaries",
-        "- Production is read-only from here: rc list/show/trace and prod-console queries only; never rc ask, never confirm an action.",
-        "- Edit only the repos listed above. Commit when done; do not publish/promote unless the Change says so.",
+        "- Execute only after a human review decision. Investigation never runs rc ask or confirms actions.",
+        "- Edit only the listed repos. Commit AND ship: publish brain, release kit or promote host as appropriate.",
+        "- The implementation job owns production verification against Done when; record the result. If not improved, allow one bounded fix/ship/test retry (two rounds maximum).",
     ]
     return "\n".join(lines)
 
@@ -822,26 +819,59 @@ def _format_error(error: dict[str, Any]) -> list[str]:
     return lines or [f"{loc}: {msg}"]
 
 
-def load_report(path: str | Path, *, prior_dirs=None) -> Report:
+def load_report(path: str | Path, *, dsn=None, prior=None) -> Report:
     from prior import prior_findings
 
     path = Path(path)
     report = Report.model_validate_json(path.read_text(encoding="utf-8"))
     report._source = path.resolve()
-    report._prior = prior_findings(
-        path, prior_dirs=prior_dirs, date=report.date, report_id=report.report_id
+    report._prior = prior if prior is not None else prior_findings(
+        path, projects=report.coverage.projects, dsn=dsn
     )
     for f in report.findings:
         old = report._prior.get(f.signature)
-        if f.status == "new" and old:
+        projects = set(f.members or report.coverage.projects)
+        audiences = {"owner", "technical"} if f.audience == "both" else {f.audience}
+        relevant = [row for row in old.get("rows", []) if
+                    ("project" not in row or row["project"] in projects) and
+                    ("audience" not in row or row["audience"] in audiences) and
+                    "#archived:" not in row.get("signature", "")] if old else []
+        if old and old.get("rows") and not relevant:
+            old = None
+        archived = bool(relevant and all(
+            row["status"] in ("closed", "applied") for row in relevant
+        ))
+        active = [row for row in relevant if row["status"] not in ("closed", "applied")]
+        same_day_retry = bool(active and all(
+            str(row.get("last_seen")) == report.date for row in active
+        ))
+        if f.status == "new" and any(
+            row["status"] == "closed" and
+            (row.get("applied") or {}).get("disposition") != "later"
+            for row in relevant
+        ):
             raise ValueError(
-                f"findings[{f.id}].status: signature seen {old['date']}; use changed/unchanged"
+                f"findings[{f.id}].status: closed signature requires changed + update explaining the met retest trigger"
+            )
+        if f.status == "new" and old and not archived and not same_day_retry:
+            raise ValueError(
+                f"findings[{f.id}].status: signature already active; use changed/unchanged"
             )
         if f.status in ("changed", "unchanged") and not old:
             raise ValueError(
                 f"findings[{f.id}].status: {f.status} needs a prior v2 finding"
             )
         if f.status == "unchanged":
+            if archived:
+                raise ValueError(f"findings[{f.id}]: archived signature requires full fields; use new/changed")
+            missing = [(project, audience) for project in projects for audience in audiences
+                       if not any(row.get("project") == project and
+                                  row.get("audience") == audience for row in active)]
+            if missing:
+                raise ValueError(
+                    f"findings[{f.id}]: unchanged needs an active prior row for every member/audience; "
+                    f"missing {missing}; use changed with full fields"
+                )
             previous = old["finding"]
             if not previous.get("prompt") and not previous.get("ask_nl"):
                 raise ValueError(
@@ -851,7 +881,7 @@ def load_report(path: str | Path, *, prior_dirs=None) -> Report:
                 effective = report.effective(f)
             except (ValueError, KeyError, TypeError) as exc:
                 raise ValueError(
-                    f"findings[{f.id}]: inherited prompt from {old['prompt_date']} no longer validates; "
+                    f"findings[{f.id}]: inherited prompt no longer validates; "
                     f"use changed ({_one_line_exc(exc)})"
                 ) from exc
             for name in (
@@ -868,9 +898,9 @@ def load_report(path: str | Path, *, prior_dirs=None) -> Report:
     return report
 
 
-def validation_errors(path: str | Path, *, prior_dirs=None) -> list[str]:
+def validation_errors(path: str | Path, *, dsn=None, prior=None) -> list[str]:
     try:
-        load_report(path, prior_dirs=prior_dirs)
+        load_report(path, dsn=dsn, prior=prior)
     except ValidationError as exc:
         return [line for error in exc.errors() for line in _format_error(error)]
     except (OSError, ValueError, KeyError, TypeError) as exc:

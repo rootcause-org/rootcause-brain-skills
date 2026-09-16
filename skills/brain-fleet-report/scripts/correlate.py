@@ -348,10 +348,11 @@ def run(brain_root: Path, members: Sequence[str], overlay, clusters: Sequence[di
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--date", required=True, help="focus day of an existing report directory")
+    parser.add_argument("--overlay", help="shared overlay directory (default: brain _internal/fleet-report)")
     parser.add_argument("--report-id")
     args = parser.parse_args()
     brain_root = find_brain_root()
-    overlay = load_overlay(brain_root)
+    overlay = load_overlay(brain_root, args.overlay)
     tz = tzinfo(str(overlay.get("timezone", DEFAULT_TZ)))
     report_id = args.report_id or str(overlay.get("report_id") or brain_root.name.replace("rootcause-brain-", ""))
     out_dir = brain_root / ".rootcause" / "fleet-report" / report_id / args.date
