@@ -270,3 +270,14 @@ def test_config_rejects_incomplete_entries(tmp_path, body):
     cfg.write_text(body)
     with pytest.raises(ValueError):
         scope_smoke.load_config(cfg)
+
+
+def test_classify_marks_unconstrained_tables_visible():
+    from scope_matrix import classify, VISIBLE, HIDDEN
+
+    cells = classify({
+        "unconstrained_tables": ["activities", "people"],
+        "tables": [{"name": "avo_tables", "count": 56, "predicate": "id IN (...)"}],
+        "hidden_tables": ["tenants"],
+    })
+    assert cells == {"activities": VISIBLE, "people": VISIBLE, "avo_tables": "rows:56", "tenants": HIDDEN}

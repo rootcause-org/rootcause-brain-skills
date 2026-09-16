@@ -79,6 +79,10 @@ def classify(report: dict) -> dict[str, str]:
     """
     cells = {t: HIDDEN for t in report.get("hidden_tables") or []}
     unconstrained = set(report.get("unconstrained_tables") or [])
+    # Unconstrained tables are minted views with no extra predicate — the preview lists them by name
+    # only, so they must become ✓ here or the whole tenant-wide column reads as "not in projection".
+    for name in unconstrained:
+        cells.setdefault(name, VISIBLE)
     for table in report.get("tables") or []:
         name = table.get("name")
         if not name or name in cells:
