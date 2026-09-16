@@ -45,7 +45,7 @@ Set `SKILL` to the directory holding this `SKILL.md`; every command below is
 | `brain_run.py` | one grounding script, or `-m lib.db` for ad-hoc read-only SQL; `--brief` maps the brain |
 | `brain_test.py` | test tiers: import smoke + offline pytest, `--live`, `--tenant` |
 | `brain_smoke.py` | import smoke alone (what publish verification runs) |
-| `brain_lint.py` | dependency-light action lint; no uv env, non-zero on FAIL |
+| `brain_lint.py` | dependency-light action lint; whole tree by default (`--all`) or only the paths you pass; no uv env, non-zero on FAIL |
 | `brain_structure.py` | links, frontmatter, routing, privacy lint |
 | `brain_action.py` | hosted-Python action: Layer-1 + preflight + policy + write body |
 | `brain_projection.py` | tenant projection preview — see [projection.md](projection.md) |

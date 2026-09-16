@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Instant dependency-light lint for a rootcause brain checkout."""
+"""Instant dependency-light lint for a rootcause brain checkout.
+
+    brain_lint.py                      # whole tree (default)
+    brain_lint.py --all                # whole tree, explicitly
+    brain_lint.py AGENTS.md skills/    # only these files/dirs
+    brain_lint.py --strict             # WARN findings fail too
+"""
 
 from __future__ import annotations
 
@@ -15,6 +21,10 @@ if RUNTIME.is_dir():
     sys.path.insert(0, str(RUNTIME))
 
 _BOOTSTRAP_FLAG = "RC_BRAIN_LINT_BOOTSTRAPPED"
+
+# Suffixes this linter can produce findings for (SKILL.md / cases *.md, action manifests, stray
+# *.py). Explicit paths with any other suffix are ignored rather than treated as clean-but-scanned.
+SCAN_SUFFIXES = {".md", ".py", ".yaml", ".yml"}
 
 
 def _reexec_with_pyyaml() -> int:
@@ -38,10 +48,36 @@ except ModuleNotFoundError as exc:
     raise SystemExit(_reexec_with_pyyaml()) from None
 
 
+def _select(paths: list[str], brain: Path) -> set[str]:
+    """Brain-relative posix paths/dir-prefixes to keep findings for.
+
+    Paths outside the brain, or whose suffix this linter never scans, are ignored — callers
+    (brain_structure.py's changed-scope pass) hand over whatever git reported as changed.
+    """
+    selected: set[str] = set()
+    for raw in paths:
+        candidate = Path(raw)
+        resolved = (candidate if candidate.is_absolute() else brain / candidate).resolve()
+        try:
+            rel = resolved.relative_to(brain).as_posix()
+        except ValueError:
+            continue
+        if resolved.is_dir():
+            selected.add(rel.rstrip("/") + "/")
+        elif resolved.suffix.lower() in SCAN_SUFFIXES:
+            selected.add(rel)
+    return selected
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="brain_lint.py", description=__doc__)
     parser.add_argument("--brain", help="brain dir (default: cwd)")
     parser.add_argument("--strict", action="store_true", help="exit 1 when WARN findings exist")
+    parser.add_argument("--all", action="store_true",
+                        help="lint the whole brain tree (the default when no paths are given)")
+    parser.add_argument("paths", nargs="*",
+                        help="lint only these files/dirs (relative to the brain dir); paths whose "
+                             "suffix this linter does not scan are ignored")
     args = parser.parse_args(argv)
 
     brain = Path(args.brain).expanduser().resolve() if args.brain else Path.cwd().resolve()
@@ -50,6 +86,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     findings = lint_brain(brain)
+    if args.paths and not args.all:
+        selected = _select(args.paths, brain)
+        dirs = tuple(p for p in selected if p.endswith("/"))
+        # Some rules append `:<line>` to the path they report; scope on the file part.
+        findings = [f for f in findings
+                    if (rel := f.path.split(":", 1)[0]) in selected or rel.startswith(dirs)]
     print(format_report(findings))
     return int(any(f.level == "FAIL" or (args.strict and f.level == "WARN") for f in findings))
 

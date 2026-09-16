@@ -54,3 +54,19 @@ def test_entrypoint_reports_missing_pyyaml_as_dependency_error(tmp_path: Path) -
     assert run.returncode == 1
     assert run.stdout == ""
     assert "error: PyYAML is required" in run.stderr
+
+
+def test_entrypoint_accepts_all_and_explicit_paths(tmp_path: Path) -> None:
+    """brain_structure.py drives this entrypoint as `--all [--strict]` and `[--strict] <path>…`."""
+    brain = _brain(tmp_path, "_DEAD = 1\n")
+    command = [sys.executable, str(SCRIPT), "--brain", str(brain)]
+
+    whole = subprocess.run([*command, "--all"], text=True, capture_output=True, check=False)
+    scoped = subprocess.run([*command, "actions/example/script.py"],
+                            text=True, capture_output=True, check=False)
+    elsewhere = subprocess.run([*command, "actions/example/manifest.yaml", "notes/thing.txt"],
+                               text=True, capture_output=True, check=False)
+
+    assert whole.returncode == 0 and "WARN dead private names (1)" in whole.stdout
+    assert scoped.returncode == 0 and "WARN dead private names (1)" in scoped.stdout
+    assert elsewhere.returncode == 0 and elsewhere.stdout.strip() == "brain lint: clean"
