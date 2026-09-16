@@ -617,7 +617,7 @@ def rc_version(cwd: Path) -> str:
 # --------------------------------------------------------------------- overlay
 
 
-HOOK_NAMES = ("classify_run", "channel_of", "drill", "custom_sections")
+HOOK_NAMES = ("classify_run", "channel_of", "drill")
 
 
 @dataclass
@@ -629,7 +629,6 @@ class Overlay:
       channel_of(run) -> str | None         axis key on a tenantless project
       drill(run, ctx) -> str | None         markdown detail block, appended by drill.py under
                                             "## Project follow-up"; see drill.py for the ctx keys
-      custom_sections(evidence) -> list     extra report sections (slice C)
     """
 
     root: Path | None = None

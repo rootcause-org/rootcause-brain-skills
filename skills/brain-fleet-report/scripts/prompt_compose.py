@@ -7,10 +7,8 @@
 
     uv run scripts/prompt_compose.py report.json [--finding F3]
 
-The LLM never writes the prompt blob — it fills `prompt.{task_kind, target_repo,
-paths, skills, run_refs, conclusion, proposed_change, verification,
-decision_needed}` and Python renders them the same way everywhere (HTML, e-mail,
-txt, this CLI). Aim: 100–220 words; `validate.py` warns outside that band.
+Structured v2 fields compose identically in HTML, text and this CLI. Prior prompts
+are resolved by load_report. validate.py warns outside 90–260 words.
 """
 
 from __future__ import annotations
@@ -27,15 +25,25 @@ from report_schema import compose_prompt, load_report  # noqa: E402
 def main() -> int:
     parser = argparse.ArgumentParser(description="Render finding prompts as plain text")
     parser.add_argument("report", type=Path)
-    parser.add_argument("--finding", help="one finding id (default: all findings with a prompt)")
+    parser.add_argument(
+        "--finding", help="one finding id (default: all findings with a prompt)"
+    )
+    parser.add_argument(
+        "--prior-dir",
+        type=Path,
+        action="append",
+        help="explicit prior report directory (fixtures)",
+    )
     args = parser.parse_args()
 
-    report = load_report(args.report)
+    report = load_report(args.report, prior_dirs=args.prior_dir)
     findings = [f for f in report.findings_sorted() if f.prompt]
     if args.finding:
         findings = [f for f in findings if f.id == args.finding]
         if not findings:
-            print(f"{args.finding}: no such finding, or it has no prompt", file=sys.stderr)
+            print(
+                f"{args.finding}: no such finding, or it has no prompt", file=sys.stderr
+            )
             return 1
 
     for i, finding in enumerate(findings):

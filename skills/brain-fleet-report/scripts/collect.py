@@ -1161,7 +1161,10 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001 - correlation is a nice-to-have
             rc.note_error("correlate", "git", f"{type(exc).__name__}: {exc}")
 
+    from prior import prior_findings, prior_table
+
     digest = build_digest(evidence, tz)
+    digest += "\n" + prior_table(prior_findings(out_dir, date=focus_iso, report_id=report_id))
     (out_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     (out_dir / "kpis.json").write_text(json.dumps(kpis, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     (out_dir / "evidence.json").write_text(

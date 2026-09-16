@@ -1,0 +1,98 @@
+{
+  "schema_version": 2,
+  "report_id": "kampadmin",
+  "date": "2026-09-03",
+  "generated_at": "2026-09-05T07:12:00+02:00",
+  "window": {
+    "focus": "2026-09-03",
+    "context_days": []
+  },
+  "kpis": {
+    "focus": {
+      "date": "2026-09-03"
+    },
+    "per_axis": [],
+    "context_days": []
+  },
+  "coverage": {
+    "report_id": "kampadmin",
+    "projects": [
+      "kampadmin"
+    ],
+    "window": {
+      "focus": "2026-09-03",
+      "context_days": []
+    },
+    "generated_at": "2026-09-05T07:12:00+02:00",
+    "coverage": []
+  },
+  "findings": [
+    {
+      "id": "F5",
+      "signature": "sql:subscriptions-activity-name-undefined-column",
+      "kind": "pattern",
+      "audience": "technical",
+      "members": [
+        "kampadmin-support"
+      ],
+      "scope": {
+        "level": "project"
+      },
+      "severity": "medium",
+      "impact": {
+        "runs": 6,
+        "threads": 5
+      },
+      "recurrence": {
+        "first_seen": "2026-08-29",
+        "last_seen": "2026-09-04",
+        "focus_count": 2,
+        "context_count": 4,
+        "state": "recurring",
+        "known_since": "2026-08-29"
+      },
+      "title": "The brain keeps selecting subscriptions.activity_name (UndefinedColumn)",
+      "text_en": "Six failed queries in seven days select activity_name from subscriptions. The column exists on activities, not on subscriptions. The Guessed-to-real table in records-schema.md documents 'activities.name to activity_name', which reads as if the column is simply named activity_name and invites the wrong join.",
+      "evidence": {
+        "run_ids": [
+          "6c9f920c",
+          "8d6f2a21",
+          "d7c4594e"
+        ],
+        "run_urls": [
+          "https://app.replypen.com/runs/6c9f920c-f261-4b88-84f8-f4eb46bdc75d",
+          "https://app.replypen.com/runs/8d6f2a21-0a17-4d63-9c58-b2e6f1470d39"
+        ]
+      },
+      "root_cause": {
+        "plane": "mirror",
+        "confidence": "medium"
+      },
+      "prompt": {
+        "task_kind": "fix",
+        "targets": [
+          {
+            "repo": "/tmp",
+            "paths": [
+              "."
+            ]
+          }
+        ],
+        "run_refs": [
+          "https://app.replypen.com/runs/6c9f920c-f261-4b88-84f8-f4eb46bdc75d"
+        ],
+        "conclusion": "The fixture demonstrates a concrete failure in the reported workflow.",
+        "repro": "Open the cited run and inspect its first failing step.",
+        "change": "Update the demonstrated rule in the target checkout and add a regression case for the observed input.",
+        "done_when": "The regression case reproduces the failure before the change and passes after it."
+      },
+      "status": "new"
+    }
+  ],
+  "technical": {
+    "headline": "One projection change remains open."
+  },
+  "owner": {
+    "headline_nl": "Geen nieuwe acties."
+  }
+}

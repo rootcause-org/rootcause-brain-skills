@@ -1,250 +1,101 @@
 ---
 name: brain-fleet-report
-description: "Build the daily two-audience fleet report for one rootcause project from a brain checkout: Python collects a day of evidence (runs, actions, bash corpus, deltas, feedback, commits), you judge it and write report.json, Python validates and renders it. Use for 'fleet report', 'dagrapport', 'daily report for the product owner', 'what did the agent do yesterday', or a ranked 'what do I fix today' list."
+description: "Build the daily two-audience fleet report from a brain checkout: collect public rc evidence, judge it into a ranked work queue, validate and render technical and owner reports. Use for fleet reports, dagrapport, or what to fix today."
 ---
 
-# brain-fleet-report — one day, two audiences, ranked actionables
+# Daily work queue
 
-**Python is the evidence, you are the judgement.** The scripts never decide what is wrong; they
-collect, cluster, count recurrence, validate and render. You read the digest, drill what matters,
-and write one `report.json`.
-
-North star: **"what do I fix today"** — findings ranked by customer impact, each high one carrying a
-copy-paste prompt for a fresh coding agent. KPIs are context, not the point.
-
-Two halves of one report: **technical (EN)** for the developer — failing actions with error text,
-brain-script breakage, capture gaps, lost runs, correlating commits — and the **owner half** for the
-product owner, who sees `text_nl` only: no run ids, no technical prose — conversation links are
-fine, and each finding's copyable **English prompt** rides along so the owner can hand it to a coding
-agent as is. The owner language is the overlay's `[owner].lang` (default `nl`, `en` when the owner is you);
-it travels through `manifest.owner_lang`, and `render.py` puts the page chrome in that language. The
-`*_nl` field names are historical.
-
-Read-only. Every `rc` call is a list/show/trace. Never `rc ask` from here, never edit a brain from
-here — the report *produces* prompts, other skills execute them
-([docs/side-effects.md](../../docs/side-effects.md)).
-
-## Prerequisites
-
-- `rc auth status` with an **all-projects** token (a combined report fans out over members).
-- A brain checkout of any member project; run from its root. Output goes to the gitignored
-  `<brain>/.rootcause/fleet-report/<report_id>/<D>/`.
-- Optional but strongly recommended: the project's overlay at `<brain>/_internal/fleet-report/`
-  ([overlay.md](overlay.md)). Without it you get one project, defaults, and no project follow-up.
+Python collects evidence; you judge it. Technical EN is developer work. The owner half uses
+`coverage.owner_lang` (default Dutch; `_nl` field names are historical) and contains only what the
+owner can decide or do. Report generation is read-only: no `rc ask`, action confirmation or brain edits.
+Read the project's `_internal/fleet-report/OVERLAY.md` and `ledger.md` before judging;
+[overlay.md](overlay.md) describes their contract.
 
 ## Pipeline
 
+Run from the brain root with `rc auth status` showing an all-projects token when members are combined.
+
 ```bash
-cd ~/code/rootcause-org/rootcause-brain-<project>          # any member checkout
-FR="$PWD/.agents/skills/brain-fleet-report"                # installed kit skill
-D=2026-09-04
-
-uv run "$FR/scripts/collect.py" --date "$D"        # --project X (repeatable) --report-id --context-days 4
-                                                   # --refresh | --offline | --no-correlate | --prune-raw
-                                                   # last line of its summary = the output dir
+FR="$PWD/.agents/skills/brain-fleet-report"
+D=2026-09-16
+uv run "$FR/scripts/collect.py" --date "$D"
+# Last output line names OUT; --project X (repeatable), --report-id, --context-days 4,
+# --refresh, --offline, --no-correlate and --prune-raw are available.
 OUT="$PWD/.rootcause/fleet-report/<report_id>/$D"
-cat "$OUT/digest.md"                               # tier 0 — the only file you read whole
-cat "$OUT/commits.md"                              # correlation detail when a signature is new
-
-uv run "$FR/scripts/drill.py" --date "$D" --run f89d3d89          # tier 1 → details/run-<run8>.md
-uv run "$FR/scripts/drill.py" --date "$D" --run f89d3d89,a1b2c3d4,9e8f7a6b   # batch, one file each
-uv run "$FR/scripts/drill.py" --date "$D" --cluster action_failure:create_placeholder
-                                                   # the `sig=` key from digest.md; a title
-                                                   # substring also matches. One excerpt per run,
-                                                   # per-axis/per-fate split, every run URL.
-uv run "$FR/scripts/drill.py" --date "$D" --delta f89d3d89       # proposed vs sent, in full
-uv run "$FR/scripts/drill.py" --date "$D" --feedback             # every score+comment, joined to its run
-
-# write $OUT/report.json yourself — fields in report_schema.md, examples in fixtures/
+cat "$OUT/digest.md"
+cat "$OUT/commits.md"   # when onset/deployment evidence changes the task
+uv run "$FR/scripts/drill.py" --date "$D" --run f89d3d89,a1b2c3d4
+uv run "$FR/scripts/drill.py" --date "$D" --cluster 'action_failure:create_placeholder'
+uv run "$FR/scripts/drill.py" --date "$D" --delta f89d3d89
+uv run "$FR/scripts/drill.py" --date "$D" --feedback
+# Write report.json using report_schema.md. Copy kpis.json and manifest.json verbatim.
 uv run "$FR/scripts/validate.py" "$OUT/report.json" \
-    --kpis "$OUT/kpis.json" --manifest "$OUT/manifest.json" --evidence "$OUT/evidence.json"
-uv run "$FR/scripts/render.py" "$OUT/report.json"                 # 6 deliverables next to report.json
-uv run "$FR/scripts/prompt_compose.py" "$OUT/report.json" --finding F3   # check one prompt as text
-open "$OUT/technical.html" "$OUT/owner.html"                      # read both halves locally
+  --kpis "$OUT/kpis.json" --manifest "$OUT/manifest.json" --evidence "$OUT/evidence.json"
+uv run "$FR/scripts/render.py" "$OUT/report.json"
+uv run "$FR/scripts/prompt_compose.py" "$OUT/report.json" --finding F3
+open "$OUT/technical.html" "$OUT/owner.html"
 ```
 
-## Three deliverables, not two
+Four files: `technical.html`, `owner.html`, `technical.txt`, `owner.txt`. No email variants.
+Read both halves before handing them over. The [schema](report_schema.md) documents exact fields.
+`evidence.json` is the raw tier: search selectively, never read it whole. Drill every high finding
+and every consequential live correction; stop when more detail would not change the task.
 
-`technical.html` and `owner.html` are files. The third deliverable is the **spawn list**: the short
-bullet list you write in your own answer, in the turn that produced them, so the operator can turn
-findings into separate coding threads without opening the report first.
+## Judging rules
 
-- One bullet per finding worth acting on today (`high` and the `medium` ones with a prompt), ranked;
-  five at most. Zero is a valid spawn list on a quiet day.
-- Each bullet: what is wrong in one clause, then **the direction you would take** — "expose
-  `activity_name` on the scoped projection", not "investigate the schema guesses" — then the repo and
-  the skill that should do the work.
-- No run ids, no file dumps, no numbers the operator did not ask for. The full prompt already lives
-  in the report for whoever picks the bullet up.
+1. No finding without an actionable change or decision. “By design”, “recovered”, or an
+   unimportant measurement gap is at most a lede clause. A consequential unknown may become a
+   bounded investigation with a question and stop condition. Zero findings is valid.
+2. State each finding once. `findings[]` is the ranked queue, in author order; the lede names
+   nothing that a card carries. One finding = one remedy or decision; split omnibus findings.
+3. Reuse signatures from the digest's **Prior findings** table. Collector-backed signatures are
+   copied exactly; other signatures use stable `<kind>:<slug>` names. Prior v1 reports are ignored.
+4. `unchanged` carries only today's metadata and short update; it inherits the prior text/ask/prompt.
+   Use it when the remedy has not moved. Count changes alone do not justify another full card.
+   `changed` has full fields plus the specific delta. A prior owner ask can carry without a prompt.
+5. A `fix` is an edit another agent can apply without reopening the run to diagnose it. Otherwise
+   use `investigate`: exact checks, stop condition, output location. Every prompt path was opened
+   today and exists in its target repo; list all repositories touched. `decide` names the question
+   and options before implementation. Prompts must respect their production-read-only boundary.
+6. Owner card = what happened + what we ask, with the person named when useful. Read the overlay's
+   Owner reach table. PJ-only work never becomes an owner card. Shared findings must have a distinct
+   owner task. Owner prompts appear only for content fixes targeting brain repos; dashboard/profile,
+   persona and business decisions remain explicit human asks. Do not move settings into Markdown.
+7. At most five new/changed technical findings and four owner findings; prioritize customer impact.
+   Numbers belong in counters/chips, not repeated prose. Keep recurrence history out of prompts.
+8. Honour ledger dispositions: accepted/noise never become fresh findings absent their retest
+   trigger. Publish drift needs an actionable unpublished runtime change; tooling-only drift stays
+   parked. An unexplained deployed ref can be a separate investigation.
+9. First names only; no emails, surnames, phone numbers or credentials. Canonical token-free run
+   URLs go into prompts; owner conversation links may use the collected access URL.
 
-Close the answer with the two html paths. A finding that is a decision for the owner, not work for a
-coding agent, does not belong in the spawn list.
+## Evidence semantics
 
-Delivery to the owner is project-specific: a wrapper skill in the brain (e.g. `fleet-report-dentai`)
-attaches `owner.html` to a ticket. **Every delivered report title starts with `🌅`** —
-`🌅 Dagrapport <display_name> <D>` — so the daily reports are identifiable at a glance in a ticket
-list or inbox and a wrapper can find yesterday's by prefix. One emoji, fleet-wide, never per project.
+- Focus is day D; context is recurrence background. Do not assert undrilled context-day facts.
+  `gone` means “not seen”, never “fixed”. New consequential signatures outrank familiar noise.
+- `proposed` actions have not executed. Domain refusals differ from infrastructure failures.
+  Read the full error before naming the fix plane; `error_message` is often truncated.
+- Funnel buckets use execution-or-proposal date; stale proposals are >36h at collection.
+  Keep collector counters verbatim; the report does not display heuristic reviewer acceptance.
+- Draft placement is not delivery. Shadow deltas are independent comparisons, not human corrections.
+  Microsoft `sent_as_proposed` without sent-body capture cannot prove verbatim sending.
+- Lost/errored runs must be checked against their thread: a later run may have recovered the reply.
+- Feedback comments carry intent; scores alone do not prove a defect. An escalation-ledger comment
+  is human workflow. Cosmetic edits and justified reviewer placeholders are not standalone defects.
+- Exit -1 is timeout, 64 is the reread guard, grep/rg exit 1 is noise; `usage:` usually means bad flags.
+  Privacy-reduced excerpts and server `⟦pii:…⟧` masking are not proof of corrupted outgoing text.
+- Live DB evidence is “as of” the query time, not the run. Missing/partial feeds qualify affected
+  claims. Excluded runs do not enter denominators; context detection can have less coverage.
+- Commit correlation is not causation. A commit after first occurrence cannot explain onset.
 
-`evidence.json` is the raw tier — grep it, never read it whole. Copy `kpis.json` and `manifest.json`
-verbatim into `report.json` (all keys, including `raw` and `owner_lang`); never retype a counter.
-The collector also writes `kpis.action_funnel`: focus/context action tables and focus per-axis totals;
-all six outputs show the focus funnel.
-Clusters in `evidence.json` carry `first_seen`/`last_seen`/`state` — copy those into
-`findings[].recurrence` instead of transcribing digest prose.
+## Handoff
 
-## Window semantics
+Besides the two HTML reports, deliver the **spawn list**: at most five ranked bullets naming the
+problem, concrete direction and target repo/skill. Derive it from actionable findings, never invent
+another summary. Owner decisions without coding work do not belong in it. Close with the HTML paths.
+Project wrappers own delivery; delivered titles begin `🌅`. Do not send reports independently.
 
-Focus = day `D`. Context = the 4 workdays before it, for recurrence only. Every signature carries
-`new | recurring | gone` plus `first_seen/last_seen/known_since`.
+When `[feedback_review].enabled`, follow [brain-feedback-review](../brain-feedback-review/SKILL.md)
+on its configured cadence; keep its sibling attachment link. No automatic learning or delivery.
 
-- Report the focus day. Context days are pattern background — **do not make hard claims about them**
-  (you did not drill them).
-- **Absence is not resolution.** `gone` means "not seen on D", never "fixed". Say so in those words.
-- Recurrence beats volume: a `new` high-severity signature outranks a familiar noisy one.
-
-## Data semantics — how to not be wrong
-
-- **Draft fate ladder**: `sent_as_proposed | edited | shadow_compared | not_sent_yet | no_draft`. In
-  draft-mode projects a placed draft is **not** proof of a send — never claim the customer received it.
-- **Deltas**: per-delta `shadow` flag. A shadow delta is a blind comparison against what the human
-  wrote independently — **not a correction**, and `equivalent` is positive evidence. A live delta
-  (non-shadow) in a live mailbox is a real human edit and the strongest adoption signal you have.
-- **`[[✏️]]` fills** are counted as a cluster, not as individual deltas; a shipped unresolved
-  placeholder is a capture gap.
-- **Feedback**: comments are near-100% actionable, scores are ambiguous. Quote the comment; treat a
-  score-1 escalation-ledger comment (e.g. "escalated: <clickup url>") as a human workflow, not a bot
-  failure. Open feedback older than the window is its own finding class.
-- **Actions**: `proposed` = recorded, never executed — a stale `proposed` pile is a finding, not a
-  failure. Classify a failure as infra (RootCause machinery — report, do not edit the brain) or
-  domain (the action's own refusal) before proposing anything.
-- **Action funnel**: bucket by `executed_at or proposed_at`; stale = proposed >36 h at collection.
-  With no confirmation field, reviewer-confirmed is a heuristic: succeeded >120 s after proposal;
-  other successes are auto (fast human confirmations can be misclassified). Acceptance is a
-  status snapshot, not a proposal cohort: human / (human + failed + superseded + canceled + stale).
-  `superseded` = the assistant chose a different action than proposed, not a failure.
-- **Bash corpus**: exit `-1` = timeout, exit `64` = the context re-read guard, `rg`/`grep` exit 1 =
-  noise. `usage:` lines are brain-script flag errors and are usually a brain-content fix.
-- **`error_message` is server-truncated (~80 chars)**; the manifest says how many. Do not extrapolate
-  a root cause from a cut string — drill.
-- **Reduced text is not corrupted text.** Every digest line and every drill excerpt is post-privacy
-  (first names shortened, e-mail addresses dropped, sometimes mid-sentence). Before filing "the agent
-  emitted mangled output", check the same string in `raw/` — that is the unreduced original.
-- **`⟦pii:…⟧` in `draft_markdown` is server-side masking**, applied inconsistently (an unfamiliar
-  first name comes through in the clear). It is not a placeholder the agent shipped, and never a
-  finding on its own.
-- **`sent_as_proposed` in a shadow tenant** means the practice sent its own mail and it matched the
-  agent's draft — *not* that our draft reached anyone. Check the thread before writing impact.
-- **A lost or errored run must be checked against its thread** before you claim the customer got
-  nothing: threads are re-processed, often hours later. digest.md marks it `↻ recovered <HH:MM>`;
-  `drill --run` shows the whole thread.
-- **Live grounding-DB reads are as of now, not as of the run.** An overlay drill that queries the
-  project database stamps `as of <time>`; anything the customer changed in between is already in
-  the answer. That gap is the difference between "the agent misread the agenda" and "the human
-  moved it afterwards".
-- **Excluded runs are not in any denominator.** A run excluded as noise contributes no cluster count;
-  its run-level error still shows, flagged `excl`. digest.md prints the window total and the
-  focus-day total separately — read the label before quoting a number.
-- **Coverage**: any feed at `partial`/`unavailable` must be said out loud in `meta.signal_note`, and
-  no claim may rest on the missing part.
-
-## Drill before you judge
-
-`findings[].signature` is the collector's cluster key when the finding has one — the `sig=` line in
-digest.md, copied verbatim (the bold title next to it is privacy-reduced and truncated, so it is not
-an identifier). Delta-, feedback-, watch- and policy-derived findings have no cluster: give them
-`<kind>:<stable-kebab-slug>` and reuse the same slug tomorrow, or recurrence memory fragments.
-
-Drill **every** finding you intend to mark `high`, and **every** consequential correction (a live
-delta that changed the answer's substance). One line in the digest is never enough to name a plane.
-Stop drilling when more detail would not change the action.
-
-Choose `root_cause.plane` only after the drill: `host`, `action_plane`, `brain_script`,
-`brain_content`, `tenant_brain`, `persona`, `settings`, `mirror`, `project_code`, `human_policy`,
-`human_context`, `noise`, `unknown`.
-
-**Commit correlation is correlation.** A commit that landed *after* a signature's first occurrence
-cannot explain onset — at most expansion or recovery. Candidates in `commits.md` narrow the search;
-you decide.
-
-**Publish drift is a finding, never a footnote.** `commits.md` ends with *Deployed state*: the
-managed brain cache vs `origin/main` and every channel with its last promotion. A `⚠ PUBLISH DRIFT`
-line (cache diverged/dirty, or a channel not `current` for 24 h+) means the brain running in
-production is not the brain on `main` — put it in the technical "fix today" list with the
-`brain-publish` route, even when the day's runs look fine (the code Thomas is testing is not live).
-
-## Audience split — by reach, not by severity
-
-`findings[].audience` answers one question: **who can act on this?** The owner half is not a softer
-copy of the technical half; it is the list of things the owner can change or decide without a
-developer. The technical half is everything that needs code, infra or a debugger.
-
-| Owner can act | Technical |
-|---|---|
-| business / policy decisions (`human_policy`), context only the owner knows (`human_context`) | code in the product repo (`project_code`), the host (`host`), the action executor (`action_plane`) |
-| what the brain *says* or *decides*: playbooks, routing, wording of a note (`brain_content`, `tenant_brain`, `persona`, `settings`) — as a decision to take or approve, not an edit to make | brain *scripts* (`brain_script`), mirror freshness (`mirror`), capture gaps, lost runs |
-| the product's own admin surfaces the owner maintains: tenant/practice configuration, master data, data mismatches between the product and the source system | anything whose fix is a commit |
-
-Rule of thumb: a finding is `owner` when the owner would say "I can fix that" or "that is my call";
-`technical` when the honest answer is "PJ has to change code"; `both` when the owner must decide
-*and* a developer must build. The owner half still carries the English prompt for every finding, so
-"owner" never means "no prompt". Each overlay's `OVERLAY.md` names the concrete owner surfaces for
-its project (see [overlay.md](overlay.md) § *Owner reach*) — read that table before assigning
-`audience`, it beats the generic one above.
-
-- Technical half and **all prompts**: English. Owner half: owner language, standing on its own —
-  with the English prompt accordions attached (copy button on the page, plain `<pre>` in the e-mail
-  and text variants).
-- Tenant-scoped findings ≈ 1 per 5 project findings (validator warns above 25%). A tenant section
-  exists only when that tenant's **policy demonstrably departs from the project** (public says 14
-  days, this tenant does 7) — never to show a nice example.
-- Never synthesize good news. A `good` finding needs the same evidence as a bad one.
-- **Quiet day**: zero findings is a valid report. One honest sentence in `technical.headline` /
-  `owner.headline_nl`, keep `watch[]` for open work, let coverage do the rest.
-
-## Prompt rules
-
-You fill structured fields; `prompt_compose.py` writes the blob (100–220 words).
-
-- `run_refs` are **canonical** `https://app.replypen.com/runs/<uuid>` — strip `?t=`. Tokenized URLs
-  belong in `evidence.run_urls` only; the owner page renders them as a neutral "conversation ↗"
-  link (numbered when there are several), never as a run id.
-- `target_repo` and `paths` are absolute (or `~/…`), pointing at the checkout that owns the plane.
-- Name the skill that should do the work: [`brain-dream-cycle`](../brain-dream-cycle/SKILL.md) for a
-  lesson from feedback/deltas, [`brain-ask`](../brain-ask/SKILL.md) to verify on prod,
-  [`rc-debug`](../rc-debug/SKILL.md) for one more run, [`prod-console`](../prod-console/SKILL.md) for
-  a guarded production primitive, [`brain-publish`](../brain-publish/SKILL.md) to ship.
-- Voice, tone, salutation, signature, language → **persona/triage settings**, never a markdown edit.
-- `conclusion` says what is wrong and why; `proposed_change` is the concrete edit, not a direction;
-  `verification` is how a fresh agent proves it worked.
-
-## Privacy
-
-First names only, no e-mail addresses, no phone numbers, no tokens — in prompts, in HTML, anywhere.
-The collector's privacy reducer already runs over the digest; keep it that way when you quote.
-`evidence.json` and `raw/` stay local (the whole `.rootcause/` tree is gitignored).
-
-## More
-
-[report_schema.md](report_schema.md) the one file you write · [overlay.md](overlay.md) the per-brain
-contract · [`rc-fleet`](../rc-fleet/SKILL.md) interactive triage when you have no report ·
-[docs/side-effects.md](../../docs/side-effects.md).
-
-## Iteration log
-
-- **2026-09-10** — action funnel: proposal outcomes, estimated human acceptance, per-axis totals.
-- **2026-09-10** — third deliverable: the in-answer spawn list next to the two html files.
-- **2026-09-08** — audience = reach (owner surfaces per overlay), `🌅` title prefix for delivered
-  reports.
-- **2026-09-07** — built (collect/correlate/drill/schema/validate/render + overlays). First
-  real runs: dentai, kampadmin (+kampadmin-support), pro-backup, momentum-tools on 09-03 / 09-04.
-
-## Weekly focus and feedback review
-
-`collect.py --days 7 --date YYYY-MM-DD` collects one continuous seven-calendar-day focus ending on
-that date, plus context workdays preceding the first focus day. Output directory gains `-7d` to avoid
-overwriting daily evidence. All focus KPIs, axes, traces, draft fates and cluster counts cover those
-seven days. Copy `window.focus_days` with the manifest into `report.json`; the rendered period spans
-the full window. `drill.py --date YYYY-MM-DD-7d` reads that directory. Daily default remains one day.
-
-If `[feedback_review].enabled`, follow [brain-feedback-review](../brain-feedback-review/SKILL.md)
-on the configured cadence and deliver its sibling HTML. Daily reports stay concise.
+v2 2026-09-16: work-queue layout.

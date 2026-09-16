@@ -43,7 +43,6 @@ the manifest instead of losing the report. Be defensive anyway.
 | `classify_run` | `(run: dict) -> list[str]` — extra tags on the reduced run dict. **A tag starting with `noise:` excludes the run**: it drops out of `counted`, out of every cluster denominator, and is counted in `excluded` under the tag name. Use it for exclusions `config.toml` cannot express — vendor identity, sender heuristics, anything needing more than a topic substring | `collect.py` |
 | `channel_of` | `(run: dict) -> str \| None` — axis key on a tenantless project | `collect.py` |
 | `drill` | `(run: dict, ctx: dict) -> str \| None` — markdown appended under "## Project follow-up" | `drill.py` |
-| `custom_sections` | `(evidence: dict) -> list[dict]` | reserved — no script calls it yet; pre-render sections yourself into `report.json.custom_sections[]` |
 
 `classify_run` sees the run *before* exclusion, with its reduced trace header attached:
 `run["trace"]["question_head"]` is the first 600 characters of the inbound message and
@@ -71,6 +70,9 @@ this section the LLM falls back to the generic table and the owner half degrades
 of the technical one.
 
 ## `ledger.md`
+
+For automatic v2 warnings, put the exact stable signature in the Pattern cell and bold
+`**accepted**` or `**noise**` in Disposition. Prose-only legacy rows still require judgement.
 
 A markdown table the judging LLM subtracts before writing findings — the disposition of patterns
 already understood. (`state/ledger.json` is the *automatic* signature memory; this file is the human

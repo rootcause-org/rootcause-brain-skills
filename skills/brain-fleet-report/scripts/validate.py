@@ -32,15 +32,27 @@ from report_schema import (  # noqa: E402
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate report.json")
     parser.add_argument("report", type=Path)
-    parser.add_argument("--kpis", type=Path, help="collector kpis.json to compare against")
-    parser.add_argument("--manifest", type=Path, help="collector manifest.json to compare against")
-    parser.add_argument("--evidence", type=Path, help="collector evidence.json (run-id check)")
+    parser.add_argument(
+        "--kpis", type=Path, help="collector kpis.json to compare against"
+    )
+    parser.add_argument(
+        "--manifest", type=Path, help="collector manifest.json to compare against"
+    )
+    parser.add_argument(
+        "--evidence", type=Path, help="collector evidence.json (run-id check)"
+    )
+    parser.add_argument(
+        "--prior-dir",
+        type=Path,
+        action="append",
+        help="explicit prior report directory (fixtures)",
+    )
     args = parser.parse_args()
 
-    errors = validation_errors(args.report)
+    errors = validation_errors(args.report, prior_dirs=args.prior_dir)
     report = None
     if not errors:
-        report = load_report(args.report)
+        report = load_report(args.report, prior_dirs=args.prior_dir)
         if args.evidence and args.evidence.exists():
             errors = evidence_errors(report, args.evidence)
 
@@ -56,13 +68,15 @@ def main() -> int:
     for warning in soft_warnings(report, kpis, manifest):
         print(f"  warn: {warning}", file=sys.stderr)
 
-    prompts = sum(1 for f in report.findings if f.prompt)
+    prompts = sum(bool(report.effective(f).prompt) for f in report.findings)
+    unchanged = sum(f.status == "unchanged" for f in report.findings)
+    owner = sum(
+        f.audience in ("owner", "both") and f.status != "unchanged"
+        for f in report.findings
+    )
     print(
-        f"OK — {len(report.findings)} findings ({prompts} with prompt), "
-        f"{len(report.technical.actions)} ranked actions, "
-        f"{len(report.owner.tenants)} owner tenant sections, "
-        f"{len(report.custom_sections)} custom sections, "
-        f"{len(report.kpis.per_axis)} axis rows"
+        f"OK — {len(report.findings)} findings / {prompts} with prompt / "
+        f"{unchanged} unchanged / {owner} owner cards"
     )
     return 0
 

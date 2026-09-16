@@ -19,17 +19,25 @@ import re
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    ValidationError,
+    model_validator,
+)
 
 RUN_URL_PREFIX = "https://app.replypen.com/runs/"
 _UUID = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 CANONICAL_RUN_URL = re.compile(rf"^{re.escape(RUN_URL_PREFIX)}{_UUID}$")
-TOKENIZED_RUN_URL = re.compile(rf"^{re.escape(RUN_URL_PREFIX)}{_UUID}(\?t=[A-Za-z0-9_\-]+)?$")
+TOKENIZED_RUN_URL = re.compile(
+    rf"^{re.escape(RUN_URL_PREFIX)}{_UUID}(\?t=[A-Za-z0-9_\-]+)?$"
+)
 
-MAX_FINDINGS = 20
-TENANT_RATIO_MAX = 0.25
-PROMPT_WORDS_MIN = 100
-PROMPT_WORDS_MAX = 220
+MAX_FINDINGS = 12
+PROMPT_WORDS_MIN = 90
+PROMPT_WORDS_MAX = 260
 
 Severity = Literal["high", "medium", "low", "good"]
 Audience = Literal["technical", "owner", "both"]
@@ -70,86 +78,6 @@ Plane = Literal[
     "unknown",
 ]
 
-SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2, "good": 3}
-SEVERITY_COLOR = {
-    "high": "#b42318",
-    "medium": "#b54708",
-    "low": "#475467",
-    "good": "#12734a",
-}
-SEVERITY_LABEL_EN = {"high": "High", "medium": "Medium", "low": "Low", "good": "Good"}
-SEVERITY_LABEL_NL = {"high": "Hoog", "medium": "Midden", "low": "Laag", "good": "Goed"}
-
-KIND_LABEL_EN = {
-    "lost_runs": "Lost runs",
-    "action_failure": "Action failure",
-    "script_error": "Script error",
-    "capture_gap": "Capture gap",
-    "correction": "Human correction",
-    "open_feedback": "Open feedback",
-    "policy_question": "Policy question",
-    "regression": "Regression",
-    "watch": "Watch item",
-    "pattern": "Pattern",
-    "good": "Good",
-}
-KIND_LABEL_NL = {
-    "lost_runs": "Verloren runs",
-    "action_failure": "Gefaalde actie",
-    "script_error": "Scriptfout",
-    "capture_gap": "Meetgat",
-    "correction": "Correctie",
-    "open_feedback": "Open feedback",
-    "policy_question": "Beleidsvraag",
-    "regression": "Regressie",
-    "watch": "Opvolgpunt",
-    "pattern": "Patroon",
-    "good": "Goed",
-}
-
-PLANE_LABEL_EN = {
-    "host": "RootCause host",
-    "action_plane": "Action plane",
-    "brain_script": "Brain script",
-    "brain_content": "Brain content",
-    "tenant_brain": "Tenant brain",
-    "persona": "Persona",
-    "settings": "Settings",
-    "mirror": "Source mirror",
-    "project_code": "Project code",
-    "human_policy": "Human policy",
-    "human_context": "Human context",
-    "noise": "Noise",
-    "unknown": "Unknown",
-}
-PLANE_LABEL_NL = {
-    "host": "RootCause-host",
-    "action_plane": "Actievlak",
-    "brain_script": "Brain-script",
-    "brain_content": "Brain-inhoud",
-    "tenant_brain": "Tenant-brain",
-    "persona": "Persona",
-    "settings": "Instellingen",
-    "mirror": "Bronspiegel",
-    "project_code": "Projectcode",
-    "human_policy": "Menselijk beleid",
-    "human_context": "Menselijke context",
-    "noise": "Ruis",
-    "unknown": "Onbekend",
-}
-
-TASK_KIND_LABEL = {"fix": "Fix", "investigate": "Investigate", "decide": "Decide"}
-FEED_STATUS_LABEL_EN = {
-    "complete": "complete",
-    "partial": "partial",
-    "unavailable": "unavailable",
-}
-FEED_STATUS_LABEL_NL = {
-    "complete": "volledig",
-    "partial": "gedeeltelijk",
-    "unavailable": "niet beschikbaar",
-}
-
 NonEmpty = Annotated[str, Field(min_length=1)]
 IsoDate = Annotated[str, Field(pattern=r"^\d{4}-\d{2}-\d{2}$")]
 
@@ -178,7 +106,7 @@ class Counters(_Model):
     actions_ok: int = Field(default=0, ge=0)
     actions_failed: int = Field(default=0, ge=0)
     actions_proposed: int = Field(default=0, ge=0)
-    run_errors: int = Field(default=0, ge=0)
+    run_errors: int | None = Field(default=0, ge=0)
     bash_real_errors: int = Field(default=0, ge=0)
     usage_errors: int = Field(default=0, ge=0)
     deltas_live: int = Field(default=0, ge=0)
@@ -327,10 +255,8 @@ class Scope(_Model):
 
 
 class Impact(_Model):
-    customer_effect: Annotated[str, Field(min_length=1, max_length=400)]
     runs: int = Field(default=0, ge=0)
     threads: int = Field(default=0, ge=0)
-    confidence: Confidence = "medium"
 
 
 class Recurrence(_Model):
@@ -349,27 +275,54 @@ class Evidence(_Model):
 
 class RootCause(_Model):
     plane: Plane
-    detail: Annotated[str, Field(min_length=1, max_length=600)]
-    confidence: Confidence = "medium"
+    confidence: Confidence
 
 
-class FollowUp(_Model):
-    status: Literal["done", "partial", "open"]
-    evidence: Annotated[str, Field(min_length=1, max_length=1200)]
+class Target(_Model):
+    repo: NonEmpty
+    paths: list[NonEmpty] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _paths_exist(self) -> Target:
+        repo = Path(self.repo).expanduser()
+        if not repo.is_absolute() or not repo.is_dir():
+            raise ValueError(f"repo must be an existing absolute checkout: {self.repo}")
+        for value in self.paths:
+            path = Path(re.sub(r":\d+(?::\d+)?$", "", value)).expanduser()
+            path = path if path.is_absolute() else repo / path
+            if not path.exists():
+                raise ValueError(f"path does not exist: {path}")
+            if not path.resolve().is_relative_to(repo.resolve()):
+                raise ValueError(
+                    f"path is outside target repo: {path}; add its repo as another target"
+                )
+        return self
+
+
+class Decision(_Model):
+    question: Annotated[str, Field(min_length=1, max_length=300)]
+    options: list[Annotated[str, Field(min_length=1, max_length=120)]] = Field(
+        min_length=2, max_length=4
+    )
 
 
 class Prompt(_Model):
-    """Structured fields; `prompt_compose.py` turns them into the copy blob."""
-
     task_kind: TaskKind
-    target_repo: NonEmpty
-    paths: list[NonEmpty] = Field(default_factory=list)
-    skills: list[NonEmpty] = Field(default_factory=list)
+    targets: list[Target] = Field(min_length=1)
     run_refs: list[NonEmpty] = Field(default_factory=list)
-    conclusion: Annotated[str, Field(min_length=20, max_length=1200)]
-    proposed_change: Annotated[str, Field(min_length=20, max_length=1200)]
-    verification: Annotated[str, Field(min_length=10, max_length=600)]
-    decision_needed: str | None = Field(default=None, max_length=400)
+    repro: str | None = Field(default=None, max_length=400)
+    conclusion: Annotated[str, Field(min_length=20, max_length=600)]
+    change: Annotated[str, Field(min_length=20, max_length=900)]
+    done_when: Annotated[str, Field(min_length=10, max_length=400)]
+    decision: Decision | None = None
+
+    @model_validator(mode="after")
+    def _rules(self) -> Prompt:
+        if self.task_kind == "decide" and not self.decision:
+            raise ValueError("decision is required for decide")
+        if any(not CANONICAL_RUN_URL.match(url) for url in self.run_refs):
+            raise ValueError("run_refs must be canonical run URLs without tokens")
+        return self
 
 
 class Finding(_Model):
@@ -380,128 +333,96 @@ class Finding(_Model):
     members: list[NonEmpty] = Field(default_factory=list)
     scope: Scope
     severity: Severity
-    impact: Impact
     recurrence: Recurrence
-    title: Annotated[str, Field(min_length=1, max_length=100)]
-    text_en: str | None = Field(default=None, max_length=1400)
-    text_nl: str | None = Field(default=None, max_length=1400)
-    evidence: Evidence = Field(default_factory=Evidence)
-    root_cause: RootCause
-    followup: FollowUp | None = None
-    recommendation: str | None = Field(default=None, max_length=400)
+    title: Annotated[str, Field(min_length=1, max_length=90)]
+    status: Literal["new", "changed", "unchanged"]
+    evidence: Evidence
+    impact: Impact | None = None
+    root_cause: RootCause | None = None
+    text_en: str | None = Field(default=None, max_length=700)
+    text_nl: str | None = Field(default=None, max_length=500)
+    ask_nl: str | None = Field(default=None, max_length=300)
+    ask_for: str | None = Field(default=None, max_length=40)
+    update_en: str | None = Field(default=None, max_length=200)
+    update_nl: str | None = Field(default=None, max_length=200)
     prompt: Prompt | None = None
 
     @model_validator(mode="after")
     def _rules(self) -> Finding:
-        errors: list[str] = []
-        if self.audience in ("technical", "both") and not (self.text_en or "").strip():
-            errors.append(
-                f"findings[{self.id}].text_en: required for audience "
-                f"{self.audience!r} (write the technical explanation in English)"
-            )
-        if self.audience in ("owner", "both") and not (self.text_nl or "").strip():
-            errors.append(
-                f"findings[{self.id}].text_nl: required for audience "
-                f"{self.audience!r} (write the owner explanation in Dutch)"
-            )
-        if self.severity == "high" and self.prompt is None:
-            if not (self.audience == "owner" and self.kind == "policy_question"):
-                errors.append(
-                    f"findings[{self.id}].prompt: required for severity 'high' "
-                    "(only an owner-audience policy_question may go without one)"
+        def require(name):
+            if not getattr(self, name):
+                raise ValueError(
+                    f"findings[{self.id}].{name}: required for {self.status}/{self.audience}"
                 )
-        for i, url in enumerate(self.evidence.run_urls):
-            if not TOKENIZED_RUN_URL.match(url):
-                errors.append(
-                    f"findings[{self.id}].evidence.run_urls[{i}]: not a run URL "
-                    f"({RUN_URL_PREFIX}<uuid> optionally with ?t=<token>)"
+
+        if any(not TOKENIZED_RUN_URL.match(url) for url in self.evidence.run_urls):
+            raise ValueError("evidence.run_urls must be run URLs")
+        if self.status == "unchanged":
+            forbidden = {
+                "text_en",
+                "text_nl",
+                "ask_nl",
+                "ask_for",
+                "prompt",
+                "impact",
+                "root_cause",
+            }
+            if forbidden & self.model_fields_set:
+                raise ValueError(
+                    "unchanged forbids "
+                    + ", ".join(sorted(forbidden & self.model_fields_set))
                 )
-        if self.prompt:
-            for i, url in enumerate(self.prompt.run_refs):
-                if not CANONICAL_RUN_URL.match(url):
-                    errors.append(
-                        f"findings[{self.id}].prompt.run_refs[{i}]: must be the canonical "
-                        f"{RUN_URL_PREFIX}<uuid> (strip the ?t=… token)"
-                    )
-            if self.prompt.task_kind == "decide" and not self.prompt.decision_needed:
-                errors.append(
-                    f"findings[{self.id}].prompt.decision_needed: required when "
-                    "task_kind is 'decide' (name the choice the human must make)"
-                )
-        if errors:
-            raise ValueError("\n".join(errors))
+        else:
+            require("impact")
+            require("root_cause")
+            if self.audience in ("technical", "both"):
+                require("text_en")
+            if self.audience in ("owner", "both"):
+                require("text_nl")
+                require("ask_nl")
+            if self.severity == "high" and not (
+                self.audience == "owner" and self.kind == "policy_question"
+            ):
+                require("prompt")
+        if self.status in ("changed", "unchanged"):
+            if self.audience in ("technical", "both"):
+                require("update_en")
+            if self.audience in ("owner", "both"):
+                require("update_nl")
+        elif {"update_en", "update_nl"} & self.model_fields_set:
+            raise ValueError("new forbids update fields")
         return self
 
 
-# --------------------------------------------------------------------------
-# views
-# --------------------------------------------------------------------------
-
-
-class TldrItem(_Model):
-    text: Annotated[str, Field(min_length=1, max_length=280)]
-    severity: Severity
-    finding_ids: list[str] = Field(default_factory=list)
-
-
-class ActionItem(_Model):
-    rank: int = Field(ge=1)
-    finding_id: str
-    summary: Annotated[str, Field(min_length=1, max_length=300)]
+def owner_prompt_allowed(finding: Finding) -> bool:
+    return bool(
+        finding.audience in ("owner", "both")
+        and finding.prompt
+        and finding.prompt.task_kind == "fix"
+        and finding.root_cause
+        and finding.root_cause.plane in ("brain_content", "tenant_brain")
+        and all(
+            Path(t.repo).expanduser().resolve().name.startswith("rootcause-brain-")
+            for t in finding.prompt.targets
+        )
+    )
 
 
 class TechnicalView(_Model):
-    headline: Annotated[str, Field(min_length=1, max_length=280)]
-    tldr: list[TldrItem] = Field(default_factory=list, max_length=6)
-    actions: list[ActionItem] = Field(default_factory=list)
-    regressions: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(
-        default_factory=list
-    )
-    watch: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(
-        default_factory=list
-    )
-    noise_note: str | None = Field(default=None, max_length=600)
-
-
-class OwnerTenant(_Model):
-    slug: NonEmpty
-    policy_difference_nl: Annotated[str, Field(min_length=1, max_length=400)]
-    bullets: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(
-        default_factory=list, max_length=3
-    )
-    finding_ids: list[str] = Field(default_factory=list)
+    headline: Annotated[str, Field(min_length=1, max_length=220)]
+    noise_note: str | None = Field(default=None, max_length=400)
 
 
 class OwnerView(_Model):
-    headline_nl: Annotated[str, Field(min_length=1, max_length=280)]
-    tldr_nl: list[TldrItem] = Field(default_factory=list, max_length=5)
-    actions_nl: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(
-        default_factory=list
-    )
-    policy_questions_nl: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(
-        default_factory=list
-    )
-    good_nl: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(
-        default_factory=list
-    )
-    tenants: list[OwnerTenant] = Field(default_factory=list)
-
-
-class CustomSection(_Model):
-    id: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9_\-]{1,40}$")]
-    audience: Audience
-    member: str | None = None
-    title: Annotated[str, Field(min_length=1, max_length=120)]
-    html: NonEmpty
-    text: NonEmpty
+    headline_nl: Annotated[str, Field(min_length=1, max_length=220)]
 
 
 class Meta(_Model):
-    signal_note: str | None = Field(default=None, max_length=1200)
+    signal_note: str | None = Field(default=None, max_length=600)
 
 
 class Report(_Model):
-    schema_version: int = Field(ge=1)
+    schema_version: Literal[2]
     report_id: NonEmpty
     date: IsoDate
     generated_at: NonEmpty
@@ -511,69 +432,48 @@ class Report(_Model):
     findings: list[Finding] = Field(default_factory=list, max_length=MAX_FINDINGS)
     technical: TechnicalView
     owner: OwnerView
-    custom_sections: list[CustomSection] = Field(default_factory=list)
     meta: Meta | None = None
+    _prior: dict = PrivateAttr(default_factory=dict)
+    _source: Path | None = PrivateAttr(default=None)
 
     @model_validator(mode="after")
     def _cross_refs(self) -> Report:
-        errors: list[str] = []
-        ids: set[str] = set()
-        for finding in self.findings:
-            if finding.id in ids:
-                errors.append(
-                    f"findings: duplicate id {finding.id!r} (every finding needs a unique F<n>)"
+        for field in ("id", "signature"):
+            values = [getattr(f, field) for f in self.findings]
+            if len(values) != len(set(values)):
+                raise ValueError(f"findings: duplicate {field}")
+        tenants = {a.key for a in self.kpis.per_axis if a.axis == "tenant"}
+        for f in self.findings:
+            if f.scope.tenant and f.scope.tenant not in tenants:
+                raise ValueError(
+                    f"findings[{f.id}].scope.tenant: unknown tenant {f.scope.tenant}"
                 )
-            ids.add(finding.id)
-
-        def check_ids(where: str, refs: list[str]) -> None:
-            for ref in refs:
-                if ref not in ids:
-                    errors.append(
-                        f"{where}: unknown finding_id {ref!r} "
-                        f"(known: {', '.join(sorted(ids)) or 'none'})"
-                    )
-
-        for i, item in enumerate(self.technical.tldr):
-            check_ids(f"technical.tldr[{i}].finding_ids", item.finding_ids)
-        for i, action in enumerate(self.technical.actions):
-            check_ids(f"technical.actions[{i}].finding_id", [action.finding_id])
-        for i, item in enumerate(self.owner.tldr_nl):
-            check_ids(f"owner.tldr_nl[{i}].finding_ids", item.finding_ids)
-        for i, tenant in enumerate(self.owner.tenants):
-            check_ids(f"owner.tenants[{i}].finding_ids", tenant.finding_ids)
-
-        tenant_keys = {a.key for a in self.kpis.per_axis if a.axis == "tenant"}
-        for finding in self.findings:
-            slug = finding.scope.tenant
-            if slug and slug not in tenant_keys:
-                errors.append(
-                    f"findings[{finding.id}].scope.tenant: unknown tenant {slug!r} "
-                    f"(must be a kpis.per_axis key with axis 'tenant': "
-                    f"{', '.join(sorted(tenant_keys)) or 'none'})"
-                )
-        for i, tenant in enumerate(self.owner.tenants):
-            if tenant.slug not in tenant_keys:
-                errors.append(
-                    f"owner.tenants[{i}].slug: unknown tenant {tenant.slug!r} "
-                    f"(must be a kpis.per_axis key with axis 'tenant')"
-                )
-
         if self.date != self.window.focus:
-            errors.append(
-                f"window.focus: {self.window.focus!r} differs from date {self.date!r} "
-                "(the focus day is the report day)"
-            )
-        if errors:
-            raise ValueError("\n".join(errors))
+            raise ValueError("window.focus differs from date")
         return self
 
-    # --- helpers for the renderers ----------------------------------------
+    def effective(self, finding: Finding) -> Finding:
+        if finding.status != "unchanged":
+            return finding
+        previous = self._prior[finding.signature]["finding"]
+        inherited = {
+            k: previous.get(k) for k in ("text_en", "text_nl", "ask_nl", "ask_for")
+        }
+        inherited["prompt"] = (
+            Prompt.model_validate(previous["prompt"])
+            if previous.get("prompt")
+            else None
+        )
+        inherited["root_cause"] = RootCause.model_validate(previous["root_cause"])
+        inherited["impact"] = Impact.model_validate(previous["impact"])
+        return finding.model_copy(update=inherited)
 
     def finding_by_id(self, finding_id: str) -> Finding | None:
-        return next((f for f in self.findings if f.id == finding_id), None)
+        return next(
+            (self.effective(f) for f in self.findings if f.id == finding_id), None
+        )
 
     def axis_rows(self) -> list[AxisKpis]:
-        """The KPI table axis: tenants if any, else channels, else members."""
         for axis in ("tenant", "channel", "member"):
             rows = [a for a in self.kpis.per_axis if a.axis == axis]
             if rows:
@@ -581,34 +481,11 @@ class Report(_Model):
         return []
 
     def axis_name(self, key: str) -> str:
-        for row in self.kpis.per_axis:
-            if row.key == key:
-                return row.name
-        return key
-
-    def findings_for(self, audience: str) -> list[Finding]:
-        wanted = {audience, "both"}
-        return [f for f in self.findings_sorted() if f.audience in wanted]
+        return next((a.name for a in self.kpis.per_axis if a.key == key), key)
 
     def findings_sorted(self) -> list[Finding]:
-        return sorted(
-            self.findings,
-            key=lambda f: (SEVERITY_ORDER[f.severity], _index(f.id)),
-        )
-
-    def sections_for(self, audience: str) -> list[CustomSection]:
-        wanted = {audience, "both"}
-        return [s for s in self.custom_sections if s.audience in wanted]
-
-    def is_quiet(self) -> bool:
-        return not self.findings
-
-
-def _index(finding_id: str) -> int:
-    try:
-        return int(finding_id[1:])
-    except ValueError:  # pragma: no cover - the pattern guarantees digits
-        return 0
+        # Compatibility for the prompt CLI; author order is rank.
+        return [self.effective(f) for f in self.findings]
 
 
 # --------------------------------------------------------------------------
@@ -616,14 +493,72 @@ def _index(finding_id: str) -> int:
 # --------------------------------------------------------------------------
 
 _NL_WORDS = {
-    "de", "het", "een", "en", "van", "niet", "voor", "met", "is", "dat", "op", "te",
-    "zijn", "wordt", "naar", "maar", "die", "aan", "er", "ook", "nog", "bij", "we",
-    "wel", "geen", "hij", "ze", "over", "dan", "als", "om", "wat", "heeft",
+    "de",
+    "het",
+    "een",
+    "en",
+    "van",
+    "niet",
+    "voor",
+    "met",
+    "is",
+    "dat",
+    "op",
+    "te",
+    "zijn",
+    "wordt",
+    "naar",
+    "maar",
+    "die",
+    "aan",
+    "er",
+    "ook",
+    "nog",
+    "bij",
+    "we",
+    "wel",
+    "geen",
+    "hij",
+    "ze",
+    "over",
+    "dan",
+    "als",
+    "om",
+    "wat",
+    "heeft",
 }
 _EN_WORDS = {
-    "the", "and", "is", "to", "of", "in", "that", "for", "with", "this", "are",
-    "not", "on", "it", "we", "a", "an", "as", "by", "from", "was", "were", "but",
-    "so", "at", "has", "have", "does", "which", "when", "should",
+    "the",
+    "and",
+    "is",
+    "to",
+    "of",
+    "in",
+    "that",
+    "for",
+    "with",
+    "this",
+    "are",
+    "not",
+    "on",
+    "it",
+    "we",
+    "a",
+    "an",
+    "as",
+    "by",
+    "from",
+    "was",
+    "were",
+    "but",
+    "so",
+    "at",
+    "has",
+    "have",
+    "does",
+    "which",
+    "when",
+    "should",
 }
 
 
@@ -670,113 +605,95 @@ def _run_ids_in(blob: Any) -> set[str]:
     return found
 
 
-def _longest_prompt_field(prompt: Prompt) -> str:
-    """The field to cut (or grow) first — the word budget is spent almost entirely on these."""
-    fields = {
-        "conclusion": prompt.conclusion,
-        "proposed_change": prompt.proposed_change,
-        "verification": prompt.verification,
-        "decision_needed": prompt.decision_needed or "",
-    }
-    name = max(fields, key=lambda k: len(fields[k].split()))
-    return f"{name} ({len(fields[name].split())} words)"
-
-
-def soft_warnings(
-    report: Report,
-    kpis_path: str | Path | None = None,
-    manifest_path: str | Path | None = None,
-) -> list[str]:
-    """`json.path: message (hint)` lines that steer but do not block.
-
-    The owner half is written in `coverage.owner_lang` (default `nl`); the `*_nl` field names are
-    historical. The Dutch heuristic only runs when that language really is Dutch.
-    """
-    out: list[str] = []
-    owner_lang = report.coverage.lang()
-    owner_is_dutch = owner_lang == "nl"
-
-    tenant_scoped = sum(1 for f in report.findings if f.scope.level == "tenant")
-    if report.findings and tenant_scoped / len(report.findings) > TENANT_RATIO_MAX:
-        pct = round(tenant_scoped / len(report.findings) * 100)
-        out.append(
-            f"findings: {pct}% of findings are tenant-scoped "
-            f"(keep it under {round(TENANT_RATIO_MAX * 100)}% — the report is about the project; "
-            "a tenant finding needs a policy difference, not just an example)"
-        )
-
-    axis_keys = {a.key for a in report.kpis.per_axis}
-    for finding in report.findings:
-        key = finding.scope.key
-        if key and key not in axis_keys:
-            out.append(
-                f"findings[{finding.id}].scope.key: {key!r} is not a kpis.per_axis key "
-                f"(known: {', '.join(sorted(axis_keys)) or 'none'})"
-            )
-        if owner_is_dutch and finding.text_nl and _looks_english(finding.text_nl):
-            out.append(
-                f"findings[{finding.id}].text_nl: reads as English "
-                "(the owner half is Dutch)"
-            )
-        if finding.text_en and _looks_dutch(finding.text_en):
-            out.append(
-                f"findings[{finding.id}].text_en: reads as Dutch "
-                "(the technical half is English)"
-            )
-        if finding.prompt:
-            for field in ("conclusion", "proposed_change", "verification"):
-                value = getattr(finding.prompt, field)
-                if value and _looks_dutch(value):
+def soft_warnings(report: Report, kpis_path=None, manifest_path=None) -> list[str]:
+    out = []
+    ledger = ""
+    if report._source:
+        for parent in report._source.parents:
+            candidate = parent / "_internal/fleet-report/ledger.md"
+            if candidate.exists():
+                ledger = candidate.read_text()
+                break
+    for f in report.findings:
+        if f.text_en and _looks_dutch(f.text_en):
+            out.append(f"findings[{f.id}].text_en: reads as Dutch")
+        if report.coverage.lang() == "nl" and f.text_nl and _looks_english(f.text_nl):
+            out.append(f"findings[{f.id}].text_nl: reads as English")
+        if f.scope.key and f.scope.key not in {a.key for a in report.kpis.per_axis}:
+            out.append(f"findings[{f.id}].scope.key: unknown axis key")
+        if f.prompt:
+            words = len(compose_prompt(f).split())
+            if not PROMPT_WORDS_MIN <= words <= PROMPT_WORDS_MAX:
+                longest = max(
+                    ("conclusion", "change", "done_when"),
+                    key=lambda k: len(getattr(f.prompt, k)),
+                )
+                out.append(
+                    f"findings[{f.id}].prompt: {words} words; aim for 90–260 (adjust {longest})"
+                )
+            if f.prompt.task_kind == "fix":
+                if not f.prompt.repro:
                     out.append(
-                        f"findings[{finding.id}].prompt.{field}: reads as Dutch "
-                        "(prompts are always English)"
+                        f"findings[{f.id}].prompt.repro: fix needs a reproducible case"
                     )
-            words = len(compose_prompt(finding).split())
-            if words < PROMPT_WORDS_MIN or words > PROMPT_WORDS_MAX:
-                verb = "trim" if words > PROMPT_WORDS_MAX else "grow"
+                for phrase in (
+                    "locate",
+                    "consider",
+                    "investigate whether",
+                    "either",
+                    "or (b)",
+                    "read the full error",
+                ):
+                    if phrase in f.prompt.change.lower():
+                        out.append(
+                            f"findings[{f.id}].prompt.change: fix hedge {phrase!r}; use investigate"
+                        )
+        if any(
+            f.signature in row and re.search(r"\*\*(?:accepted|noise)\*\*", row, re.I)
+            for row in ledger.splitlines()
+        ):
+            out.append(f"findings[{f.id}]: ledger says accepted/noise")
+        if f.status == "new":
+            words = {w for w in re.findall(r"\w+", f.title.lower()) if len(w) > 3}
+            for signature, old in report._prior.items():
+                old_words = {
+                    w
+                    for w in re.findall(r"\w+", old["finding"]["title"].lower())
+                    if len(w) > 3
+                }
+                if (
+                    signature != f.signature
+                    and words
+                    and len(words & old_words) / len(words) >= 0.6
+                ):
+                    out.append(
+                        f"findings[{f.id}]: looks like prior signature {signature} — reuse it"
+                    )
+    for audience, maximum in (("technical", 5), ("owner", 4)):
+        count = sum(
+            f.status != "unchanged" and f.audience in (audience, "both")
+            for f in report.findings
+        )
+        if count > maximum:
+            out.append(
+                f"{audience}: {count} expanded findings; aim for at most {maximum}"
+            )
+    for label, model, value, path in (
+        ("kpis", Kpis, report.kpis, kpis_path),
+        ("coverage", Manifest, report.coverage, manifest_path),
+    ):
+        if path:
+            try:
+                other = model.model_validate(_load_json(path))
+            except (OSError, ValueError) as exc:
                 out.append(
-                    f"findings[{finding.id}].prompt: composes to {words} words "
-                    f"(aim for {PROMPT_WORDS_MIN}–{PROMPT_WORDS_MAX}: enough to act on, "
-                    f"short enough to edit — {verb} "
-                    f"{_longest_prompt_field(finding.prompt)} first)"
+                    f"{label}: cannot compare against {path} ({_one_line_exc(exc)})"
                 )
-
-    if owner_is_dutch:
-        for i, item in enumerate(report.owner.tldr_nl):
-            if _looks_english(item.text):
-                out.append(f"owner.tldr_nl[{i}].text: reads as English (the owner half is Dutch)")
-        for i, text in enumerate(report.owner.actions_nl):
-            if _looks_english(text):
-                out.append(f"owner.actions_nl[{i}]: reads as English (the owner half is Dutch)")
-        if _looks_english(report.owner.headline_nl):
-            out.append("owner.headline_nl: reads as English (the owner half is Dutch)")
-    if _looks_dutch(report.technical.headline):
-        out.append("technical.headline: reads as Dutch (the technical half is English)")
-
-    # A drift check must never be able to kill the run: an on-disk artefact that no longer parses
-    # is a `warn:` line, not a traceback in the middle of the documented happy path.
-    if kpis_path:
-        try:
-            on_disk = Kpis.model_validate(_load_json(kpis_path))
-        except (OSError, json.JSONDecodeError, ValidationError, ValueError) as exc:
-            out.append(f"kpis: cannot compare against {kpis_path} ({_one_line_exc(exc)})")
-        else:
-            if report.kpis.model_dump(exclude_none=False) != on_disk.model_dump(exclude_none=False):
-                out.append(
-                    f"kpis: differs from {kpis_path} "
-                    "(copy the collector's kpis.json verbatim — never retype counters)"
-                )
-    if manifest_path:
-        try:
-            on_disk_manifest = Manifest.model_validate(_load_json(manifest_path))
-        except (OSError, json.JSONDecodeError, ValidationError, ValueError) as exc:
-            out.append(f"coverage: cannot compare against {manifest_path} ({_one_line_exc(exc)})")
-        else:
-            if report.coverage.model_dump() != on_disk_manifest.model_dump():
-                out.append(
-                    f"coverage: differs from {manifest_path} "
-                    "(copy the collector's manifest.json verbatim)"
-                )
+            else:
+                if value.model_dump() != other.model_dump():
+                    out.append(
+                        f"{label}: differs from {path}; copy collector artefact verbatim"
+                    )
     return out
 
 
@@ -806,32 +723,42 @@ def evidence_errors(report: Report, evidence_path: str | Path) -> list[str]:
 # --------------------------------------------------------------------------
 
 
-def compose_prompt(finding: Finding) -> str:
-    """Render `finding.prompt` into the editable plain-text prompt."""
+def compose_prompt(finding: Finding, *, owner: bool = False) -> str:
     prompt = finding.prompt
     if prompt is None:
         return ""
-    lines = [f"{TASK_KIND_LABEL[prompt.task_kind]}: {finding.title}", ""]
-    lines.append("Context")
-    lines.append(f"- Repo: {prompt.target_repo}")
-    if prompt.paths:
-        for path in prompt.paths:
-            lines.append(f"- Path: {path}")
-    if prompt.skills:
-        lines.append(f"- Skills: {', '.join(prompt.skills)}")
-    if prompt.run_refs:
-        for url in prompt.run_refs:
-            lines.append(f"- Run: {url}")
-    lines.append(
-        f"- Seen {finding.recurrence.focus_count}× on {finding.recurrence.last_seen}, "
-        f"{finding.recurrence.context_count}× in the context window "
-        f"(first {finding.recurrence.first_seen}, {finding.recurrence.state})."
+    first = prompt.targets[0]
+    lines = (
+        [f"Paste this into the coding agent of the brain repo {first.repo}.", ""]
+        if owner
+        else []
     )
-    lines += ["", "Conclusion", f"- {prompt.conclusion}"]
-    lines += ["", "Proposed change", f"- {prompt.proposed_change}"]
-    lines += ["", "Verification", f"- {prompt.verification}"]
-    if prompt.decision_needed:
-        lines += ["", "Decision needed", f"- {prompt.decision_needed}"]
+    lines += [
+        f"{prompt.task_kind.upper()}: {finding.title}",
+        "",
+        f"Start in: {first.repo} — open this checkout, read its AGENTS.md, run everything from its root.",
+    ]
+    for target in prompt.targets[1:]:
+        lines.append(f"Also touch: {target.repo}: {', '.join(target.paths)}")
+    lines.append(f"Files: {', '.join(first.paths)}")
+    for url in prompt.run_refs:
+        lines.append(f"Runs: {url} (trace: rc run show {url.rsplit('/', 1)[-1]})")
+    lines += ["", "What is wrong", prompt.conclusion]
+    if prompt.repro:
+        lines += ["", "Reproduce", prompt.repro]
+    heading = {"fix": "Change", "investigate": "Task / Checks", "decide": "Per option"}[
+        prompt.task_kind
+    ]
+    lines += ["", heading, prompt.change, "", "Done when", prompt.done_when]
+    if prompt.decision:
+        lines += ["", "Decision first", prompt.decision.question]
+        lines += [f"- {option}" for option in prompt.decision.options]
+    lines += [
+        "",
+        "Boundaries",
+        "- Production is read-only from here: rc list/show/trace and prod-console queries only; never rc ask, never confirm an action.",
+        "- Edit only the repos listed above. Commit when done; do not publish/promote unless the Change says so.",
+    ]
     return "\n".join(lines)
 
 
@@ -895,36 +822,57 @@ def _format_error(error: dict[str, Any]) -> list[str]:
     return lines or [f"{loc}: {msg}"]
 
 
-def validation_errors(path: str | Path) -> list[str]:
-    """Actionable `json.path: message (hint)` lines; empty means valid."""
+def load_report(path: str | Path, *, prior_dirs=None) -> Report:
+    from prior import prior_findings
+
     path = Path(path)
+    report = Report.model_validate_json(path.read_text(encoding="utf-8"))
+    report._source = path.resolve()
+    report._prior = prior_findings(
+        path, prior_dirs=prior_dirs, date=report.date, report_id=report.report_id
+    )
+    for f in report.findings:
+        old = report._prior.get(f.signature)
+        if f.status == "new" and old:
+            raise ValueError(
+                f"findings[{f.id}].status: signature seen {old['date']}; use changed/unchanged"
+            )
+        if f.status in ("changed", "unchanged") and not old:
+            raise ValueError(
+                f"findings[{f.id}].status: {f.status} needs a prior v2 finding"
+            )
+        if f.status == "unchanged":
+            previous = old["finding"]
+            if not previous.get("prompt") and not previous.get("ask_nl"):
+                raise ValueError(
+                    f"findings[{f.id}]: unchanged needs a prior prompt or owner task"
+                )
+            try:
+                effective = report.effective(f)
+            except (ValueError, KeyError, TypeError) as exc:
+                raise ValueError(
+                    f"findings[{f.id}]: inherited prompt from {old['prompt_date']} no longer validates; "
+                    f"use changed ({_one_line_exc(exc)})"
+                ) from exc
+            for name in (
+                ["text_en"]
+                if f.audience == "technical"
+                else ["text_nl", "ask_nl"]
+                if f.audience == "owner"
+                else ["text_en", "text_nl", "ask_nl"]
+            ):
+                if not getattr(effective, name):
+                    raise ValueError(
+                        f"findings[{f.id}]: prior lacks {name}; use changed"
+                    )
+    return report
+
+
+def validation_errors(path: str | Path, *, prior_dirs=None) -> list[str]:
     try:
-        raw = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        return [f"<file>: cannot read {path} ({exc})"]
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        lines = raw.splitlines()
-        line = lines[exc.lineno - 1] if 0 < exc.lineno <= len(lines) else ""
-        return [
-            f"<root>: invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg} "
-            f"({_excerpt(line.strip(), 100)!r})"
-        ]
-    if not isinstance(data, dict):
-        return ["<root>: report.json must be a JSON object, not a list or scalar"]
-    try:
-        Report.model_validate(data)
+        load_report(path, prior_dirs=prior_dirs)
     except ValidationError as exc:
-        out: list[str] = []
-        for error in exc.errors():
-            out.extend(_format_error(error))
-        return out
+        return [line for error in exc.errors() for line in _format_error(error)]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return [str(exc)]
     return []
-
-
-def load_report(path: str | Path) -> Report:
-    errors = validation_errors(path)
-    if errors:
-        raise ValueError("\n".join(errors))
-    return Report.model_validate(json.loads(Path(path).read_text(encoding="utf-8")))

@@ -3,1202 +3,504 @@
 # requires-python = ">=3.10"
 # dependencies = ["pydantic>=2"]
 # ///
-"""Render `report.json` into the six deliverables.
-
-    uv run scripts/render.py report.json [--out-dir DIR]
-
-    technical.html        EN, everything: technical view, all findings
-                          (owner-facing ones in a secondary block), coverage,
-                          KPIs, custom sections for technical/both.
-    owner.html            owner view only: findings with audience owner/both,
-                          `text_nl` only — no technical text, no run ids. The
-                          copyable prompts ARE shown (English, in an accordion)
-                          so the owner can hand one to a coding agent. Chrome
-                          and labels follow `coverage.owner_lang` (default `nl`;
-                          the `*_nl` field names are historical).
-    technical.email.html  same content, inline CSS, no JS, prompt as <pre>.
-    owner.email.html      idem for the owner (prompts as plain <pre>).
-    technical.txt         plain-text fallback (prompts included).
-    owner.txt             plain-text fallback (owner language, prompts included).
-
-Neutral house style: no project branding, self-contained, mobile-friendly from
-500 px. Copy buttons are progressive enhancement — the <pre> stays selectable.
-"""
+"""Four fleet report outputs, projected once per audience for HTML and text."""
 
 from __future__ import annotations
 
 import argparse
-import sys
-from datetime import date, datetime
-from html import escape
+import html
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from report_schema import (  # noqa: E402
-    Counters,
-    CustomSection,
-    FEED_STATUS_LABEL_EN,
-    FEED_STATUS_LABEL_NL,
-    Finding,
-    KIND_LABEL_EN,
-    KIND_LABEL_NL,
-    PLANE_LABEL_EN,
-    PLANE_LABEL_NL,
-    Report,
-    SEVERITY_COLOR,
-    SEVERITY_LABEL_EN,
-    SEVERITY_LABEL_NL,
-    compose_prompt,
-    load_report,
-)
-
-ACCENT = "#33518c"
-ACCENT_SOFT = "#eef2fa"
-BG = "#f6f7f9"
-INK = "#101828"
-MUTED = "#667085"
-BORDER = "#e4e7ec"
-
-_MONTHS_EN = ["January", "February", "March", "April", "May", "June", "July",
-              "August", "September", "October", "November", "December"]
-_MONTHS_NL = ["januari", "februari", "maart", "april", "mei", "juni", "juli",
-              "augustus", "september", "oktober", "november", "december"]
-_DAYS_EN = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-_DAYS_NL = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"]
-
-
-def e(text: str | None) -> str:
-    return escape(text or "", quote=True)
-
-
-def long_date(iso: str, lang: str) -> str:
-    day = date.fromisoformat(iso)
-    if lang == "nl":
-        return f"{_DAYS_NL[day.weekday()]} {day.day} {_MONTHS_NL[day.month - 1]} {day.year}"
-    return f"{_DAYS_EN[day.weekday()]} {day.day} {_MONTHS_EN[day.month - 1]} {day.year}"
-
-
-def short_date(iso: str) -> str:
-    day = date.fromisoformat(iso)
-    return f"{day.day:02d}-{day.month:02d}"
-
-
-def stamp(generated_at: str, lang: str) -> str:
-    try:
-        parsed = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
-    except ValueError:
-        return generated_at
-    joiner = " om " if lang == "nl" else " at "
-    return long_date(parsed.date().isoformat(), lang) + joiner + f"{parsed:%H:%M}"
-
-
-# --- per-language UI strings ------------------------------------------------
+from report_schema import Report, compose_prompt, load_report, owner_prompt_allowed
 
 STR = {
     "en": {
-        "kicker": "Fleet report",
-        "generated": "Generated",
-        "runs_of": "runs of",
-        "actions": "What to fix today",
-        "tldr": "In one look",
-        "kpis": "Numbers",
-        "context": "Context days",
-        "coverage": "Data coverage",
-        "findings": "Findings",
-        "owner_findings": "Owner-facing findings",
-        "regressions": "Regressions",
-        "watch": "Watch",
-        "noise": "Noise",
-        "quiet": "Nothing needed a decision on this day.",
-        "evidence": "Evidence",
+        "act": "Act today",
+        "owner_act": "Decisions and tasks",
+        "open": "Still open",
+        "diagnostics": "Diagnostics",
+        "since": "since",
+        "update": "Since last report",
         "prompt": "Prompt — copy",
+        "owner_prompt": "Prompt for the assistant in the brain repo — copy",
         "copy": "Copy prompt",
-        "copied": "Copied",
-        "followup": "Follow-up",
-        "recommendation": "Recommendation",
-        "impact": "Impact",
-        "root_cause": "Root cause",
-        "runs": "Runs",
-        "drafts": "Drafts",
-        "accepted": "Accepted",
-        "edited": "Edited",
-        "shadow": "Shadow",
-        "actions_col": "Actions ok/failed",
-        "errors": "Errors",
-        "total": "Whole project",
-        "open_run": "run",
-        "note": "Note",
-        "footer": "Generated by the brain-fleet-report skill.",
-        "no_findings": "No findings.",
-        "excluded": "excluded as noise",
-        # owner-page chrome (the owner half is rendered in `coverage.owner_lang`)
-        "owner_kicker": "Daily report",
-        "owner_actions": "What we pick up today",
-        "policy_questions": "Questions for you",
-        "good": "What went well",
-        "tenants": "Per customer",
         "conversation": "conversation",
-        "owner_footer": "Generated automatically. No surnames, no e-mail addresses.",
-        # the owner half shows the same prompts; they stay English on purpose
-        "owner_prompt": "Prompt for a coding agent — copy",
+        "for": "For",
+        "unchanged": "unchanged",
+        "prompt_from": "prompt from",
+        "evidence": "Evidence",
+        "review": "Complete feedback review (about 10 minutes)",
+        "quiet": "No new tasks.",
+        "high": "High",
+        "medium": "Medium",
+        "low": "Low",
+        "good": "Good",
     },
     "nl": {
-        "kicker": "Dagrapport",
-        "generated": "Gegenereerd",
-        "runs_of": "runs van",
-        "actions": "Wat we vandaag oppakken",
-        "tldr": "In één oogopslag",
-        "kpis": "Cijfers",
-        "context": "Contextdagen",
-        "coverage": "Dekking van de data",
-        "findings": "Bevindingen",
-        "owner_findings": "Bevindingen",
-        "regressions": "Regressies",
-        "watch": "Opvolgen",
-        "noise": "Ruis",
-        "quiet": "Op deze dag was er niets dat een beslissing vroeg.",
-        "evidence": "Bewijs",
+        "act": "Vandaag",
+        "owner_act": "Te beslissen / te doen",
+        "open": "Nog open",
+        "diagnostics": "Diagnostiek",
+        "since": "sinds",
+        "update": "Sinds vorig rapport",
         "prompt": "Prompt — kopieer",
+        "owner_prompt": "Prompt voor de assistent in de brain-repo — kopieer",
         "copy": "Kopieer prompt",
-        "copied": "Gekopieerd",
-        "followup": "Opvolging",
-        "recommendation": "Aanbeveling",
-        "impact": "Impact",
-        "root_cause": "Oorzaak",
-        "runs": "Runs",
-        "drafts": "Concepten",
-        "accepted": "Ongewijzigd verstuurd",
-        "edited": "Bijgewerkt",
-        "shadow": "Schaduw",
-        "actions_col": "Acties ok/fout",
-        "errors": "Fouten",
-        "total": "Hele project",
-        "open_run": "run",
-        "note": "Noot",
-        "footer": "Automatisch gegenereerd. Geen achternamen, geen e-mailadressen.",
-        "no_findings": "Geen bevindingen.",
-        "excluded": "als ruis genegeerd",
-        "owner_kicker": "Dagrapport",
-        "owner_actions": "Wat we vandaag oppakken",
-        "policy_questions": "Vragen aan jou",
-        "good": "Wat goed ging",
-        "tenants": "Per klant",
         "conversation": "gesprek",
-        "owner_footer": "Automatisch gegenereerd. Geen achternamen, geen e-mailadressen.",
-        "owner_prompt": "Prompt voor een coding agent (Engels) — kopieer",
+        "for": "Voor",
+        "unchanged": "ongewijzigd",
+        "prompt_from": "prompt van",
+        "evidence": "Bewijs",
+        "review": "Feedbackreview invullen (±10 minuten)",
+        "quiet": "Geen nieuwe acties.",
+        "high": "Hoog",
+        "medium": "Midden",
+        "low": "Laag",
+        "good": "Goed",
     },
 }
 
 
-def owner_lang(report: Report) -> str:
-    """The owner half's language. `*_nl` field names are historical; this is the truth."""
-    lang = report.coverage.lang()
-    return lang if lang in STR else "nl"
+def owner_lang(report):
+    return "en" if report.coverage.lang() == "en" else "nl"
 
 
-def sev_label(severity: str, lang: str) -> str:
-    return (SEVERITY_LABEL_NL if lang == "nl" else SEVERITY_LABEL_EN)[severity]
+def e(value):
+    return html.escape(str(value))
 
 
-def kind_label(kind: str, lang: str) -> str:
-    return (KIND_LABEL_NL if lang == "nl" else KIND_LABEL_EN)[kind]
+def _table(title, columns, rows):
+    return {"title": title, "columns": columns, "rows": rows}
 
 
-def plane_label(plane: str, lang: str) -> str:
-    return (PLANE_LABEL_NL if lang == "nl" else PLANE_LABEL_EN)[plane]
-
-
-def recurrence_label(finding: Finding, lang: str) -> str:
-    rec = finding.recurrence
-    span = (date.fromisoformat(rec.last_seen) - date.fromisoformat(rec.first_seen)).days + 1
-    if rec.known_since:
-        return (
-            f"bekend sinds {short_date(rec.known_since)}"
-            if lang == "nl"
-            else f"known since {short_date(rec.known_since)}"
-        )
-    if rec.state == "new":
-        return "nieuw" if lang == "nl" else "new"
-    if rec.state == "gone":
-        return "niet meer gezien" if lang == "nl" else "not seen since"
-    return f"terugkerend, {span} dagen" if lang == "nl" else f"recurring, {span} days"
-
-
-def scope_label(finding: Finding, report: Report, lang: str) -> str:
-    scope = finding.scope
-    value = scope.axis_value()
-    if scope.level in ("tenant", "channel", "member") and value:
-        return report.axis_name(value)
-    if finding.members:
-        return " · ".join(finding.members)
-    return "project"
-
-
-# ---------------------------------------------------------------------------
-# browser HTML
-# ---------------------------------------------------------------------------
-
-_CSS = f"""
-*,*::before,*::after{{box-sizing:border-box}}
-body{{margin:0;background:{BG};color:{INK};font-size:16px;line-height:1.55;
- font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}}
-.wrap{{max-width:940px;margin:0 auto;padding:40px 20px 80px}}
-a{{color:{ACCENT}}}
-h1,h2,h3{{margin:0;font-weight:600;line-height:1.25;letter-spacing:-0.01em}}
-h1{{font-size:27px}}
-h2{{font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:{MUTED};font-weight:700}}
-h3{{font-size:17px}}
-p{{margin:0}}
-.kicker{{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:{ACCENT}}}
-.stamp{{color:{MUTED};font-size:13px;margin-top:6px}}
-section{{margin-top:44px;scroll-margin-top:16px}}
-.section-head{{display:flex;align-items:baseline;gap:10px;margin-bottom:14px;flex-wrap:wrap}}
-.section-head .count{{font-size:12px;color:{MUTED}}}
-.card{{background:#fff;border:1px solid {BORDER};border-radius:14px;padding:20px 22px}}
-.lede{{margin-top:24px;background:#fff;border:1px solid {BORDER};border-left:4px solid {ACCENT};
- border-radius:14px;padding:20px 22px;font-size:18px;line-height:1.45}}
-.quiet{{margin-top:24px;background:#fff;border:1px solid {BORDER};border-radius:14px;
- padding:22px;font-size:17px;color:#344054}}
-.chip{{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:3px 9px;
- background:{ACCENT_SOFT};color:{ACCENT};white-space:nowrap}}
-.chip.grey{{background:#f1f3f7;color:{MUTED}}}
-.chip.warn{{background:#fdf3e7;color:#b54708}}
-.chip.bad{{background:#fdeceb;color:#b42318}}
-.sev{{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
- display:inline-flex;align-items:center;gap:6px;min-width:58px}}
-.sev::before{{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}}
-ul.tldr{{list-style:none;margin:0;padding:0}}
-ul.tldr li{{display:flex;gap:12px;padding:12px 2px;border-top:1px solid {BORDER};align-items:baseline}}
-ul.tldr li:first-child{{border-top:none}}
-ul.tldr .body{{flex:1 1 auto}}
-.reflinks a{{font-size:11px;font-weight:700;background:{ACCENT_SOFT};color:{ACCENT};
- border-radius:6px;padding:2px 6px;margin-left:5px;text-decoration:none}}
-ol.actions{{list-style:none;counter-reset:a;margin:0;padding:0}}
-ol.actions li{{counter-increment:a;display:flex;gap:14px;padding:13px 2px;
- border-top:1px solid {BORDER};align-items:baseline}}
-ol.actions li:first-child{{border-top:none}}
-ol.actions li::before{{content:counter(a);flex:0 0 24px;height:24px;border-radius:50%;
- background:{ACCENT};color:#fff;font-size:12px;font-weight:700;display:flex;
- align-items:center;justify-content:center;align-self:flex-start}}
-.finding{{background:#fff;border:1px solid {BORDER};border-radius:14px;padding:20px 22px;
- border-left:4px solid var(--sev);margin-bottom:12px}}
-.finding .top{{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-bottom:8px}}
-.finding .fid{{font-size:11px;font-weight:700;color:{MUTED};letter-spacing:.06em}}
-.finding h3{{margin:2px 0 8px}}
-.finding .body{{color:#344054}}
-.meta-row{{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:baseline;
- font-size:13px;color:{MUTED}}}
-.meta-row b{{color:{INK};font-weight:600}}
-details{{margin-top:12px;border-top:1px solid {BORDER};padding-top:10px}}
-details summary{{cursor:pointer;font-size:13px;font-weight:600;color:{ACCENT};list-style:none;
- display:flex;align-items:center;gap:6px}}
-details summary::-webkit-details-marker{{display:none}}
-details summary::before{{content:"›";font-size:17px;line-height:1;transition:transform .15s}}
-details[open] summary::before{{transform:rotate(90deg)}}
-.evidence{{margin-top:10px;background:{BG};border-radius:10px;padding:12px 14px;font-size:13.5px;
- color:#344054;word-break:break-word}}
-.rec{{margin-top:12px;font-size:14.5px;padding-left:12px;border-left:2px solid {ACCENT}}}
-.rec b{{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:{ACCENT};display:block}}
-.tablewrap{{overflow-x:auto}}
-#action-funnel th{{white-space:normal;font-size:9px;letter-spacing:0}}
-#action-funnel td:first-child{{overflow-wrap:anywhere;min-width:120px;max-width:180px}}
-#action-funnel .card + .card{{margin-top:12px}}
-table{{width:100%;border-collapse:collapse;font-size:13px}}
-th,td{{text-align:right;padding:8px 4px;border-top:1px solid {BORDER};white-space:nowrap}}
-th{{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:{MUTED};font-weight:700;
- border-top:none}}
-th:first-child,td:first-child{{text-align:left;white-space:normal}}
-tfoot td{{font-weight:700;border-top:2px solid {INK}}}
-.bad-num{{color:#b42318;font-weight:700}}
-.zero{{color:#98a2b3}}
-ul.plain{{list-style:none;margin:0;padding:0}}
-ul.plain li{{padding:10px 2px;border-top:1px solid {BORDER}}}
-ul.plain li:first-child{{border-top:none}}
-ul.bullets{{margin:8px 0 0;padding-left:18px;color:#344054;font-size:14.5px}}
-.cov{{display:flex;flex-wrap:wrap;gap:8px}}
-.footer{{margin-top:36px;font-size:12px;color:#98a2b3}}
-.note{{margin-top:28px;font-size:12.5px;color:{MUTED}}}
-@media (max-width:640px){{
- .wrap{{padding:24px 12px 56px}}
- h1{{font-size:22px}}
- .lede{{font-size:16px;padding:16px}}
- .card,.finding{{padding:16px 14px}}
- ul.tldr li{{flex-direction:column;gap:3px}}
- thead{{display:none}}
- table,tbody,tfoot,tr,td{{display:block;width:100%}}
- tbody tr,tfoot tr{{border-top:1px solid {BORDER};padding:10px 0}}
- td{{border:none;padding:2px 0;display:flex;justify-content:space-between;gap:12px;
-  text-align:right}}
- td::before{{content:attr(data-label);font-size:11px;text-transform:uppercase;
-  letter-spacing:.06em;color:{MUTED};font-weight:700;text-align:left}}
- td.name-cell{{display:block}}
- td.name-cell::before{{content:none}}
-}}
-"""
-
-# Both halves carry the prompt accordion (the prompt text itself is always
-# English); the CSS/JS only ship on the HTML pages that actually have one.
-_CSS_PROMPT = f"""
-.prompt-head{{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}}
-.copy{{font:inherit;font-size:12px;font-weight:700;border:1px solid {BORDER};background:#fff;
- color:{ACCENT};border-radius:8px;padding:5px 11px;cursor:pointer;margin-left:auto}}
-pre{{margin:10px 0 0;background:#11141c;color:#e6e9f2;border-radius:10px;padding:14px 16px;
- font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;
- font-family:ui-monospace,SFMono-Regular,Menlo,monospace;max-height:460px;overflow:auto;
- user-select:text}}
-"""
-
-_JS = """
-document.querySelectorAll('button.copy').forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    var pre = document.getElementById(btn.dataset.target);
-    if (!pre) return;
-    var done = function () {
-      var old = btn.textContent;
-      btn.textContent = btn.dataset.done;
-      setTimeout(function () { btn.textContent = old; }, 1500);
-    };
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(pre.textContent).then(done);
-    } else {
-      var ta = document.createElement('textarea');
-      ta.value = pre.textContent; ta.style.position = 'fixed'; ta.style.opacity = '0';
-      document.body.appendChild(ta); ta.select();
-      try { document.execCommand('copy'); done(); } finally { ta.remove(); }
-    }
-  });
-});
-"""
-
-
-def _sev(severity: str, lang: str) -> str:
-    return (
-        f'<span class="sev" style="color:{SEVERITY_COLOR[severity]}">'
-        f"{e(sev_label(severity, lang))}</span>"
-    )
-
-
-def _refs(finding_ids: list[str], report: Report) -> str:
-    known = [f for f in finding_ids if report.finding_by_id(f)]
-    if not known:
-        return ""
-    return '<span class="reflinks">' + "".join(
-        f'<a href="#{e(f)}">{e(f)}</a>' for f in known
-    ) + "</span>"
-
-
-def _run_links(finding: Finding, lang: str, neutral: bool = False) -> str:
-    """`neutral` is the owner half: the link opens, but its label is never a run id."""
-    urls = finding.evidence.run_urls
-    if not urls:
-        return "" if neutral else " · ".join(e(r) for r in finding.evidence.run_ids)
-    out = []
-    for i, url in enumerate(urls):
-        if neutral:
-            word = STR[lang]["conversation"]
-            label = f"{word} {i + 1}" if len(urls) > 1 else word
-        elif i < len(finding.evidence.run_ids):
-            label = finding.evidence.run_ids[i]
-        else:
-            label = STR[lang]["open_run"]
-        out.append(f'<a href="{e(url)}" target="_blank" rel="noopener">{e(label)} ↗</a>')
-    return " · ".join(out)
-
-
-def _num(value: int, bad: bool = False) -> str:
-    if value == 0:
-        return '<span class="zero">0</span>'
-    return f'<span class="bad-num">{value}</span>' if bad else str(value)
-
-
-def _section(anchor: str, title: str, body: str, count: str = "") -> str:
-    count_html = f'<span class="count">{e(count)}</span>' if count else ""
-    return (
-        f'<section id="{anchor}"><div class="section-head"><h2>{e(title)}</h2>'
-        f"{count_html}</div>{body}</section>"
-    )
-
-
-def _prompt_details(finding: Finding, lang: str, owner: bool = False) -> str:
-    """The copyable prompt accordion, shown on both halves.
-
-    The prompt body is always English (it is handed to a coding agent); only the
-    summary and the button follow `lang`. Task-kind/repo chips are technical, so
-    the owner half drops them.
-    """
-    strings = STR[lang]
-    pid = f"prompt-{finding.id}"
-    chips = (
-        ""
-        if owner
-        else f'<span class="chip">{e(finding.prompt.task_kind)}</span>'
-        f'<span class="chip grey">{e(finding.prompt.target_repo)}</span>'
-    )
-    return (
-        f'<details class="prompt" id="{pid}">'
-        f'<summary>{e(strings["owner_prompt" if owner else "prompt"])}</summary>'
-        f'<div class="prompt-head">{chips}'
-        f'<button class="copy" type="button" data-target="{pid}-pre" '
-        f'data-done="{e(strings["copied"])}">{e(strings["copy"])}</button>'
-        "</div>"
-        f'<pre id="{pid}-pre">{e(compose_prompt(finding))}</pre>'
-        "</details>"
-    )
-
-
-def _tech_card(finding: Finding, report: Report) -> str:
-    color = SEVERITY_COLOR[finding.severity]
-    chips = [
-        f'<span class="chip">{e(scope_label(finding, report, "en"))}</span>',
-        f'<span class="chip grey">{e(kind_label(finding.kind, "en"))}</span>',
-        f'<span class="chip grey">{e(plane_label(finding.root_cause.plane, "en"))}</span>',
-        f'<span class="chip {"warn" if finding.recurrence.state == "recurring" else "grey"}">'
-        f'{e(recurrence_label(finding, "en"))}</span>',
+def _kpi_table(report):
+    columns = [
+        "Scope",
+        "Runs",
+        "Drafts",
+        "Sent as proposed",
+        "Edited",
+        "Shadow compared",
+        "Actions failed",
+        "Run errors",
     ]
-    if finding.audience == "owner":
-        chips.append('<span class="chip grey">owner</span>')
-    text = finding.text_en or finding.text_nl or ""
-    parts = [
-        f'<article class="finding" id="{e(finding.id)}" style="--sev:{color}">',
-        '<div class="top">',
-        f'<span class="fid">{e(finding.id)}</span>',
-        _sev(finding.severity, "en"),
-        *chips,
-        "</div>",
-        f"<h3>{e(finding.title)}</h3>",
-        f'<p class="body">{e(text)}</p>',
-        '<div class="meta-row">'
-        f'<span><b>{e(STR["en"]["impact"])}:</b> {e(finding.impact.customer_effect)} '
-        f"({finding.impact.runs} runs, {finding.impact.threads} threads, "
-        f"{e(finding.impact.confidence)} confidence)</span></div>",
-        '<div class="meta-row">'
-        f'<span><b>{e(STR["en"]["root_cause"])}:</b> {e(finding.root_cause.detail)}</span></div>',
+    rows = [
+        [
+            r.name,
+            r.runs,
+            r.drafts,
+            r.sent_as_proposed,
+            r.edited,
+            r.shadow_compared,
+            r.actions_failed,
+            r.run_errors,
+        ]
+        for r in report.axis_rows()
     ]
-    if finding.evidence.run_ids or finding.evidence.run_urls:
-        parts.append(
-            f'<details><summary>{e(STR["en"]["evidence"])} '
-            f"({len(finding.evidence.run_ids) or len(finding.evidence.run_urls)})</summary>"
-            f'<div class="evidence">{_run_links(finding, "en")}'
-            f'<div style="margin-top:6px;color:{MUTED}">signature: {e(finding.signature)}</div>'
-            "</div></details>"
-        )
-    if finding.followup:
-        parts.append(
-            f'<details><summary>{e(STR["en"]["followup"])} ({e(finding.followup.status)})'
-            f'</summary><div class="evidence">{e(finding.followup.evidence)}</div></details>'
-        )
-    if finding.recommendation:
-        parts.append(
-            f'<div class="rec"><b>{e(STR["en"]["recommendation"])}</b>'
-            f"{e(finding.recommendation)}</div>"
-        )
-    if finding.prompt:
-        parts.append(_prompt_details(finding, "en"))
-    parts.append("</article>")
-    return "".join(parts)
+    return _table("Per-axis counts", columns, rows)
 
 
-def _owner_card(finding: Finding, report: Report) -> str:
-    """Owner language only: no title, no text_en, no run ids — nothing technical
-    leaks here except the copyable English prompt, which is meant to be handed
-    to a coding agent as is."""
-    color = SEVERITY_COLOR[finding.severity]
-    text = (finding.text_nl or "").strip()
-    # Lead with the first sentence, but never split a word: a long opener just
-    # stays in the body.
-    first, _, tail = text.partition(". ")
-    if tail and len(first) <= 140:
-        head, rest = first + ".", tail
-    else:
-        head, rest = "", text
-    lang = owner_lang(report)
-    chips = [
-        f'<span class="chip">{e(scope_label(finding, report, lang))}</span>',
-        f'<span class="chip grey">{e(kind_label(finding.kind, lang))}</span>',
-        f'<span class="chip {"warn" if finding.recurrence.state == "recurring" else "grey"}">'
-        f'{e(recurrence_label(finding, lang))}</span>',
-    ]
-    links = ""
-    if finding.evidence.run_urls:
-        # The owner gets the conversation, never its run id.
-        links = (
-            f'<div class="meta-row">{_run_links(finding, lang, neutral=True)}</div>'
-        )
-    return (
-        f'<article class="finding" id="{e(finding.id)}" style="--sev:{color}">'
-        f'<div class="top">{_sev(finding.severity, lang)}{"".join(chips)}</div>'
-        + (f"<h3>{e(head)}</h3>" if head else "")
-        + (f'<p class="body">{e(rest.strip())}</p>' if rest.strip() else "")
-        + links
-        + (_prompt_details(finding, lang, owner=True) if finding.prompt else "")
-        + "</article>"
-    )
-
-
-_KPI_COLUMNS = [
-    ("runs", "runs", False),
-    ("drafts", "drafts", False),
-    ("sent_as_proposed", "accepted", False),
-    ("edited", "edited", False),
-    ("shadow_compared", "shadow", False),
-    ("actions_failed", "actions_col", True),
-    ("run_errors", "errors", True),
-]
-
-
-def _kpi_table(report: Report, lang: str) -> str:
-    rows = report.axis_rows()
-    strings = STR[lang]
-    names = (
-        {"tenant": "Tenant", "channel": "Channel", "member": "Member", "": "Project"}
-        if lang == "en"
-        else {"tenant": "Klant", "channel": "Kanaal", "member": "Onderdeel", "": "Project"}
-    )
-    head = "<tr><th>" + e(names[rows[0].axis if rows else ""]) + "</th>" + "".join(
-        f"<th>{e(strings[label])}</th>" for _, label, _ in _KPI_COLUMNS
-    ) + "</tr>"
-
-    def cells(counters: Counters, name_cell: str) -> str:
-        out = [f'<td class="name-cell">{name_cell}</td>']
-        for field, label, bad in _KPI_COLUMNS:
-            value = getattr(counters, field)
-            if field == "actions_failed":
-                # One element: the mobile row is a flex box, two would drift apart.
-                text = f"<span>{counters.actions_ok} / " + (
-                    f'<span class="bad-num">{value}</span>' if value else "0"
-                ) + "</span>"
-            else:
-                text = _num(value, bad=bad and value > 0)
-            out.append(f'<td data-label="{e(strings[label])}">{text}</td>')
-        return "<tr>" + "".join(out) + "</tr>"
-
-    body = ""
-    for row in rows:
-        mode = (
-            f' <span class="chip grey">{e(row.mode)}</span>' if row.mode else ""
-        )
-        body += cells(row, f"<b>{e(row.name)}</b>{mode}")
-    foot = cells(report.kpis.focus, f"<b>{e(strings['total'])}</b>")
-    return (
-        f'<div class="card"><div class="tablewrap"><table><thead>{head}</thead>'
-        f"<tbody>{body}</tbody><tfoot>{foot}</tfoot></table></div></div>"
-    )
-
-
-_FUNNEL_FIELDS = ("proposed_total", "human_confirmed", "auto", "failed", "superseded",
-                  "canceled", "executing", "pending", "stale", "acceptance_rate")
-_FUNNEL_LABELS = {
-    "en": ("Proposed", "Reviewer-confirmed", "Automatic", "Failed", "Superseded",
-           "Canceled", "Executing", "Awaiting confirmation", "Stale", "Acceptance"),
-    "nl": ("Voorgesteld", "door assistent bevestigd", "automatisch", "mislukt", "vervangen",
-           "geannuleerd", "in uitvoering", "wacht op bevestiging", "verlopen", "Acceptatie"),
-}
-
-
-def _action_funnel_content(report, lang, *, owner=False):
-    """One set of labels and values for HTML, email and text."""
+def _diagnostics(report):
+    tables = [_kpi_table(report)]
     funnel = report.kpis.action_funnel
-    title = "Voorgestelde acties" if lang == "nl" else "Action funnel"
-    if funnel is None:
-        return title, "", []
-    if not funnel.focus.rows:
-        return title, ("Geen acties in deze periode." if lang == "nl" else "No actions in the focus period."), []
-    rule = funnel.rule
-    note = (
-        f"Heuristiek: door assistent bevestigd bij uitvoering > {rule.reviewer_confirmed_after_s} s "
-        f"na voorstel; verlopen na > {rule.stale_after_h} uur bij verzameling. "
-        "Periode op uitvoer- of voorsteldatum. Acceptatie sluit automatisch en wachtend uit."
-        if lang == "nl" else
-        f"Reviewer-confirmed heuristic: execution > {rule.reviewer_confirmed_after_s} s after proposal; "
-        f"stale > {rule.stale_after_h} h at collection. Bucket: execution or proposal date. "
-        "Acceptance excludes auto and pending."
-    )
-
-    def values(row):
-        return ["—" if getattr(row, key) is None else
-                f"{row.acceptance_rate:.0%}" if key == "acceptance_rate" else str(getattr(row, key))
-                for key in _FUNNEL_FIELDS]
-
-    total_label = STR[lang]["total"]
-    rows = [[r.action_id, *values(r)] for r in funnel.focus.rows]
-    rows.append([total_label, *values(funnel.focus.total)])
-    tables = [(["Actie" if lang == "nl" else "Action", *_FUNNEL_LABELS[lang]], rows)]
-    axes = [a for a in funnel.per_axis if not owner or a.axis == "tenant"]
-    if axes:
-        rows = [[report.axis_name(a.key), *values(a.total)] for a in axes]
-        tables.append((["Klant" if lang == "nl" else "Tenant" if owner else "Tenant / member / channel",
-                        *_FUNNEL_LABELS[lang]], rows))
-    return title, note, tables
-
-
-def _action_funnel_section(report: Report, lang: str, *, owner=False) -> str:
-    title, note, tables = _action_funnel_content(report, lang, owner=owner)
-    if not note:
-        return ""
-    body = f'<p class="note">{e(note)}</p>'
-    for headers, rows in tables:
-        head = "<tr>" + "".join(f"<th>{e(h)}</th>" for h in headers) + "</tr>"
-        content = "".join("<tr>" + "".join(
-            f'<td data-label="{e(h)}">{e(value)}</td>' for h, value in zip(headers, row)
-        ) + "</tr>" for row in rows)
-        body += (f'<div class="card"><div class="tablewrap"><table><thead>{head}</thead>'
-                 f'<tbody>{content}</tbody></table></div></div>')
-    return _section("action-funnel", title, body)
-
-
-def _action_funnel_text(report, lang, *, owner=False):
-    title, note, tables = _action_funnel_content(report, lang, owner=owner)
-    if not note:
-        return []
-    lines = ["", title.upper(), note]
-    for headers, rows in tables:
-        lines += ["", " | ".join(headers)]
-        lines += [" | ".join(row) for row in rows]
-    return lines
-
-
-def _context_table(report: Report, lang: str) -> str:
-    if not report.kpis.context_days:
-        return ""
-    strings = STR[lang]
-    head = (
-        "<tr><th>" + ("Dag" if lang == "nl" else "Day") + "</th>"
-        f"<th>{e(strings['runs'])}</th><th>{e(strings['drafts'])}</th>"
-        f"<th>{e(strings['actions_col'])}</th><th>{e(strings['errors'])}</th></tr>"
-    )
-    rows = ""
-    for day in report.kpis.context_days + [report.kpis.focus]:
-        focus = day.date == report.date
-        name = period_label(report, lang) if focus else long_date(day.date, lang)
-        label = f"<b>{e(name)}</b>" if focus else e(name)
-        rows += (
-            "<tr>"
-            f'<td class="name-cell">{label}</td>'
-            f'<td data-label="{e(strings["runs"])}">{_num(day.runs)}</td>'
-            f'<td data-label="{e(strings["drafts"])}">{_num(day.drafts)}</td>'
-            f'<td data-label="{e(strings["actions_col"])}"><span>{day.actions_ok} / '
-            + (f'<span class="bad-num">{day.actions_failed}</span>' if day.actions_failed else "0")
-            + "</span></td>"
-            f'<td data-label="{e(strings["errors"])}">'
-            f"{_num(day.run_errors, bad=day.run_errors > 0)}</td>"
-            "</tr>"
-        )
-    return (
-        f'<div class="card"><div class="tablewrap"><table><thead>{head}</thead>'
-        f"<tbody>{rows}</tbody></table></div></div>"
-    )
-
-
-def _coverage_block(report: Report, lang: str) -> str:
-    labels = FEED_STATUS_LABEL_NL if lang == "nl" else FEED_STATUS_LABEL_EN
-    chips = []
-    for feed in report.coverage.coverage:
-        css = {"complete": "grey", "partial": "warn", "unavailable": "bad"}[feed.status]
-        title = f"{feed.fetched} rows" + (f" — {feed.reason}" if feed.reason else "")
-        chips.append(
-            f'<span class="chip {css}" title="{e(title)}">{e(feed.feed)}: '
-            f"{e(labels[feed.status])}</span>"
-        )
-    excluded = ""
-    if report.coverage.excluded:
-        total = sum(report.coverage.excluded.values())
-        detail = ", ".join(f"{k} {v}" for k, v in sorted(report.coverage.excluded.items()))
-        excluded = (
-            f'<div class="meta-row"><span>{total} {e(STR[lang]["excluded"])}: {e(detail)}</span></div>'
-        )
-    projects = " · ".join(e(p) for p in report.coverage.projects)
-    return (
-        f'<div class="card"><div class="cov">{"".join(chips)}</div>'
-        f'<div class="meta-row"><span>{projects} · rc {e(report.coverage.rc_version or "?")}'
-        f"</span></div>{excluded}</div>"
-    )
-
-
-def _custom(sections: list[CustomSection]) -> str:
-    return "".join(
-        f'<section id="cs-{e(s.id)}"><div class="section-head"><h2>{e(s.title)}</h2>'
-        + (f'<span class="count">{e(s.member)}</span>' if s.member else "")
-        + f'</div><div class="card">{s.html}</div></section>'
-        for s in sections
-    )
-
-
-def _page(title: str, lang: str, body: str, with_js: bool) -> str:
-    script = f"<script>{_JS}</script>" if with_js else ""
-    css = _CSS + (_CSS_PROMPT if with_js else "")
-    return (
-        f'<!doctype html><html lang="{lang}"><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        f"<title>{e(title)}</title><style>{css}</style></head><body>"
-        f'<div class="wrap">{body}</div>{script}</body></html>'
-    )
-
-
-def period_label(report, lang):
-    days = report.window.focus_days
-    end = long_date(report.date, lang)
-    return f"{long_date(min(days), lang)} – {end}" if len(days) > 1 else end
-
-
-def _header(report: Report, lang: str, title: str, kicker: str | None = None) -> str:
-    strings = STR[lang]
-    return (
-        "<header>"
-        f'<div class="kicker">{e(kicker or strings["kicker"])}</div>'
-        f'<h1 style="margin-top:8px">{e(title)}</h1>'
-        f'<div class="stamp">{e(strings["generated"])} '
-        f'{e(stamp(report.generated_at, lang))} · {e(strings["runs_of"])} '
-        f'{e(period_label(report, lang))} · {e(report.report_id)}</div>'
-        "</header>"
-    )
-
-
-def render_technical_html(report: Report) -> str:
-    strings = STR["en"]
-    title = f"{' + '.join(report.coverage.projects)} — {period_label(report, 'en')}"
-    body = [_header(report, "en", title)]
-
-    if report.is_quiet():
-        # One sentence, the coverage that backs it, and any open work — absence
-        # of findings is never evidence that older items are resolved.
-        body.append(f'<div class="quiet">{e(report.technical.headline)}</div>')
-        body.append(_section("coverage", strings["coverage"], _coverage_block(report, "en")))
-        body.append(_section("kpis", strings["kpis"], _kpi_table(report, "en")))
-        body.append(_action_funnel_section(report, "en"))
-        open_work = report.technical.regressions + report.technical.watch
-        if open_work:
-            items = "".join(f"<li>{e(v)}</li>" for v in open_work)
-            body.append(
-                _section(
-                    "watch", strings["watch"], f'<div class="card"><ul class="plain">{items}</ul></div>'
-                )
-            )
-        body.append(_footer("en"))
-        return _page(title, "en", "".join(body), with_js=False)
-
-    body.append(f'<div class="lede">{e(report.technical.headline)}</div>')
-
-    if report.technical.actions:
-        items = ""
-        for action in sorted(report.technical.actions, key=lambda a: a.rank):
-            finding = report.finding_by_id(action.finding_id)
-            prompt_link = (
-                f'<a class="chip" style="margin-left:6px" href="#prompt-{e(action.finding_id)}">'
-                "prompt ↓</a>"
-                if finding and finding.prompt
-                else ""
-            )
-            items += (
-                f"<li><div>{e(action.summary)}"
-                f"{_refs([action.finding_id], report)}{prompt_link}</div></li>"
-            )
-
-        body.append(
-            _section(
-                "actions",
-                strings["actions"],
-                f'<div class="card"><ol class="actions">{items}</ol></div>',
-                f"{len(report.technical.actions)} ranked",
-            )
-        )
-
-    if report.technical.tldr:
-        items = "".join(
-            f'<li>{_sev(i.severity, "en")}<div class="body">{e(i.text)}'
-            f"{_refs(i.finding_ids, report)}</div></li>"
-            for i in report.technical.tldr
-        )
-        body.append(
-            _section("tldr", strings["tldr"], f'<div class="card"><ul class="tldr">{items}</ul></div>')
-        )
-
-    body.append(_section("kpis", strings["kpis"], _kpi_table(report, "en")))
-    body.append(_action_funnel_section(report, "en"))
-    context = _context_table(report, "en")
-    if context:
-        body.append(_section("context", strings["context"], context))
-    body.append(_section("coverage", strings["coverage"], _coverage_block(report, "en")))
-
-    primary = [f for f in report.findings_sorted() if f.audience in ("technical", "both")]
-    if primary:
-        body.append(
-            _section(
-                "findings",
-                strings["findings"],
-                "".join(_tech_card(f, report) for f in primary),
-                f"{len(primary)}",
-            )
-        )
-    secondary = [f for f in report.findings_sorted() if f.audience == "owner"]
-    if secondary:
-        body.append(
-            _section(
-                "owner-findings",
-                strings["owner_findings"],
-                "".join(_tech_card(f, report) for f in secondary),
-                f"{len(secondary)} — also in the owner report",
-            )
-        )
-
-    for key, heading in (("regressions", strings["regressions"]), ("watch", strings["watch"])):
-        values = getattr(report.technical, key)
-        if values:
-            items = "".join(f"<li>{e(v)}</li>" for v in values)
-            body.append(
-                _section(key, heading, f'<div class="card"><ul class="plain">{items}</ul></div>')
-            )
-
-    body.append(_custom(report.sections_for("technical")))
-
-    notes = []
-    if report.technical.noise_note:
-        notes.append(f'<b>{e(strings["noise"])}.</b> {e(report.technical.noise_note)}')
-    if report.meta and report.meta.signal_note:
-        notes.append(f'<b>{e(strings["note"])}.</b> {e(report.meta.signal_note)}')
-    if notes:
-        body.append('<div class="note">' + "<br>".join(notes) + "</div>")
-    body.append(_footer("en"))
-    return _page(title, "en", "".join(body), with_js=True)
-
-
-def render_owner_html(report: Report) -> str:
-    lang = owner_lang(report)
-    strings = STR[lang]
-    title = f"{' + '.join(report.coverage.projects)} — {period_label(report, lang)}"
-    body = [_header(report, lang, title, kicker=strings["owner_kicker"])]
-    review = report.coverage.feedback_review
-    if review.get('enabled') and (review.get('cadence', 'weekly') == 'daily-lite' or len(report.window.focus_days) > 1):
-        # Sibling attachment; no local absolute path or executable URL on the owner surface.
-        body.append('<div class="note"><a href="feedback-review.html">' +
-                    ('Feedbackreview invullen (±10 minuten)' if lang == 'nl' else 'Complete feedback review (about 10 minutes)') + '</a></div>')
-
-
-    findings = [f for f in report.findings_sorted() if f.audience in ("owner", "both")]
-    with_prompts = {f.id for f in findings if f.prompt}
-    if not findings:
-        body.append(f'<div class="quiet">{e(report.owner.headline_nl)}</div>')
-        body.append(_section("dekking", strings["coverage"], _coverage_block(report, lang)))
-        body.append(_section("cijfers", strings["kpis"], _kpi_table(report, lang)))
-        body.append(_action_funnel_section(report, lang, owner=True))
-        body.append(_footer(lang, owner=True))
-        return _page(title, lang, "".join(body), with_js=False)
-
-    body.append(f'<div class="lede">{e(report.owner.headline_nl)}</div>')
-
-    if report.owner.actions_nl:
-        items = "".join(f"<li><div>{e(a)}</div></li>" for a in report.owner.actions_nl)
-        body.append(
-            _section(
-                "acties",
-                strings["owner_actions"],
-                f'<div class="card"><ol class="actions">{items}</ol></div>',
-            )
-        )
-    if report.owner.tldr_nl:
-        items = ""
-        for item in report.owner.tldr_nl:
-            # only a pointer to the prompt below — never the finding id itself
-            link = "".join(
-                f'<a class="chip" style="margin-left:6px" href="#prompt-{e(fid)}">prompt ↓</a>'
-                for fid in item.finding_ids
-                if fid in with_prompts
-            )
-            items += (
-                f'<li>{_sev(item.severity, lang)}'
-                f'<div class="body">{e(item.text)}{link}</div></li>'
-            )
-        body.append(
-            _section("kort", strings["tldr"], f'<div class="card"><ul class="tldr">{items}</ul></div>')
-        )
-
-    body.append(_section("cijfers", strings["kpis"], _kpi_table(report, lang)))
-    body.append(_action_funnel_section(report, lang, owner=True))
-    body.append(
-        _section(
-            "bevindingen",
-            strings["findings"],
-            "".join(_owner_card(f, report) for f in findings),
-            f"{len(findings)}",
-        )
-    )
-
-    if report.owner.tenants:
-        cards = ""
-        for tenant in report.owner.tenants:
-            bullets = "".join(f"<li>{e(b)}</li>" for b in tenant.bullets)
-            cards += (
-                '<div class="card" style="margin-bottom:12px">'
-                f"<h3>{e(report.axis_name(tenant.slug))}</h3>"
-                f'<p class="body" style="margin-top:6px">{e(tenant.policy_difference_nl)}</p>'
-                + (f'<ul class="bullets">{bullets}</ul>' if bullets else "")
-                + "</div>"
-            )
-        body.append(_section("klanten", strings["tenants"], cards))
-
-    if report.owner.policy_questions_nl:
-        items = "".join(f"<li>{e(q)}</li>" for q in report.owner.policy_questions_nl)
-        body.append(
-            _section(
-                "vragen",
-                strings["policy_questions"],
-                f'<div class="card"><ul class="plain">{items}</ul></div>',
-            )
-        )
-    if report.owner.good_nl:
-        items = "".join(f"<li>{e(g)}</li>" for g in report.owner.good_nl)
-        body.append(
-            _section("goed", strings["good"], f'<div class="card"><ul class="plain">{items}</ul></div>')
-        )
-
-    body.append(_custom(report.sections_for("owner")))
-    body.append(_footer(lang, owner=True))
-    return _page(title, lang, "".join(body), with_js=bool(with_prompts))
-
-
-def _footer(lang: str, owner: bool = False) -> str:
-    key = "owner_footer" if owner else "footer"
-    return f'<div class="footer">{e(STR[lang][key])}</div>'
-
-
-# ---------------------------------------------------------------------------
-# e-mail HTML (inline styles, tables, no JS)
-# ---------------------------------------------------------------------------
-
-_EF = "font-family:Arial,Helvetica,sans-serif;"
-
-
-def _email_block(heading: str, inner: str) -> str:
-    return (
-        '<tr><td style="padding:22px 22px 0">'
-        f'<div style="{_EF}font-size:11px;font-weight:bold;text-transform:uppercase;'
-        f'letter-spacing:2px;color:{MUTED};padding-bottom:8px">{e(heading)}</div>'
-        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'style="border-collapse:collapse">{inner}</table></td></tr>'
-    )
-
-
-def _email_row(left: str, right: str, color: str = INK) -> str:
-    return (
-        "<tr>"
-        f'<td style="{_EF}font-size:11px;font-weight:bold;color:{color};padding:9px 10px 9px 0;'
-        f'vertical-align:top;white-space:nowrap;text-transform:uppercase;letter-spacing:1px;'
-        f'border-top:1px solid {BORDER}">{left}</td>'
-        f'<td style="{_EF}font-size:14px;line-height:1.5;color:{INK};padding:9px 0;'
-        f'border-top:1px solid {BORDER}">{right}</td>'
-        "</tr>"
-    )
-
-
-def render_email_html(report: Report, half: str) -> str:
-    """`half` is the audience (`technical` | `owner`); the owner's language is `coverage.owner_lang`."""
-    technical = half == "technical"
-    lang = "en" if technical else owner_lang(report)
-    strings = STR[lang]
-    title = f"{' + '.join(report.coverage.projects)} — {period_label(report, lang)}"
-    if technical:
-        headline = report.technical.headline
-        tldr = report.technical.tldr
-        findings = [f for f in report.findings_sorted() if f.audience in ("technical", "both")]
-        findings += [f for f in report.findings_sorted() if f.audience == "owner"]
-        actions = [a.summary for a in sorted(report.technical.actions, key=lambda a: a.rank)]
-    else:
-        headline = report.owner.headline_nl
-        tldr = report.owner.tldr_nl
-        findings = [f for f in report.findings_sorted() if f.audience in ("owner", "both")]
-        actions = list(report.owner.actions_nl)
-
-    blocks = ""
-    if actions:
-        rows = "".join(
-            _email_row(f"{i + 1}.", e(text), ACCENT) for i, text in enumerate(actions)
-        )
-        blocks += _email_block(strings["actions" if technical else "owner_actions"], rows)
-    if tldr:
-        rows = "".join(
-            _email_row(e(sev_label(i.severity, lang)), e(i.text), SEVERITY_COLOR[i.severity])
-            for i in tldr
-        )
-        blocks += _email_block(strings["tldr"], rows)
-
-    funnel_lines = _action_funnel_text(report, lang, owner=not technical)
-    if funnel_lines:
-        blocks += _email_block(funnel_lines[1], _email_row("", '<pre id="action-funnel" '
-            'style="white-space:pre-wrap;font-size:12px">' + e("\n".join(funnel_lines[2:])) + '</pre>'))
-
-    if findings:
-        rows = ""
-        for finding in findings:
-            text = (finding.text_en if technical else finding.text_nl) or ""
-            heading = finding.title if technical else ""
-            inner = (f"<b>{e(heading)}</b><br>" if heading else "") + (
-                f'<span style="font-size:12px;color:{MUTED}">'
-                f"{e(scope_label(finding, report, lang))} · "
-                f"{e(kind_label(finding.kind, lang))} · "
-                f"{e(recurrence_label(finding, lang))}</span><br>"
-            ) + f'<span style="color:#344054">{e(text)}</span>'
-            if finding.prompt:
-                if not technical:
-                    inner += (
-                        f'<div style="{_EF}font-size:12px;color:{MUTED};margin-top:8px">'
-                        f'{e(strings["owner_prompt"])}</div>'
-                    )
-                inner += (
-                    f'<pre style="{_EF}white-space:pre-wrap;background:#f2f4f7;'
-                    f'border:1px solid {BORDER};border-radius:8px;padding:10px;'
-                    f'font-size:12px;color:{INK};margin:8px 0 0">'
-                    f"{e(compose_prompt(finding))}</pre>"
-                )
-            rows += _email_row(
-                e(sev_label(finding.severity, lang)), inner, SEVERITY_COLOR[finding.severity]
-            )
-        blocks += _email_block(strings["findings"], rows)
-
-    if technical:
-        cov = " · ".join(
-            f"{c.feed}: {FEED_STATUS_LABEL_EN[c.status]}" for c in report.coverage.coverage
-        )
-        if cov:
-            blocks += _email_block(strings["coverage"], _email_row("", e(cov)))
-
-    for section in report.sections_for(half):
-        blocks += _email_block(section.title, _email_row("", section.html))
-
-    return (
-        f'<!doctype html><html lang="{lang}"><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        f"<title>{e(title)}</title></head>"
-        f'<body style="margin:0;padding:0;background:{BG}">'
-        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'style="background:{BG};padding:20px 10px"><tr><td align="center">'
-        '<table role="presentation" width="620" cellpadding="0" cellspacing="0" '
-        f'style="width:620px;max-width:100%;background:#ffffff;border:1px solid {BORDER};'
-        'border-radius:12px;overflow:hidden">'
-        '<tr><td style="padding:22px 22px 0">'
-        f'<div style="{_EF}font-size:11px;font-weight:bold;letter-spacing:2px;'
-        f'text-transform:uppercase;color:{ACCENT}">{e(strings["kicker" if technical else "owner_kicker"])}</div>'
-        f'<div style="{_EF}font-size:20px;font-weight:bold;color:{INK};padding-top:6px;'
-        f'line-height:1.25">{e(title)}</div>'
-        f'<div style="{_EF}font-size:15px;line-height:1.5;color:#344054;'
-        f'border-left:3px solid {ACCENT};padding-left:12px;margin-top:12px">'
-        f"{e(headline)}</div></td></tr>"
-        + blocks
-        + '<tr><td style="padding:18px 22px 22px">'
-        f'<div style="{_EF}font-size:11.5px;color:#98a2b3;line-height:1.5">'
-        f'{e(strings["footer" if technical else "owner_footer"])}</div></td></tr>'
-        "</table></td></tr></table></body></html>"
-    )
-
-
-# ---------------------------------------------------------------------------
-# plain text
-# ---------------------------------------------------------------------------
-
-
-def render_txt(report: Report, half: str) -> str:
-    technical = half == "technical"
-    lang = "en" if technical else owner_lang(report)
-    strings = STR[lang]
-    title = f"{' + '.join(report.coverage.projects)} — {period_label(report, lang)}"
-    lines = [title, "=" * min(len(title), 72), ""]
-    if technical:
-        lines.append(report.technical.headline)
-        findings = [f for f in report.findings_sorted() if f.audience in ("technical", "both")]
-        findings += [f for f in report.findings_sorted() if f.audience == "owner"]
-        actions = [a.summary for a in sorted(report.technical.actions, key=lambda a: a.rank)]
-        tldr = report.technical.tldr
-    else:
-        lines.append(report.owner.headline_nl)
-        findings = [f for f in report.findings_sorted() if f.audience in ("owner", "both")]
-        actions = list(report.owner.actions_nl)
-        tldr = report.owner.tldr_nl
-
-    if not findings:
-        lines += ["", strings["quiet"]]
-
-    if actions:
-        lines += ["", strings["actions" if technical else "owner_actions"].upper()]
-        lines += [f"  {i + 1}. {text}" for i, text in enumerate(actions)]
-    if tldr:
-        lines += ["", strings["tldr"].upper()]
-        lines += [f"  [{sev_label(i.severity, lang)}] {i.text}" for i in tldr]
-
-    focus = report.kpis.focus
-    lines += [
-        "",
-        strings["kpis"].upper(),
-        f"  {focus.runs} runs · {focus.drafts} {strings['drafts'].lower()} · "
-        f"{focus.actions_ok}/{focus.actions_failed} {strings['actions_col'].lower()} · "
-        f"{focus.run_errors} {strings['errors'].lower()}",
-    ]
-
-    lines += _action_funnel_text(report, lang, owner=not technical)
-
-    if findings:
-        lines += ["", strings["findings"].upper()]
-        for finding in findings:
-            text = (finding.text_en if technical else finding.text_nl) or ""
-            head = finding.title if technical else text.split(". ")[0]
-            lines.append(f"  [{sev_label(finding.severity, lang)}] {finding.id} — {head}")
-            lines.append(f"      {text}")
-            for url in finding.evidence.run_urls:
-                lines.append(f"      {url}")
-            if finding.prompt:
-                lines.append("")
-                if not technical:
-                    lines.append(f"      {strings['owner_prompt']}")
-                lines += [f"      {row}" for row in compose_prompt(finding).splitlines()]
-            lines.append("")
-
-    if technical and report.coverage.coverage:
-        lines += [
-            strings["coverage"].upper(),
-            "  " + " · ".join(
-                f"{c.feed}: {FEED_STATUS_LABEL_EN[c.status]}"
-                + (f" ({c.reason})" if c.reason else "")
-                for c in report.coverage.coverage
-            ),
+    if funnel:
+        columns = [
+            "Action",
+            "Proposed",
+            "Executed",
+            "Failed",
+            "Superseded",
+            "Awaiting",
+            "Stale",
         ]
 
-    for section in report.sections_for(half):
-        lines += ["", section.title.upper(), "  " + section.text.replace("\n", "\n  ")]
+        def row(label, r):
+            return [
+                label,
+                r.proposed_total,
+                r.succeeded,
+                r.failed,
+                r.superseded,
+                r.pending,
+                r.stale,
+            ]
 
-    lines += ["", f"— {strings['footer' if technical else 'owner_footer']}"]
+        rows = [row(r.action_id, r) for r in funnel.focus.rows if r.proposed_total]
+        if rows:
+            rows.append(row("Whole project", funnel.focus.total))
+            tables.append(_table("Action funnel", columns, rows))
+        axes = [a for a in funnel.per_axis if a.total.proposed_total]
+        if len(axes) >= 2:
+            tables.append(
+                _table(
+                    "Actions by scope",
+                    ["Scope"] + columns[1:],
+                    [
+                        row(f"{a.axis}: {report.axis_name(a.key)}", a.total)
+                        for a in axes
+                    ],
+                )
+            )
+    coverage = [
+        f"{c.feed}: {c.status}" + (f" — {c.reason}" if c.reason else "")
+        for c in report.coverage.coverage
+    ]
+    notes = [
+        n
+        for n in (
+            report.technical.noise_note,
+            report.meta.signal_note if report.meta else None,
+        )
+        if n
+    ]
+    return {
+        "tables": [t for t in tables if t["rows"]],
+        "coverage": coverage,
+        "notes": notes,
+    }
+
+
+def project_sections(report: Report, half: str) -> dict:
+    """All selection, ordering, localization and prompt gating lives here."""
+    technical = half == "technical"
+    lang = "en" if technical else owner_lang(report)
+    words = STR[lang]
+    k = report.kpis.focus
+    counters = (
+        (
+            f"{k.runs} runs · {k.drafts} drafts · {k.actions_ok}/{k.actions_failed} actions ok/failed"
+            + (f" · {k.run_errors} errors" if k.run_errors is not None else "")
+        )
+        if technical
+        else (
+            f"{k.runs} mails · {k.drafts} voorstellen"
+            if lang == "nl"
+            else f"{k.runs} mails · {k.drafts} drafts"
+        )
+    )
+    totals = (
+        report.kpis.action_funnel.focus.total if report.kpis.action_funnel else None
+    )
+    actions = ""
+    if not technical and totals and totals.proposed_total:
+        actions = (
+            (
+                f"{totals.proposed_total} acties voorgesteld · {totals.succeeded} uitgevoerd · "
+                f"{totals.failed} mislukt · {totals.pending} wachten op bevestiging"
+            )
+            if lang == "nl"
+            else (
+                f"{totals.proposed_total} actions proposed · {totals.succeeded} executed · "
+                f"{totals.failed} failed · {totals.pending} awaiting confirmation"
+            )
+        )
+    coverage = [
+        f"{c.feed}: {c.status}"
+        for c in report.coverage.coverage
+        if c.status != "complete"
+    ]
+    active, carried = [], []
+    for original in report.findings:
+        if not technical and original.audience == "technical":
+            continue
+        if technical and original.audience == "owner":
+            carried.append(
+                {"id": original.id, "line": f"Waiting on owner: {original.title}"}
+            )
+            continue
+        f = report.effective(original)
+        scope = (
+            report.axis_name(f.scope.axis_value())
+            if f.scope.axis_value()
+            else "project"
+        )
+        prompt = (
+            compose_prompt(f, owner=not technical)
+            if technical or owner_prompt_allowed(f)
+            else ""
+        )
+        prompt_label = words["prompt" if technical else "owner_prompt"]
+        if f.status == "unchanged":
+            date = report._prior[f.signature]["prompt_date"]
+            prompt_label += f" — {words['prompt_from']} {date}, {words['unchanged']}"
+        links = [
+            {
+                "url": url,
+                "label": (
+                    url.split("/runs/")[-1].split("?")[0][:8]
+                    if technical
+                    else words["conversation"]
+                    + (f" {i + 1}" if len(f.evidence.run_urls) > 1 else "")
+                )
+                + " ↗",
+            }
+            for i, url in enumerate(f.evidence.run_urls)
+        ]
+        ask = (
+            ((f"{words['for']} {f.ask_for}: " if f.ask_for else "") + (f.ask_nl or ""))
+            if not technical
+            else ""
+        )
+        item = {
+            "id": f.id,
+            "severity": f.severity,
+            "severity_label": words[f.severity],
+            "title": f.title if technical else "",
+            "text": f.text_en if technical else f.text_nl,
+            "ask": ask,
+            "links": links,
+            "prompt": prompt,
+            "prompt_label": prompt_label,
+            "signature": f.signature if technical else "",
+            "chips": [scope],
+            "prompt_chips": [f.prompt.task_kind, *[t.repo for t in f.prompt.targets]]
+            if f.prompt
+            else [],
+            "update": f.update_en if technical else f.update_nl,
+        }
+        if technical:
+            item["chips"] += [f.root_cause.plane, f"{f.impact.runs} runs"]
+        if f.status == "changed":
+            item["chips"].append("changed" if lang == "en" else "gewijzigd")
+        if f.status == "unchanged":
+            start = f.title if technical else ask.split(". ", 1)[0]
+            since = f"{words['since']} {f.recurrence.first_seen}"
+            if technical:
+                since += f" · {f.recurrence.focus_count} today"
+            item["line"] = f"{start} — {since} · {item['update']}"
+            carried.append(item)
+        else:
+            active.append(item)
+    sections = []
+    if active:
+        sections.append(
+            {
+                "id": "act",
+                "title": words["act" if technical else "owner_act"],
+                "items": active,
+            }
+        )
+    if carried:
+        sections.append({"id": "open", "title": words["open"], "items": carried})
+    if technical:
+        sections.append(
+            {
+                "id": "diagnostics",
+                "title": words["diagnostics"],
+                "data": _diagnostics(report),
+            }
+        )
+    review = report.coverage.feedback_review
+    feedback = (
+        not technical
+        and review.get("enabled")
+        and (
+            review.get("cadence", "weekly") == "daily-lite"
+            or len(report.window.focus_days) > 1
+        )
+    )
+    return {
+        "lang": lang,
+        "technical": technical,
+        "title": f"{' + '.join(report.coverage.projects)} — {report.date}",
+        "headline": report.technical.headline
+        if technical
+        else report.owner.headline_nl,
+        "counters": counters,
+        "actions": actions,
+        "warning": " · ".join(coverage) if technical else "",
+        "sections": sections,
+        "feedback": feedback,
+        "quiet": not active,
+    }
+
+
+CSS = """
+:root{color-scheme:light;font-family:system-ui,sans-serif;color:#172b36;background:#f5f7f9}
+body{max-width:1000px;margin:40px auto;padding:0 24px 40px}h1{font-size:26px;margin:8px 0 16px}
+h2{font-size:18px;margin:30px 0 14px}p{line-height:1.55}.lede{font-size:18px;max-width:800px}
+.counts,.muted,footer{font-size:13px;color:#536673}.warning{background:#fff0c2;padding:12px;border-radius:6px}
+.card{background:white;border:1px solid #dbe2e7;border-radius:10px;padding:20px;margin:12px 0}
+h3{font-size:18px;margin:10px 0}.chip,.severity{display:inline-block;font-size:12px;padding:3px 7px;margin:0 6px 5px 0;border-radius:4px;background:#edf2f5}
+.high{color:#a52020;background:#ffe9e9}.medium{color:#815400;background:#fff1cd}.low{color:#475467}.good{color:#12734a}
+.ask{font-weight:650}.update{font-style:italic;color:#536673}details{margin-top:12px}summary{cursor:pointer;font-size:14px}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f2f5f7;padding:16px;border-radius:6px;font-size:13px;line-height:1.5}
+button{cursor:pointer;padding:7px 12px;border:1px solid #bbcbd5;border-radius:5px;background:white;margin-top:10px}
+a{color:#145d8e;margin-right:12px}table{border-collapse:collapse;width:100%;font-size:12px;margin:12px 0}th,td{padding:8px;border-bottom:1px solid #dde5ea;text-align:left}
+.scroll{overflow-x:auto}.open-item{padding:12px 0;border-bottom:1px solid #dde5ea}.open-item p{margin:0}footer{margin-top:32px}
+"""
+JS = """document.querySelectorAll('button.copy').forEach(b=>b.addEventListener('click',async()=>{
+const p=document.getElementById(b.dataset.target);try{await navigator.clipboard.writeText(p.textContent);
+b.textContent=document.documentElement.lang==='nl'?'Gekopieerd':'Copied';}catch{const r=document.createRange();r.selectNodeContents(p);const s=window.getSelection();s.removeAllRanges();s.addRange(r);b.textContent=document.documentElement.lang==='nl'?'Selectie klaar: kopieer handmatig':'Selected: copy manually';}}));"""
+
+
+def _prompt_html(item, lang):
+    if not item.get("prompt"):
+        return ""
+    pid = "prompt-" + item["id"]
+    chips = "".join(f'<span class="chip">{e(c)}</span>' for c in item["prompt_chips"])
+    return (
+        f"<details><summary>{e(item['prompt_label'])}</summary><p>{chips}</p>"
+        f'<button class="copy" data-target="{e(pid)}">{e(STR[lang]["copy"])}</button>'
+        f'<pre id="{e(pid)}">{e(item["prompt"])}</pre></details>'
+    )
+
+
+def render_html(view):
+    lang = view["lang"]
+    words = STR[lang]
+    body = [
+        f'<header><h1>{e(view["title"])}</h1><p class="lede">{e(view["headline"])}</p>',
+        f'<p class="counts">{e(view["counters"])}</p>',
+    ]
+    for key, cls in (("actions", "counts"), ("warning", "warning")):
+        if view[key]:
+            body.append(f'<p class="{cls}">{e(view[key])}</p>')
+    if view["feedback"]:
+        body.append(f'<a href="feedback-review.html">{e(words["review"])}</a>')
+    if view["quiet"]:
+        body.append(f'<p class="quiet">{e(words["quiet"])}</p>')
+    body.append("</header>")
+    for section in view["sections"]:
+        body.append(f'<section id="{section["id"]}">')
+        if section["id"] == "diagnostics":
+            body.append(f"<details><summary>{e(section['title'])}</summary>")
+            for table in section["data"]["tables"]:
+                body.append(
+                    f'<h3>{e(table["title"])}</h3><div class="scroll"><table><thead><tr>'
+                )
+                body.extend(f"<th>{e(c)}</th>" for c in table["columns"])
+                body.append("</tr></thead><tbody>")
+                for row in table["rows"]:
+                    body.append(
+                        "<tr>" + "".join(f"<td>{e(v)}</td>" for v in row) + "</tr>"
+                    )
+                body.append("</tbody></table></div>")
+            body.append("<h3>Data coverage</h3>")
+            body.extend(
+                f'<p class="muted">{e(line)}</p>'
+                for line in section["data"]["coverage"] + section["data"]["notes"]
+            )
+            body.append("</details>")
+        else:
+            body.append(f"<h2>{e(section['title'])}</h2>")
+            for item in section["items"]:
+                cls = "open-item" if "line" in item else "card"
+                body.append(f'<article class="{cls}" id="{e(item["id"])}">')
+                if "severity" in item:
+                    body.append(
+                        f'<span class="severity {item["severity"]}">{e(item["severity_label"])}</span>'
+                    )
+                if "line" in item:
+                    body.append(f"<p>{e(item['line'])}</p>")
+                else:
+                    body.extend(
+                        f'<span class="chip">{e(c)}</span>' for c in item["chips"]
+                    )
+                    if item["title"]:
+                        body.append(f"<h3>{e(item['title'])}</h3>")
+                    body.append(f"<p>{e(item['text'])}</p>")
+                    if item["update"]:
+                        body.append(
+                            f'<p class="update">{e(words["update"])}: {e(item["update"])}</p>'
+                        )
+                    if item["ask"]:
+                        body.append(f'<p class="ask">{e(item["ask"])}</p>')
+                    links = "".join(
+                        f'<a href="{e(link["url"])}" target="_blank" rel="noopener">{e(link["label"])}</a>'
+                        for link in item["links"]
+                    )
+                    if item["signature"]:
+                        body.append(
+                            f"<details><summary>{e(words['evidence'])}</summary><p>{links}</p><code>{e(item['signature'])}</code></details>"
+                        )
+                    else:
+                        body.append(f"<p>{links}</p>")
+                body.append(_prompt_html(item, lang))
+                body.append("</article>")
+        body.append("</section>")
+    body.append("<footer>brain-fleet-report · v2</footer>")
+    return (
+        f'<!doctype html><html lang="{lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{e(view["title"])}</title><style>{CSS}</style></head><body>'
+        + "".join(body)
+        + f"<script>{JS}</script></body></html>"
+    )
+
+
+def render_text(view):
+    words = STR[view["lang"]]
+    lines = [view["title"], "", view["headline"], view["counters"]]
+    lines += [view[k] for k in ("actions", "warning") if view[k]]
+    if view["feedback"]:
+        lines.append(words["review"] + ": feedback-review.html")
+    if view["quiet"]:
+        lines.append(words["quiet"])
+    for section in view["sections"]:
+        lines += ["", section["title"].upper()]
+        if section["id"] == "diagnostics":
+            for table in section["data"]["tables"]:
+                lines += [table["title"], " | ".join(table["columns"])]
+                lines += [" | ".join(map(str, row)) for row in table["rows"]]
+            lines += (
+                ["Data coverage"]
+                + section["data"]["coverage"]
+                + section["data"]["notes"]
+            )
+            continue
+        for item in section["items"]:
+            if "line" in item:
+                lines.append(item["line"])
+            else:
+                lines += [
+                    f"[{item['severity_label']}] "
+                    + " · ".join(
+                        ([item["title"]] if item["title"] else []) + item["chips"]
+                    ),
+                    item["text"],
+                ]
+                if item["update"]:
+                    lines.append(f"{words['update']}: {item['update']}")
+                if item["ask"]:
+                    lines.append(item["ask"])
+                lines += [f"{link['label']}: {link['url']}" for link in item["links"]]
+                if item["signature"]:
+                    lines.append("signature: " + item["signature"])
+            if item.get("prompt"):
+                lines += [item["prompt_label"]] + [
+                    "    " + line for line in item["prompt"].splitlines()
+                ]
+            lines.append("")
     return "\n".join(lines) + "\n"
-
-
-# ---------------------------------------------------------------------------
 
 
 def render_all(report: Report, out_dir: Path) -> list[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     written = []
-    for name, content in (
-        ("technical.html", render_technical_html(report)),
-        ("owner.html", render_owner_html(report)),
-        ("technical.email.html", render_email_html(report, "technical")),
-        ("owner.email.html", render_email_html(report, "owner")),
-        ("technical.txt", render_txt(report, "technical")),
-        ("owner.txt", render_txt(report, "owner")),
-    ):
-        path = out_dir / name
-        path.write_text(content, encoding="utf-8")
-        written.append(path)
+    for half in ("technical", "owner"):
+        view = project_sections(report, half)
+        for extension, content in (
+            ("html", render_html(view)),
+            ("txt", render_text(view)),
+        ):
+            path = out_dir / f"{half}.{extension}"
+            path.write_text(content, encoding="utf-8")
+            written.append(path)
     return written
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Render report.json into the six deliverables")
-    parser.add_argument("report", type=Path)
-    parser.add_argument("--out-dir", type=Path, help="default: next to report.json")
-    args = parser.parse_args()
-
-    report = load_report(args.report)
-    out_dir = args.out_dir or args.report.parent
-    for path in render_all(report, out_dir):
-        print(path)
-    return 0
-
-
 if __name__ == "__main__":
-    raise SystemExit(main())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("report", type=Path)
+    parser.add_argument("--out-dir", type=Path)
+    parser.add_argument(
+        "--prior-dir",
+        type=Path,
+        action="append",
+        help="explicit prior report directory (fixtures)",
+    )
+    args = parser.parse_args()
+    for path in render_all(
+        load_report(args.report, prior_dirs=args.prior_dir),
+        args.out_dir or args.report.parent,
+    ):
+        print(path)

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "report_id": "momentum-tools",
   "date": "2026-09-06",
   "generated_at": "2026-09-07T07:05:00+02:00",
@@ -138,24 +138,12 @@
   },
   "findings": [],
   "technical": {
-    "headline": "One simulated run on a Sunday and nothing else; the em-dash feedback from 27 days ago is still open.",
-    "tldr": [],
-    "actions": [],
-    "regressions": [],
-    "watch": [
-      "Open feedback about em dashes has not been consolidated for 27 days."
-    ],
-    "noise_note": "The single run was a simulation and was excluded."
+    "headline": "No new technical tasks.",
+    "noise_note": "One simulation excluded."
   },
   "owner": {
-    "headline_nl": "Zondag was er geen enkele echte vraag; er is niets dat je moet bekijken.",
-    "tldr_nl": [],
-    "actions_nl": [],
-    "policy_questions_nl": [],
-    "good_nl": [],
-    "tenants": []
+    "headline_nl": "Geen nieuwe acties vandaag."
   },
-  "custom_sections": [],
   "meta": {
     "signal_note": "Quiet day; absence of findings is not evidence that older items are resolved."
   }
