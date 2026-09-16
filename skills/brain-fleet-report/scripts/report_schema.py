@@ -269,7 +269,36 @@ class Recurrence(_Model):
     known_since: IsoDate | None = None
 
 
+class ManualFeedback(_Model):
+    score: int | None = Field(default=None, ge=1, le=5)
+    comment: NonEmpty | None = None
+
+    @model_validator(mode="after")
+    def _present(self):
+        if self.score is None and self.comment is None:
+            raise ValueError("feedback needs a manual score or comment")
+        return self
+
+
+class EvidenceEntry(_Model):
+    run_id: Annotated[str, Field(pattern=rf"^{_UUID}$")]
+    label: NonEmpty | None = None
+    question: NonEmpty | None = None
+    proposed: NonEmpty | None = None
+    sent: NonEmpty | None = None
+    feedback: ManualFeedback | None = None
+
+
 class Evidence(_Model):
+    entries: list[EvidenceEntry] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _unique(self):
+        ids = [e.run_id.lower() for e in self.entries]
+        if len(ids) != len(set(ids)):
+            raise ValueError("evidence entries must have unique run IDs")
+        return self
+
     run_ids: list[NonEmpty] = Field(default_factory=list)
     run_urls: list[NonEmpty] = Field(default_factory=list)
 
@@ -330,6 +359,13 @@ class Option(_Model):
     label: Annotated[str, Field(min_length=1, max_length=120)]
     instruction: Annotated[str, Field(min_length=1, max_length=8192)]
 
+    @model_validator(mode="after")
+    def _meaningful_label(self):
+        words = re.findall(r"\w+", self.label.casefold())
+        if " ".join(words) == "done in dashboard" or (len(words) <= 2 and words and set(words) <= {"ja", "nee", "ok"}):
+            raise ValueError("option label must name the owner's task or policy choice")
+        return self
+
 
 class Finding(_Model):
     id: Annotated[str, Field(pattern=r"^F\d{1,3}$")]
@@ -341,6 +377,7 @@ class Finding(_Model):
     severity: Severity
     recurrence: Recurrence
     title: Annotated[str, Field(min_length=1, max_length=90)]
+    title_nl: Annotated[str, Field(min_length=1, max_length=90)] | None = None
     status: Literal["new", "changed", "unchanged"]
     evidence: Evidence
     impact: Impact | None = None
@@ -364,6 +401,7 @@ class Finding(_Model):
 
         if self.audience in ("owner", "both"):
             require("options")
+            require("title_nl")
         if any(option.label in ("Other", "Skip") for option in self.options):
             raise ValueError("Other and Skip are reserved host options")
         if len({option.label for option in self.options}) != len(self.options):
@@ -621,6 +659,13 @@ def _run_ids_in(blob: Any) -> set[str]:
 def soft_warnings(report: Report, kpis_path=None, manifest_path=None) -> list[str]:
     out = []
     for f in report.findings:
+        if f.ask_nl and "?" not in f.ask_nl and not re.match(
+            r"^(vul|bevestig|controleer|kijk|geef|kies|pas|werk|voeg|vermeld|beschrijf|bepaal|noteer|zet|maak|stuur|check|confirm|fill|review|provide|choose|update|add)\b",
+            f.ask_nl, re.IGNORECASE,
+        ):
+            out.append(f"findings[{f.id}].ask_nl: use a direct question or imperative task naming the fill-in items")
+        if report.coverage.lang() == "nl" and f.title_nl and _looks_english(f.title_nl):
+            out.append(f"findings[{f.id}].title_nl: reads as English")
         if f.text_en and _looks_dutch(f.text_en):
             out.append(f"findings[{f.id}].text_en: reads as Dutch")
         if report.coverage.lang() == "nl" and f.text_nl and _looks_english(f.text_nl):
@@ -705,12 +750,28 @@ def _one_line_exc(exc: Exception) -> str:
 def evidence_errors(report: Report, evidence_path: str | Path) -> list[str]:
     """Run ids cited by findings must exist in the collector's evidence.json."""
     try:
-        known = _run_ids_in(_load_json(evidence_path))
+        collected = _load_json(evidence_path)
+        known = _run_ids_in(collected)
     except (OSError, json.JSONDecodeError) as exc:
         return [f"<evidence>: cannot read {evidence_path} ({exc})"]
     out: list[str] = []
+    from evidence_excerpts import evidence_sources, excerpt_matches
+
     for finding in report.findings:
-        for i, run_id in enumerate(finding.evidence.run_ids):
+        for entry in finding.evidence.entries:
+            prefix = f"findings[{finding.id}].evidence.entries[{entry.run_id}]"
+            sources = evidence_sources(entry.run_id, collected, Path(evidence_path).parent)
+            for field in ("question", "proposed", "sent"):
+                value = getattr(entry, field)
+                if value is not None and not any(excerpt_matches(value, original) for original in sources[field]):
+                    out.append(f"{prefix}.{field}: excerpt does not match collected text; drill this run or omit the field")
+            if entry.feedback:
+                supplied = entry.feedback.model_dump(exclude_none=True)
+                if not any(all(row.get(k) == v for k, v in supplied.items()) for row in sources["feedback"]):
+                    out.append(f"{prefix}.feedback: no matching manual feedback in the feedback feed")
+        cited = finding.evidence.run_ids + [e.run_id for e in finding.evidence.entries]
+        cited += [url.split('/')[-1].split('?')[0] for url in finding.evidence.run_urls]
+        for i, run_id in enumerate(cited):
             if run_id not in known and run_id[:8] not in known:
                 out.append(
                     f"findings[{finding.id}].evidence.run_ids[{i}]: {run_id!r} is not in "
@@ -825,6 +886,10 @@ def load_report(path: str | Path, *, dsn=None, prior=None) -> Report:
     path = Path(path)
     report = Report.model_validate_json(path.read_text(encoding="utf-8"))
     report._source = path.resolve()
+    if any(f.evidence.entries for f in report.findings):
+        errors = evidence_errors(report, path.parent / 'evidence.json')
+        if errors:
+            raise ValueError("\n".join(errors))
     report._prior = prior if prior is not None else prior_findings(
         path, projects=report.coverage.projects, dsn=dsn
     )
@@ -835,6 +900,10 @@ def load_report(path: str | Path, *, dsn=None, prior=None) -> Report:
         relevant = [row for row in old.get("rows", []) if
                     ("project" not in row or row["project"] in projects) and
                     ("audience" not in row or row["audience"] in audiences) and
+                    (row.get("audience") != "owner" or row.get("tenant") ==
+                     (f.scope.tenant if f.scope.level == "tenant" else None) or
+                     (f.scope.level == "tenant" and row.get("tenant") is None and
+                      row.get("scope_label") == f.scope.tenant)) and
                     "#archived:" not in row.get("signature", "")] if old else []
         if old and old.get("rows") and not relevant:
             old = None

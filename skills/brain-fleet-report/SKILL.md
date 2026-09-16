@@ -21,7 +21,7 @@ uv run "$FR/scripts/publish.py" "$OUT/report.json" --write
 
 Before production writes, verify migrated review columns exist; otherwise use `--dsn` locally.
 Print the owner/technical review URLs. Members use their project sessions; tenants
-use project sessions with scope. No ClickUp. After a human decision, use
+use tenant owner sessions; technical twins remain on project sessions. No ClickUp. After a human decision, use
 the host checkout's `.agents/skills/review-implement/SKILL.md`: commit, ship, production-test.
 
 1. Require an actionable remedy/decision or bounded investigation. Recovery/by-design is context;
@@ -34,6 +34,14 @@ the host checkout's `.agents/skills/review-implement/SKILL.md`: commit, ship, pr
    Decisions precede implementation; implementation owns verification, at most two fix/ship/test rounds.
 6. Owner = reachable task, in owner language (NL default), named recipient. Use Owner reach;
    shared findings need a distinct owner ask. Only brain-content fixes expose prompts.
+   Owner asks about one practice/tenant use tenant scope (FAQ/profile/master data included);
+   project scope is for asks crossing tenants. Supply title_nl in the owner language.
+   Ask one direct question or concrete task naming each fill-in item. Options name owner actions
+   (“Prijzen invullen”, “Regel bevestigen”); admin instructions are fill-in templates, decisions
+   contain concrete policy text. Never “Done in dashboard” or bare Ja/Nee/Ok.
+   Drill writes details/excerpts-<uuid>.json via evidence_excerpts(run_id): shorten those originals
+   into evidence.entries, stripping greeting/footer with … omissions. Include manual feedback only
+   from the feedback feed; omit unavailable fields. Keep evidence.json beside report.json.
 7. Aim ≤5 expanded technical, ≤4 owner findings; prioritize customer impact. Counters own numbers.
 8. Honour DB decisions: accepted/noise reopen only on retest trigger; later after its date; post-fix
    sightings become regressions. Unpublished runtime drift needs a remedy; tooling drift stays parked.

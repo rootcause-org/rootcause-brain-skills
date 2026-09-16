@@ -535,10 +535,11 @@
       "ask_for": "Tobias",
       "options": [
         {
-          "label": "Done in dashboard",
-          "instruction": "Complete the requested owner task in the dashboard."
+          "label": "Gegevens invullen",
+          "instruction": "- Juiste gegevens: …\n- Geldig vanaf: …"
         }
-      ]
+      ],
+      "title_nl": "Controleer de praktijkgegevens"
     },
     {
       "id": "F3",
@@ -605,10 +606,11 @@
       "ask_for": "Tobias",
       "options": [
         {
-          "label": "Done in dashboard",
-          "instruction": "Complete the requested owner task in the dashboard."
+          "label": "Gegevens invullen",
+          "instruction": "- Juiste gegevens: …\n- Geldig vanaf: …"
         }
-      ]
+      ],
+      "title_nl": "Controleer de praktijkgegevens"
     },
     {
       "id": "F7",
@@ -660,7 +662,8 @@
           "label": "Fourteen days",
           "instruction": "Use a fourteen-day policy."
         }
-      ]
+      ],
+      "title_nl": "Controleer de praktijkgegevens"
     },
     {
       "id": "F5",

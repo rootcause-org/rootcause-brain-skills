@@ -94,11 +94,21 @@ def test_both_members_have_own_project_sessions_and_linked_tenant_cards(db, proj
     for project_id in projects.values():
         owner, technical = [c for c in cards if c['project_id'] == project_id]
         assert technical['linked_item_id'] == owner['id']
-        assert owner['options'][0]['label'] == 'Done in dashboard'
+        assert owner['options'][0]['label'] == 'Gegevens invullen'
         assert technical['options'][0]['instruction'] == r.findings[0].prompt.change
         assert len(technical['options']) == 5
         assert technical['prompt']['text']
-    assert all(c['tenant_id'] is None and c['scope_label'] == 'practice' and c['cadence'] == 'queue' for c in cards)
+        assert owner['tenant_id'] == db.execute('SELECT id FROM tenants WHERE project_id=%s AND slug=%s', (project_id, 'practice')).fetchone()['id']
+        assert technical['tenant_id'] is None
+        assert owner['subject'] == r.findings[0].title_nl
+        assert technical['subject'] == r.findings[0].title
+    assert all(c['scope_label'] == 'practice' and c['cadence'] == 'queue' for c in cards)
+    publish(db, r, write=True)
+    assert rows(db, projects) == cards
+    history = read_prior(db, list(projects))[r.findings[0].signature]
+    assert len(history['rows']) == 4
+    assert history['finding']['title_nl'] == r.findings[0].title_nl
+    assert history['finding']['title'] == r.findings[0].title
 
 
 def test_same_day_idempotent_next_day_unchanged_preserves_task(db, projects):
@@ -260,3 +270,38 @@ def test_frozen_technical_twin_follows_reopened_owner(db, projects):
         assert owner['status'] == 'open'
         assert owner['signature'] == r.findings[0].signature
         assert technical['status'] == 'decided'
+
+
+@pytest.mark.parametrize('status', ['open', 'decided'])
+def test_legacy_owner_moves_on_next_sighting_preserving_identity(db, projects, tmp_path, status):
+    from report_schema import load_report
+    r = report(projects, audience='both')
+    r.findings[0].scope.level = 'tenant'
+    r.findings[0].scope.tenant = 'practice'
+    r.kpis.per_axis = []  # Report helper changes scope after validation; add the real axis below.
+    publish(db, r, write=True)
+    # Reproduce old releases: owner card has tenant scope_label but a project queue session.
+    for owner in (c for c in rows(db, projects) if c['audience'] == 'owner'):
+        session = db.execute("SELECT id FROM review_sessions WHERE project_id=%s AND audience='owner' AND tenant_id IS NULL", (owner['project_id'],)).fetchone()['id']
+        db.execute("UPDATE review_items SET session_id=%s,status=%s,decision_instruction='Existing choice' WHERE id=%s", (session, status, owner['id']))
+    before = rows(db, projects)
+    carried = next_day(r)
+    data = carried.model_dump(exclude_unset=True)
+    data['window']['focus'] = carried.date
+    data['kpis']['per_axis'] = [{'axis': 'tenant', 'key': 'practice', 'name': 'Practice'}]
+    for key in ('text_en', 'text_nl', 'ask_nl', 'ask_for', 'prompt', 'impact', 'root_cause'):
+        data['findings'][0].pop(key, None)
+    path = tmp_path / 'report.json'
+    path.write_text(json.dumps(data))
+    carried = load_report(path, prior=read_prior(db, list(projects)))
+    assert all(p['action'] == 'update' for p in publish(db, carried, write=False))
+    assert rows(db, projects) == before
+    publish(db, carried, write=True)
+    after = rows(db, projects)
+    assert {c['id'] for c in after} == {c['id'] for c in before}
+    for card in after:
+        old = next(c for c in before if c['id'] == card['id'])
+        assert card['status'] == old['status']
+        assert card['decision_instruction'] == old['decision_instruction']
+        assert card['linked_item_id'] == old['linked_item_id']
+        assert (card['tenant_id'] is not None) == (card['audience'] == 'owner')

@@ -153,7 +153,7 @@ def test_unchanged_owner_requires_options(tmp_path):
     finding = {k: v for k, v in old.items() if k not in ("text_en", "text_nl", "ask_nl", "ask_for", "prompt", "impact", "root_cause")}
     finding.update(status="unchanged", update_nl="Nog geen beslissing.")
     data["findings"] = [finding]
-    prior = {old["signature"]: {"finding": old, "rows": [{"status": "open", "project": old["members"][0], "audience": old["audience"]}]}}
+    prior = {old["signature"]: {"finding": old, "rows": [{"status": "open", "project": old["members"][0], "audience": old["audience"], "tenant": old["scope"].get("tenant")}]}}
     path = write_report(tmp_path, data)
     report = load_report(path, prior=prior)
     assert report.effective(report.findings[0]).ask_nl == old["ask_nl"]
@@ -263,6 +263,6 @@ def test_unchanged_cannot_widen_prior_scope(tmp_path, widen):
     if widen == "member":
         finding["members"] = ["kampadmin", "kampadmin-support"]
     else:
-        finding.update(audience="both", update_nl="Nog open.", options=[{"label": "A", "instruction": "Kies beleid A."}])
+        finding.update(audience="both", title_nl="Controleer het beleid", update_nl="Nog open.", options=[{"label": "A", "instruction": "Kies beleid A."}])
         prior[OLD["signature"]]["finding"].update(text_nl="Oude samengevoegde tekst.", ask_nl="Welke keuze?")
     assert any("every member/audience" in e for e in validation_errors(write_report(tmp_path, data), prior=prior))

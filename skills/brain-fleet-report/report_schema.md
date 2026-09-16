@@ -28,17 +28,18 @@ The lede adds context without repeating cards. Collector artifacts own counters,
 | scope | level project/member/channel/tenant; tenant required only for tenant, key optional except project; tenant must exist in per_axis |
 | severity | high, medium, low, good |
 | recurrence | first_seen, last_seen, focus_count, context_count, state new/recurring/gone, optional known_since; copy evidence cluster |
-| title | English ≤90 |
+| title | English ≤90; technical subject |
+| title_nl | Owner language ≤90; required owner/both, including unchanged; owner subject |
 | status | new, changed, unchanged |
-| evidence | run_ids[], run_urls[]; run URLs may carry access tokens |
+| evidence | run_ids[], run_urls[], entries[] (below); run URLs may carry access tokens |
 | impact | runs, threads; no prose |
 | root_cause | plane + confidence low/medium/high; no detail prose |
 | text_en | ≤700; required technical/both |
 | text_nl | ≤500; required owner/both; no code/run IDs |
-| ask_nl | ≤300; required owner/both; explicit decision/options or admin task |
+| ask_nl | ≤300; required owner/both; one direct question or imperative task naming the fill-in items |
 | ask_for | Optional person ≤40 |
 | update_en, update_nl | ≤200; required for relevant audience when changed/unchanged; forbidden for new |
-| options | Required owner/both, including unchanged: 1–4 `{label, instruction}` with nonempty, distinct labels; real policy choices or one `Done in dashboard` task, never generic approval placeholders |
+| options | Required owner/both, including unchanged: 1–4 `{label, instruction}` with nonempty, distinct labels; owner verb phrases; admin instructions are fill-in templates, decision instructions concrete policy text; reject “Done in dashboard” and bare Ja/Nee/Ok |
 | prompt | Structured below; required high except owner policy_question |
 
 Planes: host, action_plane, brain_script, brain_content, tenant_brain, persona, settings,
@@ -62,7 +63,29 @@ prompt_compose and publish; production uses operator DB access (`RC_HOST_CHECKOU
 `prior={}` or a prior snapshot into `load_report`, never silently connect to production.
 
 Publication writes standard technical options; owner options come from the finding. `both` creates
-linked rows; the technical twin waits for the owner decision. Tenant findings stay on project sessions.
+linked rows; the technical twin waits for the owner decision. Tenant owner rows use that tenant’s open queue session; technical rows stay on project sessions
+with the tenant slug as scope_label. One-practice FAQ/profile/master-data asks are tenant scope;
+project scope is for cross-tenant asks. Legacy owner cards on project sessions match by signature
+and tenant scope_label: their next publication moves an active card into its tenant session,
+preserving ID, decisions and links. No one-off republish/migration is needed.
+
+## Evidence excerpts
+
+`evidence.entries` holds `{run_id, label?, question?, proposed?, sent?, feedback?}` per full UUID.
+`feedback` is `{score?, comment?}` from the manual feedback feed only. Missing fields are absent.
+The publisher preserves these fields in review_items.evidence for both audiences.
+
+From OUT, `evidence_excerpts(run_id)` in scripts/evidence_excerpts.py returns original source text;
+`drill.py --run` also writes details/excerpts-<uuid>.json. Select short verbatim passages; omit
+salutations/footers with “…” between passages. Never paraphrase quotations. Validator matches each
+passage against collected inbound/draft/sent text after link→text, asterisk removal, curly-apostrophe
+normalization and collapsed whitespace (weekly-review excerpt_matches). Manual feedback must match
+the feed exactly. Auto-evaluation scores never qualify. Keep evidence.json beside report.json:
+load/publish validate populated entries too; missing source text requires a drill or omitted excerpt.
+Ask text without “?” or an initial imperative warns; options are 1–4 and meaningful labels required.
+
+Admin option example: label “Prijzen invullen”, instruction
+`- mondonderzoek: … EUR\n- RX-foto’s: … EUR\n- poetsbeurt: inbegrepen / … EUR`.
 
 ## Prompt
 
@@ -96,7 +119,7 @@ These are steering, not proof of identity. KPI/manifest comparisons and evidence
 {
   "id": "F1", "signature": "policy_question:refund-window", "kind": "policy_question",
   "audience": "owner", "members": ["example"], "scope": {"level": "project"},
-  "severity": "high", "status": "new", "title": "Choose the refund window",
+  "severity": "high", "status": "new", "title_nl": "Bevestig het terugbetalingsbeleid", "title": "Choose the refund window",
   "recurrence": {"first_seen": "2026-09-16", "last_seen": "2026-09-16",
     "focus_count": 1, "context_count": 0, "state": "new"},
   "evidence": {"run_ids": [], "run_urls": []}, "impact": {"runs": 1, "threads": 1},

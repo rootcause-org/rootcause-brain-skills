@@ -286,6 +286,8 @@ def enrich_runs(rc: Rc, member: str, runs: list[dict[str, Any]], focus: date, tz
             {"key": n.get("key"), "body": clip(n.get("body"), 800)}
             for n in (payload.get("notes") or []) if isinstance(n, dict) and n.get("body")
         ]
+        run["question"] = payload.get("question")
+        run["draft_markdown"] = payload.get("draft_markdown")
         run["draft_markdown_len"] = len(str(payload.get("draft_markdown") or ""))
         run["draft_deferral"] = "[[✏️" in str(payload.get("draft_markdown") or "")
         run["proposed_actions"] = [a.get("slug") or a.get("action_id")
@@ -322,6 +324,8 @@ def enrich_runs(rc: Rc, member: str, runs: list[dict[str, Any]], focus: date, tz
     def do_trace(run: dict[str, Any]) -> None:
         records = rc.jsonl(*base, "run", "trace", str(run.get("run_id")), "--stream", timeout=600)
         if records:
+            run["question"] = records[0].get("question") or run.get("question")
+            run["draft_markdown"] = records[0].get("draft") or run.get("draft_markdown")
             run["trace"] = reduce_trace_header(records[0])
             if not run.get("tenant") and run["trace"].get("tenant"):
                 run["tenant"] = run["trace"]["tenant"]

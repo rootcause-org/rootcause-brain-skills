@@ -620,6 +620,19 @@ def drill_one(rc: Rc, evidence: dict[str, Any], overlay, brain_root: Path, out_d
         print(f"run {run_id} not found (rc errors: {rc.errors})", file=sys.stderr)
         return None
 
+    run_id = str(data["show"].get("run_id") or data["header"].get("run_id") or run_id)
+    run["run_id"] = run_id
+
+    # Persist original source text for offline quote validation (never the privacy-reduced Markdown).
+    source_path = out_dir / "details" / f"evidence-{run_id}.json"
+    source_path.write_text(json.dumps({
+        "question": data["header"].get("question") or data["show"].get("question"),
+        "proposed": data["header"].get("draft") or data["show"].get("draft_markdown"),
+    }, ensure_ascii=False), encoding="utf-8")
+    from evidence_excerpts import evidence_excerpts
+    excerpt_path = out_dir / "details" / f"excerpts-{run_id}.json"
+    excerpt_path.write_text(json.dumps(evidence_excerpts(run_id, evidence=evidence, out_dir=out_dir), ensure_ascii=False, indent=2), encoding="utf-8")
+
     tenant = str(data["header"].get("tenant") or run.get("tenant") or "")
     ctx = {
         "run_id": run_id,

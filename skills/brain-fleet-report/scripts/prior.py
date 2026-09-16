@@ -16,9 +16,10 @@ ARCHIVE = re.compile(r'#archived:[0-9a-f-]{36}$')
 
 def read_prior(conn, projects):
     ids = project_ids(conn, projects)
-    rows = conn.execute('''SELECT i.*,p.name AS project,s.audience FROM review_items i
+    rows = conn.execute('''SELECT i.*,p.name AS project,s.audience,s.tenant_id,t.slug AS tenant FROM review_items i
       JOIN review_sessions s ON s.id=i.session_id JOIN projects p ON p.id=s.project_id
-      WHERE s.project_id=ANY(%s::uuid[]) AND s.cadence='queue' AND s.tenant_id IS NULL
+      LEFT JOIN tenants t ON t.id=s.tenant_id
+      WHERE s.project_id=ANY(%s::uuid[]) AND s.cadence='queue'
         AND i.signature IS NOT NULL
       ORDER BY i.last_seen NULLS FIRST,i.position''', (list(ids.values()),)).fetchall()
     result = {}
@@ -32,11 +33,13 @@ def read_prior(conn, projects):
         entry['date'] = str(row['last_seen'])
         entry['prompt_date'] = str(row['first_seen'])
         f = entry['finding']
-        f.update(signature=signature, title=row['subject'], severity=row['severity'],
+        f.update(signature=signature, severity=row['severity'],
                  status=row['status'], root_cause={'plane': row['plane'] or 'unknown', 'confidence': 'low'},
                  impact={'runs': len(row['evidence']), 'threads': 0})
+        if row['audience'] == 'technical' or not f.get('title'):
+            f['title'] = row['subject']
         if row['audience'] == 'owner':
-            f.update(text_nl=row['body'], ask_nl=row['ask'], ask_for=row['ask_for'], options=row['options'])
+            f.update(title_nl=row['subject'], text_nl=row['body'], ask_nl=row['ask'], ask_for=row['ask_for'], options=row['options'])
         else:
             f['text_en'] = row['body']
         prompt = {k: v for k, v in row['prompt'].items() if k != 'text'}

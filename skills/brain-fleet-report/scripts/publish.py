@@ -29,17 +29,17 @@ def technical_options(change):
     ]
 
 
-def ensure_session(conn, project_id, audience, today):
-    row = conn.execute("SELECT id FROM review_sessions WHERE project_id=%s AND tenant_id IS NULL AND audience=%s AND cadence='queue' AND status='open' FOR UPDATE", (project_id, audience)).fetchone()
+def ensure_session(conn, project_id, audience, today, tenant_id=None):
+    row = conn.execute("SELECT id FROM review_sessions WHERE project_id=%s AND tenant_id IS NOT DISTINCT FROM %s AND audience=%s AND cadence='queue' AND status='open' FOR UPDATE", (project_id, tenant_id, audience)).fetchone()
     if row:
         conn.execute('UPDATE review_sessions SET period_end=GREATEST(period_end,%s) WHERE id=%s', (today, row['id']))
         return row['id']
     return conn.execute("""INSERT INTO review_sessions(project_id,tenant_id,audience,cadence,period_start,period_end)
-      VALUES (%s,NULL,%s,'queue',%s,%s) RETURNING id""", (project_id, audience, today, today)).fetchone()['id']
+      VALUES (%s,%s,%s,'queue',%s,%s) RETURNING id""", (project_id, tenant_id, audience, today, today)).fetchone()['id']
 
 
 def evidence_for(conn, finding, project_id):
-    ids = list(dict.fromkeys(finding.evidence.run_ids + [url.split('/')[-1].split('?')[0] for url in finding.evidence.run_urls]))
+    ids = list(dict.fromkeys(finding.evidence.run_ids + [e.run_id for e in finding.evidence.entries] + [url.split('/')[-1].split('?')[0] for url in finding.evidence.run_urls]))
     result = {}
     for value in ids:
         if re.fullmatch(r'[0-9a-fA-F]{8}', value):
@@ -94,14 +94,14 @@ def payload(finding, audience, run_ids, linked=None):
         prompt = finding.prompt.model_dump(exclude_none=True)
         prompt['text'] = compose_prompt(finding)
     return {
-        'subject': finding.title, 'kind': 'got_it_right' if finding.kind == 'good' else finding.kind,
+        'subject': finding.title_nl if audience == 'owner' else finding.title, 'kind': 'got_it_right' if finding.kind == 'good' else finding.kind,
         'severity': 'low' if finding.severity == 'good' else finding.severity,
         'plane': finding.root_cause.plane if finding.root_cause else 'unknown',
         'scope_label': finding.scope.axis_value() or 'project',
         'body': (finding.text_en if audience == 'technical' else finding.text_nl) or '',
         'ask': finding.ask_nl if audience == 'owner' else None,
         'ask_for': finding.ask_for if audience == 'owner' else None,
-        'evidence': [{'run_id': r, 'label': r[:8]} for r in run_ids],
+        'evidence': [dict(run_id=r, label=r[:8]) | next((e.model_dump(exclude_none=True) for e in finding.evidence.entries if e.run_id.lower() == r.lower()), {}) for r in run_ids],
         'prompt': prompt,
         'options': technical_options(finding.prompt.change if finding.prompt else '') if audience == 'technical'
                    else [o.model_dump() for o in finding.options],
@@ -150,18 +150,36 @@ def publish(conn, report, *, write=False):
             continue  # Absence is not a sighting and cannot reopen or resolve a queue item.
         for member in sorted(set(members)):
             project_id = projects[member]
+            tenant_id = None
             if finding.scope.level == 'tenant':
                 tenant = conn.execute('SELECT id FROM tenants WHERE project_id=%s AND slug=%s', (project_id, finding.scope.tenant)).fetchone()
                 if not tenant:
                     raise ValueError(f'Unknown tenant {member}/{finding.scope.tenant}')
+                tenant_id = tenant['id']
             runs = evidence_for(conn, finding, project_id)
-            if (finding.evidence.run_ids or finding.evidence.run_urls) and not runs:
+            if (finding.evidence.run_ids or finding.evidence.run_urls or finding.evidence.entries) and not runs:
                 raise ValueError(f'{finding.signature}: no cited evidence belongs to {member}')
             linked = None
             audiences = ('owner', 'technical') if finding.audience == 'both' else (finding.audience,)
             for audience in audiences:
-                session = sessions[member, audience]
+                if audience == 'owner' and tenant_id is not None:
+                    key = (member, audience, tenant_id)
+                    if key not in sessions:
+                        if write:
+                            sessions[key] = ensure_session(conn, project_id, audience, today, tenant_id)
+                        else:
+                            row = conn.execute("SELECT id FROM review_sessions WHERE project_id=%s AND tenant_id=%s AND audience=%s AND cadence='queue' AND status='open'", (project_id, tenant_id, audience)).fetchone()
+                            sessions[key] = row['id'] if row else None
+                    session = sessions[key]
+                else:
+                    session = sessions[member, audience]
                 old = conn.execute('SELECT * FROM review_items WHERE session_id=%s AND signature=%s' + (' FOR UPDATE' if write else ''), (session, finding.signature)).fetchone() if session else None
+                legacy = False
+                if not old and audience == 'owner' and tenant_id is not None:
+                    # Pre-tenant-routing cards keep their identity/decisions on their next sighting.
+                    old = conn.execute('SELECT * FROM review_items WHERE session_id=%s AND signature=%s AND scope_label=%s' + (' FOR UPDATE' if write else ''),
+                                       (sessions[member, audience], finding.signature, finding.scope.tenant)).fetchone()
+                    legacy = old is not None
                 action, note = transition(old, finding, runs.values(), focus)
                 output.append({'project': member, 'audience': audience, 'signature': finding.signature, 'action': action, 'note': note})
                 if action == 'skip':
@@ -170,6 +188,9 @@ def publish(conn, report, *, write=False):
                     continue
                 if not write:
                     continue
+                if legacy and action == 'update':
+                    position = conn.execute('SELECT COALESCE(MAX(position),0)+1 AS n FROM review_items WHERE session_id=%s', (session,)).fetchone()['n']
+                    conn.execute('UPDATE review_items SET session_id=%s,position=%s WHERE id=%s', (session, position, old['id']))
                 update = finding.update_en if audience == 'technical' else finding.update_nl
                 if action in ('regression', 'reopen'):
                     # The locked unique(session_id,signature) contract needs the historical generation
