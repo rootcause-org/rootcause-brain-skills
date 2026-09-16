@@ -1,0 +1,4 @@
+interface:
+  display_name: "Scope Check"
+  short_description: "Per-principal visibility matrix and per-audience smoke tests"
+  default_prompt: "Use $scope-check to see what each audience's projection contains and to run this brain's helpers as every real identity."

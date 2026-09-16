@@ -66,6 +66,7 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 | [`brain-helpcenter-suggestions`](skills/brain-helpcenter-suggestions/SKILL.md) | A window of real customer questions (email runs, chat runs, Help Scout) vs the public help centre: collect the corpus and every `/kb` article body, classify and cluster the gaps, render a ranked, evidence-backed edit list (new / rewrite / retitle / merge / delete / add-alias), each edit anchored in the current article, with verbatim quotes, a link per conversation and a bot-readable block per card. |
 | [`brain-grounding-intake`](skills/brain-grounding-intake/SKILL.md) | A customer's code and database taken in together from the production run's chair: what a run receives, a bounded repo scan and schema probe, the last window of real customer questions benchmarked into grounded / ambiguous / missing / knowledge / human, safe data drills, and a self-contained questionnaire for the customer's developer (impact per question, the real tickets behind each, one copy-as-markdown button) whose answers become `skills/codebase/` and `skills/databases/<db>.md`. |
 | [`brain-helpcenter-publish`](skills/brain-helpcenter-publish/SKILL.md) | Apply one approved help-centre suggestion to the live provider: save its `replypen: helpcenter/v1` block, dry-run the provider request, then `rc project knowledge article apply` writes the article (draft by default, `--publish` to go live) and re-syncs `/kb`. |
+| [`scope-check`](skills/scope-check/SKILL.md) | Principal-scoped projects: generate the per-audience table/column visibility matrix (`✓` / row-constrained / `hidden` / absent) and run the brain's helpers as every real identity in a production sandbox, as a pass/fail matrix. |
 | [`rc-script-wrapper`](skills/rc-script-wrapper/SKILL.md) | Deterministic local Python/shell wrappers for `rc` console queries, exports, typed failures, and remote artifacts. |
 | `brain-dev-upgrade` | Update local kit and `rc` CLI. |
 | [`brain-git-sync`](skills/brain-git-sync/SKILL.md) | Safely inventory, merge, and push local plus cross-computer work to `origin/main`. |
@@ -152,11 +153,11 @@ CLI equivalents: `python -m lib.db --stats accounts --db ruby --format json` and
 ## Single Version Line
 
 The plugin versions, `rootcause-runtime` pin, workspace image tag, and production runtime pin move
-together; see [RELEASING.md](RELEASING.md). Current line: **`v0.9.24`**.
+together; see [RELEASING.md](RELEASING.md). Current line: **`v0.9.25`**.
 
 - Runtime pin:
-  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.9.24#subdirectory=runtime`
-- Workspace image: `ghcr.io/rootcause-org/workspace:v0.9.24`
+  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.9.25#subdirectory=runtime`
+- Workspace image: `ghcr.io/rootcause-org/workspace:v0.9.25`
 
 Check coherence:
 

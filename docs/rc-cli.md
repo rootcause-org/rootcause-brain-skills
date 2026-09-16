@@ -128,10 +128,29 @@ Unsupported project/tenant selectors fail locally instead of being silently igno
 
 A project may narrow runs below the tenant to one asserted end-user identity — a **principal** (e.g. a
 parent or a staff leader on a family-admin product). The run's database views then already encode that
-requester: hidden tables raise `UndefinedTable`, per-audience columns are simply absent from the view,
-and `RC_PRINCIPAL_SCOPED=1` / `RC_PRINCIPAL_KIND` mark the run. Brain scripts must tolerate all three
-(lib.db auto-heals a SELECT naming a policy-hidden column) and must **never re-filter by ids taken from
-the message body** — identity is host-asserted, not prompt-inferred.
+requester: hidden tables raise `lib.db.HiddenTableError`, per-audience columns are simply absent from
+the view, and `RC_PRINCIPAL_SCOPED=1` / `RC_PRINCIPAL_KIND` mark the run. Brain scripts must tolerate
+all three (lib.db auto-heals a SELECT naming a policy-hidden column) and must **never re-filter by ids
+taken from the message body** — identity is host-asserted, not prompt-inferred.
+
+The host also tells each sandbox what its projection contains, so a helper can ask instead of crashing.
+Three env vars, all JSON keyed by the exact DSN env-var name, all best-effort (absent/malformed changes
+nothing):
+
+| Env var | Meaning | `lib.db` surface |
+|---|---|---|
+| `RC_DB_VISIBLE_TABLES` | the minted view names per scoped DSN (absent for flat/passthrough DSNs) | `visible_tables(db=None)` — `None` = unknown, never "nothing" |
+| `RC_DB_HIDDEN_TABLES` | tables the requester's access policy removed | `hidden_tables(db=None)`, and the warning `tables()` emits |
+| `RC_DB_EXCLUDED_COLUMNS` | per-table hidden/allowlisted columns | the `query` auto-heal + the warning `columns()` emits |
+
+`is_visible("form_fields")` collapses the first two into `True` / `False` / `None`. Querying a hidden
+table raises `HiddenTableError` (a `RuntimeError` subclass with `.table` / `.db`) instead of a bare
+`UndefinedTable`; a relation in neither list is reported as genuinely absent from the projection, which
+is the typo case. Rule for helpers: **degrade, never fail** — a hidden enrichment table means fewer
+columns in the answer, not an error, and its name is never echoed to the requester.
+
+Replicating a real per-principal session end to end — the schema/visibility matrix and the per-audience
+smoke matrix — is the [`scope-check`](../skills/scope-check/SKILL.md) skill.
 
 What you can do from a brain checkout:
 
