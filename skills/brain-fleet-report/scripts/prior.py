@@ -52,7 +52,7 @@ def prior_findings(report_json_path=None, *, projects=None, dsn=None, **_):
         path = Path(report_json_path)
         path = path if path.suffix == '.json' else path / 'manifest.json'
         data = json.loads(path.read_text())
-        projects = data.get('coverage', data)['projects']
+        projects = data.get('projects') or data['coverage']['projects']
     with connect(dsn) as conn:
         return read_prior(conn, projects)
 
