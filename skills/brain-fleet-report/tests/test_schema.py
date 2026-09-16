@@ -266,3 +266,20 @@ def test_unchanged_cannot_widen_prior_scope(tmp_path, widen):
         finding.update(audience="both", title_nl="Controleer het beleid", update_nl="Nog open.", options=[{"label": "A", "instruction": "Kies beleid A."}])
         prior[OLD["signature"]]["finding"].update(text_nl="Oude samengevoegde tekst.", ask_nl="Welke keuze?")
     assert any("every member/audience" in e for e in validation_errors(write_report(tmp_path, data), prior=prior))
+
+
+def test_owner_language_resolution_has_no_dutch_fallback(sample):
+    coverage = sample.coverage
+    assert coverage.lang() == "nl"                 # project persona.language
+    assert coverage.lang("lbv") == "fr"            # tenant overrides the project
+    assert coverage.lang("unknown") == "nl"        # unknown tenant inherits the project
+    bare = coverage.model_copy(update={"owner_lang": None, "owner_lang_by_tenant": {}})
+    assert bare.lang() == "en" and bare.lang("lbv") == "en"
+
+
+def test_owner_language_drives_the_prose_heuristics(sample):
+    english = sample.model_copy(deep=True)
+    english.coverage.owner_lang = "en"
+    english.coverage.owner_lang_by_tenant = {}
+    dutch_titles = [w for w in soft_warnings(english) if "title_nl" in w or "text_nl" in w]
+    assert not dutch_titles  # the Dutch heuristic must not fire on an English owner half

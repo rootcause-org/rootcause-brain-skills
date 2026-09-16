@@ -22,7 +22,7 @@ already is in most brains). The report output (`.rootcause/`) is gitignored.
 | `display_name` | human label used in report identity |
 | `timezone` | day boundaries (default `Europe/Brussels`, DST-correct) |
 | `[[members]]` | `project` — one report over 1..n projects; `channel_label` labels the half (read by you, not by the scripts) |
-| `[owner]` | `name`, `email`, `lang` — who the owner half is written for. `lang` (default `nl`) is **load-bearing**: it reaches `manifest.owner_lang`, and `validate.py` skips the Dutch heuristic for other languages. The `*_nl` field names stay as they are; they mean "owner language" |
+| `[owner]` | `name`, `email`, `lang` — who the owner half is written for. `lang` is an **explicit override only**, no default: the owner language normally comes from the host's `persona.language` (project, and per tenant), resolved by `collect.py` into `manifest.owner_lang` + `manifest.owner_lang_by_tenant`. Set it only to overrule the host everywhere. The `*_nl` field names stay as they are; they mean "owner language" |
 | `dev_tenants` | tenant slugs that are test beds, excluded and counted |
 | `noise_topics` | case-insensitive substrings of the run topic that are never support work |
 | `noise_senders` | same, on the sender |

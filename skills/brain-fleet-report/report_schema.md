@@ -1,14 +1,16 @@
 # report.json v2
 
 Source of truth: `scripts/report_schema.py`. Unknown keys and v1 reports fail validation.
-Array order is rank. English technical prose/prompts; owner prose uses `coverage.owner_lang`.
+Array order is rank. English technical prose/prompts; owner prose uses `coverage.owner_lang`, or
+`coverage.owner_lang_by_tenant[scope.tenant]` for a tenant-scoped finding (host `persona.language`;
+overlay `[owner].lang` overrides). `*_nl` fields are owner-language fields, not Dutch ones.
 
 | Root field | Contract |
 |---|---|
 | schema_version | Exactly 2 |
 | report_id, date, generated_at | Report identity, focus YYYY-MM-DD, timestamp |
 | window | Collector window; date equals focus |
-| kpis, coverage | Copy kpis.json and manifest.json verbatim, including raw/owner_lang/action_funnel |
+| kpis, coverage | Copy kpis.json and manifest.json verbatim, including raw/owner_lang/owner_lang_by_tenant/action_funnel |
 | findings | At most 12, unique IDs and signatures, ranked |
 | technical | headline ≤220; optional noise_note ≤400 |
 | owner | headline_nl ≤220 |
