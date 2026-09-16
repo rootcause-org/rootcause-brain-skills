@@ -687,6 +687,133 @@ def load_overlay(brain_root: Path, override: str | None = None) -> Overlay:
     return overlay
 
 
+# ------------------------------------------------------------- owner language
+
+
+DEFAULT_OWNER_LANG = "en"
+
+# `persona.language` is free prose written by the operator ("Nederlands, altijd — …"), not a code.
+# Earliest-matching name wins, so a sentence that mentions a second language later still resolves
+# to the one it opens with. Bare codes are only honoured when they are the whole setting: "en" is
+# also a Dutch word.
+_LANGUAGE_NAMES: dict[str, tuple[str, ...]] = {
+    "nl": ("nederlands", "vlaams", "dutch", "flemish", "neerlandais", "niederlandisch"),
+    "en": ("english", "engels", "anglais", "englisch"),
+    "fr": ("frans", "francais", "français", "french", "franzosisch"),
+    "de": ("duits", "deutsch", "german", "allemand"),
+    "es": ("spaans", "espanol", "español", "spanish", "espagnol"),
+    "it": ("italiaans", "italiano", "italian", "italien"),
+    "pt": ("portugees", "portugues", "português", "portuguese"),
+    "pl": ("pools", "polski", "polish"),
+    "tr": ("turks", "turkce", "türkçe", "turkish"),
+    "da": ("deens", "dansk", "danish"),
+    "sv": ("zweeds", "svenska", "swedish"),
+    "no": ("noors", "norsk", "norwegian"),
+    "fi": ("fins", "suomi", "finnish"),
+}
+
+
+def lang_code(value: Any) -> str:
+    """Normalise an explicit language code ('NL-be', ' EN ') to two lowercase letters."""
+    return str(value or "").strip().lower()[:2]
+
+
+def language_code(setting: Any) -> str | None:
+    """`persona.language` prose -> ISO 639-1, or None when it names no language we know.
+
+    Empty setting means English (the host's own contract), so it resolves rather than fails."""
+    text = str(setting or "").strip()
+    if not text:
+        return DEFAULT_OWNER_LANG
+    if len(text) <= 5 and re.fullmatch(r"[A-Za-z]{2}([_-][A-Za-z]{2,3})?", text):
+        return text[:2].lower()
+    lowered = text.lower()
+    best: tuple[int, str] | None = None
+    for code, names in _LANGUAGE_NAMES.items():
+        for name in names:
+            at = lowered.find(name)
+            if at >= 0 and (best is None or at < best[0]):
+                best = (at, code)
+    return best[1] if best else None
+
+
+def _persona_language(payload: Any) -> Any:
+    """`persona.language` out of an `rc … settings get` envelope (resolved, provenance-wrapped)."""
+    if not isinstance(payload, dict):
+        return None
+    for section in (payload.get("resolved"), payload.get("settings"), payload):
+        persona = (section or {}).get("persona") if isinstance(section, dict) else None
+        if not isinstance(persona, dict):
+            continue
+        value = persona.get("language")
+        if isinstance(value, dict):
+            value = value.get("value")
+        if value:
+            return value
+    return None
+
+
+def owner_languages(
+    rc: Rc,
+    members: Sequence[str],
+    tenants_by_member: dict[str, Sequence[str]] | None = None,
+    override: Any = None,
+) -> tuple[str, dict[str, str]]:
+    """Resolve the owner half's language from the host, never from a hardcoded default.
+
+    Project language = the first member's `persona.language`; a tenant inherits it unless its own
+    settings resolve differently. `override` (overlay `[owner].lang`) wins everywhere. Unreadable
+    settings fail soft to English and leave a coverage record, so the gap shows in the report."""
+    forced = lang_code(override)
+    if forced:
+        by_tenant = {slug: forced for slugs in (tenants_by_member or {}).values() for slug in slugs}
+        rc.note_coverage(Coverage("owner_language", "complete", 1 + len(by_tenant),
+                                  f"overlay [owner].lang={forced} overrides persona.language"))
+        return forced, by_tenant
+
+    unresolved: list[str] = []
+
+    def resolve(label: str, *args: str) -> str | None:
+        payload = rc.json(*args)
+        if payload is None:
+            unresolved.append(f"{label}: settings unreadable")
+            return None
+        setting = _persona_language(payload)
+        if setting is None:
+            # No resolved persona.language at this scope: a tenant then inherits the project,
+            # and the project itself lands on the host's English floor.
+            unresolved.append(f"{label}: no resolved persona.language")
+            return None
+        code = language_code(setting)
+        if code is None:
+            unresolved.append(f"{label}: persona.language names no known language")
+        return code
+
+    project_lang = DEFAULT_OWNER_LANG
+    for member in members:
+        code = resolve(member, "--project", member, "--scope", "project",
+                       "project", "settings", "behavior", "get")
+        if code:
+            project_lang = code
+            break
+
+    by_tenant: dict[str, str] = {}
+    for member, slugs in (tenants_by_member or {}).items():
+        for slug in slugs:
+            if not slug:
+                continue
+            code = resolve(f"{member}/{slug}", "--project", member, "--scope", "project",
+                           "project", "tenant", "settings", "get", slug)
+            by_tenant[slug] = code or project_lang
+
+    rc.note_coverage(Coverage(
+        "owner_language", "complete" if not unresolved else "partial", 1 + len(by_tenant),
+        None if not unresolved else "; ".join(unresolved[:4])
+        + f" — tenants fall back to the project language, the project to {DEFAULT_OWNER_LANG}",
+    ))
+    return project_lang, by_tenant
+
+
 # ------------------------------------------------------------------- recurrence
 
 

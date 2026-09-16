@@ -51,6 +51,7 @@ from fr_common import (  # noqa: E402
     local_day,
     normalise_error,
     one_line,
+    owner_languages,
     parallel,
     parse_action_lines,
     parse_ts,
@@ -592,6 +593,16 @@ def coverage_warnings(ev: dict[str, Any]) -> list[str]:
     return out
 
 
+def owner_language_line(ev: dict[str, Any]) -> str:
+    """The judging LLM writes the owner half in these languages — it must never guess Dutch."""
+    project_lang = str(ev.get("owner_lang") or "en")
+    by_tenant = ev.get("owner_lang_by_tenant") or {}
+    differing = [f"{slug}: {code}" for slug, code in sorted(by_tenant.items()) if code != project_lang]
+    tail = (" · " + ", ".join(differing[:8])) if differing else (
+        f" · {len(by_tenant)} tenant(s) idem" if by_tenant else "")
+    return f"Owner language: {project_lang} (project){tail} — write every owner field in it."
+
+
 def build_digest(ev: dict[str, Any], tz) -> str:
     focus = date.fromisoformat(ev["window"]["focus"])
     kpis = ev["kpis"]
@@ -612,6 +623,7 @@ def build_digest(ev: dict[str, Any], tz) -> str:
     )
     if ev.get("overlay_problems"):
         out.append("Overlay problems: " + "; ".join(ev["overlay_problems"][:3]))
+    out.append(owner_language_line(ev))
     out += exclusion_lines(ev)
     out += coverage_warnings(ev)
     out.append("")
@@ -1101,10 +1113,15 @@ def main() -> int:
     if console_total:
         excluded_counter["kind:console"] = console_total
 
+    # The owner half is written in the language the HOST resolves for the project/tenant
+    # (`persona.language`); the overlay's `[owner].lang` is an explicit override, never a default.
+    # Both travel through the manifest so the judging LLM and the validator key off the same codes.
+    owner_lang, owner_lang_by_tenant = owner_languages(
+        rc, members,
+        {d["member"]: [str(t.get("slug") or t.get("id") or "") for t in d["tenants"]] for d in members_data},
+        override=(overlay.get("owner", {}) or {}).get("lang"),
+    )
     coverage = [c.as_dict() for c in rc.coverage]
-    # The owner half is written in the overlay's `[owner].lang` (default nl); it travels through
-    # the manifest so `report.coverage.owner_lang` drives the validator's heuristic.
-    owner_lang = str((overlay.get("owner", {}) or {}).get("lang") or "nl").strip().lower()[:2] or "nl"
     raw_dir = out_dir / "raw"
     raw_bytes = sum(f.stat().st_size for f in raw_dir.rglob("*") if f.is_file())
     manifest = {
@@ -1116,6 +1133,7 @@ def main() -> int:
         "coverage": coverage,
         "excluded": dict(excluded_counter),
         "owner_lang": owner_lang,
+        "owner_lang_by_tenant": owner_lang_by_tenant,
         "raw": {
             "path": str(raw_dir.relative_to(out_dir)),
             "files": sum(1 for f in raw_dir.rglob("*") if f.is_file()),
@@ -1135,6 +1153,7 @@ def main() -> int:
         "excluded": dict(excluded_counter),
         "overlay_problems": overlay.problems,
         "owner_lang": owner_lang,
+        "owner_lang_by_tenant": owner_lang_by_tenant,
         "kpis": kpis,
         "clusters": clusters,
         "runs": runs,

@@ -475,3 +475,72 @@ def test_action_funnel_axes_join_run_id_not_tenant_uuid():
     assert axes[('member', 'one')]['proposed_total'] == 2
     assert funnel['focus']['total']['proposed_total'] == 3
     assert funnel['focus']['total']['acceptance_rate'] is None
+
+
+# ------------------------------------------------------------- owner language
+
+
+class _StubRc:
+    """Just the two Rc surfaces `owner_languages` uses."""
+
+    def __init__(self, payloads):
+        self.payloads = payloads
+        self.coverage = []
+        self.asked = []
+
+    def json(self, *args):
+        self.asked.append(args)
+        return self.payloads.get(args[-1])
+
+    def note_coverage(self, record):
+        self.coverage.append(record)
+
+
+def _settings(language):
+    return {"resolved": {"persona": {"language": {"source": "project", "value": language}}}}
+
+
+def test_language_code_reads_persona_prose_not_a_hardcoded_default():
+    assert fr.language_code("Nederlands, altijd — concept én note, ook wanneer brain Engels is") == "nl"
+    assert fr.language_code("Always English, also when the brain is Dutch/Nederlands") == "en"
+    assert fr.language_code("Français, toujours") == "fr"
+    assert fr.language_code("nl-BE") == "nl"
+    # empty is the host's own "⇒ English"; unreadable prose resolves to nothing, never to Dutch
+    assert fr.language_code("") == "en"
+    assert fr.language_code("Antwoord in de taal van de klant") is None
+
+
+def test_owner_languages_resolve_tenant_then_project_then_english():
+    rc = _StubRc({
+        "get": _settings("Nederlands, altijd"),   # project call ends in "get"
+        "de-kies": _settings("Nederlands, altijd"),
+        "orthodusart": _settings("Français, toujours"),
+    })
+    project, by_tenant = fr.owner_languages(
+        rc, ["dentai"], {"dentai": ["de-kies", "orthodusart", "molaar"]}
+    )
+    assert project == "nl"
+    # a tenant whose settings are unreadable inherits the project language, not a literal "nl"
+    assert by_tenant == {"de-kies": "nl", "orthodusart": "fr", "molaar": "nl"}
+    assert rc.coverage[-1].status == "partial" and "molaar" in (rc.coverage[-1].reason or "")
+
+    blind = _StubRc({})
+    assert fr.owner_languages(blind, ["dentai"], {}) == ("en", {})
+    assert blind.coverage[-1].status == "partial"
+
+
+def test_overlay_lang_is_an_explicit_override():
+    rc = _StubRc({"get": _settings("Nederlands, altijd")})
+    project, by_tenant = fr.owner_languages(
+        rc, ["dentai"], {"dentai": ["de-kies"]}, override="DE"
+    )
+    assert (project, by_tenant) == ("de", {"de-kies": "de"})
+    assert not rc.asked  # the override never calls the host
+
+
+def test_digest_names_the_owner_language_per_tenant():
+    line = collect.owner_language_line(
+        {"owner_lang": "nl", "owner_lang_by_tenant": {"de-kies": "nl", "orthodusart": "fr"}}
+    )
+    assert line.startswith("Owner language: nl (project)") and "orthodusart: fr" in line
+    assert "de-kies" not in line

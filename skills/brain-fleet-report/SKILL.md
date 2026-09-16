@@ -32,10 +32,12 @@ the host checkout's `.agents/skills/review-implement/SKILL.md`: commit, ship, pr
    and delta. Owner/both supply 1–4 real options, including unchanged.
 5. Fixes name diagnosed edits; investigations name checks/stop/output. Open every target path today.
    Decisions precede implementation; implementation owns verification, at most two fix/ship/test rounds.
-6. Owner = reachable task, in owner language (NL default), named recipient. Use Owner reach;
+6. Owner = reachable task, in the owner language, named recipient. Use Owner reach;
    shared findings need a distinct owner ask. Only brain-content fixes expose prompts.
    Owner asks about one practice/tenant use tenant scope (FAQ/profile/master data included);
    project scope is for asks crossing tenants. Supply title_nl in the owner language.
+   Owner language = digest "Owner language" line / `manifest.owner_lang` (a tenant-scoped finding
+   uses its `owner_lang_by_tenant` entry); the host resolves it, never assume Dutch.
    Ask one direct question or concrete task naming each fill-in item. Options name owner actions
    (“Prijzen invullen”, “Regel bevestigen”); admin instructions are fill-in templates, decisions
    contain concrete policy text. Never “Done in dashboard” or bare Ja/Nee/Ok.

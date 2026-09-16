@@ -210,11 +210,19 @@ class Manifest(_Model):
     coverage: list[FeedCoverage] = Field(default_factory=list)
     excluded: dict[str, int] = Field(default_factory=dict)
     owner_lang: str | None = None
+    owner_lang_by_tenant: dict[str, str] = Field(default_factory=dict)
     raw: ManifestRaw | None = None
 
-    def lang(self) -> str:
-        """The owner half's language; `nl` unless the overlay says otherwise."""
-        return (self.owner_lang or "nl").strip().lower()[:2] or "nl"
+    def lang(self, tenant: str | None = None) -> str:
+        """The owner half's language, as the HOST resolved it from `persona.language`.
+
+        Tenant-scoped findings follow their tenant; everything else follows the project. English
+        is the floor (the host's own "empty ⇒ English"), never a hardcoded Dutch."""
+        for value in ((self.owner_lang_by_tenant or {}).get(tenant or ""), self.owner_lang):
+            code = str(value or "").strip().lower()[:2]
+            if code:
+                return code
+        return "en"
 
 
 # --------------------------------------------------------------------------
@@ -621,6 +629,14 @@ def _lang_score(text: str) -> tuple[int, int]:
     )
 
 
+# Imperative openers per owner language; a language we cannot judge simply skips the check
+# rather than warning in the wrong grammar.
+_IMPERATIVE_STARTS = {
+    "nl": r"^(vul|bevestig|controleer|kijk|geef|kies|pas|werk|voeg|vermeld|beschrijf|bepaal|noteer|zet|maak|stuur)\b",
+    "en": r"^(check|confirm|fill|review|provide|choose|update|add|describe|decide|note|send|set|pick)\b",
+}
+
+
 def _looks_english(text: str) -> bool:
     nl, en = _lang_score(text)
     return en > nl
@@ -659,16 +675,17 @@ def _run_ids_in(blob: Any) -> set[str]:
 def soft_warnings(report: Report, kpis_path=None, manifest_path=None) -> list[str]:
     out = []
     for f in report.findings:
-        if f.ask_nl and "?" not in f.ask_nl and not re.match(
-            r"^(vul|bevestig|controleer|kijk|geef|kies|pas|werk|voeg|vermeld|beschrijf|bepaal|noteer|zet|maak|stuur|check|confirm|fill|review|provide|choose|update|add)\b",
-            f.ask_nl, re.IGNORECASE,
+        # `*_nl` means "owner language", whatever the host resolved for this finding's scope.
+        owner_lang = report.coverage.lang(f.scope.tenant)
+        if owner_lang in _IMPERATIVE_STARTS and f.ask_nl and "?" not in f.ask_nl and not re.match(
+            _IMPERATIVE_STARTS[owner_lang], f.ask_nl, re.IGNORECASE,
         ):
             out.append(f"findings[{f.id}].ask_nl: use a direct question or imperative task naming the fill-in items")
-        if report.coverage.lang() == "nl" and f.title_nl and _looks_english(f.title_nl):
+        if owner_lang == "nl" and f.title_nl and _looks_english(f.title_nl):
             out.append(f"findings[{f.id}].title_nl: reads as English")
         if f.text_en and _looks_dutch(f.text_en):
             out.append(f"findings[{f.id}].text_en: reads as Dutch")
-        if report.coverage.lang() == "nl" and f.text_nl and _looks_english(f.text_nl):
+        if owner_lang == "nl" and f.text_nl and _looks_english(f.text_nl):
             out.append(f"findings[{f.id}].text_nl: reads as English")
         if f.scope.key and f.scope.key not in {a.key for a in report.kpis.per_axis}:
             out.append(f"findings[{f.id}].scope.key: unknown axis key")

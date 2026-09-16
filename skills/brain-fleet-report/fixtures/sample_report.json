@@ -467,6 +467,11 @@
       "chat_probe": 6,
       "simulation": 3,
       "internal_topic": 4
+    },
+    "owner_lang": "nl",
+    "owner_lang_by_tenant": {
+      "yes_events": "nl",
+      "lbv": "fr"
     }
   },
   "findings": [
