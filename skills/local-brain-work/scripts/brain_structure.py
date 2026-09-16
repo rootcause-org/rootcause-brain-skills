@@ -7,7 +7,9 @@ do (it exits "no tests" for docs-only brains). Used by `brain-harvest` and `brai
 Run it from a brain checkout root; it grounds every check in `git ls-files`, so only committed/tracked
 content is judged. Checks (each independently reported, skippable with `--skip <name>`):
 
-  * links        — every relative Markdown link/route target in tracked *.md resolves to a tracked path.
+  * links        — every relative Markdown link/route target in tracked *.md resolves to a tracked
+                   path. Run-hidden sources (`.replypenignore`/`.rcignore`/`_internal/`) are not
+                   judged: maintainer-only docs may link to gitignored kit skills.
   * frontmatter  — every tracked `skills/*/SKILL.md` has a valid front-matter block (name + description).
   * reachability — routed case/notes/playbook files are reachable from the project router (AGENTS.md).
   * ignored-refs — NOTICE when run-visible text references a path hidden by `.replypenignore`,
@@ -138,6 +140,7 @@ class Ctx:
     history_limit: int = 2000
     strict_lint: bool = False
     scope: str = "new"
+    _hidden: set[str] | None = None
 
     def read(self, rel: str) -> str:
         return (self.root / rel).read_text(encoding="utf-8", errors="replace")
@@ -239,7 +242,12 @@ def resolve_target(root: Path, md_rel: str, target: str) -> str | None:
 def check_links(ctx: Ctx) -> list[Finding]:
     findings: list[Finding] = []
     tracked_dirs = {parent for p in ctx.tracked for parent in _ancestors(p)}
+    # A run-hidden source file (`.agents/`, `.claude/`, `_internal/`, … per the ignore controls) is
+    # maintainer-only: it may legitimately link to gitignored kit skills, so its links are not judged.
+    hidden = hidden_paths(ctx)
     for md in ctx.md_files:
+        if md in hidden:
+            continue
         for lineno, target in iter_links(ctx.read(md)):
             if EXTERNAL_RE.match(target) or target.startswith("#"):
                 continue
@@ -354,6 +362,17 @@ def _ignored_tracked_paths(ctx: Ctx) -> set[str]:
     ignored.update(p for p in ctx.tracked if p == "_internal" or p.startswith("_internal/"))
     ignored.update(ALWAYS_HIDDEN_FILES & ctx.tracked_set)
     return ignored
+
+
+def hidden_paths(ctx: Ctx) -> set[str]:
+    """Cached run-hidden tracked paths; empty when they cannot be resolved (e.g. the materialized
+    origin/main baseline tree, which is not a git checkout)."""
+    if ctx._hidden is None:
+        try:
+            ctx._hidden = _ignored_tracked_paths(ctx)
+        except StructureError:
+            ctx._hidden = set()
+    return ctx._hidden
 
 
 def _is_control_navigation(line: str) -> bool:

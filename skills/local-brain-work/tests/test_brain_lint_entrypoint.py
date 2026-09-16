@@ -70,3 +70,22 @@ def test_entrypoint_accepts_all_and_explicit_paths(tmp_path: Path) -> None:
     assert whole.returncode == 0 and "WARN dead private names (1)" in whole.stdout
     assert scoped.returncode == 0 and "WARN dead private names (1)" in scoped.stdout
     assert elsewhere.returncode == 0 and elsewhere.stdout.strip() == "brain lint: clean"
+
+
+def test_entrypoint_skips_run_hidden_paths(tmp_path: Path) -> None:
+    """`.agents/` & co never reach a run, so their (machine-local) symlinks are not brain findings."""
+    brain = _brain(tmp_path, "x = 1\n")
+    for args in (["init", "-q"], ["config", "user.email", "t@example.com"],
+                 ["config", "user.name", "Test"]):
+        subprocess.run(["git", "-C", str(brain), *args], check=True, capture_output=True)
+    (brain / ".replypenignore").write_text("/.agents/\n", "utf-8")
+    (brain / ".agents").mkdir()
+    (brain / ".agents" / "docs").symlink_to("/opt/kit/docs")
+    subprocess.run(["git", "-C", str(brain), "add", "-A", "-f"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(brain), "commit", "-qm", "x"], check=True, capture_output=True)
+
+    run = subprocess.run([sys.executable, str(SCRIPT), "--brain", str(brain), "--all"],
+                         text=True, capture_output=True, check=False)
+
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert "symlink" not in run.stdout

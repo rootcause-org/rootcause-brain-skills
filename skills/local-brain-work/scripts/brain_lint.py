@@ -26,6 +26,30 @@ _BOOTSTRAP_FLAG = "RC_BRAIN_LINT_BOOTSTRAPPED"
 # *.py). Explicit paths with any other suffix are ignored rather than treated as clean-but-scanned.
 SCAN_SUFFIXES = {".md", ".py", ".yaml", ".yml"}
 
+# Run-hidden trees (`.replypenignore` / `.rcignore` / the conventional `_internal/`): maintainer-only
+# content that is physically absent from every run, so no linter judges it. Same semantics as
+# brain_structure.py's ignored-refs resolver and brain-harvest/scripts/brain_lint.py.
+IGNORE_CONTROLS = (".replypenignore", ".rcignore")
+
+
+def _run_hidden(brain: Path) -> tuple[set[str], tuple[str, ...]]:
+    """(exact paths, directory prefixes) the production run never sees, brain-relative posix."""
+    exact: set[str] = set()
+    prefixes = {"_internal/"}
+    for control in IGNORE_CONTROLS:
+        if not (brain / control).is_file():
+            continue
+        proc = subprocess.run(
+            ["git", "-C", str(brain), "ls-files", "-z", "-c", "-o", "-i",
+             f"--exclude-from={brain / control}"], capture_output=True, text=True)
+        if proc.returncode != 0:
+            continue  # not a git checkout: judge everything, as before
+        for entry in (e for e in proc.stdout.split("\0") if e):
+            exact.add(entry)
+            if (brain / entry).is_dir():
+                prefixes.add(entry.rstrip("/") + "/")
+    return exact, tuple(sorted(prefixes))
+
 
 def _reexec_with_pyyaml() -> int:
     """The interpreter that picked us up lacks PyYAML (typical when `python3` resolves to an
@@ -86,6 +110,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     findings = lint_brain(brain)
+    hidden_exact, hidden_dirs = _run_hidden(brain)
+    findings = [f for f in findings
+                if (rel := f.path.split(":", 1)[0]) not in hidden_exact
+                and not rel.startswith(hidden_dirs)]
     if args.paths and not args.all:
         selected = _select(args.paths, brain)
         dirs = tuple(p for p in selected if p.endswith("/"))

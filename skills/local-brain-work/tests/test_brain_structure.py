@@ -333,6 +333,22 @@ class BrainStructureTests(unittest.TestCase):
                                 for f in report["findings"]))
             self.assertTrue(any(f["check"] == "links" for f in report["findings"]))
 
+    def test_run_hidden_source_links_are_not_judged(self):
+        """`.agents/` & co are absent from every run; their links may point at gitignored kit skills."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "brain"
+            init_repo(root)
+            good_brain(root)
+            write(root, ".replypenignore", "/.agents/\n")
+            write(root, ".agents/skills/local/SKILL.md",
+                  "---\nname: local\ndescription: Maintainer-only skill.\n---\n\n"
+                  "See [rc-debug](../rc-debug/SKILL.md); run `rc dev console --project x`.\n")
+            commit_all(root)
+            code, output = run_main(root, "--skip", "lint", "--scope", "full")
+            self.assertEqual(code, 0, output)
+            self.assertNotIn("rc-debug", output)
+            self.assertIn("failed_checks=-", output)
+
 
 if __name__ == "__main__":
     unittest.main()

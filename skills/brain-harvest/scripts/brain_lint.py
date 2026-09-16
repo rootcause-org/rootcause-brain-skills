@@ -24,6 +24,10 @@ two classes are suppressed there while raw-thread/secret/payment/identifier/name
 (name findings downgrade from HARD to SOFT in scratch mode, per spec §7). Default mode
 (staged/tracked/--all) enables every class — nothing opaque may reach a tracked brain file.
 
+Run-hidden trees are never scanned, in any mode: paths excluded by `.replypenignore` / `.rcignore`
+(plus `_internal/`) are physically absent from every production run, so the maintainer-only rc CLI
+guidance and operator material living there is exactly where it belongs.
+
 Exit status: 1 if any HARD finding is present, or if `--strict` and any SOFT finding is present; else
 0. Findings print grep-style: `path:line: <category>: <snippet>`.
 """
@@ -221,6 +225,43 @@ RC_CLI_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 SCAN_SUFFIXES = {".md", ".py", ".rb", ".sh", ".toml", ".yaml", ".yml", ".json"}
+
+
+# Run-hidden trees: content the production run never sees (`/brain` is built without them), so the
+# maintainer-only rc CLI guidance, harness config and operator overlays living there are exactly
+# where they belong. Same semantics as brain_structure.py's ignored-refs resolver.
+IGNORE_CONTROLS = (".replypenignore", ".rcignore")
+ALWAYS_HIDDEN_PREFIXES = ("_internal/",)
+
+
+def run_hidden_paths(root: Path | None = None) -> tuple[set[str], tuple[str, ...]]:
+    """(exact paths, directory prefixes) excluded from runs by `.replypenignore` / `.rcignore`
+    / the conventional `_internal/` tree, all repo-relative posix."""
+    root = (root or Path.cwd()).resolve()
+    exact: set[str] = set()
+    prefixes: set[str] = set(ALWAYS_HIDDEN_PREFIXES)
+    for control in IGNORE_CONTROLS:
+        if not (root / control).is_file():
+            continue
+        proc = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z", "-c", "-o", "-i",
+             f"--exclude-from={root / control}"], capture_output=True, text=True)
+        if proc.returncode != 0:
+            continue  # not a git checkout / unusable git: judge everything, as before
+        for entry in (e for e in proc.stdout.split("\0") if e):
+            exact.add(entry)
+            if (root / entry).is_dir():
+                prefixes.add(entry.rstrip("/") + "/")
+    return exact, tuple(sorted(prefixes))
+
+
+def _is_run_hidden(path: Path, hidden: tuple[set[str], tuple[str, ...]], root: Path) -> bool:
+    exact, prefixes = hidden
+    try:
+        rel = path.resolve().relative_to(root).as_posix()
+    except ValueError:
+        rel = path.as_posix().removeprefix("./")
+    return rel in exact or rel.startswith(prefixes)
 
 
 def _kit_checkout_root() -> Path | None:
@@ -471,6 +512,13 @@ def main(argv: list[str] | None = None) -> int:
         targets = _all_targets()
     else:
         targets = _staged_targets()
+
+    # Maintainer-only trees (.agents/, .claude/, _internal/, anything the ignore controls hide) are
+    # physically absent from every run, so local-only rc CLI guidance there is by design: never judge
+    # them, in any mode — explicit hidden paths are silently dropped too.
+    root = Path.cwd().resolve()
+    hidden = run_hidden_paths(root)
+    targets = [t for t in targets if not _is_run_hidden(t, hidden, root)]
 
     if not targets:
         print("no brain text to scan (staged set empty — use --all or pass paths).")
