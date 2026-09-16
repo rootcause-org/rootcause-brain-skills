@@ -747,6 +747,24 @@ def _one_line_exc(exc: Exception) -> str:
     return _excerpt(f"{type(exc).__name__}: {exc}", 200)
 
 
+def evidence_entry_errors(entry: EvidenceEntry, collected: dict, out_dir: Path) -> list[str]:
+    """Shared verbatim-source contract for publication and targeted backfills."""
+    from evidence_excerpts import evidence_sources, excerpt_matches
+
+    out = []
+    prefix = entry.run_id
+    sources = evidence_sources(entry.run_id, collected, out_dir)
+    for field in ("question", "proposed", "sent"):
+        value = getattr(entry, field)
+        if value is not None and not any(excerpt_matches(value, original) for original in sources[field]):
+            out.append(f"{prefix}.{field}: excerpt does not match collected text; drill this run or omit the field")
+    if entry.feedback:
+        supplied = entry.feedback.model_dump(exclude_none=True)
+        if not any(all(row.get(k) == v for k, v in supplied.items()) for row in sources["feedback"]):
+            out.append(f"{prefix}.feedback: no matching manual feedback in the feedback feed")
+    return out
+
+
 def evidence_errors(report: Report, evidence_path: str | Path) -> list[str]:
     """Run ids cited by findings must exist in the collector's evidence.json."""
     try:
@@ -755,20 +773,11 @@ def evidence_errors(report: Report, evidence_path: str | Path) -> list[str]:
     except (OSError, json.JSONDecodeError) as exc:
         return [f"<evidence>: cannot read {evidence_path} ({exc})"]
     out: list[str] = []
-    from evidence_excerpts import evidence_sources, excerpt_matches
-
     for finding in report.findings:
         for entry in finding.evidence.entries:
             prefix = f"findings[{finding.id}].evidence.entries[{entry.run_id}]"
-            sources = evidence_sources(entry.run_id, collected, Path(evidence_path).parent)
-            for field in ("question", "proposed", "sent"):
-                value = getattr(entry, field)
-                if value is not None and not any(excerpt_matches(value, original) for original in sources[field]):
-                    out.append(f"{prefix}.{field}: excerpt does not match collected text; drill this run or omit the field")
-            if entry.feedback:
-                supplied = entry.feedback.model_dump(exclude_none=True)
-                if not any(all(row.get(k) == v for k, v in supplied.items()) for row in sources["feedback"]):
-                    out.append(f"{prefix}.feedback: no matching manual feedback in the feedback feed")
+            out.extend(f"{prefix}: {error}" for error in
+                       evidence_entry_errors(entry, collected, Path(evidence_path).parent))
         cited = finding.evidence.run_ids + [e.run_id for e in finding.evidence.entries]
         cited += [url.split('/')[-1].split('?')[0] for url in finding.evidence.run_urls]
         for i, run_id in enumerate(cited):

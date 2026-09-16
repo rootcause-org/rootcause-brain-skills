@@ -87,6 +87,12 @@ Ask text without “?” or an initial imperative warns; options are 1–4 and m
 Admin option example: label “Prijzen invullen”, instruction
 `- mondonderzoek: … EUR\n- RX-foto’s: … EUR\n- poetsbeurt: inbegrepen / … EUR`.
 
+For an existing open card, run `scripts/evidence_update.py --item UUID --run UUID --json '<entry>'`
+from OUT (or pass `--evidence PATH`). It validates against the same originals, updates only the
+matching evidence entry, and preserves its run ID/label and populated fields. `--force` explicitly
+replaces populated fields; `--dsn` selects a test database. This operator repair does not republish
+reports or alter decisions.
+
 ## Prompt
 
 | Field | Contract |
