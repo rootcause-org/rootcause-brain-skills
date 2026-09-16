@@ -42,6 +42,7 @@ The lede adds context without repeating cards. Collector artifacts own counters,
 | ask_for | Optional person ≤40 |
 | update_en, update_nl | ≤200; required for relevant audience when changed/unchanged; forbidden for new |
 | options | Required owner/both, including unchanged: 1–4 `{label, instruction}` with nonempty, distinct labels; owner verb phrases; admin instructions are fill-in templates, decision instructions concrete policy text; reject “Done in dashboard” and bare Ja/Nee/Ok |
+| prototype | Optional technical helper proof: `{repo, branch, files, command, before, after}`; branch `review/<slug>`, each result `{stdout, stderr, exit_code, sha, run_id}`; AFTER succeeds; see [helper-prototype.md](helper-prototype.md) |
 | prompt | Structured below; required high except owner policy_question |
 
 Planes: host, action_plane, brain_script, brain_content, tenant_brain, persona, settings,

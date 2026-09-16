@@ -7,7 +7,8 @@ Collect → drill → judge → validate → publish in the brain. Read
 `_internal/fleet-report/OVERLAY.md`, [overlay.md](overlay.md), [schema](report_schema.md) and
 [evidence semantics](evidence.md). Requires `rc` login; operator DB uses
 `RC_HOST_CHECKOUT` (default `~/code/rootcause-org/rootcause`); DB scripts accept `--dsn` for tests.
-Investigation never runs actions, `rc ask`, or implementation edits.
+Investigation never runs actions, sends or `rc ask`. Python helper proposals use isolated
+[helper prototypes](helper-prototype.md); other implementation waits for a decision.
 
 ```bash
 FR="$PWD/.agents/skills/brain-fleet-report"
@@ -31,7 +32,9 @@ the host checkout's `.agents/skills/review-implement/SKILL.md`: commit, ship, pr
 4. `unchanged` inherits text/ask/prompt; counts alone do not. `changed` supplies full fields
    and delta. Owner/both supply 1–4 real options, including unchanged.
 5. Fixes name diagnosed edits; investigations name checks/stop/output. Open every target path today.
-   Decisions precede implementation; implementation owns verification, at most two fix/ship/test rounds.
+   Prototype Python helper fixes/new capabilities via [helper-prototype.md](helper-prototype.md)
+   while judging. Decisions authorize merge/ship; implementation owns final production verification,
+   at most two fix/ship/test rounds.
 6. Owner = reachable task, in the owner language, named recipient. Use Owner reach;
    shared findings need a distinct owner ask. Only brain-content fixes expose prompts.
    Owner asks about one practice/tenant use tenant scope (FAQ/profile/master data included);

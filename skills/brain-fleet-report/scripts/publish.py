@@ -13,6 +13,7 @@ from urllib.parse import quote
 from uuid import UUID
 
 from psycopg.types.json import Jsonb
+from prototype_format import prototype_markdown, merge_option, MARKER
 from prior import read_prior
 from prompt_compose import compose_prompt
 from queue_db import connect, project_ids
@@ -98,12 +99,12 @@ def payload(finding, audience, run_ids, linked=None):
         'severity': 'low' if finding.severity == 'good' else finding.severity,
         'plane': finding.root_cause.plane if finding.root_cause else 'unknown',
         'scope_label': finding.scope.axis_value() or 'project',
-        'body': (finding.text_en if audience == 'technical' else finding.text_nl) or '',
+        'body': ((finding.text_en or '') + (MARKER + prototype_markdown(finding.prototype) if finding.prototype else '')) if audience == 'technical' else (finding.text_nl or ''),
         'ask': finding.ask_nl if audience == 'owner' else None,
         'ask_for': finding.ask_for if audience == 'owner' else None,
         'evidence': [dict(run_id=r, label=r[:8]) | next((e.model_dump(exclude_none=True) for e in finding.evidence.entries if e.run_id.lower() == r.lower()), {}) for r in run_ids],
         'prompt': prompt,
-        'options': technical_options(finding.prompt.change if finding.prompt else '') if audience == 'technical'
+        'options': ([merge_option(finding.prototype)] if finding.prototype else []) + technical_options(finding.prompt.change if finding.prompt else '') if audience == 'technical'
                    else [o.model_dump() for o in finding.options],
         'linked_item_id': linked,
     }

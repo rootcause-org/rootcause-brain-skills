@@ -305,3 +305,23 @@ def test_legacy_owner_moves_on_next_sighting_preserving_identity(db, projects, t
         assert card['decision_instruction'] == old['decision_instruction']
         assert card['linked_item_id'] == old['linked_item_id']
         assert (card['tenant_id'] is not None) == (card['audience'] == 'owner')
+
+
+def test_prototype_open_card_repair_preserves_decisions(db, projects):
+    from body_update import update_body
+    from test_helper_prototype import sample
+    r = report(projects)
+    r.findings[0].prototype = sample()
+    publish(db, r, write=True)
+    row = rows(db, projects)[0]
+    assert row['options'][0]['label'] == 'Merge branch'
+    project = next(name for name, pid in projects.items() if pid == row['project_id'])
+    original = row['body']
+    update_body(db, row['id'], project, sample())
+    assert db.execute('SELECT body FROM review_items WHERE id=%s', (row['id'],)).fetchone()['body'] == original
+    first = update_body(db, row['id'], project, sample(), write=True)
+    assert first['body'].count('## Before') == 1
+    assert update_body(db, row['id'], project, sample(), write=True) == first
+    db.execute("UPDATE review_items SET status='decided',decision_label='Later' WHERE id=%s", (row['id'],))
+    with pytest.raises(ValueError, match='open technical'):
+        update_body(db, row['id'], project, sample(), write=True)

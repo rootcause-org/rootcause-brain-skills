@@ -375,6 +375,32 @@ class Option(_Model):
         return self
 
 
+class PrototypeOutput(_Model):
+    stdout: str = Field(max_length=6000)
+    stderr: str = Field(max_length=6000)
+    exit_code: int
+    sha: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+    run_id: NonEmpty
+    seq: int = Field(default=0, ge=0)
+
+
+class Prototype(_Model):
+    repo: NonEmpty
+    branch: Annotated[str, Field(pattern=r"^review/[a-z0-9]+(?:-[a-z0-9]+)*$")]
+    before: PrototypeOutput
+    after: PrototypeOutput
+    command: Annotated[str, Field(min_length=1, max_length=2000)]
+    files: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def _successful(self):
+        if self.after.exit_code != 0:
+            raise ValueError("prototype AFTER must succeed before offering a merge")
+        if self.before.sha == self.after.sha:
+            raise ValueError("prototype must compare distinct commits")
+        return self
+
+
 class Finding(_Model):
     id: Annotated[str, Field(pattern=r"^F\d{1,3}$")]
     signature: NonEmpty
@@ -397,6 +423,7 @@ class Finding(_Model):
     update_en: str | None = Field(default=None, max_length=200)
     update_nl: str | None = Field(default=None, max_length=200)
     prompt: Prompt | None = None
+    prototype: Prototype | None = None
     options: list[Option] = Field(default_factory=list, max_length=4)
 
     @model_validator(mode="after")
@@ -423,6 +450,7 @@ class Finding(_Model):
                 "ask_nl",
                 "ask_for",
                 "prompt",
+                "prototype",
                 "impact",
                 "root_cause",
             }
