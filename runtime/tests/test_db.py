@@ -740,3 +740,167 @@ def test_mysql_explain_skips_format_tree_before_8_0_16(monkeypatch):
     plan = db.explain("select * from t")
     assert "table=t" in plan
     assert all("FORMAT=TREE" not in s for s in conn.executed)
+
+
+# --- Table visibility (RC_DB_VISIBLE_TABLES / RC_DB_HIDDEN_TABLES) -----------------------------
+#
+# A hidden table is wire-indistinguishable from a typo: both come back as UndefinedTable. The host
+# injects what the projection actually contains, which lets lib.db answer the three questions
+# separately — visible / hidden by policy / absent — before AND after a failed query.
+
+
+@pytest.fixture
+def scoped_env(monkeypatch):
+    """One scoped database whose projection the host described."""
+    for key in list(__import__("os").environ):
+        if key.endswith("_DSN"):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("APP_DSN", "postgresql://app")
+    monkeypatch.setenv("RC_DB_VISIBLE_TABLES", '{"APP_DSN": ["activities", "people"]}')
+    monkeypatch.setenv("RC_DB_HIDDEN_TABLES", '{"APP_DSN": ["form_fields"]}')
+
+
+def test_visibility_primitives(scoped_env):
+    assert db.visible_tables() == ["activities", "people"]
+    assert db.hidden_tables() == ["form_fields"]
+    assert db.is_visible("activities") is True
+    assert db.is_visible("form_fields") is False
+    assert db.is_visible("nonsense") is False
+    # Schema-qualified / quoted / mixed-case names resolve to the same relation.
+    assert db.is_visible('public."Activities"') is True
+
+
+def test_visibility_is_unknown_without_host_metadata(monkeypatch):
+    monkeypatch.delenv("RC_DB_VISIBLE_TABLES", raising=False)
+    monkeypatch.delenv("RC_DB_HIDDEN_TABLES", raising=False)
+    monkeypatch.setenv("PG_DSN", "postgresql://example")
+    # None, not [] — "we were told nothing" must never read as "nothing is visible".
+    assert db.visible_tables() is None
+    assert db.hidden_tables() == []
+    assert db.is_visible("anything") is None
+
+
+@pytest.mark.parametrize("raw", ["", "   ", "not json", '["a"]', '{"APP_DSN": 3}'])
+def test_malformed_visibility_env_is_ignored(monkeypatch, raw):
+    monkeypatch.setenv("APP_DSN", "postgresql://app")
+    monkeypatch.setenv("RC_DB_VISIBLE_TABLES", raw)
+    monkeypatch.setenv("RC_DB_HIDDEN_TABLES", raw)
+    assert db.visible_tables() is None
+    assert db.hidden_tables() == []
+
+
+def _psycopg_double(monkeypatch, message):
+    """A psycopg stand-in whose cursor raises UndefinedTable(message) on the query.
+
+    Returns the raised instance so a test can assert on `__cause__` identity."""
+
+    class UndefinedTable(Exception):
+        pass
+
+    class UndefinedColumn(Exception):
+        pass
+
+    class Error(Exception):
+        pass
+
+    error = UndefinedTable(message)
+
+    class Cursor:
+        description = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+        def execute(self, sql, params=None):
+            if not sql.lstrip().upper().startswith("SET LOCAL"):
+                raise error
+
+        def fetchall(self):
+            return []
+
+    class Connection:
+        read_only = False
+        info = SimpleNamespace(server_version=160004)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+        def cursor(self):
+            return Cursor()
+
+    fake = SimpleNamespace(
+        connect=lambda *a, **kw: Connection(),
+        Error=Error,
+        errors=SimpleNamespace(UndefinedTable=UndefinedTable, UndefinedColumn=UndefinedColumn),
+    )
+    monkeypatch.setitem(sys.modules, "psycopg", fake)
+    return error
+
+
+def test_query_on_a_hidden_table_raises_hidden_table_error(monkeypatch, scoped_env):
+    exc = _psycopg_double(
+        monkeypatch, 'relation "form_fields" does not exist\nLINE 1: select * from form_fields'
+    )
+
+    with pytest.raises(db.HiddenTableError) as excinfo:
+        db.query("select * from form_fields")
+
+    err = excinfo.value
+    assert err.table == "form_fields"
+    assert err.db is None
+    assert isinstance(err, RuntimeError)  # catchable by helpers that only know RuntimeError
+    assert err.__cause__ is exc  # the original psycopg error survives
+    msg = str(err)
+    assert "permission boundary, not missing data" in msg
+    assert "Do not name it to the requester" in msg
+
+
+def test_query_on_an_unknown_table_says_it_is_absent(monkeypatch, scoped_env):
+    _psycopg_double(monkeypatch, 'relation "form_fieldz" does not exist')
+
+    with pytest.raises(RuntimeError) as excinfo:
+        db.query("select * from form_fieldz")
+
+    assert not isinstance(excinfo.value, db.HiddenTableError)
+    msg = str(excinfo.value)
+    assert "does not exist in this project's projection at all" in msg
+    assert "lib.db.tables()" in msg
+
+
+def test_undefined_hint_stays_generic_when_the_projection_is_unknown(monkeypatch):
+    monkeypatch.delenv("RC_DB_VISIBLE_TABLES", raising=False)
+    monkeypatch.delenv("RC_DB_HIDDEN_TABLES", raising=False)
+    monkeypatch.setenv("PG_DSN", "postgresql://example")
+    hint = db._undefined_hint(Exception('relation "whatever" does not exist'))
+    assert "intentionally hidden by this project's data-scoping" in hint
+    assert "does not exist in this project's projection at all" not in hint
+
+
+def test_undefined_column_keeps_the_column_hint(scoped_env):
+    # A missing COLUMN must not be re-labelled as a missing table.
+    hint = db._undefined_hint(Exception('column "nope" does not exist'))
+    assert "lib.db.columns" in hint
+
+
+def test_tables_warns_about_policy_hidden_tables(monkeypatch, scoped_env, recwarn):
+    import warnings as _warnings
+
+    monkeypatch.setattr(db, "query", lambda *a, **kw: [{"table_name": "activities"}])
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter("always")
+        rows = db.tables()
+    assert rows == [{"table_name": "activities"}]
+    assert any("form_fields" in str(w.message) for w in caught)
+
+
+def test_cli_list_shows_hidden_tables(scoped_env, capsys):
+    assert db._main(["--list"]) == 0
+    out = capsys.readouterr().out
+    assert "APP_DSN" in out
+    assert "hidden for this requester (app): form_fields" in out

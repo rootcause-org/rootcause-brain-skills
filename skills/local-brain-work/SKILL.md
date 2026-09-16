@@ -30,6 +30,7 @@ content** — the run agent cannot open it and will hallucinate around the gap.
 | Debug one run/thread/session, read full trace, or explain why a draft/action happened | `rc-debug` |
 | "Is anything broken?" stale mirrors or dead letters | `rc-health` |
 | "What keeps failing?" recent fleet/pattern review | `rc-fleet` |
+| "Why does this work for me but not for a parent/admin?", per-principal visibility or helper coverage | [`scope-check`](../scope-check/SKILL.md) |
 | Update local skills kit or `rc` CLI | `brain-dev-upgrade` |
 | Reconcile local work and `origin/main`, including cross-computer divergence | `brain-git-sync` |
 | Make reconciled brain edits live, server-sync, promote, publish, or prepare support handoff | `brain-publish` |
@@ -67,6 +68,11 @@ report which rung you reached.
    production egress allowlist.
 3. **`rc ask --brain-ref dev/<branch>`** (`brain-ask`) — the real loop: LLM turns, warm start, grounding
    pre-step, tenant scoping, egress, callback, journal. The only rung that is a production statement.
+
+On a project that scopes runs to an asserted end-user, rungs 1–2 all run with YOUR wide view — a
+helper can pass every one of them and still die for a parent or a regular admin. The per-identity
+rung is [`scope-check`](../scope-check/SKILL.md): a real sandbox bound to a real principal, with
+exactly the projection that person's hosted run gets.
 
 A green `uv` run is not a guaranteed-green production run; say so when that is all you ran. Use
 `brain_dump.py <run_id>` to explode a run locally (markdown index first, then `jq` the JSONL);

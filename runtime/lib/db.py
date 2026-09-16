@@ -16,6 +16,15 @@ single-table shape), it's dropped, the trimmed query runs, and a warning names w
 one extra field doesn't fail the whole query. A column that ISN'T hidden (a typo) still raises, with a
 scoping-aware hint. The hidden-column map comes from the ``RC_DB_EXCLUDED_COLUMNS`` env var.
 
+Whole TABLES can be hidden the same way, by the requester's access policy. The host injects what the
+projection contains through ``RC_DB_VISIBLE_TABLES`` and ``RC_DB_HIDDEN_TABLES`` (both JSON, keyed by
+the exact DSN env-var name), which turns an ambiguous "does not exist" into three distinct answers:
+`visible_tables()` (``None`` = unknown), `hidden_tables()`, and `is_visible(table)` — ask before
+writing an enrichment query. Querying a hidden table raises `HiddenTableError` (a ``RuntimeError``
+subclass carrying ``.table``/``.db``) instead of a bare ``UndefinedTable``, so a helper can degrade on
+the permission boundary; a name in neither list is reported as genuinely absent. As with every other
+host-injected map this is best-effort — absent or malformed metadata changes nothing.
+
 Array columns hydrate to real Python lists (``enum[]`` included — see `query`), so
 ``row["roles"]`` is a ``list``, never the raw ``"{parent,child}"`` literal.
 
@@ -341,19 +350,36 @@ def _resolve_dsn(db: str | None) -> str:
     )
 
 
-def _undefined_hint(exc) -> str:
+def _undefined_hint(exc, db: str | None = None) -> str:
     """Guidance suffix for an undefined-column/table error — the data-scoping footgun, defused.
 
     On a scoped run the agent queries the per-run ``scope_<id>`` **views**, so a column (or table)
     the project's data-scoping projected away simply "does not exist" — at the wire level it's
     indistinguishable from a typo, and the bare Postgres error tempts the LLM to rewrite the whole
     query from scratch. Instead, point it at the introspection helper so it drops just the one
-    unavailable name and re-runs. Best-effort: prepends Postgres's own HINT when present."""
+    unavailable name and re-runs. Best-effort: prepends Postgres's own HINT when present.
+
+    When the host told us what the projection contains (``RC_DB_VISIBLE_TABLES`` /
+    ``RC_DB_HIDDEN_TABLES``) a missing RELATION stops being ambiguous, so say which of the three it
+    is: hidden by the access policy, or genuinely absent, or (unknown projection) the generic text."""
     parts = []
     diag = getattr(exc, "diag", None)
     pg_hint = getattr(diag, "message_hint", None) if diag is not None else None
     if pg_hint:
         parts.append(pg_hint)
+    rel = _undefined_relation(exc)
+    if rel is not None:
+        norm = _norm_table(rel)
+        if norm in {_norm_table(t) for t in hidden_tables(db)}:
+            parts.append(_hidden_table_message(rel))
+            return " ".join(parts)
+        vis = visible_tables(db)
+        if vis is not None and norm not in {_norm_table(t) for t in vis}:
+            parts.append(
+                f"`{rel}` does not exist in this project's projection at all (check spelling / db=); "
+                "queryable tables: `lib.db.tables()`."
+            )
+            return " ".join(parts)
     parts.append(
         "This column/table may be intentionally hidden by this project's data-scoping — you query "
         "projected views, not the base tables, so a hidden column reads as 'does not exist' (NOT "
@@ -571,6 +597,147 @@ def _env_name_for_dsn(dsn: str) -> str | None:
         if k.endswith("_DSN") and v == dsn:
             return k
     return None
+
+
+class HiddenTableError(RuntimeError):
+    """A table the requester's access policy removed from this run's projection.
+
+    Not the same failure as "no such table": the relation exists in the customer's database, it is
+    simply not part of what THIS requester may read. Raised by `query`/`query_one` (and the
+    introspection helpers that go through them) when Postgres's ``UndefinedTable`` names a relation
+    the host listed in ``RC_DB_HIDDEN_TABLES``. ``__cause__`` keeps the original psycopg error.
+
+    Attributes: ``table`` (the relation as Postgres named it) and ``db`` (the ``db=`` argument in
+    play, possibly ``None``)."""
+
+    def __init__(self, message: str, *, table: str, db: str | None = None):
+        super().__init__(message)
+        self.table = table
+        self.db = db
+
+
+def _hidden_table_message(table: str) -> str:
+    """The one wording for a policy-hidden table. Says the boundary out loud AND forbids leaking it:
+    naming the table back to the requester would disclose the very thing the policy hid."""
+    return (
+        f"`{table}` is hidden for this requester by the project's access policy — a permission "
+        "boundary, not missing data. Do not name it to the requester; skip it or say the "
+        "information is not available to them."
+    )
+
+
+def _norm_table(name) -> str:
+    """Comparable form of a (possibly schema-qualified, possibly quoted) relation name."""
+    s = str(name).strip().strip('"')
+    if "." in s:
+        s = s.rsplit(".", 1)[-1].strip().strip('"')
+    return s.lower()
+
+
+# `relation "form_fields" does not exist` (Postgres) / `Table 'db.form_fields' doesn't exist` (MySQL).
+# Column errors say `column "x" does not exist`, which neither pattern matches — deliberate, a missing
+# COLUMN must keep falling through to the generic hint.
+_UNDEFINED_RELATION_RES = (
+    re.compile(r'relation "([^"]+)" does not exist', re.IGNORECASE),
+    re.compile(r"Table '([^']+)' doesn't exist", re.IGNORECASE),
+)
+
+
+def _undefined_relation(exc) -> str | None:
+    """The relation name inside an undefined-table error, or None if this isn't one."""
+    texts = []
+    diag = getattr(exc, "diag", None)
+    primary = getattr(diag, "message_primary", None) if diag is not None else None
+    if primary:
+        texts.append(str(primary))
+    texts.append(str(exc))
+    for text in texts:
+        for rx in _UNDEFINED_RELATION_RES:
+            m = rx.search(text)
+            if m:
+                return m.group(1)
+    return None
+
+
+def _table_scope_env(name: str) -> dict:
+    """Parse a host-injected ``{"<DSN_ENV_NAME>": ["table", ...]}`` JSON map.
+
+    Same best-effort contract as `_excluded_columns`: absent/blank/malformed → ``{}``. Nothing here
+    may ever raise — a query must not break because visibility metadata is missing or garbled."""
+    import json
+
+    raw = os.environ.get(name)
+    if not raw or not raw.strip():
+        return {}
+    try:
+        val = json.loads(raw)
+    except (ValueError, TypeError):
+        return {}
+    if not isinstance(val, dict):
+        return {}
+    return {
+        str(k): [str(t) for t in v if isinstance(t, str)]
+        for k, v in val.items()
+        if isinstance(v, list)
+    }
+
+
+def _table_list_for_db(env_var: str, db: str | None) -> list[str] | None:
+    """This db's entry in one of the visibility maps, or None when there is no entry.
+
+    None covers every "we don't know" case: env absent, DSN passed raw (no env name), or the DSN
+    simply not listed (flat/passthrough — nothing was projected)."""
+    mapping = _table_scope_env(env_var)
+    if not mapping:
+        return None
+    try:
+        dsn = _resolve_dsn(db)
+    except RuntimeError:
+        return None
+    val = mapping.get(_env_name_for_dsn(dsn) or "")
+    return list(val) if val is not None else None
+
+
+def visible_tables(db: str | None = None) -> list[str] | None:
+    """Table/view names this run's projection exposes — or ``None`` when that is unknown.
+
+    ``None`` is a real answer and must not be read as "nothing is visible": it means the host
+    injected no ``RC_DB_VISIBLE_TABLES`` entry for this database (older host, local run, or a flat
+    DSN that was never projected). A list means the projection is known and complete."""
+    return _table_list_for_db("RC_DB_VISIBLE_TABLES", db)
+
+
+def hidden_tables(db: str | None = None) -> list[str]:
+    """Tables the requester's access policy removed from this run's projection.
+
+    ``[]`` when none are hidden *and* when nothing is known — callers that need the distinction ask
+    `visible_tables` (``None`` = unknown). Never raises."""
+    return _table_list_for_db("RC_DB_HIDDEN_TABLES", db) or []
+
+
+def is_visible(table: str, db: str | None = None) -> bool | None:
+    """Can this run query ``table``? ``True``/``False``, or ``None`` when the projection is unknown.
+
+    Ask BEFORE writing an enrichment query, so a helper degrades on purpose instead of crashing on a
+    permission boundary it cannot see. ``None`` means "no information" — treat it as "try it"."""
+    norm = _norm_table(table)
+    if norm in {_norm_table(t) for t in hidden_tables(db)}:
+        return False
+    vis = visible_tables(db)
+    if vis is None:
+        return None
+    return norm in {_norm_table(t) for t in vis}
+
+
+def _hidden_table_notes(db: str | None = None) -> list[str]:
+    """Short warnings naming the policy-hidden tables, mirroring `_hidden_column_notes`."""
+    hidden = sorted(hidden_tables(db))
+    if not hidden:
+        return []
+    return [
+        "access policy: tables hidden from this requester and absent from the list above: "
+        f"{', '.join(hidden)}. Querying one raises HiddenTableError; do not name it to the requester."
+    ]
 
 
 def _pattern_matches(pattern: str, value: str) -> bool:
@@ -1023,9 +1190,9 @@ def _mysql_hint(
                 f"there. If it lives in another database, re-run with db=. Databases this run can "
                 f"read:\n{_format_catalog()}"
             )
-        return _undefined_hint(exc)
+        return _undefined_hint(exc, db)
     if errno == _MYSQL_BAD_FIELD:
-        return _undefined_hint(exc)
+        return _undefined_hint(exc, db)
     if errno == _MYSQL_SYNTAX_ERROR:
         return (
             "MySQL rejected the syntax. This is MySQL, not Postgres: quote identifiers with "
@@ -1180,6 +1347,12 @@ def query(
                 # parameterised queries (params given) still bind `%s` normally.
                 cur.execute(sql, params if params else None)
             except psycopg.errors.UndefinedTable as e:
+                # The access policy removed this relation from the requester's projection. That is a
+                # permission boundary, not a data gap or a typo, so it gets its own exception type a
+                # helper can catch and degrade on — and a message that forbids echoing the name back.
+                rel = _undefined_relation(e)
+                if rel and _norm_table(rel) in {_norm_table(t) for t in hidden_tables(db)}:
+                    raise HiddenTableError(_hidden_table_message(rel), table=rel, db=db) from e
                 # A table-not-found on a multi-DB run where db= was OMITTED is usually "wrong database",
                 # not a typo: name the standard we silently used + the alternatives so the agent re-runs
                 # with db= instead of rewriting against the wrong DB. Otherwise the generic scoping/typo
@@ -1192,13 +1365,13 @@ def query(
                         f"read:\n{_format_catalog()}"
                     )
                 else:
-                    hint = _undefined_hint(e)
+                    hint = _undefined_hint(e, db)
                 raise RuntimeError(f"{e}\n\n{hint}") from e
             except psycopg.errors.UndefinedColumn as e:
                 # Still undefined after the pre-flight heal ⇒ a typo, a hidden column used in WHERE/
                 # ORDER BY (which we don't rewrite), or a shape we couldn't parse. Enrich so the agent
                 # fixes the one bad name instead of rewriting. `from e` keeps the original traceback.
-                raise RuntimeError(f"{e}\n\n{_undefined_hint(e)}") from e
+                raise RuntimeError(f"{e}\n\n{_undefined_hint(e, db)}") from e
             except psycopg.Error as e:
                 # Everything else Postgres (or psycopg itself) rejected: attach one corrective hint
                 # for the mistake classes agents repeat — invented enum labels, scalar-vs-array,
@@ -1253,9 +1426,13 @@ def tables(schema: str | None = None, db: str | None = None) -> list[dict]:
     ``schema=None`` (default) mirrors ``columns``: introspect ``current_schema()`` so scoped runs see
     their projected ``scope_<id>`` views and flat runs see ``public``. On MySQL the effective schema
     is the DSN's own database (``database()``).
+
+    This is the authoritative "what can I query" list. When the host also told us what the access
+    policy REMOVED, a warning names those tables — same treatment `columns` gives hidden columns, so
+    a helper learns the boundary here instead of through an `UndefinedTable` mid-investigation.
     """
     if _engine_is_mysql(db):
-        return query(
+        rows = query(
             "select table_name as table_name, table_type as table_type "
             "from information_schema.tables "
             "where table_schema = coalesce(%s, database()) "
@@ -1263,13 +1440,17 @@ def tables(schema: str | None = None, db: str | None = None) -> list[dict]:
             [schema],
             db=db,
         )
-    return query(
-        "select table_name, table_type from information_schema.tables "
-        "where table_schema = coalesce(%s::text, current_schema()) "
-        "order by table_name",
-        [schema],
-        db=db,
-    )
+    else:
+        rows = query(
+            "select table_name, table_type from information_schema.tables "
+            "where table_schema = coalesce(%s::text, current_schema()) "
+            "order by table_name",
+            [schema],
+            db=db,
+        )
+    for note in _hidden_table_notes(db):
+        warnings.warn(note, stacklevel=2)
+    return rows
 
 
 # Every key an agent plausibly reaches for on an introspected column, mapped to the canonical
@@ -1678,6 +1859,10 @@ def _main(argv=None) -> int:
 
     if args.list:
         print(_format_catalog())
+        for env in databases():
+            hidden = sorted(hidden_tables(env))
+            if hidden:
+                print(f"  hidden for this requester ({_short_name(env)}): {', '.join(hidden)}")
         return 0
     try:
         if args.stats:

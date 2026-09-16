@@ -68,6 +68,14 @@ there is no undo:
 
 **`action run`.** See step 5 and [docs/actions.md](../../docs/actions.md).
 
+## One identity, or all of them
+
+`--principal-kind` / `--principal-id` on `bash run`, `database query` and `database schema` bind a
+console primitive to one asserted end-user, so it sees exactly the projection that person's hosted
+run gets — the right tool for "reproduce this one requester's failure". When the question is broader
+("which audiences does this helper work for", "what does each audience's projection contain"), use
+[`scope-check`](../scope-check/SKILL.md), which sweeps a set of audiences into a matrix instead.
+
 ## Preflight is not a scope gap
 
 `preflight` honours `--tenant` and runs in the same tenant-scoped grounding workspace a run gets

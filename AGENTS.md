@@ -119,6 +119,9 @@ Only these are first-class:
   and the database description line.
 - `prod-console` — direct guarded production primitives through `rc dev console capabilities`,
   `rc dev console database`, `rc dev console bash`, and `rc dev console action`.
+- `scope-check` — principal-scoped projects: the per-audience table/column visibility matrix
+  (`scope_matrix.py`) and the per-audience helper smoke matrix run in real production sandboxes
+  (`scope_smoke.py`). The closest-to-production tier for "for whom does this helper work".
 - `rc-script-wrapper` — deterministic local Python/shell wrappers around `rc`, including complete
   exports, typed failures, parameters, and remote artifact fetches.
 - `brain-dev-upgrade` — update kit and `rc`.
@@ -143,6 +146,8 @@ Ships here:
 - the grounding-intake engine in `skills/brain-grounding-intake/scripts/` (run context, bounded
   repo scan, remote schema probe and reduction, guarded read-only drill, question benchmark,
   validator over paths and tables and columns, HTML questionnaire);
+- the scope-check scripts in `skills/scope-check/scripts/` (per-audience `rc project database
+  preview` matrix, per-audience `rc dev console bash run` smoke matrix);
 - public-API skills over `rc`;
 - `rootcause-runtime` (`runtime/lib`);
 - workspace Dockerfile/image.

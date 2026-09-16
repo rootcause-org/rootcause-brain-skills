@@ -1,0 +1,34 @@
+# scope-check smoke configuration — `scope_smoke.py --config <this file>`.
+#
+# Live it in the brain checkout (e.g. `_internal/scopecheck.toml`) and commit it: the audience list
+# IS the project's statement of who its helpers must work for.
+
+project = "kampadmin"
+tenant = "acme"
+timeout = 120
+
+# Output that marks a cell failed even when the command exits 0. Omit to keep the defaults
+# ("does not exist", "Traceback", "QueryError").
+# fail_on = ["does not exist", "Traceback", "QueryError", "not available to them"]
+
+# The no-principal (tenant-wide) audience is always added and always runs first.
+[[audience]]
+label = "regular-admin"
+kind = "kampadmin_person"
+id = "00000000-0000-0000-0000-000000000001"
+
+[[audience]]
+label = "parent"
+kind = "kampadmin_parent"
+id = "00000000-0000-0000-0000-000000000002"
+
+[[command]]
+name = "camp-overview"
+cmd = "python skills/camps/scripts/camp_overview.py --camp-id 42"
+# Every string must appear in stdout+stderr, or the cell fails. Use it to prove the helper still
+# ANSWERS for a narrow audience instead of only surviving.
+expect = ["Camp:"]
+
+[[command]]
+name = "db-tables"
+cmd = "python -m lib.db --list"
