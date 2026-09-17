@@ -5,15 +5,17 @@
 # ///
 """Prepare a review branch; compare committed helper bytes in the guarded production console."""
 import argparse
-import base64
 import json
 from pathlib import Path, PurePosixPath
 import re
 import shlex
 import subprocess
+import sys
 import tempfile
 
-from prototype_format import prototype_markdown, reduced
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "mirror-try/scripts"))
+from mirror_try import snapshot, console_command, run_version
+from prototype_format import prototype_markdown
 from report_schema import Prototype
 
 
@@ -40,59 +42,6 @@ def prepare(repo, slug, out):
     state = dict(repo=str(repo), branch=branch, base=base, worktree=str(worktree))
     save(out, state)
     return state
-
-
-def snapshot(repo, sha, paths):
-    files = {}
-    for path in paths:
-        rel = PurePosixPath(path)
-        if rel.is_absolute() or '..' in rel.parts or not rel.parts or rel.parts[0] == 'actions':
-            raise ValueError('Stage relative grounding paths only, never actions')
-        for line in git(repo, 'ls-tree', '-r', sha, '--', path).splitlines():
-            mode, _, _, name = line.split(None, 3)
-            if mode not in ('100644', '100755'):
-                raise ValueError('Symlinks/submodules are not supported in staged paths')
-            if any(part.startswith('.') for part in PurePosixPath(name).parts):
-                raise ValueError('Do not stage hidden config/credentials')
-            data = subprocess.check_output(['git', '-C', str(repo), 'show', f'{sha}:{name}'])
-            files[name] = base64.b64encode(data).decode()
-    if len(json.dumps(files).encode()) > 240_000:
-        raise ValueError('Selected files exceed 240 KB console budget; narrow --path')
-    return files
-
-
-def console_command(files, argv):
-    # No shell interpolation of filenames, source, or helper arguments. Scratch is removed on exit.
-    source = 'import base64,json,os,pathlib,subprocess,tempfile\n'
-    source += 'files = ' + repr(files) + '\nargv = ' + repr(argv) + '\n'
-    source += '''with tempfile.TemporaryDirectory(prefix="review-helper-") as root:
- for name,data in files.items():
-  path=pathlib.Path(root)/name
-  path.parent.mkdir(parents=True,exist_ok=True)
-  path.write_bytes(base64.b64decode(data))
- env=dict(os.environ)
- env["PYTHONPATH"]=root+os.pathsep+env.get("PYTHONPATH", "")
- result=subprocess.run(argv,cwd=root,env=env)
- raise SystemExit(result.returncode)
-'''
-    if len(source.encode()) > 250_000:
-        raise ValueError('Command exceeds console stdin budget; narrow --path/args')
-    return 'python - <<\'REVIEW_HELPER\'\n' + source + '\nREVIEW_HELPER'
-
-
-def run_version(files, argv, scope, sha):
-    cmd = ['rc', 'dev', 'console', 'bash', 'run', *scope, '--raw-output', '-o', 'json',
-           '--timeout', '120', '--', '-']
-    done = subprocess.run(cmd, input=console_command(files, argv), text=True,
-                          capture_output=True, timeout=180)
-    try:
-        result = json.loads(done.stdout)
-    except json.JSONDecodeError as exc:
-        raise ValueError('Console transport failed: ' + reduced(done.stderr)) from exc
-    if 'exit_code' not in result or not result.get('run_id') or result.get('timed_out') or result.get('stdout_truncated') or result.get('stderr_truncated'):
-        raise ValueError('No complete helper result: ' + reduced(json.dumps(result)))
-    return dict(stdout=reduced(result.get('stdout', '')), stderr=reduced(result.get('stderr', '')),
-                exit_code=result['exit_code'], sha=sha, run_id=result['run_id'], seq=result.get('seq', 0))
 
 
 def capture(state, project, tenant, principal_kind, principal_id, paths, argv):

@@ -4,6 +4,11 @@ A helper error, wrong output, usage trap or missing capability earns working cod
 before/after output before a technical card is decided. This includes new helpers in brains and
 source mirrors. The human decides whether to merge; never merge or promote the prototype yourself.
 
+For mirror repos use [mirror-try](../mirror-try/SKILL.md) to resolve sibling imports and compare
+a ref or tracked working-tree changes. `scripts/helper_prototype.py` uses its shared console staging
+engine for review-card capture. For brain content, validate the dev channel with
+[brain-ask simulation](../brain-ask/SKILL.md); scratch helper proof alone does not validate a brain.
+
 Use `scripts/helper_prototype.py`: **stage committed helper files in scratch inside the guarded
 production console**. Both revisions use identical arguments, tenant/principal and current production
 DB/mirror mounts. No local DSN, live ref changes or LLM run needed. This proves the staged helper,

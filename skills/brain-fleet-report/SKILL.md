@@ -33,7 +33,8 @@ the host checkout's `.agents/skills/review-implement/SKILL.md`: commit, ship, pr
    and delta. Owner/both supply 1–4 real options, including unchanged.
 5. Fixes name diagnosed edits; investigations name checks/stop/output. Open every target path today.
    Prototype Python helper fixes/new capabilities via [helper-prototype.md](helper-prototype.md)
-   while judging. Decisions authorize merge/ship; implementation owns final production verification,
+   while judging: use [mirror-try](../mirror-try/SKILL.md) for mirror repos; brain content
+   uses a dev channel with [simulation](../brain-ask/SKILL.md). Decisions authorize merge/ship; implementation owns final production verification,
    at most two fix/ship/test rounds.
 6. Owner = reachable task, in the owner language, named recipient. Use Owner reach;
    shared findings need a distinct owner ask. Only brain-content fixes expose prompts.

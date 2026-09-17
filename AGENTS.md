@@ -119,6 +119,7 @@ Only these are first-class:
   question, clickable cluster chips showing the real tickets, one copy-as-markdown button), and
   the answers written back as `skills/codebase/` and `skills/databases/<db>.md` plus routing rows
   and the database description line.
+- `mirror-try` — compare staged mirror helpers and sibling imports on real scoped production data.
 - `prod-console` — direct guarded production primitives through `rc dev console capabilities`,
   `rc dev console database`, `rc dev console bash`, and `rc dev console action`.
 - `scope-check` — principal-scoped projects: the per-audience table/column visibility matrix
