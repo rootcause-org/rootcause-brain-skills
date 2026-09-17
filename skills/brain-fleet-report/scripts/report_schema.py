@@ -278,6 +278,8 @@ class Recurrence(_Model):
 
 
 class ManualFeedback(_Model):
+    # Manual comments are verbatim evidence, including surrounding whitespace.
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
     score: int | None = Field(default=None, ge=1, le=5)
     comment: NonEmpty | None = None
 

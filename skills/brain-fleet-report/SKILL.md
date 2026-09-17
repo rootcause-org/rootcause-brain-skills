@@ -48,7 +48,12 @@ the host checkout's `.agents/skills/review-implement/SKILL.md`: commit, ship, pr
    Drill writes details/excerpts-<uuid>.json via evidence_excerpts(run_id): shorten those originals
    into evidence.entries, stripping greeting/footer with … omissions. Include manual feedback only
    from the feedback feed; omit unavailable fields. Keep evidence.json beside report.json.
-7. Aim ≤5 expanded technical, ≤4 owner findings; prioritize customer impact. Counters own numbers.
+7. Read every available manual feedback comment before ranking. Group repeated corrections, including
+   terminology and reply style: an explicit instruction needs implementation, not another owner
+   question. Record each theme as queued, already covered (with evidence), or deferred with reason
+   in OUT/feedback-disposition.md; do not equate a low score without a comment with a diagnosis.
+   Keep feedback received after the run window labelled separately. Check preserved decisions
+   before asking again. Aim ≤5 expanded technical, ≤4 owner findings; counters own numbers.
 8. Honour DB decisions: accepted/noise reopen only on retest trigger; later after its date; post-fix
    sightings become regressions. Unpublished runtime drift needs a remedy; tooling drift stays parked.
 9. First names only; no credentials/contact details. Prompt run URLs are canonical and token-free.
