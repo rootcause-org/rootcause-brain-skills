@@ -14,6 +14,24 @@ This repo is the kit, not a brain:
 Brains consume this kit from a brain checkout (`rootcause-brain-<project>`). Skills install once and
 run from inside any brain; never copy this kit into a brain's committed `skills/`.
 
+## Domain Taxonomy
+
+Use the shared RootCause vocabulary in [Brain Model](docs/brain-model.md) and
+[Run Trace Model](docs/run-trace-model.md). The distinctions that matter in this kit:
+
+| Term | Meaning / distinction |
+|---|---|
+| **Project / tenant** | Project is the SaaS world being grounded; tenant is a scoped organization within it. Tenant exceptions do not belong in shared project rules. |
+| **Brain / kit** | Brain is project-owned knowledge and tooling mounted read-only for runs. This kit supplies developer tooling and runtime helpers; it is not a project brain or KB. |
+| **Skill** | Kit `skills/` teaches local developers; a brain's `skills/` holds production domain knowledge/scripts; mounted `/skills` holds shared file-format skills. These are separate sources, not interchangeable install paths. |
+| **Tenant overlay / projection** | Overlay adds tenant-specific knowledge; projection compiles shared templates plus tenant profile values into an ephemeral `/brain` view. The compiled view is not another maintained brain. See [project and tenant brains](docs/brain-model.md#project-and-tenant-brains). |
+| **Mirror / knowledge base (KB)** | Mirror is a read-only customer source checkout (UI: “Code bases”); KB is synced support material. Both are external context, refreshed independently of brain changes. See [mirrors](docs/mirrors.md). |
+| **Run / workspace** | Run is one end-to-end handling of an inbound trigger; workspace is its execution container. A local script check is not a production run. |
+| **Grounding / grounding pre-step** | Grounding gathers evidence for an answer; the pre-step selects files for the main agent. Selection is not a guarantee that required reference material reaches the answer-writer. See [`include_in`](docs/brain-model.md#the-include_in-contract--hard-loading-a-doc-into-a-host-prompt). |
+| **Triage / persona** | Triage decides process versus skip; persona controls voice, language and signature. Neither replaces business playbooks. See [prompt ownership](docs/brain-model.md#production-prompt-boundary). |
+| **Action / preflight** | Action is a vetted write intent, not a loop tool. Preflight checks it read-only; a proposal or passing preflight does not prove execution. See [side effects](docs/side-effects.md). |
+| **Brain channel / kit release** | A brain channel selects a shared brain commit for runs; a kit release pins developer tooling and runtime versions. Publishing one does not update the other. See [channels and refs](docs/brain-model.md#channels-and-refs) and [releases](RELEASING.md). |
+
 ## Audience
 
 One audience only: project developers and their agents.
