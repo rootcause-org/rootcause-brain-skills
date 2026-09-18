@@ -74,13 +74,13 @@ sequenceDiagram
         H-->>A: Actual result for the answer
     else Human review required
         alt Available preflight says no
-            H-->>A: Refusal and feedback; no executable proposal
+            H-->>A: Refusal and feedback, no executable proposal
         else Passed or preview unavailable
             H-->>A: Pending proposal (no write yet)
             H->>R: Confirmation and stored preview
             R->>H: Confirm
             Note over H: No fresh preflight here
-            H->>W: Run approved script; body rechecks invariants
+            H->>W: Run approved script, body rechecks invariants
             W-->>H: Execution result
         end
     end
