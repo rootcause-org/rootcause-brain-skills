@@ -89,6 +89,9 @@ escapes coverage (action, test, and root `conftest.py` code are exempt). A singl
 
 ## Hosted Python Actions
 
+For “how do actions work?” start with [the execution boundaries](../../docs/action-boundaries.md):
+read workspace, preflight feedback, separate policy gate, human confirmation, and write executor.
+
 `brain_action.py` is the local state-changing exception: it reproduces hosted-Python action validation,
 preflight, policy gate, and body execution against whatever `./.env.action` points at. Dry-run with
 rollback is the default; **`--commit` writes for real** — use a local/staging target unless a real write

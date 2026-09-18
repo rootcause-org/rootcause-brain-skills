@@ -1,10 +1,11 @@
 # Actions
 
 Everything else in a brain is read-only diagnosis. An action is the deliberate state-changing plane:
-the run proposes vetted params, a human confirms later, and only then does the executor run the
-approved digest.
+the run requests an approved action with parameters; host gates decide whether it executes now or
+waits for human confirmation.
 
-Read [docs/side-effects.md](side-effects.md) before reporting action results.
+Start with [what runs where and which verdicts block](action-boundaries.md) for the read/write
+boundary and preflight/policy sequence. Read [side effects](side-effects.md) before reporting results.
 
 ## Product Flow
 
@@ -166,9 +167,10 @@ means "always auto":
 - `risk: high` in the manifest → always `human` (risk is now **load-bearing**, not just informational).
 - **brain-TEST runs** (a `--brain-ref` dev run) → always `human`, so testing a new `auto` action never
   fires a real write.
-- **Plane**: mid-loop is **email + analysis only**. MCP / Prompt-API / chat runs always resolve to `human`.
-- **Mode**: **hosted (`script.py`) only** in v1. Embassy (`script.rb`) actions stay `human` whatever the
-  manifest says — keep their manifests `autonomy: human`.
+- **Decision authority:** no in-band confirmer means human. Requester-confirmed automation also
+  requires `confirm: requester` and a claim-bound input. Reviewer/admin surfaces can use effective
+  policy/auto autonomy. Chat Studio previews and shadow delivery stay human.
+- These gates apply to hosted and Embassy execution; execution mode alone does not force human review.
 
 The catalog the agent sees labels each action with its **effective** autonomy (`(auto)`, `(policy-gated)`,
 or nothing for human) — so the agent is never told it can auto-run something the cap or a floor forbids.
@@ -176,8 +178,9 @@ or nothing for human) — so the agent is never told it can auto-run something t
 ### `policy.py` — the per-invocation gate
 
 `autonomy: policy` **requires** a `policy.py` (the host refuses to resolve the action without one). It is
-**orthogonal to preflight**: preflight answers *"will these params do the intended thing?"* (advisory,
-agent-visible, runs in the live run container); policy answers *"is a human needed for THIS invocation?"*
+**orthogonal to preflight**: preflight answers *"will these params do the intended thing?"*. It runs
+in the read-only workspace and blocks completed negative previews on the human-review path, but does
+not gate automatic execution. Policy answers *"is a human needed for THIS invocation?"*
 (authorization). An action may have either, both, or neither.
 
 Because the verdict **replaces a human**, policy runs **host-side** in a fresh one-shot **read-only
@@ -388,8 +391,11 @@ uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>'
 uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --commit
 ```
 
-The runner reproduces the prod ordering — Layer-1 → preflight → **policy gate** → write body. `--policy-only`
-runs `policy.py` read-only in the grounding env and prints whether this invocation would **auto-execute**
+The local runner uses Layer-1 → preflight → **policy gate** → write body. This is stricter than
+production automatic execution, which does not enforce the preflight verdict; a local pass does not
+prove that production rejects the same negative cases. See [the gate contract](action-boundaries.md).
+
+`--policy-only` runs `policy.py` read-only in the grounding env and prints whether this invocation would **auto-execute**
 (allow) or **escalate to a human** (deny), with the exit code reflecting the verdict — the way to iterate on
 an `autonomy: policy` rule before publishing. Default body execution is a local dry-run rollback. `--commit`
 writes for real to whatever `.env.action` targets; use only safe local/staging targets unless explicitly
