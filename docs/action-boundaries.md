@@ -4,6 +4,41 @@ The agent can read action code and choose an action plus arguments. It cannot se
 Python or shell commands to the write executor. The host selects approved code and controls
 whether it runs automatically or waits for a human.
 
+## Hosted Python: the request and feedback loop
+
+Two views of the normal flow. The detailed gate behavior is below.
+
+### 1. Check and refine — no writes
+
+The agent can use preflight feedback to correct its arguments or understand the predicted effect.
+A passing check is not permission to execute.
+
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant P as Preflight in read-only workspace
+    A->>P: Check candidate arguments
+    P-->>A: Predicted result or useful correction
+```
+
+### 2. Request execution — the host decides
+
+The agent requests an action, not arbitrary code. The host either permits automatic execution or
+routes an eligible proposal to a human. Only the separate write container performs the change.
+
+```mermaid
+flowchart TD
+    A["Agent"] -->|Action and arguments| H["Host approval gates"]
+    H -->|Automatic execution permitted| W["Separate write container<br/>Approved Python script"]
+    H -->|Human review required| R["Human reviewer"]
+    R -->|Confirms| W
+```
+
+These diagrams omit refusals and technical failures. In today's implementation, preflight does
+**not** block automatic execution. See the exact behavior below.
+
+## Execution contexts
+
 | Context | Runs here | Access |
 |---|---|---|
 | Agent workspace | Grounding, optional `preflight.py` | Read-only data; brain mounted read-only; no action write credentials |
@@ -48,43 +83,6 @@ For example, “discounts above €50 need review” belongs in `policy.py`. “
 allowed” must be enforced in the body too; mirror it in preflight for early feedback. A policy denial
 alone still permits human approval.
 
-## Hosted Python: the request and feedback loop
-
-```mermaid
-sequenceDiagram
-    participant A as Agent in read-only workspace
-    participant H as Host action gate
-    participant P as Isolated read-only policy check
-    participant R as Human reviewer
-    participant W as Separate Python write container
-    opt Agent explores before requesting an action
-        A->>A: Run read-only preflight with candidate params
-        Note over A: Read feedback and correct arguments
-    end
-    A->>H: action(action_id, params, intent)
-    H->>A: Run installed preflight in live workspace, if present
-    A-->>H: ok, summary, observed (or unavailable)
-    opt Effective autonomy is policy
-        H->>P: Check these arguments and trusted scope
-        P-->>H: allow or require human review
-    end
-    alt Effective auto or policy allows
-        H->>W: Run approved script with params and write credentials
-        W-->>H: Execution result
-        H-->>A: Actual result for the answer
-    else Human review required
-        alt Available preflight says no
-            H-->>A: Refusal and feedback, no executable proposal
-        else Passed or preview unavailable
-            H-->>A: Pending proposal (no write yet)
-            H->>R: Confirmation and stored preview
-            R->>H: Confirm
-            Note over H: No fresh preflight here
-            H->>W: Run approved script, body rechecks invariants
-            W-->>H: Execution result
-        end
-    end
-```
 
 Make preflight feedback useful: identify the disqualifying state, suggest a grounded next step,
 and show calculated effects in `observed` (for example €150 − 10% = €135). Keep `summary` short
