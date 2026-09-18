@@ -55,7 +55,7 @@ jq 'select(.type=="run") | {tenant_settings, tenant_settings_current, tenant_set
 user turn and the thread itself. Never read it as the whole prompt.
 
 **Why didn't the model know X?** The prompt-context capture (`context_schema_version`; `0` = a
-pre-1.14 run or past the 7-day retention window) carries the section map. The `on:false` sections are
+pre-1.14 run or past the 14-day retention window) carries the section map. The `on:false` sections are
 the signal — a gate that stayed shut is context the run never received:
 
 ```bash
