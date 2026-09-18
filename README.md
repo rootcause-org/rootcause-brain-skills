@@ -154,11 +154,11 @@ CLI equivalents: `python -m lib.db --stats accounts --db ruby --format json` and
 ## Single Version Line
 
 The plugin versions, `rootcause-runtime` pin, workspace image tag, and production runtime pin move
-together; see [RELEASING.md](RELEASING.md). Current line: **`v0.9.33`**.
+together; see [RELEASING.md](RELEASING.md). Current line: **`v0.9.34`**.
 
 - Runtime pin:
-  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.9.33#subdirectory=runtime`
-- Workspace image: `ghcr.io/rootcause-org/workspace:v0.9.33`
+  `rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.9.34#subdirectory=runtime`
+- Workspace image: `ghcr.io/rootcause-org/workspace:v0.9.34`
 
 Check coherence:
 
