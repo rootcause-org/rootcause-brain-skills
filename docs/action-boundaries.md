@@ -34,8 +34,8 @@ flowchart TD
     R -->|Confirms| W
 ```
 
-These diagrams omit refusals and technical failures. In today's implementation, preflight does
-**not** block automatic execution. See the exact behavior below.
+These diagrams omit refusals and technical failures. A rejected check blocks execution; an
+unavailable check requires human review. See the exact behavior below.
 
 ## Execution contexts
 
@@ -60,7 +60,7 @@ passes through the host. But approval must also review any extra effects the cho
 | Mechanism | Verdict | Current production effect |
 |---|---|---|
 | Manifest parameter schema | Valid/invalid arguments | Invalid inputs are rejected before dispatch. |
-| Optional `preflight.py` | `ok`, `summary`, optional `reason`, `class`, `observed`, `resource_url` | A completed `ok:false` blocks a human-review proposal (or disables a chat card). It does **not** gate automatic execution. |
+| Optional `preflight.py` | `ok`, `summary`, optional `reason`, `class`, `observed`, `resource_url` | A completed `ok:false` blocks execution. A technical failure requires human review. |
 | `policy.py` for effective `policy` autonomy | `allow`, `reason`, optional `observed` | `allow:false` or a technical failure prevents automatic execution and falls back to human review. It is not an absolute prohibition. |
 | `script.py` | Execution result | Recheck hard business limits and current state before writing, including after a human confirms. |
 
@@ -69,12 +69,13 @@ builds a verdict dictionary; it neither schedules an action nor grants write acc
 agent requests execution through the host's `action` tool.
 
 The host runs the installed preflight during an action-tool request, so a prior manual preflight
-is not accepted as a reusable permission slip. However, **the verdict is enforced only on the
-human-review path**. Effective `auto`, or `policy` with `allow:true`, can execute despite `ok:false`.
-A preflight crash/timeout/unparseable result becomes **preview unavailable** and remains human-confirmable.
+is not accepted as a reusable permission slip. A completed rejection returns feedback to the agent
+before automatic execution or proposal creation (human-gated chat may show a disabled card).
+A crash, timeout, unparseable result or missing preview prevents automation and instead creates a
+human-review proposal/card marked **preview unavailable**. A pass still needs autonomy/policy approval.
 No preflight means schema validation alone, not proof that the business operation will succeed.
 
-Human confirmation uses the stored preview; it does **not** rerun `preflight.py`. Data can change
+Human confirmation refuses a stored rejection; it does **not** rerun `preflight.py`. Data can change
 between preview and execution. Check invariants again in the body, using a transaction or conditional
 write where needed. The executor resolves the current approved action; an approved version changing
 since proposal is surfaced/audited, not an unconditional refusal of execution.

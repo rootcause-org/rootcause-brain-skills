@@ -179,8 +179,8 @@ or nothing for human) — so the agent is never told it can auto-run something t
 
 `autonomy: policy` **requires** a `policy.py` (the host refuses to resolve the action without one). It is
 **orthogonal to preflight**: preflight answers *"will these params do the intended thing?"*. It runs
-in the read-only workspace and blocks completed negative previews on the human-review path, but does
-not gate automatic execution. Policy answers *"is a human needed for THIS invocation?"*
+in the read-only workspace: a completed rejection blocks execution; a technical failure requires
+human review. Policy answers *"is a human needed for THIS invocation?"*
 (authorization). An action may have either, both, or neither.
 
 Because the verdict **replaces a human**, policy runs **host-side** in a fresh one-shot **read-only
@@ -391,9 +391,9 @@ uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>'
 uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --commit
 ```
 
-The local runner uses Layer-1 → preflight → **policy gate** → write body. This is stricter than
-production automatic execution, which does not enforce the preflight verdict; a local pass does not
-prove that production rejects the same negative cases. See [the gate contract](action-boundaries.md).
+The local runner uses Layer-1 → preflight → **policy gate** → write body. Production also rejects
+completed negative checks, but sends unavailable checks to human review. A local pass does not
+prove production data or permissions match. See [the gate contract](action-boundaries.md).
 
 `--policy-only` runs `policy.py` read-only in the grounding env and prints whether this invocation would **auto-execute**
 (allow) or **escalate to a human** (deny), with the exit code reflecting the verdict — the way to iterate on
