@@ -17,6 +17,9 @@ structured `reply.journal` entry, which the HOST appends to the brain as a journ
 the curated brain (these helpers included) evolves out of band via the consolidation cron's
 operator-merged PRs. They favour being obvious and safe over complete.
 
+`tenant` reads the tenant's effective onboarding-profile values from the compiled `/brain` view, so a
+script fetches its own setting (`tenant.get("latecancel_min_hours", 24)`) instead of being handed one.
+
 A project has several databases — pick one with ``db=`` (short name, env-var name, or DSN); see
 ``db.databases()``. ``db`` and ``cloudwatch`` also have a CLI for one-off queries from bash
 (``python -m lib.db --list``, ``python -m lib.cloudwatch --tail <group>``).
@@ -31,7 +34,7 @@ Typical use from a `bash` Python script:
 
 # Submodules are imported on demand (`from lib import db`), not eagerly here: eager imports make
 # `python -m lib.db` double-import the module it's running and emit a RuntimeWarning on every call.
-__all__ = ["db", "api", "stripe", "cloudwatch", "fs", "http", "html", "oauth", "action", "rc_client", "telemetry"]
+__all__ = ["db", "api", "stripe", "cloudwatch", "fs", "http", "html", "oauth", "action", "tenant", "rc_client", "telemetry"]
 
 # Auto-wire best-effort PostHog error tracking (no-op without POSTHOG_PROJECT_API_KEY). Swallow any
 # failure here — importing `lib` must never fail because telemetry couldn't initialize.

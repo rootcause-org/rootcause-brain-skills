@@ -46,6 +46,7 @@ interchangeable.
 | Knowledge base | `/kb` | External support docs or synced knowledge sources, when configured. | When to consult KB material and how it should rank against committed brain playbooks. |
 | Shared file-format skills | `/skills` | RootCause-owned, cross-project xlsx/csv/pdf reading and writing skills; their libraries (openpyxl, pandas, pypdf, pdfplumber, fpdf2) are baked into the workspace image. | Nothing — don't reinvent file parsing in a brain; point at `/skills` and describe only project-specific file layouts. |
 | Grounding databases/APIs | `lib.db`, `lib.http`, etc. | Live read-only facts: customers, orders, invoices, app state, remote API data. Runtime-owned HTTP attempts emit the [HTTP audit contract](http-audit.md). | How to query safely, which scripts encapsulate repeated lookups, and what findings mean for the customer. |
+| Tenant profile | `lib.tenant` over `/brain/tenant_profile.json` | The tenant's effective onboarding-profile values (stored value, else the `projection.yaml` default); `{}` on a flat project. | Which setting a script reads, and the fallback it degrades to. |
 | Actions | `actions/<id>/` plus host catalog | Vetted write intents, parameter schemas, read-only preflight, optional hosted execution script. | When an action is the right resolution, required evidence for params, and reviewer-facing caveats. |
 
 `lib.db` hydrates Postgres array columns into real Python lists — `enum[]` included, which psycopg
@@ -74,7 +75,7 @@ Do not mix the local control plane with the production model's workspace:
 | Context | Available interface | Brain access | Instruction home |
 |---|---|---|---|
 | Local brain-development agent | Public `rc` CLI after OAuth, local engine scripts, local shell | Writable checkout | This kit's locally installed skills and docs |
-| Production main LLM loop | `bash` plus the scenario terminal tool (`reply` for email); `/brain` scripts and injected `lib.db`, `lib.cloudwatch`, `lib.http`, `lib.fs`, `lib.connectors`, `lib.api`, `lib.mcp`, `lib.image` as configured | `/brain` read-only | Committed project business context, routing, playbooks, and grounding scripts |
+| Production main LLM loop | `bash` plus the scenario terminal tool (`reply` for email); `/brain` scripts and injected `lib.db`, `lib.cloudwatch`, `lib.http`, `lib.fs`, `lib.connectors`, `lib.api`, `lib.mcp`, `lib.tenant`, `lib.image` as configured | `/brain` read-only | Committed project business context, routing, playbooks, and grounding scripts |
 
 There is no `rc` binary in the production loop. Never put `rc ...` command guidance in committed
 project-brain content: it cannot execute there and competes with the actual grounding path. A brain
@@ -393,7 +394,9 @@ artifacts stay on the laptop.
   (`/kb`, `/mirrors/<name>`) the same way — never by restating them; the overlay carries only tenant
   deltas.
 - A templated project brain may compile a tenant-specific `/brain` view from `projection.yaml` plus
-  tenant profile values. Preview locally with `brain_projection.py` when present;
+  tenant profile values. A script that needs a practice/tenant setting reads it via
+  `lib.tenant.get('<key>', <fallback>)`; never let the playbook ask the model to copy a `{{ }}` value
+  into an argument. Preview locally with `brain_projection.py` when present;
   `rc dev brain render --tenant <slug>` prints the server-compiled view exactly as `/brain` mounts it.
 
 ## Channels And Refs

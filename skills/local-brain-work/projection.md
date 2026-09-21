@@ -25,6 +25,9 @@ Get three things in view before editing: `projection.yaml`, `rc project tenant p
 
 - Every placeholder used in markdown must be declared in `projection.yaml` and backed by a tenant value
   or a projection default.
+- A script that needs a practice/tenant setting reads it via `lib.tenant.get('<key>', <fallback>)` from
+  the compiled view's `/brain/tenant_profile.json`; never let the playbook ask the model to copy a
+  `{{ }}` value into a script argument. Placeholders are for prose the customer reads.
 - A branch selector matches the **exact rendered string** of its value (`true`/`false` for a bool, the
   decimal form for an integral number). Unmatched → the branch `default`; no default → the region is
   dropped.
