@@ -43,6 +43,12 @@ actions/<id>/
   normalize to `email`; new manifests must not use them. Omission means all; unknown values fail lint
   and registry loading. Files remain mounted wholesale: this gates action eligibility, not filesystem
   visibility.
+- Optional `exclusive_with: [<action_id>, ...]` names the OTHER answers to the same single decision
+  (confirm-vs-cancel a hold, adjust-vs-cancel a subscription). When the reviewer picks one, every listed
+  counterpart proposed in the same run with the same shared param values is declined and its buttons
+  disappear everywhere. Symmetric: declaring it on one side is enough. Every id must exist in the same
+  registry (a typo fails loading), and an action may not list itself. Only use it for genuine
+  either/or pairs — two proposals of the SAME action (one per patient, per child) are never exclusive.
 - `preflight.py`, when present, is read-only and blocks unsafe/mis-grounded params before proposal.
 - `policy.py`, when present, is read-only and decides per-invocation whether an `autonomy: policy` action
   auto-executes or escalates to a human (see [Autonomy](#autonomy-human--policy--auto)).
