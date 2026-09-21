@@ -350,6 +350,8 @@ an irrelevant one is an active distractor. Checklist:
 - Flat archives (e.g. FAQ imports): greppable frontmatter facets on every item plus a generated
   `INDEX.md` with facet counts and exact `rg` recipes; the tree caps large dirs, so never rely on
   filename enumeration.
+- Tenant settings: a script reads its own via `from lib import tenant`, never via a `{{ }}` the model
+  copies into an argument — [recipe](tenant-settings.md).
 - `journal/` is host-written and renders as one counts line; never hand-author it.
 - `AGENTS.md` routing rows map symptom phrases to exact file paths; named paths are pinned in the
   tree, so keep them current when files move.
@@ -394,9 +396,9 @@ artifacts stay on the laptop.
   (`/kb`, `/mirrors/<name>`) the same way — never by restating them; the overlay carries only tenant
   deltas.
 - A templated project brain may compile a tenant-specific `/brain` view from `projection.yaml` plus
-  tenant profile values. A script that needs a practice/tenant setting reads it via
-  `lib.tenant.get('<key>', <fallback>)`; never let the playbook ask the model to copy a `{{ }}` value
-  into an argument. Preview locally with `brain_projection.py` when present;
+  tenant profile values. Any Python that needs a tenant setting reads it itself —
+  [reading a tenant setting from Python](tenant-settings.md). Preview locally with
+  `brain_projection.py` when present;
   `rc dev brain render --tenant <slug>` prints the server-compiled view exactly as `/brain` mounts it.
 
 ## Channels And Refs

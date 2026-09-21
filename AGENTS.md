@@ -71,9 +71,9 @@ Keep these planes explicit in every skill, template, and brain edit:
   not an `rc` binary. The committed brain is mounted read-only at `/brain`. Ground through `/brain`
   scripts and the injected `lib.db`, `lib.cloudwatch`, `lib.http`, `lib.fs`, `lib.connectors`,
   `lib.api`, `lib.mcp`, `lib.tenant`, and `lib.image` capabilities available for that project/run.
-  (`lib.tenant` — a script that needs a practice/tenant setting reads it via
-  `lib.tenant.get('<key>', <fallback>)`; never let the playbook ask the model to copy a `{{ }}` value
-  into an argument.)
+  (`lib.tenant` — a script that needs a practice/tenant setting reads it itself; never let the
+  playbook ask the model to copy a `{{ }}` value into an argument. Recipe, and the action-container
+  env fallback: [docs/tenant-settings.md](docs/tenant-settings.md).)
   (`lib.image` — cheap preview → refine-from-preview image generation over the broker's `image`
   mount, saving to `/tmp/outbox`; absent mount ⇒ one clear "not enabled" sentence. Cost model + ladder decisions: `docs/image-generation.md`.)
 

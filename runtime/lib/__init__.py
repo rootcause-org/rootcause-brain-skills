@@ -17,8 +17,10 @@ structured `reply.journal` entry, which the HOST appends to the brain as a journ
 the curated brain (these helpers included) evolves out of band via the consolidation cron's
 operator-merged PRs. They favour being obvious and safe over complete.
 
-`tenant` reads the tenant's effective onboarding-profile values from the compiled `/brain` view, so a
-script fetches its own setting (`tenant.get("latecancel_min_hours", 24)`) instead of being handed one.
+`tenant` reads the tenant's effective onboarding-profile values from the compiled `/brain` view —
+falling back to the injected `RC_TENANT_PROFILE_JSON` env document, which is all an action/preflight
+container (raw clone, no compiled view) ever gets — so a script fetches its own setting
+(`tenant.get("latecancel_min_hours", 24)`) instead of being handed one.
 
 A project has several databases — pick one with ``db=`` (short name, env-var name, or DSN); see
 ``db.databases()``. ``db`` and ``cloudwatch`` also have a CLI for one-off queries from bash

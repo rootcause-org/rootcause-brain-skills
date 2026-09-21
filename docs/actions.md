@@ -90,6 +90,8 @@ Conventions:
 - A project bundler may keep readable shared/`.src.py` code while emitting one digest-pinned hosted
   artifact. The lint still checks the shipped artifact's raw size, but checks helper drift in the
   declared source so unavoidable single-file transport copies do not masquerade as maintained drift.
+- **Tenant settings come from `lib.tenant`**, never from a param the model filled in from a rendered
+  `{{ }}` — see [reading a tenant setting from Python](tenant-settings.md).
 - **Delete, don't park.** Unused `_constants`/helpers left "for later" are the growth curve.
 
 ## Customer-Facing Copy
@@ -324,6 +326,16 @@ from lib.action import preflight
 
 params = preflight.params()
 verdict = preflight.result(params.get("status") == "open", "Order checked")
+```
+
+`lib` is baked into the harness, so a tenant setting is read the same way here as in a grounding
+script — the action container gets the profile as `RC_TENANT_PROFILE_JSON`
+([recipe](tenant-settings.md)):
+
+```python
+from lib import tenant
+
+min_hours = tenant.get("latecancel_min_hours", 48)
 ```
 
 `action.ok(summary, data)` writes the success Result to `$RC_ACTION_RESULT`, prints it, and exits.
