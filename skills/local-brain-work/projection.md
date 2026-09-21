@@ -50,9 +50,11 @@ variants itself.
 
 `rc dev brain render --project <p> --tenant <slug>` returns the **server-compiled** view,
 exactly as `/brain` mounts it, with a header of sha/channel/fill/branch/degradation counts. Pin
-`--sha`/`--channel`; `--all` for the whole tree. Artifacts are keyed by tenant only
-(`.rootcause/output/brain-render-<tenant>/`), so a second render of another sha overwrites the first —
-move it aside to compare. Needs a project-level login.
+`--sha`/`--channel`; `--all` for the whole tree. Every returned file is also written verbatim to
+`.rootcause/output/brain-render-<tenant>/tree/<brain-relative path>`, so you open the real
+`playbooks/annulatie_beleid.md` instead of an opaque `content.txt`. Artifacts are keyed by tenant only
+(`.rootcause/output/brain-render-<tenant>/`, `tree/` wiped per render), so a second render of another
+sha overwrites the first — move it aside to compare. Needs a project-level login.
 
 Template-editing flow: author → `render` for 1–2 representative tenants ("what does this tenant read")
 → `rc dev brain preflight` ("would this commit break anyone", pass/fail across all tenants) → publish
