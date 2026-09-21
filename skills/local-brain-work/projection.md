@@ -58,3 +58,18 @@ Template-editing flow: author → `render` for 1–2 representative tenants ("wh
 → `rc dev brain preflight` ("would this commit break anyone", pass/fail across all tenants) → publish
 (`brain-publish`). For full production confidence, `rc ask --brain-ref dev/x` with a login bound to the
 target tenant, then inspect the dump.
+
+## Reporting a template change (so the reviewer never has to ask)
+
+A change to any templated file (`projection.yaml`, `tenant.schema.json`, a markdown under
+`templated_globs`) is reviewed on its **rendered** form, not its source. Before reporting done:
+
+1. Render for the most relevant tenant(s) — the one whose values exercise the new branches, or one per
+   variant when a selector has several (`rc dev brain render --tenant <slug> --path <file> …`, `--all`
+   when the change spans files). Do it against the SHA you are shipping (`--sha`), not an older channel.
+2. In the final report list, as clickable local paths: every source file you changed **and** its
+   rendered twin(s) under `.rootcause/output/brain-render-<tenant>/…`, naming the tenant and the branch
+   values that drove the render (e.g. "de-kies: latecancel_policy=active, free_count=1").
+3. Quote branch names that YAML 1.1 reads as booleans (`"off"`, `"on"`, `"yes"`, `"no"`): the Go
+   compiler keeps them as strings, PyYAML previews do not.
+

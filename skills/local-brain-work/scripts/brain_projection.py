@@ -108,6 +108,22 @@ def _render_selector(raw: Any) -> str | None:
     return None
 
 
+def _yaml_token(v: Any) -> str:
+    """A variant/default name as the Go compiler (yaml.v3, YAML 1.2) reads it.
+
+    PyYAML is YAML 1.1: bare `off`/`on`/`yes`/`no` parse as booleans here but stay strings in Go, so a
+    real name would vanish into "" and the preview would wrongly report a dropped region. Warn, and
+    recover the token the author wrote. Quote such names in projection.yaml to keep both readers honest.
+    """
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        print(f"warn: projection.yaml uses a bare YAML-1.1 boolean lookalike as a variant/default "
+              f"({'true' if v else 'false'} after parsing) — quote it, e.g. \"off\"", file=sys.stderr)
+        return "true" if v else "false"
+    return str(v)
+
+
 def _selected_variant(settings: dict[str, Any], branch: dict[str, Any]) -> tuple[str, str, str, str | None]:
     """(selector field, raw value as displayed, variant prod collapses to, note) — "" = region dropped."""
     field = str(branch.get("select") or "")
@@ -115,8 +131,8 @@ def _selected_variant(settings: dict[str, Any], branch: dict[str, Any]) -> tuple
     if not found:
         raw = None
     rendered = _render_selector(raw)
-    variants = [str(v) for v in branch.get("variants") or []]
-    default = str(branch.get("default") or "")
+    variants = [_yaml_token(v) for v in branch.get("variants") or []]
+    default = _yaml_token(branch.get("default"))
     shown = _as_inline(raw) if rendered is None else rendered
     if rendered is None:
         note = f"type-error: selector is not a string, bool or int -> {default or 'region dropped'}"
