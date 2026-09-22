@@ -75,6 +75,11 @@ helper can pass every one of them and still die for a parent or a regular admin.
 rung is [`scope-check`](../scope-check/SKILL.md): a real sandbox bound to a real principal, with
 exactly the projection that person's hosted run gets.
 
+When a brain rule changes the recipient or sets a subject — web-form relays, voicemail/PBX
+notifications, and partner forwards are typical — production validation also checks the result's
+`outbound_email.to`/`cc`/`bcc` and `subject` against that rule. Do not turn this into a blanket check:
+ordinary same-thread replies correctly omit `outbound_email`, with nothing to report.
+
 A green `uv` run is not a guaranteed-green production run; say so when that is all you ran. Use
 `brain_dump.py <run_id>` to explode a run locally (markdown index first, then `jq` the JSONL);
 `rc-debug` for analysis-first debugging.

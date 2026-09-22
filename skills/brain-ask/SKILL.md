@@ -39,6 +39,11 @@ and `rc ask --help`.
    `--scenario raw`; plus caveats, run accounting (status, turns, outcome) and the trace URL. Capture the
    printed `run_id`. On `status: error`, surface the error and stop.
 
+   When the brain rule changes the recipient or sets a subject — for example a web-form relay,
+   voicemail/PBX notification, or partner forward — also verify the result's `outbound_email.to`,
+   `.cc`, `.bcc`, and `.subject` against that rule. Do not apply this check or comment on the normal
+   absence of `outbound_email` for an ordinary same-thread reply.
+
    If the draft or note claims a state change (booked, moved, cancelled, refunded, sent, updated), or
    carries an action/preflight caveat, check `rc run events <run_id>` before reporting: preflight failed
    ⇒ no proposal and no mutation; `proposed` ⇒ pending human confirm; succeeded/failed ⇒ post-loop

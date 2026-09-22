@@ -54,6 +54,11 @@ jq 'select(.type=="run") | {tenant_settings, tenant_settings_current, tenant_set
 `system_prompt` is only plane 1 of the assembled context — the run also gets a bootstrap/brain-plane
 user turn and the thread itself. Never read it as the whole prompt.
 
+Inspect the run header's `outbound_email` only when the applicable brain rule changes recipients or
+sets a subject, such as a web-form relay, voicemail/PBX notification, or partner forward; verify
+`to`/`cc`/`bcc` and `subject` against that rule. Its absence on an ordinary same-thread reply is normal
+and needs no comment.
+
 **Why didn't the model know X?** The prompt-context capture (`context_schema_version`; `0` = a
 pre-1.14 run or past the 14-day retention window) carries the section map. The `on:false` sections are
 the signal — a gate that stayed shut is context the run never received:
