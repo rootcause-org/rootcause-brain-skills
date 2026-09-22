@@ -47,6 +47,7 @@ interchangeable.
 | Shared file-format skills | `/skills` | RootCause-owned, cross-project xlsx/csv/pdf reading and writing skills; their libraries (openpyxl, pandas, pypdf, pdfplumber, fpdf2) are baked into the workspace image. | Nothing — don't reinvent file parsing in a brain; point at `/skills` and describe only project-specific file layouts. |
 | Grounding databases/APIs | `lib.db`, `lib.http`, etc. | Live read-only facts: customers, orders, invoices, app state, remote API data. Runtime-owned HTTP attempts emit the [HTTP audit contract](http-audit.md). | How to query safely, which scripts encapsulate repeated lookups, and what findings mean for the customer. |
 | Tenant profile | `lib.tenant` over `/brain/tenant_profile.json` | The tenant's effective onboarding-profile values (stored value, else the `projection.yaml` default); `{}` on a flat project. | Which setting a script reads, and the fallback it degrades to. |
+| Run context | `lib.runctx` over `/brain/run_context.json` | What KIND of run this is: plane, ingress surface, simulation flag, principal-scoped or not ([details](run-context.md)). Descriptive, never authorization. | Which branch a script takes per ingress/audience — never the prompt's prose. |
 | Actions | `actions/<id>/` plus host catalog | Vetted write intents, parameter schemas, read-only preflight, optional hosted execution script. | When an action is the right resolution, required evidence for params, and reviewer-facing caveats. |
 
 `lib.db` hydrates Postgres array columns into real Python lists — `enum[]` included, which psycopg
@@ -75,7 +76,7 @@ Do not mix the local control plane with the production model's workspace:
 | Context | Available interface | Brain access | Instruction home |
 |---|---|---|---|
 | Local brain-development agent | Public `rc` CLI after OAuth, local engine scripts, local shell | Writable checkout | This kit's locally installed skills and docs |
-| Production main LLM loop | `bash` plus the scenario terminal tool (`reply` for email); `/brain` scripts and injected `lib.db`, `lib.cloudwatch`, `lib.http`, `lib.fs`, `lib.connectors`, `lib.api`, `lib.mcp`, `lib.tenant`, `lib.image` as configured | `/brain` read-only | Committed project business context, routing, playbooks, and grounding scripts |
+| Production main LLM loop | `bash` plus the scenario terminal tool (`reply` for email); `/brain` scripts and injected `lib.db`, `lib.cloudwatch`, `lib.http`, `lib.fs`, `lib.connectors`, `lib.api`, `lib.mcp`, `lib.tenant`, `lib.runctx`, `lib.image` as configured | `/brain` read-only | Committed project business context, routing, playbooks, and grounding scripts |
 
 There is no `rc` binary in the production loop. Never put `rc ...` command guidance in committed
 project-brain content: it cannot execute there and competes with the actual grounding path. A brain
@@ -352,6 +353,8 @@ an irrelevant one is an active distractor. Checklist:
   filename enumeration.
 - Tenant settings: a script reads its own via `from lib import tenant`, never via a `{{ }}` the model
   copies into an argument — [recipe](tenant-settings.md).
+- Run kind: a script that must behave differently per ingress or per audience reads `lib.runctx`, never
+  the prompt's `Request source:` prose — [what kind of run is this](run-context.md).
 - `journal/` is host-written and renders as one counts line; never hand-author it.
 - `AGENTS.md` routing rows map symptom phrases to exact file paths; named paths are pinned in the
   tree, so keep them current when files move.

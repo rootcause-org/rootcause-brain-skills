@@ -133,6 +133,9 @@ the view, and `RC_PRINCIPAL_SCOPED=1` / `RC_PRINCIPAL_KIND` mark the run. Brain 
 all three (lib.db auto-heals a SELECT naming a policy-hidden column) and must **never re-filter by ids
 taken from the message body** — identity is host-asserted, not prompt-inferred.
 
+`runctx.is_principal_scoped()` is the readable form of that mark (and carries `principal.kind` /
+`external_id` with it) — [what kind of run is this](run-context.md).
+
 The host also tells each sandbox what its projection contains, so a helper can ask instead of crashing.
 Three env vars, all JSON keyed by the exact DSN env-var name, all best-effort (absent/malformed changes
 nothing):

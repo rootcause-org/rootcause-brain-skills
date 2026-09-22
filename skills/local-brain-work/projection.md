@@ -29,6 +29,9 @@ Get three things in view before editing: `projection.yaml`, `rc project tenant p
   the playbook ask the model to copy a `{{ }}` value into a script argument or an action param.
   Placeholders are for prose the customer reads. Full recipe (including actions, which get the profile
   as an env document): [reading a tenant setting from Python](../../docs/tenant-settings.md).
+- The run's own situation (plane, ingress surface, simulation, principal-scoped) is a separate
+  host-stamped document read with `lib.runctx`, and it lands on flat projects too:
+  [what kind of run is this](../../docs/run-context.md).
 - A branch selector matches the **exact rendered string** of its value (`true`/`false` for a bool, the
   decimal form for an integral number). Unmatched → the branch `default`; no default → the region is
   dropped.

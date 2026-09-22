@@ -92,6 +92,8 @@ Conventions:
   declared source so unavoidable single-file transport copies do not masquerade as maintained drift.
 - **Tenant settings come from `lib.tenant`**, never from a param the model filled in from a rendered
   `{{ }}` — see [reading a tenant setting from Python](tenant-settings.md).
+- **A preflight/policy knows it is not the run**: `lib.runctx.plane()` is `"action"` there, with every
+  ingress field null — [what kind of run is this](run-context.md).
 - **Delete, don't park.** Unused `_constants`/helpers left "for later" are the growth curve.
 
 ## Customer-Facing Copy
