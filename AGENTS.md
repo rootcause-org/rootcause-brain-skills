@@ -70,7 +70,7 @@ Keep these planes explicit in every skill, template, and brain edit:
 - **Production main loop:** the model has `bash` plus its scenario terminal tool (`reply` for email),
   not an `rc` binary. The committed brain is mounted read-only at `/brain`. Ground through `/brain`
   scripts and the injected `lib.db`, `lib.cloudwatch`, `lib.http`, `lib.fs`, `lib.connectors`,
-  `lib.api`, `lib.mcp`, `lib.tenant`, `lib.runctx`, and `lib.image` capabilities available for that project/run.
+  `lib.api`, `lib.mcp`, `lib.tenant`, `lib.runctx`, `lib.image`, and `lib.transcribe` capabilities available for that project/run.
   (`lib.tenant` — a script that needs a practice/tenant setting reads it itself; never let the
   playbook ask the model to copy a `{{ }}` value into an argument. Recipe, and the action-container
   env fallback: [docs/tenant-settings.md](docs/tenant-settings.md).)
@@ -79,6 +79,8 @@ Keep these planes explicit in every skill, template, and brain edit:
   [docs/run-context.md](docs/run-context.md).)
   (`lib.image` — cheap preview → refine-from-preview image generation over the broker's `image`
   mount, saving to `/tmp/outbox`; absent mount ⇒ one clear "not enabled" sentence. Cost model + ladder decisions: `docs/image-generation.md`.)
+  (`lib.transcribe` — on-demand transcript of a chat recording over the broker's `transcribe` mount,
+  with the run's own `--instructions`/`--keywords` added to the project hints: [docs/transcription.md](docs/transcription.md).)
 
 Never put `rc ...` command guidance in committed project-brain content. Describe the project-specific
 evidence or decision; keep laptop-side control-plane steps in this kit's local skills/docs.
