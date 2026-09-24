@@ -19,6 +19,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 import tomllib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -421,6 +422,21 @@ class Coverage:
         return out
 
 
+def rc_error_envelope(stdout: str) -> str | None:
+    """`{"error": {"code": …, "message": …}}` as rc's whole stdout → short message, else None."""
+    text = (stdout or "").strip()
+    if not text.startswith("{") or '"error"' not in text[:20]:
+        return None
+    try:
+        doc = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not (isinstance(doc, dict) and set(doc) == {"error"} and isinstance(doc["error"], dict)):
+        return None
+    err = doc["error"]
+    return f"{err.get('code') or 'ERROR'}: {err.get('message') or ''}".strip()
+
+
 @dataclass
 class Rc:
     """rc CLI wrapper: on-disk raw cache keyed by argv, one retry, never fatal."""
@@ -463,7 +479,9 @@ class Rc:
             return None
         command = ["rc", *args]
         last = ""
-        for _ in range(2):
+        for attempt in range(3):
+            if attempt:
+                time.sleep(2 * attempt)
             with self._lock:
                 self.calls += 1
             try:
@@ -472,6 +490,13 @@ class Rc:
                 )
             except (OSError, subprocess.TimeoutExpired) as exc:
                 last = f"{type(exc).__name__}: {exc}"
+                continue
+            # rc prints transport failures as a JSON error envelope on stdout with exit 0
+            # (`{"error":{"code":"NETWORK_ERROR",…}}`). Never cache it as a payload: on
+            # 2026-09-23 thirteen cached resets made 0 runs look like a quiet day.
+            envelope = rc_error_envelope(done.stdout)
+            if envelope:
+                last = envelope
                 continue
             # `fleet health` exits non-zero *and* prints a valid payload when unhealthy.
             if done.stdout.strip():

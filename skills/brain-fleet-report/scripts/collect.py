@@ -134,6 +134,9 @@ def paged_runs(rc: Rc, base: Sequence[str], start: datetime, end: datetime, max_
         if before:
             args += ["--before", before]
         payload = rc.json(*args)
+        if payload is None:
+            # rc failed (network reset, auth): an empty list is NOT a quiet day.
+            raise RuntimeError(f"run list failed for {' '.join(base)} (see collect errors)")
         runs = (payload or {}).get("runs") or []
         if not runs:
             complete = True
