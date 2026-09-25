@@ -15,6 +15,13 @@ private operator scripts.
   it surfaces it. See [Register A New Grounding Database](#register-a-new-grounding-database). Keep the
   raw env var name out of brain prose unless a script must reference it directly; the host-injected DB
   roster carries the database names and purposes.
+- Per-user API token for an embed chat that acts as the chatting user: not a store you manage. The
+  customer backend mints it into the chat token's `credentials` claim; the host seals it per chat
+  session and injects it on every turn. **Session credentials appear as plain env vars** (e.g.
+  `PROBACKUP_AGENT_TOKEN`), only in that session's runs, never in email/MCP runs. Branch on their
+  presence, never print them, and treat an auth failure as expiry: tell the user to start a new
+  conversation (they are not refreshed mid-session). Names cannot start with `RC_` or collide with a
+  grounding env key.
 - Hosted action write credential: use `rc project env set --plane action` only when you are an operator
   with the required access. This writes `.env.action`; normal diagnosis runs never receive it.
 
