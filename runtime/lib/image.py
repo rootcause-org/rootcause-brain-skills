@@ -5,7 +5,8 @@ re-prompt at higher quality drifts away from the picture the human approved. We 
 land a cheap small ``preview`` (quality low, fewer pixels) first and produce the ``final`` as an
 *edit of that preview* — the approved image is sent back as the base, so composition, palette and
 lighting carry over. This lib owns the whole ladder (aspect → pixel sizes, quality per step); the
-host is dumb and only forwards to the provider.
+host is dumb and only forwards to the provider. ``edit``/``refine`` keep the base image's own aspect
+unless ``aspect`` overrides it.
 
 No provider key ever enters the container: the call goes to the broker mount
 ``POST http://rc-broker.internal/image/generate``, which is simply absent when the project's image
@@ -16,11 +17,13 @@ flag is off — that connection error becomes one clear sentence (``ImageUnavail
     image.refine(p)                      # /tmp/outbox/...-final.png, same picture, more pixels
     image.edit(p, "make the sky darker")
 
-CLI (prints one markdown line with the saved path):
+CLI (prints one markdown line with the saved path). ``--aspect`` is any W:H from 1:3 to 3:1
+(1:1, 3:4, 2:3, 16:9, 21:9 …); edit/refine default to the base image's own ratio:
     python3 -m lib.image generate "<prompt>" [--style ID] [--aspect 1:1] [--step preview|final]
                                   [--ref PATH ...] [--out PATH]
-    python3 -m lib.image refine /tmp/outbox/x-preview.png [--prompt "..."] [--ref PATH ...]
-    python3 -m lib.image edit /tmp/outbox/x-preview.png "make the sky darker" [--step preview|final]
+    python3 -m lib.image refine /tmp/outbox/x-preview.png [--prompt "..."] [--aspect W:H] [--ref PATH ...]
+    python3 -m lib.image edit /tmp/outbox/x-final.png "make the sky darker" [--aspect W:H]
+                              [--step final|preview]
     python3 -m lib.image styles
 """
 
@@ -28,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import struct
@@ -44,18 +48,16 @@ READ_TIMEOUT = 180.0
 MAX_REFS = 8  # host cap: 8 `image` parts per request
 _RETRY_STATUS = frozenset({502, 503, 504})
 
-# aspect → (preview size, final size). All edges are multiples of 16 and ≥ 655k pixels (the
-# provider's minimum pixel budget); preview ⇒ quality low, final ⇒ quality medium. Cost is set by
-# the quality tier, barely by pixels — see docs/image-generation.md for the formula and the why.
-LADDER: dict[str, dict[str, tuple[int, int]]] = {
-    "1:1": {"preview": (816, 816), "final": (1024, 1024)},
-    "4:5": {"preview": (736, 928), "final": (1024, 1280)},
-    "9:16": {"preview": (640, 1136), "final": (1024, 1824)},
-    "16:9": {"preview": (1136, 640), "final": (1824, 1024)},
-    "3:1": {"preview": (1440, 480), "final": (3072, 1024)},
-}
+# Sizing rule (provider: edges %16, aspect 1:3..3:1, ≥655,360 px, ≤3840 edge, ≤8.3 MP). Final =
+# short edge 1024; preview = the smallest %16 short edge whose size clears the pixel floor (+1%).
+# Within 1:3..3:1 a 1024 short edge caps the long edge at 3072, so the upper bounds can't bind.
+# Cost is set by the quality tier, barely by pixels — see docs/image-generation.md.
+MAX_RATIO = 3.0
+FINAL_SHORT_EDGE = 1024
+PREVIEW_MIN_PIXELS = 662_000  # provider floor 655,360 + ~1%
 STEPS = ("preview", "final")
 _QUALITY = {"preview": "low", "final": "medium"}
+_ASPECT = re.compile(r"\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)\s*")
 
 _RECREATE = (
     "Recreate this exact image at higher resolution and detail. Keep the composition, subjects, "
@@ -93,24 +95,65 @@ def styles() -> dict:
 
 def generate(prompt, *, style=None, aspect="1:1", step="preview", refs=(), out=None) -> str:
     """Generate a fresh image. Start at ``preview``, then ``refine()`` what the human approved."""
+    ratio = parse_aspect(aspect)
     text = _scaffold(prompt, style)
     path = Path(out) if out else outbox() / f"{_slug(prompt)}-{step}.png"
-    return _render(text, aspect=aspect, step=step, images=list(refs), out=path)
+    return _render(text, ratio=ratio, step=step, images=list(refs), out=path)
 
 
-def refine(base, prompt=None, *, step="final", refs=(), out=None) -> str:
+def refine(base, prompt=None, *, aspect=None, step="final", refs=(), out=None) -> str:
     """Re-render an approved image bigger, from the image itself so it stays the same picture."""
-    aspect = _aspect_of(base)
+    ratio = _ratio_for(base, aspect)
     text = f"{_RECREATE} {prompt}".strip() if prompt else _RECREATE
     path = Path(out) if out else _derive(base, step)
-    return _render(text, aspect=aspect, step=step, images=[base, *refs], out=path)
+    return _render(text, ratio=ratio, step=step, images=[base, *refs], out=path)
 
 
-def edit(base, instruction, *, step="preview", refs=(), out=None) -> str:
-    """Apply a change to an existing image, keeping the rest of it."""
-    aspect = _aspect_of(base)
+def edit(base, instruction, *, aspect=None, step="final", refs=(), out=None) -> str:
+    """Apply a change to an existing image, keeping the rest of it (and its aspect, unless given)."""
+    ratio = _ratio_for(base, aspect)
     path = Path(out) if out else _derive(base, "edit")
-    return _render(instruction, aspect=aspect, step=step, images=[base, *refs], out=path)
+    return _render(instruction, ratio=ratio, step=step, images=[base, *refs], out=path)
+
+
+# ---------------------------------------------------------------------------
+# Sizing
+# ---------------------------------------------------------------------------
+
+
+def parse_aspect(aspect: str) -> float:
+    """``"3:4"`` → 0.75 (width / height); outside 1:3..3:1 is an ImageError."""
+    m = _ASPECT.fullmatch(str(aspect))
+    w, h = (float(m.group(1)), float(m.group(2))) if m else (0.0, 0.0)
+    if not (w and h):
+        raise ImageError(f"aspect must look like W:H (e.g. 1:1, 3:4, 16:9), got {aspect!r}")
+    ratio = w / h
+    if not 1 / MAX_RATIO <= ratio <= MAX_RATIO:
+        raise ImageError(f"aspect {aspect} is too extreme; the image model accepts 1:3 (tall) to 3:1 (wide)")
+    return ratio
+
+
+def size_for(ratio: float, step: str) -> tuple[int, int]:
+    """(width, height) for a width/height ratio at a ladder step."""
+    stretch = max(ratio, 1 / ratio)
+
+    def dims(short: int) -> tuple[int, int]:
+        long = 16 * round(short * stretch / 16)
+        return (long, short) if ratio >= 1 else (short, long)
+
+    if step == "final":
+        return dims(FINAL_SHORT_EDGE)
+    short = 16
+    while math.prod(dims(short)) < PREVIEW_MIN_PIXELS:
+        short += 16
+    return dims(short)
+
+
+def _ratio_for(base, aspect) -> float:
+    if aspect:
+        return parse_aspect(aspect)
+    width, height = dimensions(base)
+    return min(max(width / height, 1 / MAX_RATIO), MAX_RATIO)
 
 
 # ---------------------------------------------------------------------------
@@ -161,14 +204,12 @@ def _derive(base, step: str) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def _render(prompt: str, *, aspect: str, step: str, images: list, out: Path) -> str:
-    if aspect not in LADDER:
-        raise ImageError(f"unknown aspect {aspect!r}; known: {', '.join(LADDER)}")
+def _render(prompt: str, *, ratio: float, step: str, images: list, out: Path) -> str:
     if step not in STEPS:
         raise ImageError(f"unknown step {step!r}; known: {', '.join(STEPS)}")
     if len(images) > MAX_REFS:
         raise ImageError(f"at most {MAX_REFS} reference images per call, got {len(images)}")
-    width, height = LADDER[aspect][step]
+    width, height = size_for(ratio, step)
     form = {
         "prompt": prompt,
         "size": f"{width}x{height}",
@@ -262,17 +303,6 @@ def dimensions(path) -> tuple[int, int]:
     raise ImageError(f"cannot read image dimensions from {path} (expected PNG or JPEG)")
 
 
-def _aspect_of(path) -> str:
-    width, height = dimensions(path)
-    ratio = width / height
-    return min(LADDER, key=lambda a: abs(_ratio(a) - ratio))
-
-
-def _ratio(aspect: str) -> float:
-    w, h = LADDER[aspect]["final"]
-    return w / h
-
-
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -293,6 +323,9 @@ def _styles_table() -> str:
     return "\n".join(lines)
 
 
+_KEEP_BASE = "W:H override (e.g. 1:1 to make it square); default keeps the base image's own ratio"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m lib.image", description="Generate, refine and edit images — saved to /tmp/outbox."
@@ -302,7 +335,7 @@ def main(argv: list[str] | None = None) -> int:
     p_gen = sub.add_parser("generate", help="Generate a fresh image from a prompt")
     p_gen.add_argument("prompt")
     p_gen.add_argument("--style", default=None, help="style id from `python -m lib.image styles`")
-    p_gen.add_argument("--aspect", default="1:1", choices=sorted(LADDER))
+    p_gen.add_argument("--aspect", default="1:1", help="W:H from 1:3 to 3:1, e.g. 1:1, 3:4, 16:9")
     p_gen.add_argument("--step", default="preview", choices=list(STEPS))
     p_gen.add_argument("--ref", action="append", default=[], help="reference image path (repeatable)")
     p_gen.add_argument("--out", default=None)
@@ -310,6 +343,7 @@ def main(argv: list[str] | None = None) -> int:
     p_ref = sub.add_parser("refine", help="Re-render an approved preview at final quality")
     p_ref.add_argument("base")
     p_ref.add_argument("--prompt", default=None)
+    p_ref.add_argument("--aspect", default=None, help=_KEEP_BASE)
     p_ref.add_argument("--step", default="final", choices=list(STEPS))
     p_ref.add_argument("--ref", action="append", default=[])
     p_ref.add_argument("--out", default=None)
@@ -317,7 +351,8 @@ def main(argv: list[str] | None = None) -> int:
     p_edit = sub.add_parser("edit", help="Change one thing about an existing image")
     p_edit.add_argument("base")
     p_edit.add_argument("instruction")
-    p_edit.add_argument("--step", default="preview", choices=list(STEPS))
+    p_edit.add_argument("--aspect", default=None, help=_KEEP_BASE)
+    p_edit.add_argument("--step", default="final", choices=list(STEPS), help="preview = cheap low-quality trial")
     p_edit.add_argument("--ref", action="append", default=[])
     p_edit.add_argument("--out", default=None)
 
@@ -332,9 +367,11 @@ def main(argv: list[str] | None = None) -> int:
             args.prompt, style=args.style, aspect=args.aspect, step=args.step, refs=args.ref, out=args.out
         )
     elif args.cmd == "refine":
-        path = refine(args.base, args.prompt, step=args.step, refs=args.ref, out=args.out)
+        path = refine(args.base, args.prompt, aspect=args.aspect, step=args.step, refs=args.ref, out=args.out)
     else:
-        path = edit(args.base, args.instruction, step=args.step, refs=args.ref, out=args.out)
+        path = edit(
+            args.base, args.instruction, aspect=args.aspect, step=args.step, refs=args.ref, out=args.out
+        )
     print(_saved_line(path, args.step))
     return 0
 

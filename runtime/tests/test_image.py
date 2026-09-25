@@ -80,16 +80,45 @@ class ImageTest(unittest.TestCase):
 
 
 class SizeLadder(ImageTest):
+    ASPECTS = ("1:1", "4:5", "3:4", "2:3", "9:16", "16:9", "21:9", "1.91:1", "3:1", "1:3")
+
+    def test_any_aspect_yields_provider_valid_sizes(self):
+        for aspect in self.ASPECTS:
+            ratio = image.parse_aspect(aspect)
+            for step in image.STEPS:
+                w, h = image.size_for(ratio, step)
+                self.assertEqual((w % 16, h % 16), (0, 0), f"{aspect}/{step}")
+                self.assertGreaterEqual(w * h, 655_360, f"{aspect}/{step}")
+                self.assertLessEqual(max(w, h), 3840)
+                self.assertLessEqual(w * h, 8_294_400)
+                self.assertLessEqual(max(w / h, h / w), 3.0)
+                self.assertAlmostEqual(w / h, ratio, delta=0.03 * ratio, msg=f"{aspect}/{step}")
+            self.assertEqual(min(image.size_for(ratio, "final")), 1024, aspect)
+
+    def test_preview_is_the_smallest_size_over_the_floor(self):
+        self.assertEqual(image.size_for(1.0, "preview"), (816, 816))
+        self.assertEqual(image.size_for(image.parse_aspect("4:5"), "preview"), (736, 928))
+        self.assertEqual(image.size_for(image.parse_aspect("3:1"), "preview"), (1440, 480))
+        self.assertEqual(image.size_for(image.parse_aspect("21:9"), "final"), (2384, 1024))
+
+    def test_rejects_ratios_outside_1_3_to_3_1_and_garbage(self):
+        for bad in ("4:1", "1:4", "10:3", "square", "0:1", "16x9"):
+            with self.assertRaises(image.ImageError, msg=bad):
+                image.parse_aspect(bad)
+        with self.assertRaises(image.ImageError) as ctx:
+            image.generate("x", aspect="4:1")
+        self.assertIn("1:3", str(ctx.exception))
+
     @responses.activate
-    def test_every_aspect_and_step_sends_its_size_and_quality(self):
-        for aspect, steps in image.LADDER.items():
-            for step, (w, h) in steps.items():
-                responses.reset()
-                self._broker()
-                image.generate("a red bicycle", aspect=aspect, step=step)
-                form = self._form()
-                self.assertIn(f"{w}x{h}", form, f"{aspect}/{step}")
-                self.assertIn("low" if step == "preview" else "medium", form)
+    def test_step_sets_quality_and_generate_defaults_to_square_preview(self):
+        self._broker()
+        self._broker()
+        image.generate("a red bicycle")
+        image.generate("a red bicycle", aspect="3:4", step="final")
+        self.assertIn("816x816", self._form(0))
+        self.assertIn("low", self._form(0))
+        self.assertIn("1024x1360", self._form(1))
+        self.assertIn("medium", self._form(1))
 
     @responses.activate
     def test_default_out_path_is_slugified_prompt(self):
@@ -126,12 +155,12 @@ class Styles(ImageTest):
 
 class Refine(ImageTest):
     @responses.activate
-    def test_derives_aspect_sends_base_first_at_medium(self):
+    def test_keeps_base_aspect_sends_base_first_at_medium(self):
         self._broker()
         base = self._base(size=(736, 928))  # 4:5 preview
         out = image.refine(str(base))
         form = self._form()
-        self.assertIn("1024x1280", form)  # 4:5 final
+        self.assertIn("1024x1296", form)  # the preview's own ratio at a 1024 short edge
         self.assertIn("medium", form)
         self.assertIn("Recreate this exact image", form)
         self.assertIn(b'name="image"; filename="poster-preview.png"', responses.calls[0].request.body)
@@ -150,9 +179,36 @@ class Refine(ImageTest):
     @responses.activate
     def test_aspect_from_landscape_base(self):
         self._broker()
-        base = self._base(name="banner-preview.png", size=(1136, 640))  # 16:9
+        base = self._base(name="banner-preview.png", size=(1104, 624))  # 16:9 preview
         image.refine(str(base))
-        self.assertIn("1824x1024", self._form())
+        self.assertIn("1808x1024", self._form())
+
+    @responses.activate
+    def test_edit_keeps_a_3_4_photo_at_final_quality(self):
+        self._broker()
+        base = self._base(name="photo.png", size=(3024, 4032))  # phone photo, 3:4
+        image.edit(str(base), "remove the lamp post")
+        form = self._form()
+        self.assertIn("1024x1360", form)  # 3:4, not snapped to 4:5
+        self.assertIn("medium", form)
+
+    @responses.activate
+    def test_edit_aspect_override_and_preview_trial(self):
+        self._broker()
+        base = self._base(name="photo.png", size=(3024, 4032))
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            image.main(["edit", str(base), "make it square", "--aspect", "1:1", "--step", "preview"])
+        form = self._form()
+        self.assertIn("816x816", form)
+        self.assertIn("low", form)
+
+    @responses.activate
+    def test_extreme_base_is_clamped_to_3_1(self):
+        self._broker()
+        base = self._base(name="pano.png", size=(4000, 1000))
+        image.edit(str(base), "brighter")
+        self.assertIn("3072x1024", self._form())
 
     @responses.activate
     def test_edit_names_next_free_slot(self):

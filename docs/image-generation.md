@@ -37,9 +37,9 @@ xhigh 3122 $0.094 · max 7024 $0.21. An edit adds ~1024 input tokens for the bas
 ## Preview side — how we make it cheap
 
 1. **quality low** — the only knob that moves the needle (9× cheaper than high).
-2. **smallest pixel budget the aspect allows** — `LADDER` sizes sit just above the 655k floor
-   (816², 736×928, 1136×640 …); worth ~13%, free because the preview only has to confirm
-   composition, wording and style.
+2. **smallest pixel budget the aspect allows** — `size_for` picks the smallest %16 short edge
+   whose size clears the 655k floor +1% (816², 736×928, 1104×624 …); worth ~13%, free because the
+   preview only has to confirm composition, wording and style.
 3. **Flare** — same price, fastest; the preview is a decision point, not the deliverable.
 4. **Words before pixels** — the skill ideates in text and shows free style examples first; one
    preview, never a stack of guesses (`skills/image/SKILL.md` in rootcause).
@@ -56,7 +56,19 @@ Result: $0.003–0.006 per preview. There is nothing left to squeeze here.
   banners; medium is visibly sharper than the preview and half the cost of the old gpt-image-2
   ladder. High ($0.05) and xhigh/max ($0.09/$0.21) exist for print-grade detail — flip
   `_QUALITY["final"]` if a project demonstrably needs it; no knob until then.
-- **Full-size pixels** for the final (`LADDER[...]["final"]`): pixels are nearly free, so the
-  deliverable gets its real resolution.
+- **Full-size pixels** for the final (short edge 1024, long edge from the ratio): pixels are nearly
+  free, so the deliverable gets its real resolution.
+
+## Aspect — any W:H, derived not tabled
+
+- `--aspect` takes any `W:H` from 1:3 to 3:1 (`1:1` default for `generate`); outside ⇒ `ImageError`.
+  No preset menu: `size_for(ratio, step)` derives both sizes, edges rounded to 16. Within 1:3..3:1
+  the upper provider bounds (3840 edge, 8.3 MP) cannot bind.
+- `edit`/`refine` keep the **base image's own ratio** (a 3:4 phone photo stays 3:4; >3:1 bases clamp
+  to 3:1). `--aspect` overrides ("make it square" ⇒ `--aspect 1:1`).
+- `edit` defaults to `final` (medium): its base is usually an uploaded photo or a delivered final.
+  `--step preview` = cheap low-quality trial.
+- A size the provider still rejects is retried once by the host at the nearest of
+  1024², 1024×1536, 1536×1024.
 
 Whole ladder ≈ $0.02 per delivered image, ~35 s wall time.
