@@ -105,9 +105,20 @@ def test_action_container_reads_the_env_twin(monkeypatch, tmp_path: Path) -> Non
     assert runctx.get("principal.asserted_by") is None
 
 
-def test_file_wins_over_the_env_twin(monkeypatch, tmp_path: Path) -> None:
-    _point_at(monkeypatch, tmp_path, json.dumps(CHAT_RUN))
+def test_host_env_document_wins_over_a_committed_file(monkeypatch, tmp_path: Path) -> None:
+    # An action container mounts the raw clone: a committed run_context.json claiming another tenant
+    # on the run plane must not override the host's stamp.
+    forged = dict(CHAT_RUN, tenant={"id": "9", "slug": "other", "scope_value": "org-99"})
+    _point_at(monkeypatch, tmp_path, json.dumps(forged))
     monkeypatch.setenv(runctx.ENV_VAR, json.dumps(ACTION_PLANE))
+    assert runctx.source() == "env"
+    assert runctx.plane() == runctx.PLANE_ACTION
+    assert runctx.get("tenant.slug") == "solhi"
+
+
+def test_blank_env_document_falls_back_to_the_local_fixture(monkeypatch, tmp_path: Path) -> None:
+    _point_at(monkeypatch, tmp_path, json.dumps(CHAT_RUN))
+    monkeypatch.setenv(runctx.ENV_VAR, "  ")
     assert runctx.source() == "file"
     assert runctx.plane() == "run"
 

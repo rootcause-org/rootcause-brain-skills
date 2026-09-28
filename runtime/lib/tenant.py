@@ -7,14 +7,15 @@ grounding script reads its own settings instead of a playbook telling the model 
 `{{ latecancel_min_hours }}` into an argument: the model cannot mistype what it never handles, and a
 profile change takes effect without re-teaching the prose.
 
-The same document also arrives as env `RC_TENANT_PROFILE_JSON` (compact `{"values": {...}}`). That is
-the only source an action / preflight / policy container has: it mounts the raw project clone, not the
-compiled view, and may execute long after the run that proposed it. The file wins when both exist —
-the compiled view is the fresher of the two.
+The same document also arrives as env `RC_TENANT_PROFILE_JSON` (compact `{"values": {...}}`), in
+every container the host starts — an EMPTY `{"values": {}}` on a flat (non-templated) project. **The env
+document wins whenever present**: an action / preflight / policy container mounts the raw project
+clone, where a `tenant_profile.json` would be committed brain content, not the tenant's profile. The
+file is read only when no host document exists (an older host, a local fixture).
 
-A flat (non-templated) project gets neither — `profile()` is `{}` and every `get` falls back, so the
-same script runs in both worlds. Malformed JSON is loud instead, from either source: that is a
-compiled-view or injection bug, not a missing setting.
+On a flat project `profile()` is `{}` and every `get` falls back, so the same script runs in both
+worlds. Malformed JSON is loud instead, from either source: that is a compiled-view or injection bug,
+not a missing setting.
 
 Tests/local runs point at a fixture with ``RC_TENANT_PROFILE_PATH``.
 
@@ -62,24 +63,23 @@ def profile() -> dict[str, Any]:
 
 
 def source() -> str:
-    """Where the values came from: ``"file"`` (compiled view), ``"env"`` (injected), or ``"none"``."""
+    """Where the values came from: ``"env"`` (host-injected), ``"file"`` (fallback), or ``"none"``."""
     return _resolve()[0]
 
 
 def _load(path: str) -> tuple[str, dict[str, Any]]:
+    # Host document first: the file may be committed brain content (see module doc).
+    injected = os.environ.get(ENV_VAR, "").strip()
+    if injected:
+        return "env", _parse(injected, f"tenant profile env {ENV_VAR}")
     try:
         with open(path, encoding="utf-8") as handle:
             raw = handle.read()
     except FileNotFoundError:
-        raw = None
+        return "none", {}
     except OSError as exc:
         raise TenantProfileError(f"tenant profile {path} is unreadable: {exc}") from exc
-    if raw is not None:
-        return "file", _parse(raw, f"tenant profile {path}")
-    injected = os.environ.get(ENV_VAR, "").strip()
-    if injected:
-        return "env", _parse(injected, f"tenant profile env {ENV_VAR}")
-    return "none", {}
+    return "file", _parse(raw, f"tenant profile {path}")
 
 
 def _parse(raw: str, label: str) -> dict[str, Any]:
@@ -121,7 +121,7 @@ def require(key: str) -> Any:
 
 def _origin() -> str:
     """Human-readable provenance for an error line."""
-    return {"file": _path(), "env": ENV_VAR, "none": f"{_path()} or ${ENV_VAR}, neither present"}[source()]
+    return {"file": _path(), "env": ENV_VAR, "none": f"${ENV_VAR} or {_path()}, neither present"}[source()]
 
 
 def _render(value: Any) -> str:

@@ -16,9 +16,11 @@ hours = tenant.require("latecancel_min_hours")   # raises when the script cannot
 
 Rules:
 
-- Resolution is `/brain/tenant_profile.json` (the compiled view) → the injected `RC_TENANT_PROFILE_JSON`
-  env document (all an action container gets — it mounts the raw clone) → `{}`. Malformed JSON from
-  either source raises `TenantProfileError`.
+- Resolution is the host-injected `RC_TENANT_PROFILE_JSON` env document (every run and action
+  container; `{"values": {}}` on a flat project) → `/brain/tenant_profile.json` only when no host
+  document exists (local fixture) → `{}`. Malformed JSON from either source raises `TenantProfileError`.
+- Never commit `tenant_profile.json` or `run_context.json` to a brain: both are host-generated, the host
+  refuses to write them, and the runtime ignores a committed copy whenever the host injected its own.
 - **Never let a playbook tell the model to copy a `{{ key }}` into a script argument or an action
   param.** The model copies wrong; placeholders are for prose the customer reads. A CLI flag may exist
   only as an explicit human/agent *override* of what `tenant.get` already reads.

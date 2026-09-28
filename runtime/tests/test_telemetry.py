@@ -1,4 +1,4 @@
-"""Telemetry is a no-op without a key, never raises when disabled, and scrubs credential keys.
+"""Telemetry is host-gated, never raises when disabled, and scrubs credential keys.
 
 These run offline (no PostHog network): the disabled path short-circuits before any send, and the
 scrub test exercises pure logic. Run with the rest of the suite:
@@ -23,7 +23,7 @@ class DisabledIsNoOp(unittest.TestCase):
         # Guarantee the disabled path regardless of the host env the suite runs under.
         self._env = mock.patch.dict(os.environ, {}, clear=False)
         self._env.start()
-        os.environ.pop("POSTHOG_PROJECT_API_KEY", None)
+        os.environ.pop(telemetry.KEY_ENV, None)
 
     def tearDown(self):
         self._env.stop()
@@ -39,6 +39,19 @@ class DisabledIsNoOp(unittest.TestCase):
         telemetry.capture_exception(Exception("x"))
         telemetry.capture_exception()  # no active exception → still safe
         telemetry.flush()
+
+
+class HostGate(unittest.TestCase):
+    def test_project_posthog_credentials_do_not_enable_capture(self):
+        # A project's sealed grounding key is not the host's telemetry switch.
+        env = {"POSTHOG_PROJECT_API_KEY": "phc_customer", "POSTHOG_HOST": "https://us.i.posthog.com"}
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(telemetry, "posthog", object()):
+            self.assertFalse(telemetry._enabled())
+
+    def test_host_key_enables_capture(self):
+        with mock.patch.dict(os.environ, {telemetry.KEY_ENV: "phc_host"}, clear=True), \
+                mock.patch.object(telemetry, "posthog", object()):
+            self.assertTrue(telemetry._enabled())
 
 
 class Scrub(unittest.TestCase):

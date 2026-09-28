@@ -1,8 +1,10 @@
 """What KIND of run is this? — the machine-readable document a script may branch on.
 
-The host stamps one `run_context.json` at the root of the `/brain` view for EVERY run, and the same
-document compact as env `RC_RUN_CONTEXT_JSON` for containers that never see that view (an action /
-preflight / policy container mounts the raw project clone). The file wins when both exist.
+The host stamps the document as env `RC_RUN_CONTEXT_JSON` into every container it starts (run, action,
+preflight, policy), plus a `run_context.json` copy at the root of a run's `/brain` view. **The env
+document wins whenever present**: an action container mounts the raw project clone, where a
+`run_context.json` would be committed brain content, not the host's stamp. The file is read only when
+no host document exists (an older host, a local fixture).
 
 Before it, the run's situation lived only as PROSE in the model's prompt ("Request source: chat", the
 mode preamble). **Branch on this document, never on prose, and never on ids you read out of the
@@ -76,19 +78,18 @@ def _resolve() -> tuple[str, dict[str, Any]]:
 
 
 def _load(path: str) -> tuple[str, dict[str, Any]]:
+    # Host document first: the file may be committed brain content (see module doc).
+    injected = os.environ.get(ENV_VAR, "").strip()
+    if injected:
+        return "env", _parse(injected, f"run context env {ENV_VAR}")
     try:
         with open(path, encoding="utf-8") as handle:
             raw = handle.read()
     except FileNotFoundError:
-        raw = None
+        return "none", {}
     except OSError as exc:
         raise RunContextError(f"run context {path} is unreadable: {exc}") from exc
-    if raw is not None:
-        return "file", _parse(raw, f"run context {path}")
-    injected = os.environ.get(ENV_VAR, "").strip()
-    if injected:
-        return "env", _parse(injected, f"run context env {ENV_VAR}")
-    return "none", {}
+    return "file", _parse(raw, f"run context {path}")
 
 
 def _parse(raw: str, label: str) -> dict[str, Any]:
@@ -107,7 +108,7 @@ def context() -> dict[str, Any]:
 
 
 def source() -> str:
-    """Where it came from: ``"file"`` (the run view), ``"env"`` (injected), or ``"none"``."""
+    """Where it came from: ``"env"`` (host-injected), ``"file"`` (fallback), or ``"none"``."""
     return _resolve()[0]
 
 
@@ -155,7 +156,7 @@ def is_principal_scoped() -> bool:
 
 def _origin() -> str:
     """Human-readable provenance for an error line."""
-    return {"file": _path(), "env": ENV_VAR, "none": f"{_path()} or ${ENV_VAR}, neither present"}[source()]
+    return {"file": _path(), "env": ENV_VAR, "none": f"${ENV_VAR} or {_path()}, neither present"}[source()]
 
 
 def _render(value: Any) -> str:

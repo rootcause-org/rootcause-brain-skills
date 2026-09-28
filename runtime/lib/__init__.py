@@ -17,13 +17,13 @@ structured `reply.journal` entry, which the HOST appends to the brain as a journ
 the curated brain (these helpers included) evolves out of band via the consolidation cron's
 operator-merged PRs. They favour being obvious and safe over complete.
 
-`tenant` reads the tenant's effective onboarding-profile values from the compiled `/brain` view —
-falling back to the injected `RC_TENANT_PROFILE_JSON` env document, which is all an action/preflight
-container (raw clone, no compiled view) ever gets — so a script fetches its own setting
-(`tenant.get("latecancel_min_hours", 24)`) instead of being handed one.
+`tenant` reads the tenant's effective onboarding-profile values from the host-injected
+`RC_TENANT_PROFILE_JSON` document (falling back to `/brain/tenant_profile.json` only when the host
+stamped none) — so a script fetches its own setting (`tenant.get("latecancel_min_hours", 24)`) instead
+of being handed one.
 
-`runctx` answers "what kind of run is this?" from the host-stamped `/brain/run_context.json` (env twin
-`RC_RUN_CONTEXT_JSON` for an action/preflight container): plane, ingress surface, simulation flag, and
+`runctx` answers "what kind of run is this?" from the host-injected `RC_RUN_CONTEXT_JSON` (file
+fallback `/brain/run_context.json`): plane, ingress surface, simulation flag, and
 whether the run is scoped to one asserted end-user (`runctx.is_principal_scoped()`). Branch on it
 instead of on the prompt's prose — it is descriptive only, never an authorization check.
 
@@ -43,7 +43,7 @@ Typical use from a `bash` Python script:
 # `python -m lib.db` double-import the module it's running and emit a RuntimeWarning on every call.
 __all__ = ["db", "api", "stripe", "cloudwatch", "fs", "http", "html", "oauth", "action", "tenant", "runctx", "rc_client", "telemetry"]
 
-# Auto-wire best-effort PostHog error tracking (no-op without POSTHOG_PROJECT_API_KEY). Swallow any
+# Auto-wire best-effort PostHog error tracking (no-op unless the host stamps RC_TELEMETRY_POSTHOG_KEY). Swallow any
 # failure here — importing `lib` must never fail because telemetry couldn't initialize.
 from . import telemetry as telemetry  # noqa: E402
 

@@ -11,9 +11,11 @@ Three properties hold by contract:
   wires the `sys.excepthook` + `atexit` flush — a script needs no telemetry code of its own.
 - **Best-effort.** Every entry point swallows its own errors. Telemetry must NEVER break a
   grounding script: a PostHog hiccup, a bad import, a flush timeout — all silent.
-- **No-op without a key.** With `POSTHOG_PROJECT_API_KEY` empty/unset (or `posthog` not installed),
-  `install()` returns silently and `capture_exception`/`flush` do nothing. Local dev and tests stay
-  offline by default.
+- **Host-gated.** Capture turns on only when the HOST stamps `RC_TELEMETRY_POSTHOG_KEY` (+ optional
+  `RC_TELEMETRY_POSTHOG_HOST`) — a host-reserved name a project's sealed .env cannot set. A project's own
+  `POSTHOG_*` grounding credentials never enable it (and are never touched). Without the key (or with
+  `posthog` not installed) `install()` returns silently and `capture_exception`/`flush` do nothing, so
+  local dev and tests stay offline by default.
 
 Secrets are kept out of PostHog two ways: `capture_exception_code_variables = False` stops the SDK
 attaching stack-frame locals (which can hold DSNs/keys), and a `before_send` scrub redacts any event
@@ -34,6 +36,10 @@ _prev_excepthook = None
 
 _DEFAULT_HOST = "https://eu.i.posthog.com"
 
+# Host-owned telemetry config; deliberately NOT the POSTHOG_* names a project's grounding may use.
+KEY_ENV = "RC_TELEMETRY_POSTHOG_KEY"
+HOST_ENV = "RC_TELEMETRY_POSTHOG_HOST"
+
 # Substrings (case-insensitive) that mark a property key as credential-bearing → redact its value.
 _SECRET_MARKERS = ("token", "secret", "api_key", "password", "authorization")
 
@@ -48,7 +54,7 @@ _CONTEXT_ENV = {
 
 
 def _enabled() -> bool:
-    return posthog is not None and bool(os.environ.get("POSTHOG_PROJECT_API_KEY"))
+    return posthog is not None and bool(os.environ.get(KEY_ENV, "").strip())
 
 
 def _scrub(event):
@@ -116,8 +122,8 @@ def install():
     if not _enabled():
         return
     try:
-        posthog.project_api_key = os.environ["POSTHOG_PROJECT_API_KEY"]
-        posthog.host = os.environ.get("POSTHOG_HOST") or _DEFAULT_HOST
+        posthog.project_api_key = os.environ[KEY_ENV].strip()
+        posthog.host = os.environ.get(HOST_ENV) or _DEFAULT_HOST
         posthog.capture_exception_code_variables = False
         posthog.before_send = _scrub
         _prev_excepthook = sys.excepthook

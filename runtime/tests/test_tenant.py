@@ -54,16 +54,29 @@ def test_env_document_backstops_a_container_without_the_compiled_view(monkeypatc
         tenant.require("absent")
 
 
-def test_compiled_file_wins_over_the_env_document(monkeypatch, tmp_path: Path) -> None:
-    _point_at(monkeypatch, tmp_path, json.dumps({"values": {"latecancel_min_hours": 24}}))
-    monkeypatch.setenv(tenant.ENV_VAR, json.dumps({"values": {"latecancel_min_hours": 999, "extra": "x"}}))
-    assert tenant.source() == "file"
+def test_host_env_document_wins_over_a_committed_file(monkeypatch, tmp_path: Path) -> None:
+    # An action container mounts the raw clone: a committed tenant_profile.json must not replace the
+    # tenant's thresholds the host injected.
+    _point_at(monkeypatch, tmp_path, json.dumps({"values": {"latecancel_min_hours": 999, "extra": "x"}}))
+    monkeypatch.setenv(tenant.ENV_VAR, json.dumps({"values": {"latecancel_min_hours": 24}}))
+    assert tenant.source() == "env"
     assert tenant.profile() == {"latecancel_min_hours": 24}
-    # An empty-but-present file is still the compiled view's answer, not a reason to read the env.
-    tenant._cache.clear()
-    _point_at(monkeypatch, tmp_path, json.dumps({"values": {}}))
-    assert tenant.source() == "file"
+
+
+def test_empty_host_profile_shadows_a_stale_committed_file(monkeypatch, tmp_path: Path) -> None:
+    # A flat project's container gets an explicit EMPTY document, so a committed file cannot fill it in.
+    _point_at(monkeypatch, tmp_path, json.dumps({"values": {"latecancel_min_hours": 999}}))
+    monkeypatch.setenv(tenant.ENV_VAR, json.dumps({"values": {}}))
+    assert tenant.source() == "env"
     assert tenant.profile() == {}
+    assert tenant.has_profile() is False
+    assert tenant.get("latecancel_min_hours", 24) == 24
+
+
+def test_file_is_the_fallback_without_a_host_document(monkeypatch, tmp_path: Path) -> None:
+    _point_at(monkeypatch, tmp_path, json.dumps({"values": {"latecancel_min_hours": 36}}))
+    assert tenant.source() == "file"
+    assert tenant.get("latecancel_min_hours") == 36
 
 
 @pytest.mark.parametrize(

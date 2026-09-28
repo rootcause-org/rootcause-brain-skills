@@ -1,8 +1,9 @@
 # What kind of run is this? (`lib.runctx`)
 
-The host stamps one document per run: `/brain/run_context.json` (every run, templated or not) plus the
-compact env twin `RC_RUN_CONTEXT_JSON` for a container that never sees the run view — an action,
-preflight or policy container mounts the raw project clone. The file wins when both exist.
+The host stamps one document per container as env `RC_RUN_CONTEXT_JSON` (run, action, preflight,
+policy), plus a `/brain/run_context.json` copy in a run's view. The env document wins whenever present:
+an action container mounts the raw project clone, where a `run_context.json` would be committed brain
+content. The file is only a local-fixture fallback; never commit one to a brain.
 
 Before it, a script that had to behave differently for a parent than for an operator was reading the
 prompt's `Request source:` prose, or ids out of the message body. Both are model-influenced.
