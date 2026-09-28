@@ -61,8 +61,8 @@ Import nothing from the kit — use `ctx["fr"]` if you need a helper.
 
 ## `OVERLAY.md` — the *Owner reach* table
 
-The kit decides `findings[].audience` by **reach** (SKILL.md § *Audience split*), and the generic
-plane table only knows RootCause planes. `OVERLAY.md` adds a section `## Owner reach` that names the
+The kit decides `findings[].audience` by **reach** ([SKILL.md](SKILL.md) rule 6), and the generic
+plane list ([report_schema.md](report_schema.md)) only knows RootCause planes. `OVERLAY.md` adds a section `## Owner reach` that names the
 project's concrete owner surfaces — the admin dashboard, master data, source-system configuration,
 policy calls — and, opposite it, what is developer-only. Two columns, one row per surface, written
 so the judging LLM can look at a finding and say "owner" or "technical" without guessing. Without
