@@ -404,6 +404,22 @@ artifacts stay on the laptop.
   `brain_projection.py` when present;
   `rc dev brain render --tenant <slug>` prints the server-compiled view exactly as `/brain` mounts it.
 
+## Read-Only Brain Alias
+
+A project can be configured (operator-only settings key `brain_source_project_id`) to run on another
+project's brain repo, read-only, while keeping its own `.env`/DSNs/manifests/mirrors/KB/chat config
+and runs — a **read-only brain alias**. The aliased project must never write that brain or feed
+learning; the source project is the single learning source. `rc dev brain status -o json` reports this
+as `.status.brain_source`: `{"project_id", "project", "read_only", "ref", "sha"}`, present only while
+the alias is active — absent on a project that owns its own brain, or on a server that predates the
+field. Server-side writes (journal, consolidation, decay, prompted/verbatim edits, harvest, website
+scout, actions, …) refuse with `409 BRAIN_READ_ONLY_ALIAS`. Laptop-side writers (`brain-git-sync`)
+refuse to push when the selected project's `brain_source.read_only` is true; consolidation-style
+playbooks (`brain-dream-cycle`, `brain-harvest`, `brain-website-scout`) stop at their scoping step for
+an aliased project, and `brain-fleet-report` still collects an aliased member's runs/actions as QA
+evidence but excludes its learning planes. Host side: `internal/brainsource` (resolver + fetch-only
+alias cache) and `internal/brain/status.go` (`SourceStatus`).
+
 ## Channels And Refs
 
 - Flat projects often read `main` directly.

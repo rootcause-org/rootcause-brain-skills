@@ -246,17 +246,32 @@ def collect_member(
                               "24h window only" if data["health"] else "no payload"))
     data["deploy_state"] = rc.json(*base, "fleet", "deploy-state") or {}
 
+    # Read-only brain alias: a member whose `status.brain_source.read_only` is true reads another
+    # project's brain and is never a learning source (absent `brain_source` ⇒ owns its own brain).
+    # Runs/actions/health above still feed the report as QA evidence; only the learning planes
+    # below are member-scoped knowledge input.
+    status_doc = rc.json(*base, "dev", "brain", "status") or {}
+    status_body = status_doc.get("status") if isinstance(status_doc, dict) else None
+    brain_source = status_body.get("brain_source") if isinstance(status_body, dict) else None
+    is_consumer = bool(isinstance(brain_source, dict) and brain_source.get("read_only"))
+    data["share_role"] = "consumer" if is_consumer else "owner"
+
     # learning planes: project-scope returns every plane regardless of --plane.
     days = max(cfg["lookback_days"], 3)
-    learning = rc.json(*base, "dev", "learning", "evidence", "--days", str(days),
-                       "--limit", "100", "--include-bodies") or {}
+    learning = ({} if is_consumer else
+                rc.json(*base, "dev", "learning", "evidence", "--days", str(days),
+                        "--limit", "100", "--include-bodies") or {})
     for plane in ("deltas", "feedback", "triage"):
         rows = [r for r in (learning.get(plane) or []) if isinstance(r, dict)]
         data[plane] = rows
+        reason = ("excluded: read-only brain alias, QA only — learning happens from the source project"
+                   if is_consumer else
+                   "server caps at 100 rows, no cursor" if len(rows) >= 100 else None)
         rc.note_coverage(Coverage(f"{member}/{plane}", "partial" if len(rows) >= 100 else "complete",
-                                  len(rows), "server caps at 100 rows, no cursor" if len(rows) >= 100 else None))
+                                  len(rows), reason))
     # open feedback often predates the window; a 30-day pass keeps it visible.
-    wide = rc.json(*base, "dev", "learning", "evidence", "--days", "30", "--limit", "100") or {}
+    wide = ({} if is_consumer else
+            rc.json(*base, "dev", "learning", "evidence", "--days", "30", "--limit", "100") or {})
     data["feedback_30d"] = [r for r in (wide.get("feedback") or []) if isinstance(r, dict)]
     return data
 

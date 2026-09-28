@@ -30,7 +30,9 @@ read/write you need is not exposed through `rc`, finish with a support request t
 
 1. **Scope first**, so a wrong project/tenant fails before you read evidence: `rc auth status`,
    `git status --short --branch`, `git pull --ff-only`. Preserve local work. In a tenant checkout keep
-   tenant lessons tenant-side unless they clearly generalize. Two skill paths are used throughout:
+   tenant lessons tenant-side unless they clearly generalize. If `rc dev brain status -o json` shows
+   `status.brain_source.read_only == true`, stop — learning for a read-only brain alias happens only from the source project;
+   consumer runs are QA evidence, not learning input. Two skill paths are used throughout:
 
    ```bash
    DREAM_SKILL=<absolute path to skills/brain-dream-cycle>

@@ -33,7 +33,9 @@ Script: `scripts/website_scout.py` (`plan | scrape | run`, `--help` for flags). 
 `FIRECRAWL_API_KEY` from the shell or the skill-local `.env`, and refuses stageable output.
 
 1. **Protect the capture.** Preserve unrelated work and prove the run directory is ignored — raw capture
-   must never sit under a committed brain path:
+   must never sit under a committed brain path. If `rc dev brain status -o json` shows
+   `status.brain_source.read_only == true`, stop — learning for a read-only brain alias happens only from the source project;
+   consumer runs are QA evidence, not learning input.
    ```bash
    git status --short --branch
    OUT=.rootcause/website-scout/<domain>-<YYYY-MM-DD>

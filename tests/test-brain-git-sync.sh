@@ -298,6 +298,72 @@ assert_ancestor "$new_remote_sha" "$FINAL"
 test "$(cat "$LOCAL/old-remote.txt")" = "old remote history"
 test "$(cat "$LOCAL/new-remote.txt")" = "replacement remote history"
 
+# A read-only brain alias must never write its source project's brain: the check runs before any
+# local commit or push, using whatever `rc` a fake PATH entry supplies.
+new_fixture shared-consumer
+write_file "$LOCAL/shared.txt" "consumer attempted write"
+git -C "$LOCAL" add shared.txt
+origin_before_consumer="$(git --git-dir="$ORIGIN" rev-parse main)"
+pre_head="$(git -C "$LOCAL" rev-parse HEAD)"
+FAKE_RC_BIN="$TMP/bin-consumer"
+mkdir -p "$FAKE_RC_BIN"
+cat >"$FAKE_RC_BIN/rc" <<'RC'
+#!/usr/bin/env bash
+echo "$FAKE_RC_RESPONSE"
+exit "${FAKE_RC_EXIT:-0}"
+RC
+chmod +x "$FAKE_RC_BIN/rc"
+set +e
+output="$(PATH="$FAKE_RC_BIN:$PATH" \
+  FAKE_RC_RESPONSE='{"status":{"state":"read_only_alias","brain_source":{"project_id":"00000000-0000-0000-0000-000000000001","project":"pro-backup","read_only":true,"ref":"main","sha":"deadbeef"}}}' \
+  run_sync --project pro-backup-staging --commit-message "consumer attempt" --json)"
+consumer_status=$?
+set -e
+test "$consumer_status" = 2
+printf '%s\n' "$output" | uv run --no-project python -c \
+  'import json, sys; data = json.load(sys.stdin); assert data["status"] == "blocked"; assert "pro-backup-staging" in data["error"]; assert "pro-backup" in data["error"]'
+test "$(git --git-dir="$ORIGIN" rev-parse main)" = "$origin_before_consumer"
+test "$(git -C "$LOCAL" rev-parse HEAD)" = "$pre_head"
+git -C "$LOCAL" diff --cached --name-only | grep -Fxq shared.txt
+
+# A source project (or a server too old to report `brain_source`) is never blocked by the check.
+new_fixture shared-owner
+write_file "$LOCAL/owner.txt" "owner writes its own brain"
+git -C "$LOCAL" add owner.txt
+FAKE_RC_BIN_OWNER="$TMP/bin-owner"
+mkdir -p "$FAKE_RC_BIN_OWNER"
+cat >"$FAKE_RC_BIN_OWNER/rc" <<'RC'
+#!/usr/bin/env bash
+echo "$FAKE_RC_RESPONSE"
+exit "${FAKE_RC_EXIT:-0}"
+RC
+chmod +x "$FAKE_RC_BIN_OWNER/rc"
+output="$(PATH="$FAKE_RC_BIN_OWNER:$PATH" \
+  FAKE_RC_RESPONSE='{"status":{"state":"current"}}' \
+  run_sync --project pro-backup --commit-message "owner writes its own brain" --json)"
+assert_json_ok "$output"
+assert_converged_clean
+test "$(cat "$LOCAL/owner.txt")" = "owner writes its own brain"
+
+# An `rc dev brain status` failure (older server without the alias field, not logged in, offline)
+# must degrade to standalone, never block sync.
+new_fixture shared-rc-failing
+write_file "$LOCAL/standalone.txt" "rc status unavailable"
+git -C "$LOCAL" add standalone.txt
+FAKE_RC_BIN_FAIL="$TMP/bin-fail"
+mkdir -p "$FAKE_RC_BIN_FAIL"
+cat >"$FAKE_RC_BIN_FAIL/rc" <<'RC'
+#!/usr/bin/env bash
+echo '{"error":"not logged in"}' >&2
+exit 1
+RC
+chmod +x "$FAKE_RC_BIN_FAIL/rc"
+output="$(PATH="$FAKE_RC_BIN_FAIL:$PATH" \
+  run_sync --project pro-backup --commit-message "rc status unavailable" --json)"
+assert_json_ok "$output"
+assert_converged_clean
+test "$(cat "$LOCAL/standalone.txt")" = "rc status unavailable"
+
 # Keep the exact public command discoverable if the skill integration is present in this checkout.
 if test -f "$ROOT/skills/brain-git-sync/SKILL.md"; then
   grep -Fq "\$brain dev: git sync" "$ROOT/skills/brain-git-sync/SKILL.md"

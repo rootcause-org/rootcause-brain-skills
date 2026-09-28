@@ -74,7 +74,9 @@ irreversible transition is scratch deletion in step 12, which is why it happens 
 
 Inventory scope and existing configuration first, so project/tenant mistakes fail early and synthesis
 knows what grounding/persona/triage already exist before proposing homes. **Never infer "no grounding"
-from a local repo search.**
+from a local repo search.** If `rc dev brain status -o json` shows `status.brain_source.read_only == true`, stop —
+learning for a read-only brain alias happens only from the source project; consumer runs are QA
+evidence, not learning input.
 
 ```bash
 rc auth status && rc auth access && rc project mailbox ls

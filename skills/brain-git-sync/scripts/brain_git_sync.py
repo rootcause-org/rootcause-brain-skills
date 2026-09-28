@@ -14,6 +14,7 @@ import json
 import os
 import subprocess
 import sys
+import tomllib
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import NoReturn, Sequence
@@ -184,6 +185,64 @@ def _ref_exists(git: Git, ref: str) -> bool:
 
 def _in_progress(git: Git, name: str) -> bool:
     return git.git_path(name).exists()
+
+
+def _selected_project(repo: Path, explicit: str) -> str:
+    """Explicit --project wins; otherwise best-effort from the checkout's committed marker
+    (same pattern as sent_delta_report.py's local_scope)."""
+    if explicit:
+        return explicit
+    marker = repo / ".rootcause.toml"
+    if not marker.is_file():
+        return ""
+    try:
+        data = tomllib.loads(marker.read_text("utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return ""
+    return str(data.get("project", ""))
+
+
+def _brain_source(repo: Path, project: str, reporter: Reporter) -> dict[str, object] | None:
+    """Best-effort `status.brain_source` from `rc dev brain status -o json`. Returns None (never
+    blocking) when `rc` is unavailable, fails, or the field is absent — a server that predates
+    the read-only brain alias, or a project that owns its own brain, both read as no alias."""
+    cmd = ["rc", "dev", "brain", "status", "-o", "json"]
+    if project:
+        cmd = [cmd[0], "--project", project, *cmd[1:]]
+    try:
+        proc = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        reporter.note(f"brain-alias check skipped: cannot run rc dev brain status: {error}")
+        return None
+    if proc.returncode != 0:
+        reporter.note(
+            "brain-alias check skipped: rc dev brain status failed: "
+            + (proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}")
+        )
+        return None
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        reporter.note("brain-alias check skipped: rc dev brain status returned non-JSON output")
+        return None
+    status = data.get("status") if isinstance(data, dict) else None
+    source = status.get("brain_source") if isinstance(status, dict) else None
+    return source if isinstance(source, dict) else None
+
+
+def _refuse_if_read_only_alias(repo: Path, project: str, reporter: Reporter) -> None:
+    """A read-only brain alias reads its source project's brain and must never write it: refuse
+    before any fetch/commit/push, mirroring the laptop-side source/alias contract
+    (BRAIN_READ_ONLY_ALIAS on the server side)."""
+    source = _brain_source(repo, project, reporter)
+    if not source or not source.get("read_only"):
+        return
+    owner = source.get("project") or source.get("project_id") or "its source project"
+    label = project or "this project"
+    raise SyncError(
+        f"{label} reads {owner}'s brain (read-only brain alias); sync from the source checkout",
+        details={"brain_source": source},
+    )
 
 
 def validate_repository(git: Git) -> None:
@@ -475,6 +534,7 @@ def _synchronize(
     commit_message: str | None = None,
     max_push_attempts: int = 4,
     verify_commands: Sequence[str] = (),
+    project: str = "",
     reporter: Reporter | None = None,
     error_context: dict[str, object],
 ) -> SyncResult:
@@ -486,6 +546,7 @@ def _synchronize(
         raise SyncError(f"repository path is not a directory: {resolved_repo}")
     git = Git(resolved_repo)
     validate_repository(git)
+    _refuse_if_read_only_alias(resolved_repo, _selected_project(resolved_repo, project), reporter)
 
     current_inventory = inventory(git)
     reporter.note(
@@ -829,6 +890,7 @@ def synchronize(
     commit_message: str | None = None,
     max_push_attempts: int = 4,
     verify_commands: Sequence[str] = (),
+    project: str = "",
     reporter: Reporter | None = None,
 ) -> SyncResult:
     """Run a sync and retain all available pre-mutation evidence on failure."""
@@ -839,6 +901,7 @@ def synchronize(
             commit_message=commit_message,
             max_push_attempts=max_push_attempts,
             verify_commands=verify_commands,
+            project=project,
             reporter=reporter,
             error_context=error_context,
         )
@@ -879,6 +942,14 @@ def _parser() -> argparse.ArgumentParser:
         help="shell command to run after each merge and before push (repeatable)",
     )
     parser.add_argument(
+        "--project",
+        default="",
+        help=(
+            "project slug for the read-only brain alias check (rc dev brain status); "
+            "defaults to the checkout's .rootcause.toml"
+        ),
+    )
+    parser.add_argument(
         "--json", action="store_true", help="emit one machine-readable result object"
     )
     return parser
@@ -901,6 +972,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             commit_message=args.commit_message,
             max_push_attempts=args.max_push_attempts,
             verify_commands=args.verify_command,
+            project=args.project,
             reporter=Reporter(args.json),
         )
     except SyncError as error:
