@@ -16,11 +16,14 @@ read_endpoints:
   post:
     - /internal/booking/slots
     - /internal/booking/book
+    - /internal/booking/refresh-patient
 help_md: |
-  Tenant-bound read plane of DentAI's single availability/booking engine: slot search and dry-run
-  booking verdicts. The raw token stays in rootcause's broker; ordinary runs only see the broker
-  route. The project-brain wrapper is `skills/scheduling/scripts/search_availability.py`. DentAI
-  enforces the token scope server-side: this credential can search and dry-run, never write.
+  Tenant-bound read plane of DentAI's single availability/booking engine: slot search, dry-run
+  booking verdicts, and the patient-appointment cache read-through (`refresh-patient`: re-mirror one
+  patient of THIS tenant from ClickDoc). The raw token stays in rootcause's broker; ordinary runs only
+  see the broker route. The project-brain wrapper is `skills/scheduling/scripts/search_availability.py`.
+  DentAI enforces the token scope server-side: this credential can search, dry-run and refresh the
+  cache, never mutate PMS appointments.
 onboarding_md: |
   Ask can the DentAI operator mint the booking preview credential for this tenant now.
   Mint it with `TENANT=<slug> make agenda-tokens` in dentai; store the minted preview value on this
