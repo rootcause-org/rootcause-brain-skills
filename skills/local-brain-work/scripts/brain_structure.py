@@ -15,6 +15,8 @@ content is judged. Checks (each independently reported, skippable with `--skip <
   * ignored-refs — NOTICE when run-visible text references a path hidden by `.replypenignore`,
                    `.rcignore`, the conventional `_internal/` tree, `.gitignore`, or the controls.
   * lint         — `brain_lint.py` passes on staged files and on the tree scope (below).
+  * hygiene      — `brain_hygiene.py`: conflict markers, unresolved `{{ }}`, `/Users/` paths, dead
+                   links, em dashes in customer copy, unrenderable mermaid (changed-file scope).
   * raw-tracked  — no raw-harvest path is tracked now (`.rootcause/` fragments or split-file shapes).
   * raw-history  — no raw-harvest path appears in git history (deleted-but-still-in-history case).
   * scratch      — (`--expect-clean` only) no `.rootcause/harvest/` scratch root remains on disk.
@@ -162,16 +164,16 @@ def git_tracked(root: Path) -> list[str]:
     return [p for p in proc.stdout.split("\0") if p]
 
 
-def git_changed_paths(root: Path) -> list[str] | None:
-    """Paths carrying local work relative to origin/main: commits ahead of the merge-base, plus
+def git_changed_paths(root: Path, base: str = "origin/main") -> list[str] | None:
+    """Paths carrying local work relative to `base` (default origin/main): commits ahead of the merge-base, plus
     staged, unstaged, and untracked files. Returns None when origin/main (or an unborn HEAD) makes
     the scope uncomputable — the caller then falls back to a full-tree lint."""
     probe = subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "--quiet",
-                            "origin/main"], capture_output=True, text=True)
+                            base], capture_output=True, text=True)
     if probe.returncode != 0:
         return None
     paths: dict[str, None] = {}
-    for args in (["diff", "--name-only", "--diff-filter=ACMR", "origin/main...HEAD"],
+    for args in (["diff", "--name-only", "--diff-filter=ACMR", f"{base}...HEAD"],
                  ["diff", "--name-only", "--diff-filter=ACMR", "HEAD"],
                  ["ls-files", "--others", "--exclude-standard"]):
         proc = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
@@ -477,6 +479,12 @@ def check_lint(ctx: Ctx) -> list[Finding]:
     return findings
 
 
+def check_hygiene(ctx: Ctx) -> list[Finding]:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import brain_hygiene  # lazy: brain_hygiene imports this module
+    return brain_hygiene.check(ctx.root, None if ctx.scope == "full" else git_changed_paths(ctx.root))
+
+
 def check_raw_tracked(ctx: Ctx) -> list[Finding]:
     return [Finding("raw-tracked", "raw-harvest path is tracked; it must never be committed", path=p)
             for p in ctx.tracked if RAW_ROOTCAUSE_RE.search(p) or RAW_SPLIT_RE.search(p)]
@@ -507,6 +515,7 @@ CHECKS: list[tuple[str, Callable[[Ctx], list[Finding]]]] = [
     ("reachability", check_reachability),
     ("ignored-refs", check_ignored_refs),
     ("lint", check_lint),
+    ("hygiene", check_hygiene),
     ("raw-tracked", check_raw_tracked),
     ("raw-history", check_raw_history),
 ]

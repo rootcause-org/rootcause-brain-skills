@@ -421,6 +421,31 @@ def _verify(repo: Path, commands: Sequence[str], reporter: Reporter) -> None:
             )
 
 
+HYGIENE_DIR = Path(__file__).resolve().parents[2] / "local-brain-work" / "scripts"
+
+
+def _hygiene_gate(repo: Path, base: str, reporter: Reporter) -> None:
+    """Built-in pre-push gate (brain_hygiene.py) for every brain checkout; no --verify-command
+    needed. Skipped for the kit itself and for repos that are not brains."""
+    is_kit = (repo / "runtime" / "lib").is_dir() and (repo / "plugin.json").is_file()
+    if is_kit or not ((repo / "skills").is_dir() or (repo / "actions").is_dir()):
+        return
+    if not (HYGIENE_DIR / "brain_hygiene.py").is_file():
+        raise SyncError(f"brain hygiene gate missing at {HYGIENE_DIR}; reinstall the kit "
+                        "(brain-dev-upgrade)")
+    sys.path.insert(0, str(HYGIENE_DIR))
+    import brain_hygiene
+
+    reporter.note("Verify merged tree: brain hygiene gate")
+    findings = brain_hygiene.check(repo, brain_hygiene.bs.git_changed_paths(repo, base))
+    blocking = [f.render() for f in findings if f.severity != "NOTICE"]
+    for notice in (f.render() for f in findings if f.severity == "NOTICE"):
+        reporter.note(notice)
+    if blocking:
+        raise SyncError("brain hygiene gate failed:\n" + "\n".join(blocking[:50]),
+                        details={"hygiene": blocking})
+
+
 def _merge(git: Git, target: str) -> bool:
     """Merge target if needed, returning whether HEAD changed."""
     head = git.out("rev-parse", "HEAD")
@@ -679,6 +704,7 @@ def _synchronize(
         )
         if not already_verified:
             try:
+                _hygiene_gate(git.repo, remote_sha, reporter)
                 _verify(git.repo, configured_verifiers, reporter)
             except SyncError as error:
                 raise SyncError(

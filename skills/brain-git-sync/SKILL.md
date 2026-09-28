@@ -35,6 +35,14 @@ never overwrite it.
    before push, so a merged tree is never published untested. Files deliberately left uncommitted cause
    a safe stop — report them rather than hiding them.
 
+   **Built-in hygiene gate (brains only, no flag):** before every push the script also runs
+   `local-brain-work/scripts/brain_hygiene.py` on the merged tree and blocks (exit 2, nothing pushed)
+   on git conflict markers anywhere, and, in files changed vs `origin/main`: undeclared/residual
+   projection `{{ }}`, `/Users/` paths, dead relative links, em dashes in customer copy (action
+   `display_name`/`customer_*`, `projection.yaml` defaults, `customer_facing: true` md), and mermaid
+   blocks `mmdc` rejects (skipped with a notice when no renderer runs). Born from the 2026-09-25
+   DentAI publish of `<<<<<<<` markers. Fix the file and rerun; `brain_hygiene.py --all` shows legacy debt.
+
 4. **Exit 3 = conflicts.** Resolve with repository context, preserving both sides' intent; never take
    ours/theirs wholesale just to finish. Stage each resolved path, run the focused tests, rerun the same
    script — it resumes the merge and re-enters the bounded race loop.
