@@ -25,6 +25,10 @@ tree's legacy debt cannot block an unrelated publish; `--all` judges every track
 
     uv run --no-project python brain_hygiene.py            # changed files vs origin/main
     uv run --no-project python brain_hygiene.py --all      # whole tree
+    uv run --no-project python brain_hygiene.py --staged   # staged files (managed pre-commit hook)
+
+`install.sh` installs a managed `pre-commit` hook running `--staged`, so a broken diagram or marker
+fails at commit time, not at push.
 """
 
 from __future__ import annotations
@@ -118,8 +122,10 @@ def _mermaid_render(mmdc: list[str], source: str) -> tuple[bool, str]:
             return False, ""
         lines = [ln.strip() for ln in (proc.stderr or proc.stdout).splitlines()
                  if ln.strip() and not ln.strip().startswith("at ")]
-        syntax = next((ln for ln in lines if MERMAID_SYNTAX_RE.search(ln)), None)
-        return (True, syntax) if syntax else (False, lines[0] if lines else f"exit {proc.returncode}")
+        hit = next((i for i, ln in enumerate(lines) if MERMAID_SYNTAX_RE.search(ln)), None)
+        if hit is None:
+            return False, lines[0] if lines else f"exit {proc.returncode}"
+        return True, " | ".join(lines[hit:hit + 4])
 
 
 def check(root: Path, files: list[str] | None = None) -> list[bs.Finding]:
@@ -203,18 +209,25 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--root", help="brain checkout root (default: cwd's git toplevel)")
     p.add_argument("--base", default="origin/main", help="scope rules to files changed vs this ref")
     p.add_argument("--all", action="store_true", help="judge every tracked file")
+    p.add_argument("--staged", action="store_true",
+                   help="judge only staged files (the managed pre-commit hook)")
     args = p.parse_args(argv)
     try:
         root = bs.git_toplevel(Path(args.root).resolve() if args.root else Path.cwd())
     except bs.StructureError as exc:
         print(f"brain-hygiene: {exc}", file=sys.stderr)
         return 2
-    files = None if args.all else bs.git_changed_paths(root, args.base)
+    if args.staged:
+        files = subprocess.run(["git", "-C", str(root), "diff", "--cached", "--name-only",
+                                "--diff-filter=ACMR"], capture_output=True, text=True).stdout.split()
+    else:
+        files = None if args.all else bs.git_changed_paths(root, args.base)
     findings = check(root, files)
     for f in findings:
         print(f.render())
     blocking = [f for f in findings if f.severity != "NOTICE"]
-    scope = "all" if files is None else f"{len(files)} changed file(s) vs {args.base}"
+    scope = ("all" if files is None else f"{len(files)} staged file(s)" if args.staged
+             else f"{len(files)} changed file(s) vs {args.base}")
     print(f"brain hygiene: {len(blocking)} FAIL ({scope}; conflict markers: whole tree)")
     return 1 if blocking else 0
 

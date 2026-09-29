@@ -385,6 +385,31 @@ mv "$EXCLUDE_TMP" "$EXCLUDE"
   echo "$EXCLUDE_END"
 } >>"$EXCLUDE"
 
+# 4b. Managed pre-commit hook: brain_hygiene.py --staged (conflict markers, projection `{{ }}`,
+#     `/Users/` paths, dead links, customer-copy em dashes, mermaid) fails at commit time instead of
+#     at push. Never replaces a user-owned hook or a core.hooksPath setup; says so instead.
+HOOK_MARK="# rootcause-brain-skills managed pre-commit hook"
+HOOKS_PATH="$(git -C "$BRAIN" config core.hooksPath || true)"
+HOOK="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-commit)"
+if [ -n "$BRAIN_PREFIX" ]; then
+  echo "pre-commit hook: skipped (brain is a subdirectory of its repo)"
+elif [ -n "$HOOKS_PATH" ] || { [ -e "$HOOK" ] && ! grep -qF "$HOOK_MARK" "$HOOK"; }; then
+  echo "pre-commit hook: kept your own hook; add this line to it for early hygiene feedback:"
+  echo "  python3 \"$KIT/skills/local-brain-work/scripts/brain_hygiene.py\" --staged"
+else
+  mkdir -p "$(dirname "$HOOK")"
+  cat >"$HOOK" <<HOOK_EOF
+#!/bin/sh
+$HOOK_MARK (install.sh; rewritten on every kit refresh).
+# Bypass once: git commit --no-verify
+GATE="$KIT/skills/local-brain-work/scripts/brain_hygiene.py"
+[ -f "\$GATE" ] || { echo "brain hygiene: kit missing at \$GATE, skipped" >&2; exit 0; }
+if command -v python3 >/dev/null 2>&1; then exec python3 "\$GATE" --staged; fi
+exec uv run --no-project python "\$GATE" --staged
+HOOK_EOF
+  chmod +x "$HOOK"
+fi
+
 # 5. Agent worktrees carry TRACKED files only; the alias is, the kit content behind it is not. The repo-root
 #    `.worktreeinclude` allowlist is the operator convention for ignored local files an agent should
 #    copy into a new managed worktree; keep the kit's discovery paths in it. Written but never

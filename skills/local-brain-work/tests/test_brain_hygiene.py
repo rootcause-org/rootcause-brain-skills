@@ -104,3 +104,15 @@ def test_git_sync_refuses_to_push_conflict_markers(tmp_path: Path) -> None:
     assert "brain hygiene gate failed" in run.stderr
     assert "skills/scheduling/SKILL.md:5: hygiene: conflict" in run.stderr
     assert git(origin, "rev-parse", "main") == before
+
+
+def test_staged_mode_judges_only_the_index(tmp_path: Path) -> None:
+    """What the managed pre-commit hook runs: a staged bad file fails, an unstaged one is ignored."""
+    root = make_brain(tmp_path, {})
+    (root / "a.md").write_text("Run /Users/pj/x first.\n", "utf-8")
+    (root / "b.md").write_text("Run /Users/pj/y first.\n", "utf-8")
+    git(root, "add", "a.md")
+    run = subprocess.run([sys.executable, str(SCRIPTS / "brain_hygiene.py"), "--staged",
+                          "--root", str(root)], capture_output=True, text=True)
+    assert run.returncode == 1
+    assert "a.md:1: hygiene: abs-path" in run.stdout and "b.md" not in run.stdout

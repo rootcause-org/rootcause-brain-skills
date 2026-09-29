@@ -44,7 +44,8 @@ never overwrite it.
    projection `{{ }}`, `/Users/` paths, dead relative links, em dashes in customer copy (action
    `display_name`/`customer_*`, `projection.yaml` defaults, `customer_facing: true` md), and mermaid
    blocks `mmdc` rejects (skipped with a notice when no renderer runs). Born from the 2026-09-25
-   DentAI publish of `<<<<<<<` markers. Fix the file and rerun; `brain_hygiene.py --all` shows legacy debt.
+   DentAI publish of `<<<<<<<` markers. Fix the file and rerun; `brain_hygiene.py --all` shows legacy debt. `install.sh`
+   also installs a managed `pre-commit` hook (`--staged`) so the same rules fail at commit time.
 
 4. **Exit 3 = conflicts.** Resolve with repository context, preserving both sides' intent; never take
    ours/theirs wholesale just to finish. Stage each resolved path, run the focused tests, rerun the same

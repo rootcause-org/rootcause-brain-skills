@@ -247,4 +247,19 @@ test "$(git -C "$REPO" status --short --untracked-files=all)" = '?? other/.claud
 ?? tenant/.claude/skills
 ?? tenant/.worktreeinclude'
 
+# Managed pre-commit hook: installed on a root brain, rewritten on refresh, never over a user hook.
+new_brain hooked
+run_install >/dev/null
+hook="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-commit)"
+test -x "$hook"
+grep -qF 'rootcause-brain-skills managed pre-commit hook' "$hook"
+grep -qF "$KIT/skills/local-brain-work/scripts/brain_hygiene.py" "$hook"
+run_install >/dev/null
+new_brain userhook
+hook="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-commit)"
+printf '%s\n' '#!/bin/sh' 'echo mine' >"$hook"
+run_install >"$TMP/userhook.out"
+grep -qF 'kept your own hook' "$TMP/userhook.out"
+test "$(sed -n 2p "$hook")" = 'echo mine'
+
 echo "install tests passed"
