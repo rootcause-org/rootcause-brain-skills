@@ -175,6 +175,7 @@ the doc's **full body** into a different host-assembled prompt:
 | `triage` | the **gatekeeper** — the cheap process-vs-skip classifier | decline / ownership / scope knowledge (convention: root `triage.md`) | 8KB / 24KB |
 | `grounding` | the **file-picker** — the cheap retrieval pre-step that chooses which files the main agent starts with | always-load-bearing **orientation** maps: system map, domain glossary | 8KB / 24KB |
 | `agent` | the **answer-writer** — the main loop, pasted right after `AGENTS.md` | **reference** material the writer must hold in full: schema/column maps, identifier tables, field lists | 16KB / 48KB |
+| `principal` | the **answer-writer**, but only on **principal-scoped** runs (an end user's embedded chat) | the lane doc the model must never skip there (e.g. `skills/account-chat/SKILL.md`) and that would mislead other runs; `[agent, principal]` pastes once | shares `agent`'s caps |
 
 Pick the role by asking **who must hold the doc**. The pre-step only forwards `path:span` refs
 *probabilistically*; if the main agent must **always** have the content — not just when a selector deems
@@ -199,6 +200,22 @@ do not add the redundant `agent` tag to `/tenant/AGENTS.md`. Triage is separate:
 Scan scope for the `grounding`/`agent` roles: the whole brain plus any bound tenant brain; a **mirror**
 file is only picked up at the repo root as `*.md` or under `doc/`, `docs/`, `.claude/`, `.agents/`;
 `/kb` never. Truncation past a cap appends an explicit marker — the agent may read the rest with `bash`.
+
+### Per-surface docs: `surfaces`
+
+`surfaces: [chat, dashboard_chat]` in a brain/tenant `.md` scopes it to those ingress surfaces (same
+closed vocabulary as action manifests). On any other surface the run keeps the file — so links don't
+dangle — but sees only its frontmatter (without `include_in`, so no role hard-loads it) and:
+
+```
+> Not used on this surface (email). Applies only to: chat, dashboard_chat.
+```
+
+Use it when a lane doc actively misleads other surfaces (chat-only account flows in the email lane),
+not to trim tokens. Only a top-level key is read (inline `# comments` fine) and only when the
+frontmatter closes within 8KB; an unknown value or over-cap frontmatter keeps the doc visible everywhere
+(lint WARN `doc-surfaces`). The same top-level/8KB rule applies to `include_in`. The
+brain viewer, triage, and evals always see the full file.
 
 ### Run-visible filesystem boundary (`.replypenignore`)
 

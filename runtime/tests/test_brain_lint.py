@@ -339,3 +339,27 @@ def test_lint_brain_without_git_falls_back_to_disk_existence(tmp_path: Path) -> 
 
     assert [f.path for f in warns] == ["dangling"]
     assert "does not exist" in warns[0].message
+
+
+def test_lint_brain_warns_on_unknown_doc_surfaces(tmp_path: Path) -> None:
+    _seed_brain(tmp_path)
+    _write(tmp_path / "skills/account-chat/SKILL.md",
+           "---\ndescription: Account chat\ninclude_in: [principal]\nsurfaces: [chat, dashboard_chat]\n---\n")
+    _write(tmp_path / "skills/commented/SKILL.md",
+           "---\ndescription: C\nsurfaces: [chat] # customer chat only\n---\n")
+    _write(tmp_path / "skills/nested/SKILL.md", "---\ndescription: N\nmetadata:\n  surfaces: [bogus]\n---\n")
+    _write(tmp_path / "skills/long/SKILL.md",
+           "---\ndescription: L\n# " + "c" * 8200 + "\nsurfaces: [chat]\n---\n")
+    _write(tmp_path / "skills/typo/SKILL.md", "---\ndescription: Typo\nsurfaces: [chat, gmail]\n---\n")
+    _write(tmp_path / "skills/broken/SKILL.md", "---\ndescription: B\nsurfaces: [chat\n---\n")
+
+    findings = [f for f in lint_brain(tmp_path) if f.rule == "doc-surfaces"]
+
+    assert [(f.path, f.level) for f in findings] == [
+        ("skills/broken/SKILL.md", "WARN"),
+        ("skills/long/SKILL.md", "WARN"),
+        ("skills/typo/SKILL.md", "WARN"),
+    ]
+    assert "not valid YAML" in findings[0].message
+    assert "exceeds 8192 bytes" in findings[1].message
+    assert "stays visible on every surface" in findings[2].message

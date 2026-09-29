@@ -196,6 +196,55 @@ def _check_manifest_surfaces(path: Path, rel: str) -> list[Finding]:
     return findings
 
 
+# Mirrors treeview's frontmatterCap: the host only reads frontmatter whose closing fence lies within it.
+FRONTMATTER_CAP = 8 << 10
+
+
+def _doc_surfaces_problem(path: Path) -> str | None:
+    """Why the host would NOT enforce this doc's top-level `surfaces:` as written, or None when it would
+    (or the doc declares none). Every problem means fail-open: the doc stays visible on every surface."""
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return None
+    lines = raw.decode("utf-8", "replace").split("\n")
+    if not lines or lines[0].rstrip("\r") != "---":
+        return None
+    close = next((i for i, line in enumerate(lines[1:], start=1) if line.rstrip("\r") == "---"), None)
+    if close is None:
+        return None
+    block = lines[1:close]
+    if not any(line.startswith("surfaces:") for line in block):
+        return None
+    if len("\n".join(lines[:close + 1]).encode("utf-8")) > FRONTMATTER_CAP:
+        return f"frontmatter exceeds {FRONTMATTER_CAP} bytes; the host ignores its `surfaces`"
+    try:
+        data = yaml.safe_load("\n".join(block))
+    except yaml.YAMLError:
+        return "frontmatter is not valid YAML; `surfaces` may not parse as intended"
+    values = data.get("surfaces") if isinstance(data, dict) else None
+    values = [values] if isinstance(values, str) else values
+    if not isinstance(values, list) or not values or any(v not in ACTION_SURFACES for v in values):
+        return f"`surfaces` must list known surfaces ({', '.join(ACTION_SURFACES)}); got {values!r}"
+    return None
+
+
+def _check_doc_surfaces(root: Path) -> list[Finding]:
+    """WARN when the host won't enforce a markdown `surfaces:` list: it then fails open (visible on every
+    surface), so a typo silently undoes the scoping instead of breaking runs."""
+    findings: list[Finding] = []
+    for dirpath, dirnames, filenames in os.walk(root, topdown=True):
+        dirnames[:] = sorted(name for name in dirnames if name not in _SYMLINK_WALK_IGNORED_DIRS)
+        for filename in sorted(filenames):
+            if not filename.endswith(".md"):
+                continue
+            path = Path(dirpath) / filename
+            if problem := _doc_surfaces_problem(path):
+                findings.append(Finding(_rel(root, path), "WARN",
+                                        f"{problem} — the doc stays visible on every surface", "doc-surfaces"))
+    return findings
+
+
 def _check(path: Path, rel: str, desc: str | None, kind: str) -> list[Finding]:
     """Turn one file's extracted description into findings (missing/overlong + style WARN)."""
     if desc is None:
@@ -365,6 +414,8 @@ def lint_brain(brain_root: str | Path) -> list[Finding]:
     for manifest in sorted(surface_manifests):
         findings += _check_manifest_surfaces(manifest, _rel(root, manifest))
 
+    findings += _check_doc_surfaces(root)
+
     # Bind the sibling lint when this plugin loads, before collected brain tests can replace the
     # top-level ``lib`` module in ``sys.modules`` with a test double.
     findings += [Finding(f.path, f.level, f.message, f.rule) for f in lint_actions(root)]
@@ -380,6 +431,7 @@ def _rel(root: Path, p: Path) -> str:
 
 _RULE_LABELS = {
     "action-surfaces": "action surfaces",
+    "doc-surfaces": "doc surfaces",
     "description-missing": "missing descriptions",
     "description-length": "description length",
     "description-style": "description style",
