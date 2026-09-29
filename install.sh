@@ -404,8 +404,10 @@ $HOOK_MARK (install.sh; rewritten on every kit refresh).
 # Bypass once: git commit --no-verify
 GATE="$KIT/skills/local-brain-work/scripts/brain_hygiene.py"
 [ -f "\$GATE" ] || { echo "brain hygiene: kit missing at \$GATE, skipped" >&2; exit 0; }
-if command -v python3 >/dev/null 2>&1; then exec python3 "\$GATE" --staged; fi
-exec uv run --no-project python "\$GATE" --staged
+# An interpreter that cannot start (e.g. a mise shim in an untrusted checkout) must not block commits.
+if python3 -c '' 2>/dev/null; then exec python3 "\$GATE" --staged; fi
+if uv run --no-project python -c '' 2>/dev/null; then exec uv run --no-project python "\$GATE" --staged; fi
+echo "brain hygiene: no working python3/uv here (untrusted mise.toml?), skipped; the push gate still runs" >&2
 HOOK_EOF
   chmod +x "$HOOK"
 fi
