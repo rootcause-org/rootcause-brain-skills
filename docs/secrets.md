@@ -6,24 +6,34 @@ private operator scripts.
 
 ## Choose The Store
 
-- Catalog integration exists (`rc project connection ls` shows it, or RootCause docs name one): use
-  `rc project connection add/rotate/reveal/rm`. Brain code should import the central connector or use
-  `lib.oauth` by connector key.
-- Custom read-only API key or cloud token needed by grounding scripts: use the grounding env with
-  `rc project env set`. Normal runs receive this plane.
-- New read-only database DSN: use the grounding env — sealing the key creates the database, annotating
-  it surfaces it. See [Register A New Grounding Database](#register-a-new-grounding-database). Keep the
-  raw env var name out of brain prose unless a script must reference it directly; the host-injected DB
-  roster carries the database names and purposes.
-- Per-user API token for an embed chat that acts as the chatting user: not a store you manage. The
-  customer backend mints it into the chat token's `credentials` claim; the host seals it per chat
-  session and injects it on every turn. **Session credentials appear as plain env vars** (e.g.
-  `PROBACKUP_AGENT_TOKEN`), only in that session's runs, never in email/MCP runs. Branch on their
-  presence, never print them, and treat an auth failure as expiry: tell the user to start a new
-  conversation (they are not refreshed mid-session). Names cannot start with `RC_` or collide with a
-  grounding env key.
-- Hosted action write credential: use `rc project env set --plane action` only when you are an operator
-  with the required access. This writes `.env.action`; normal diagnosis runs never receive it.
+**Anything in the grounding env is readable by the model** (`printenv`, a debug print, a traceback) and
+can land in a stored run trace. Pick the most-contained store that works, top to bottom:
+
+1. **Brokered connection** (catalog entry with broker exposure; `rc project connection add/rotate/rm`):
+   the token stays on the host, scripts call it through `lib.api`/the central connector, runs only see
+   the key name in `RC_API_BROKERED_KEYS`. Default for every catalog API.
+2. **Host-only connection** (KB sync: knowledgeowl, helpscout_docs, intercom KB; model keys): never
+   injected. Never ALSO seal the same key in the env — the sealed copy reaches every run.
+3. **Env connection** (`RC_CONN_<KEY>` JSON, e.g. the `aws` kind): injected raw. Only for a credential
+   that is least-privilege at the provider (read-only, one resource).
+4. **Sealed grounding env** (`rc project env set`): raw in the container. Only for public tokens (Mapbox
+   `pk.`) or a custom credential scoped at the provider to exactly what the scripts use (e.g. an IAM user
+   with `s3:GetObject` on one bucket). Document that scope next to the name in `AGENTS.md`.
+5. **Database DSN** (`<PROJECT>_<DBKEY>_DSN`): always proxied and projected, never raw in the container —
+   see [Register A New Grounding Database](#register-a-new-grounding-database). `*_PROVISION_DSN` and
+   `*_SSH_KEY` are host-only.
+6. **Hosted action write credential**: `rc project env set --plane action` (operator only) → `.env.action`;
+   diagnosis runs never receive it.
+7. **Per-user embed-chat token**: not a store you manage. The customer backend mints it into the chat
+   token's `credentials` claim; the host injects it as a plain env var (e.g. `PROBACKUP_AGENT_TOKEN`) in
+   that session's runs only. Branch on its presence, never print it, treat an auth failure as expiry.
+   Names cannot start with `RC_` or collide with a grounding env key.
+
+Secrets inside **customer data** (API keys in a settings table) are a data-scoping problem, not an env
+one: hide the rows/columns in the scope manifest so no run can select them.
+
+Once a connection covers an integration, `rc project env rm` the old sealed copy. Audit what a run
+actually receives: `rc dev console bash run 'env | cut -d= -f1'` (names only, never values).
 
 ## Add Or Rotate A Grounding Secret
 
