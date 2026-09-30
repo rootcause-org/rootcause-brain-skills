@@ -89,6 +89,35 @@ class MalformedManifest(unittest.TestCase):
                 api._parse_manifest_file(bad)
 
 
+class CatalogPurposes(unittest.TestCase):
+    """`purposes:` is catalog-only (the host's gen_catalog + Go catalog validate it); the runtime loader
+    ignores it. Guard the vocabulary here so a manifest can't ship a key the host would reject."""
+
+    PURPOSES = {"inbox", "kb_source", "escalation"}
+
+    def _manifests(self):
+        import yaml
+
+        root = Path(api.__file__).resolve().parent / "connectors"
+        for mf in sorted(root.glob("*/manifest.yaml")):
+            yield mf, yaml.safe_load(mf.read_text(encoding="utf-8"))
+
+    def test_purposes_use_known_keys_and_no_legacy_flags(self):
+        for mf, raw in self._manifests():
+            self.assertNotIn("inbox", raw, f"{mf}: legacy top-level inbox; use purposes.inbox")
+            self.assertNotIn("kb_source", raw, f"{mf}: legacy top-level kb_source; use purposes.kb_source")
+            purposes = raw.get("purposes") or {}
+            self.assertLessEqual(set(purposes), self.PURPOSES, mf)
+            if "escalation" in purposes:
+                self.assertTrue((purposes["escalation"] or {}).get("capability_key"), f"{mf}: escalation needs capability_key")
+
+    def test_clickup_declares_escalation_and_still_loads(self):
+        raw = dict(self._manifests())
+        clickup = next(r for mf, r in raw.items() if mf.parent.name == "clickup")
+        self.assertEqual(clickup["purposes"], {"escalation": {"capability_key": "clickup.write"}})
+        self.assertEqual(api.load_manifests()["clickup"].base_url, "https://api.clickup.com/api/v2")
+
+
 class CliDrivesManifestOnly(unittest.TestCase):
     """Prove a manifest-only integration is drivable end-to-end through the CLI: no per-key Python."""
 

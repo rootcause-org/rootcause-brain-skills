@@ -12,6 +12,10 @@ kinds: [token, oauth]
 connector_module: ""
 env_var: RC_CONN_CLICKUP
 credential_exposure: broker
+# Escalation = the host may create a ClickUp task after a run, through clickup.write (host-side only;
+# runs keep the brokered read path).
+purposes:
+  escalation: {capability_key: clickup.write}
 egress_hosts:
   - api.clickup.com
 # --- Generic lib.api caller fields (the compact declarative row) ---
