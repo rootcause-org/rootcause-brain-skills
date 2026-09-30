@@ -23,6 +23,9 @@ Public `rc` only; scope comes from `.rootcause.toml` + the OAuth login
   first: an infra class means RootCause's machinery failed — report it, do not edit the brain
   ([docs/actions.md](../../docs/actions.md#failure-classes-infra-vs-domain)).
 - **Thread/session id** → `rc run thread <id>`. No run at all → explain the channel/support boundary.
+- **A forwarded email** → `rc run list --from <address> --since <YYYY-MM-DD>` (`--subject` narrows;
+  rows show FROM/SUBJECT). No run → `rc run thread <address>`: its threads, including mail triage
+  skipped or security-blocked before any run, with the triage reason.
 - **A question, not an id** → `brain-ask`.
 - **Nothing usable** → ask for a run UUID, thread/session id, or question, and stop.
 
