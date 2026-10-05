@@ -19,6 +19,8 @@ and dev-tooling dot-dirs are judged for conflict markers only):
   * mermaid      — a ```mermaid block `mmdc` rejects as a syntax error (`mmdc` on PATH, else
                    `pnpm dlx @mermaid-js/mermaid-cli`). No renderer, or a renderer that cannot
                    start (e.g. no headless Chrome), skips the rule with a NOTICE.
+  * description  — a `skills/**/*.md` frontmatter `description` over 150 characters (the publish
+                   preflight rejects it; the skill tree truncates it).
 
 Everything but `conflict` is scoped to changed files (vs `--base`, default origin/main) so a mature
 tree's legacy debt cannot block an unrelated publish; `--all` judges every tracked file.
@@ -54,6 +56,7 @@ TEXT_SUFFIXES = {".md", ".py", ".yaml", ".yml", ".json", ".toml", ".sh", ".rb", 
 EM_DASH = "\u2014"
 TOOLING_DIRS = (".agents/", ".claude/", ".github/")
 MERMAID_TIMEOUT_S = 30
+DESCRIPTION_MAX = 150  # rootcause publish preflight limit for skills/**/*.md descriptions
 MERMAID_SYNTAX_RE = re.compile(r"(Parse|Lexical|Syntax) error|No diagram type detected", re.I)
 
 
@@ -168,6 +171,10 @@ def check(root: Path, files: list[str] | None = None) -> list[bs.Finding]:
                     if "{{" in (rest := PLACEHOLDER_RE.sub("", line)) or "}}" in rest:
                         add("placeholder", "residual `{{`/`}}` in a projection-templated file",
                             rel, lineno)
+            desc = (bs.parse_frontmatter(text) or {}).get("description", "").strip().strip("\"'")
+            if rel.startswith("skills/") and len(desc) > DESCRIPTION_MAX:
+                add("description", f"frontmatter description is {len(desc)} chars (max "
+                                   f"{DESCRIPTION_MAX}; publish rejects it)", rel, 1)
             if _frontmatter_flag(text, "customer_facing"):
                 for lineno, line in enumerate(text.splitlines(), start=1):
                     if EM_DASH in line:

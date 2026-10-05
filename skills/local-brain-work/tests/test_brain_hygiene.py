@@ -33,6 +33,7 @@ FIXTURES = {
     "em-dash": {"actions/refund/manifest.yaml": "id: refund\ndescription: Refund\n"
                                                 "display_name: \"Terugbetaling — snel\"\n"},
     "mermaid": {"skills/x/SKILL.md": "```mermaid\ngraph TD\n  A-->>>((B\n```\n"},
+    "description": {"skills/cases/x.md": f"---\nname: x\ndescription: \"{'w' * 151}\"\n---\nBody.\n"},
 }
 
 
