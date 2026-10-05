@@ -15,13 +15,14 @@ uv run "$MT/scripts/mirror_try.py" --repo /path/to/mirror --ref review/fix \
 
 Fetch the mirror first. `--ref` compares against local `origin/main`; `--base COMMIT` overrides it.
 `--diff` instead compares tracked working-tree bytes (including staged changes) against HEAD;
-add new files to the index first. `--json` emits reduced stdout/stderr, exit codes, exact revisions,
+add new files to the index first. On a shared checkout add `--only PATH` (repeatable): only those
+paths use working-tree bytes, their imports come from HEAD, other agents' edits stay out. `--json` emits reduced stdout/stderr, exit codes, exact revisions,
 staged paths and console run IDs. A working-tree result uses a content hash, not a commit claim.
 For principal scope, supply `--principal-kind KIND --principal-id ID` (`--principal ID` is an alias).
 Omitting `--tenant` explicitly selects project scope.
 
 Changed non-test grounding files (excluding hidden/action paths), the command's Python script and recursively resolved static sibling/root
-imports are staged into isolated revision directories under `/tmp/try/<repo>/`. Package initializers
+imports are staged into a per-invocation `/tmp/try/<repo>-<pid>-*` dir (parallel runs are safe). Package initializers
 are included. Use repeated `--path relative/file` for runtime data or dynamic imports. Both versions
 run with identical arguments and scope; scratch is removed afterwards. New helpers truthfully fail
 in Before. After failure exits nonzero; transport/truncation failures are not helper evidence.
@@ -33,7 +34,8 @@ Dynamic imports and runtime path manipulation are not inferred. Data may change 
 
 The console accepts at most 256 KiB stdin; this recipe caps base64/JSON files at 240,000 bytes and
 its compressed generated command at 120,000 bytes (the console shell also hits Linux’s
-128 KiB per-argument limit before the stdin cap). Narrow oversized changes; never silently omit dependencies.
+128 KiB per-argument limit before the stdin cap). Over budget: commit your files and use `--ref <branch>
+--base <sha>` (pin the base once `origin/main` moved), or `--diff --only <path>`; never silently omit dependencies.
 Explicit/imported hidden files and actions, plus symlinks and submodules, are refused. Output uses the fleet report's heuristic
 privacy reducer, not a PII guarantee: prefer aggregate/identifier-only commands and inspect before
 sharing. No merge, refresh or deployment is performed.

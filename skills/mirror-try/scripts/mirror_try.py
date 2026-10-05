@@ -17,6 +17,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'brain-fleet-report
 from prototype_format import reduced
 
 
+BUDGET_REMEDY = 'commit your files and use --ref <branch> --base <sha>, or --diff --only <path>'
+
+
 def git(repo, *args):
     return subprocess.check_output(['git', '-C', str(repo), *args], text=True).strip()
 
@@ -40,9 +43,10 @@ def console_command(files, argv, repo_name="helper"):
     payload = base64.b64encode(zlib.compress(json.dumps(files).encode())).decode()
     source += 'files = json.loads(zlib.decompress(base64.b64decode(' + repr(payload) + ')))\n'
     source += 'argv = ' + repr(argv) + '\n'
-    source += 'scratch = ' + repr('/tmp/try/' + repo_name) + '\n'
-    source += '''pathlib.Path(scratch).mkdir(parents=True,exist_ok=True)
-with tempfile.TemporaryDirectory(prefix="revision-", dir=scratch) as root:
+    source += 'prefix = ' + repr(repo_name + '-') + '\n'
+    # Unique scratch per invocation (/tmp/try/<repo>-<pid>-*) so parallel runs never collide.
+    source += '''pathlib.Path("/tmp/try").mkdir(parents=True,exist_ok=True)
+with tempfile.TemporaryDirectory(prefix=prefix+str(os.getpid())+"-", dir="/tmp/try") as root:
  for name,data in files.items():
   path=pathlib.Path(root)/name
   path.parent.mkdir(parents=True,exist_ok=True)
@@ -54,7 +58,7 @@ with tempfile.TemporaryDirectory(prefix="revision-", dir=scratch) as root:
  raise SystemExit(result.returncode)
 '''
     if len(source.encode()) > 120_000:
-        raise ValueError('Command exceeds 120 KB shell argument budget; narrow --path/args')
+        raise ValueError('Command exceeds 120 KB shell argument budget; ' + BUDGET_REMEDY)
     return 'python - <<\'REVIEW_HELPER\'\n' + source + '\nREVIEW_HELPER'
 
 
@@ -90,12 +94,19 @@ def tree(repo, ref):
     return entries
 
 
-def stage(repo, ref, seeds, *, working=False):
-    """Bounded closure of static sibling/root Python imports, plus explicit data paths."""
+def under(name, paths):
+    return any(name == p or name.startswith(p.rstrip('/') + '/') for p in paths)
+
+
+def stage(repo, ref, seeds, *, working=False, only=()):
+    """Bounded closure of static sibling/root Python imports, plus explicit data paths.
+
+    working: read working-tree bytes; with only, just for files under those paths (rest from ref)."""
     entries = tree(repo, ref)
     if working:
         for name in git(repo, 'ls-files').splitlines():
-            entries.setdefault(name, '100644')
+            if not only or under(name, only):
+                entries.setdefault(name, '100644')
     files, pending = {}, list(seeds)
     while pending:
         name = pending.pop()
@@ -104,7 +115,7 @@ def stage(repo, ref, seeds, *, working=False):
             continue  # deletions/new helper absent in the baseline are meaningful evidence
         if entries[name] not in ('100644', '100755'):
             raise ValueError('Symlinks/submodules are not supported: ' + name)
-        if working:
+        if working and (not only or under(name, only)):
             local = repo / name
             if local.is_symlink() or any(p.is_symlink() for p in local.parents if p != repo.parent):
                 raise ValueError('Symlinks are not supported: ' + name)
@@ -115,7 +126,7 @@ def stage(repo, ref, seeds, *, working=False):
             data = subprocess.check_output(['git', '-C', str(repo), 'show', f'{ref}:{name}'])
         files[name] = base64.b64encode(data).decode()
         if len(json.dumps(files).encode()) > 240_000:
-            raise ValueError('Selected files exceed 240 KB console budget; narrow the change')
+            raise ValueError('Selected files exceed 240 KB console budget; ' + BUDGET_REMEDY)
         if path.suffix != '.py':
             continue
         for parent in path.parents:
@@ -151,23 +162,29 @@ def stage(repo, ref, seeds, *, working=False):
 
 
 def compare(repo, ref, diff, base, argv, project, tenant=None, principal_kind=None,
-            principal_id=None, paths=()):
+            principal_id=None, paths=(), only=()):
     repo = repo.expanduser().resolve()
     if not argv or len(argv) < 2 or argv[0] not in ('python', 'python3') or not argv[1].endswith('.py'):
         raise ValueError('Command must be python relative/helper.py [args]; no shell or inline code')
     safe_path(argv[1])
     if bool(principal_kind) != bool(principal_id):
         raise ValueError('Supply both principal flags')
+    if only and not diff:
+        raise ValueError('--only applies to --diff')
+    for path in only:
+        safe_path(path)
     base_sha = git(repo, 'rev-parse', '--verify', (base or ('HEAD' if diff else 'origin/main')) + '^{commit}')
     after_sha = git(repo, 'rev-parse', '--verify', (ref or 'HEAD') + '^{commit}')
     changed = git(repo, 'diff', '--name-only', '--no-renames', base_sha, *([] if diff else [after_sha])).splitlines()
+    if only:
+        changed = [p for p in changed if under(p, only)]
     if not changed:
         raise ValueError('No changed files to compare')
     grounding_changes = [p for p in changed if not any(
         part.startswith('.') or part == 'actions' for part in PurePosixPath(p).parts)]
     seeds = {argv[1], *paths, *(p for p in grounding_changes if '/tests/' not in '/' + p and not p.startswith('tests/'))}
     before_files = stage(repo, base_sha, seeds)
-    after_files = stage(repo, after_sha, seeds, working=diff)
+    after_files = stage(repo, after_sha, seeds, working=diff, only=only)
     if argv[1] not in after_files:
         raise ValueError('Helper missing from staged tree')
     scope = ['--project', project, '--tenant', tenant] if tenant else ['--project', project, '--scope', 'project']
@@ -210,13 +227,15 @@ def main():
     p.add_argument('--principal-kind')
     p.add_argument('--principal-id', '--principal', dest='principal_id')
     p.add_argument('--path', action='append', default=[], help='Additional data/import file')
+    p.add_argument('--only', action='append', default=[],
+                   help='With --diff: stage working-tree changes only under PATH (repeatable)')
     p.add_argument('--cmd', required=True, help='Quoted python relative/helper.py [args]')
     p.add_argument('--json', action='store_true')
     p.add_argument('--read-only-reviewed', action='store_true', required=True,
                    help='Helper/imports inspected: no sends, actions, or customer writes')
     args = p.parse_args()
     result = compare(args.repo, args.ref, args.diff, args.base, shlex.split(args.cmd),
-                     args.project, args.tenant, args.principal_kind, args.principal_id, args.path)
+                     args.project, args.tenant, args.principal_kind, args.principal_id, args.path, args.only)
     print(json.dumps(result, indent=2) if args.json else side_by_side(result))
     return 0 if result['after']['exit_code'] == 0 else 1
 
