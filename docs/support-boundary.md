@@ -21,6 +21,7 @@ surface or in managed infrastructure.
 | `rc dev brain` command 404s | Old client resolving the project onto retired flat routes. Pass `--project <p>` explicitly and upgrade to rc >= 1.16.5. |
 | Promotion would break some tenants' projections | Not support: run `rc dev brain preflight --project <p> --scope project --sha <sha>` before promoting `stable`, and promote `edge` → observe → `stable`. |
 | Promotion denied for a tenant-scoped login | Expected: one tenant cannot move the shared channel for all tenants. Use an authorized project-maintainer login or request that access. |
+| Bug run but no tracker ticket | Usually the gate, not support: `draft` autonomy, test/simulation run, OAuth instead of token connection, or a non-bug dossier. Recipe: [escalation.md](escalation.md). |
 | Tenant brain publish / action wiring not exposed through public `rc` | RootCause support request; product gap to close. Tenant brains use `main` and have no channels. |
 
 ## Support Request Template
