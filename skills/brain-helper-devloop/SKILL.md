@@ -17,63 +17,86 @@ Each step links the skill that owns the mechanics; this file owns the order and 
 - Start from 5–8 **real** tickets of the topic (support dump, `rc run list`, help-centre threads).
   Write down per ticket: the admin's opening symptom, what the human actually replied, which record
   ids they looked at. The reply is your expected answer; the spec line is intent, not a contract.
-- Read the **source rule** before porting it (the model/service in the mirror). Note the file +
-  method in the helper docstring with a "verified <date>" so the next maintainer can diff.
+- Read the **source rule** before porting it (the model/service in the mirror), not the KB paraphrase:
+  the port is where invisible traps surface. Note file + method + "verified <date>" in the docstring.
+  Port the app's own customer-facing messages verbatim instead of paraphrasing them.
+- Design the lookup from the **ticket vocabulary**, not the code's object model: cross-cutting admin
+  words (signature, footer, logo) that name no record get a pseudo-topic that renders the shared part.
 - Check what already exists: a renderer section (`*_to_md`), a pure module, a KB article. Extend the
   existing seam when a symptom is "one record"; add a new script only for a new question shape
   (per-person sweep, export membership, cross-record diagnosis).
+- Overlapping topics: decide per symptom which helper owns it **before** writing two routing lines.
 - 80/20: one helper, ≤ ~60 lines of output, verdict in the first two lines, `--json` for chaining.
   No settings, no per-tenant knobs, no writes ([side-effects](../../docs/side-effects.md)).
 
 ## 2. Build read-only, scope-safe
 
+- Use the mirror's shared libs when present (KampAdmin: `skills/records/scripts/verdict.py` — Report:
+  verdict line 1, sections, ✓/⚠/✗/ℹ items, line cap, `--json`; `resolve.py` — admin words → record
+  candidates) instead of hand-rolling output and lookup.
 - One primary table → `rows()`; enrichment tables → `optional_rows()` / `is_visible()` so a hidden
   table degrades a section instead of killing the answer ([scope-check § The Rule](../scope-check/SKILL.md#the-rule)).
-  Never add tenant/deleted filters; the host views already encode them.
+  Never add tenant/deleted filters; the host views already encode them. Tenant-bound views hide
+  global rows (`tenant_id IS NULL`, "global row + tenant override" tables): query the scoped view
+  before trusting a hand query, and give the verdict a fallback. A non-tenant-scoped database: pin
+  every query to the organisation and say in the docstring why the helper may open it.
+- Datetimes from the row helpers may come back localised (KampAdmin `ka.rows()`: Europe/Brussels);
+  never interpolate them into UTC-naive SQL, convert first (`ka._sql_timestamp`). Know which
+  timestamps the app overwrites (KampAdmin: `subscription_submitted_at` at confirmation).
 - Importable + CLI, catalog header in the first 40 lines (`# name:` / `# purpose:` / `# args:`,
   [prod-console § catalog](../prod-console/SKILL.md#brain-script-catalog-convention)) so the script
-  is discoverable through `bash list`.
-- The module docstring is read by the grounding pre-step: put the admin's symptom words and one
-  copy-pasteable CLI example in it, not only in SKILL.md.
-- Every lookup flag accepts the words the admin uses (a name, an address), not only a uuid, and lists
-  candidates on ambiguity: a uuid-only flag costs the agent 3–4 guessing turns.
+  is discoverable through `bash list`. `--help` is read by the agent: list every call form.
+- Every lookup flag accepts the words the admin uses (a name, an address, a pasted URL), not only a
+  uuid, and lists candidates on ambiguity: a uuid-only flag costs the agent 3–4 guessing turns.
+  Cover every record shape a symptom names (activity *and* period); print organisation-level
+  verdicts even without a record id.
+- Output carries the facts, not the runbook: advice the human always gives, and every nuance the
+  agent would otherwise `sed` out of the source (test mail, timezone), is an ℹ line. A verdict names
+  the **remedy**, not only the cause. Say what the helper cannot see ("settings changed after the
+  confirmation", "history not visible") or the agent escalates.
+- Merge ⚠ per check, never per item (per-item lines explode on real tenants); test the line cap on
+  a big fixture. Exclude records that are legitimately odd (leader-audience activities at €0/uncapped)
+  from price/pax checks.
 - Error text names the **next call** ("not a subscription id — try `--person-id`"), never a trace.
-- Unit tests only for non-trivial ported rules (money, eligibility, dates). Pure functions take rows
-  in, lines out, so the tests need no database.
-- Register it: the owning `SKILL.md` (one call line + one "when" sentence), and ONE routing line in
-  the brain `AGENTS.md` only when the helper is the obvious entry point for a symptom. A case
-  runbook (`skills/cases/<slug>.md`: symptom → steps → helper → what to say / escalate) is the
-  place for procedure, not AGENTS.md.
+- Unit tests only for non-trivial ported rules (money, eligibility, dates), on pure rows→lines functions.
+- Register it — each artefact has one job: the brain `AGENTS.md` routing line = helper path + the
+  admin's symptom words (this is what pickup matches); the case runbook (`skills/cases/<slug>.md`:
+  symptom → call lines → what to say / escalate) = procedure; the module docstring (read by the
+  grounding pre-step) = symptom words + copy-paste CLI examples; the owning `SKILL.md` = one call
+  line + one "when". The script name alone never drives pickup.
 
 ## 3. Prove the bytes before proving the agent
 
 | Rung | Proves | Skill |
 |---|---|---|
 | offline pytest / `brain_test.py` | the ported rule | [local-brain-work](../local-brain-work/SKILL.md) |
-| `mirror_try.py --diff` on the real ticket ids | the staged helper on real scoped data, before vs after | [mirror-try](../mirror-try/SKILL.md) |
-| `scope_smoke.py --cmd …` per audience | exit 0 for the narrow admin, not only for you | [scope-check](../scope-check/SKILL.md) |
+| `mirror_try.py` on the real ticket ids | the staged helper on real scoped data, before vs after | [mirror-try](../mirror-try/SKILL.md) |
+| ONE mirror-try as the regular admin principal | which sections must degrade, before any `rc ask` | [scope-check](../scope-check/SKILL.md) |
 
-`mirror-try --diff` stages every uncommitted file in the mirror (other threads' too) and blows the
-240 KB budget; commit your own files and use `--ref`. Its privacy reducer shortens capitalised words
-(`Meerdere` → `M.`): never "fix" a label you only saw through it. Severity (✓/⚠/✗) is a product call:
-run the helper on 3+ live records before deciding what counts as a problem.
+Shared mirror checkout: `--diff --only <your paths>` keeps other agents' uncommitted edits out; or
+commit and use `--ref <branch> --base <sha>` (pin the base once `origin/main` moved). Principal ids:
+the mirror's `_internal/scopecheck-<project>.toml` roster (KampAdmin `admins` is readable via the
+tenant query plane: `is_super_admin=false AND active`). The privacy reducer shortens capitalised
+words (`Meerdere` → `M.`): never "fix" a label you only saw through it. Severity (✓/⚠/✗) is a
+product call: run on 3+ live records first; working sites/records must not get ✗.
 
 Stop here if the helper is wrong on the real ticket record: the agent test below would only measure
 pickup of a wrong answer.
 
 ## 4. Ask the brain like the admin would
 
-- Push the brain change to `dev/<branch>`; a mirror change must be refreshed into the mirror first
-  (`rc dev mirror refresh --expect-sha`, [prod-console § Freshness](../prod-console/SKILL.md#workflow)).
+- Push the brain change to `dev/<branch>`. `--brain-ref` covers the brain repo only: the mirror
+  follows its tracked branch (`main`), so push mirror `main` first, then `rc dev mirror refresh
+  --expect-sha` ([prod-console § Workflow](../prod-console/SKILL.md#workflow)). The worker's fetch can
+  lag 15–20 min and the tip moves under you while siblings push: plan the wait, refresh at the tip.
 - Derive 5–8 **synthetic admin questions** from the tickets: the admin's words, chat style, anonymised,
   with the real record ids a ticket needs. Never invent ids. Keep the question path-free — do not
   name your helper or SKILL file; that is the thing under test.
 - `rc ask "<question>" --brain-ref dev/<branch> [--tenant <slug>]` ([brain-ask](../brain-ask/SKILL.md)).
   Capture every `run_id`. For the narrow-admin pickup test add `--principal-kind <kind>
-  --principal-id <id>` (works on `rc ask` and `mirror-try`).
-- Tickets drift: re-derive each question and its expected answer from **today's** record state (half
-  the ticket situations are usually fixed in prod by now); judge the run against what the helper
-  reports now, naming the historical cause as a likely explanation is correct, not a miss.
+  --principal-id <id>`. Raw scenario may answer in another language: judge pickup, not prose.
+- Tickets drift (half are usually fixed in prod by now): derive each question and expected answer
+  from **today's** record state; naming the historical cause as a likely explanation is not a miss.
 
 ## 5. Read the trace for pickup, not only for correctness
 
@@ -81,7 +104,8 @@ pickup of a wrong answer.
 
 1. **Opened** — did the main loop read your SKILL/case file? (files-read section; grounding
    pre-step selections are hints, not proof).
-2. **Called** — did it run the helper with sane arguments? (timeline `bash` commands).
+2. **Called** — which helper actually answered, with sane arguments? (timeline `bash` commands; a
+   sibling topic's helper answering an overlapping symptom is an ownership question, not a miss).
 3. **Right** — does the answer match what the human replied? Note what it still got wrong.
 4. **Cause of a miss** — grounding (file never surfaced), routing (surfaced but not opened),
    helper output (called, verdict buried or misread), or model (everything right, wrong prose).
@@ -89,35 +113,28 @@ pickup of a wrong answer.
 Table it: question → opened/called → ✓/✗ → cause. That table is the deliverable of the loop.
 When the draft contradicts your runbook, check the source method before calling it a miss: the model
 reading `/mirrors` code is often right and the runbook paraphrase wrong — fix the runbook.
+Knowledge-only questions (no record id) legitimately skip the helper; count them separately.
 
 ## 6. Fix developer experience, not steering
 
 Allowed fixes after a miss: rename to the symptom word the admin uses; put the verdict on line 1;
-add `--json`; make `--help` show a copy-pasteable example; add the one missing routing line; make
-the error text name the next call; split a wall of output into sections the agent can quote.
+add `--json`; make `--help` show every call form; add the one missing routing line; make the error
+text name the next call; move a fact the agent dug out of the source into an ℹ line.
 Not allowed: a prompt rule per failed run, broad AGENTS.md rewrites, touching other topics' files.
 Two or three loops is plenty — stop when the helper is used unprompted in ≥ 4 of 5 fresh questions,
-or when the remaining misses are clearly not yours (model prose, a grounding-pass artefact).
+or when the remaining misses are clearly not yours (model prose, emphasis, a grounding-pass artefact).
 
 ## 7. Ship and re-ask live
 
 [brain-publish](../brain-publish/SKILL.md) for the brain (exact SHA, channel proof); the mirror's
 own publish path for the mirror. Then one `rc ask` **without** `--brain-ref` and confirm in its trace
 `brain_resolved` is the published SHA and the helper still gets called. Done means live, not
-"ready to publish". Before publishing: every `skills/**` description ≤ 150 chars (the publish lint
-rejects longer ones, including other threads' files already on `main`), and on a shared checkout land
-commits through a detached `/tmp` worktree + cherry-pick, never by rebasing other agents' WIP.
+"ready to publish". Before publishing: every `skills/**` description ≤ 150 chars (publish lint, also
+for other threads' files on `main`; the pre-commit hygiene gate catches yours).
 
-## Lessons from past loops
+Shared checkouts with parallel agents: code in a `git worktree add` copy; land through a detached
+`/tmp` worktree at `origin/main` + cherry-pick, never amend/rebase in the shared checkout. Shared
+files commit whole: a sibling may already have landed your hunk (`git grep origin/main` first), and a
+routing-line conflict in `AGENTS.md` is normal — keep both lines.
 
-- Pickup is driven by **symptom words in the case-md/SKILL/docstring**, not by the script name; one
-  routing line + a case runbook in the admin's own Dutch has carried 4/4 record-bearing questions on
-  the first loop in three topics, with zero prompt rules.
-- Knowledge-only questions (no record id) legitimately skip the helper; count them separately.
-- A `*_to_md` section that already states the reason is not enough when the question is "why this
-  child and not the sibling": a per-person sweep is a different question shape.
-- A rule you only know from the KB is a paraphrase; the port of the real service (e.g. an export
-  scope) is where the invisible traps surface.
-- Shared checkouts commit shared files whole: your hunk may already be on `main` under another
-  thread's commit — diff against `origin/main` before assuming it is missing.
-- Per-topic lessons and open gaps live in the brain's `_internal/devloop-lessons.md` (backlog).
+Per-topic lessons and open gaps live in the brain's `_internal/devloop-lessons.md` (backlog).
