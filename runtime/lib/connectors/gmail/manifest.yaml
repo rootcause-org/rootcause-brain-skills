@@ -28,6 +28,8 @@ rate_limit:
 oauth:
   auth_url: https://accounts.google.com/o/oauth2/v2/auth
   token_url: https://oauth2.googleapis.com/token
+  # Coverage check only, never requested: the host hides gmail.read (not on ReplyPen's Google Cloud
+  # Console scope list) and powers this connector from the inbox grant's gmail.modify.
   default_scopes:
     - https://www.googleapis.com/auth/gmail.readonly
 help_md: |
@@ -36,11 +38,9 @@ help_md: |
   fields (subject, sender, date, snippet, labels, body excerpt) without flooding context with the
   full nested MIME payload.
 
-  **IMPORTANT — CASA / sensitive scope:** `gmail.readonly` is a *restricted* Google OAuth scope
-  (full mailbox read). For production use the project must complete Google's CASA Tier 2 security
-  assessment or use the narrower `gmail.metadata` scope (headers + labels only, no body). The
-  connector script accepts a `--scope` flag defaulting to `readonly`; flip to `metadata` for
-  lower-friction deployments where body content is not needed.
+  **Access:** there is no separate Gmail read sign-in. The connector reuses the access of the
+  project's connected Gmail inbox and only reads with it. With more than one Gmail inbox connected it
+  stays off until one is bound.
 
   Key script commands (print concise markdown):
 
