@@ -61,6 +61,7 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 | `rc-debug` | One run/thread/session to trace/debug/index/JSONL drilldown; analysis-first before edits. |
 | `rc-health` | Stale mirrors plus dead-lettered runs. |
 | `rc-fleet` | Recent fleet digest plus recurring failure patterns. |
+| [`brain-helper-devloop`](skills/brain-helper-devloop/SKILL.md) | The loop for adding or changing a brain/mirror helper: design from real tickets, build read-only and verdict-first, prove on real data (`mirror-try`, `scope-check`), push a dev ref, ask synthetic admin questions with `rc ask`, read each trace for unprompted pickup, fix developer experience instead of adding prompt rules, publish, re-ask live. |
 | [`mirror-try`](skills/mirror-try/SKILL.md) | Compare mirror helper revisions on real scoped data without changing the live mirror. |
 | [`brain-fleet-report`](skills/brain-fleet-report/SKILL.md) | Daily investigation: collect evidence, judge owner and technical findings, publish rolling review queues. |
 | [`brain-simulate`](skills/brain-simulate/SKILL.md) | Replay ~10 representative real inbound cases through `rc ask --simulation`, grade each draft against the human's real reply (content, routing, tone, format, safety), render a self-contained HTML report with run links and copy-paste steering prompts; diff a `dev/<branch>` brain against `main`. |

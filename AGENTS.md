@@ -145,6 +145,9 @@ Only these are first-class:
   question, clickable cluster chips showing the real tickets, one copy-as-markdown button), and
   the answers written back as `skills/codebase/` and `skills/databases/<db>.md` plus routing rows
   and the database description line.
+- `brain-helper-devloop` — the helper feedback loop: tickets → read-only verdict-first helper →
+  `mirror-try`/`scope-check` → `rc ask` synthetic questions on a dev ref → `rc run debug` for
+  unprompted pickup → DX fixes, never steering → `brain-publish` → live re-ask.
 - `mirror-try` — compare staged mirror helpers and sibling imports on real scoped production data.
 - `prod-console` — direct guarded production primitives through `rc dev console capabilities`,
   `rc dev console database`, `rc dev console bash`, and `rc dev console action`.
