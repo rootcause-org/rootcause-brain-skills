@@ -29,6 +29,21 @@ Public `rc` only; scope comes from `.rootcause.toml` + the OAuth login
 - **A question, not an id** → `brain-ask`.
 - **Nothing usable** → ask for a run UUID, thread/session id, or question, and stop.
 
+## Files in a chat session
+
+The files a chat user uploaded (any turn) stay in the session, but their bytes expire 30 days after
+upload; text lives as long as the session. List and stream-download them with your own login (admin
+tier on that project/tenant; never an end-user chat token):
+
+- `rc run attachments <session_id|run_id>`: list (origin, size, available). `rc run thread <id> --transcript` shows them too.
+- `--download` (user uploads; `--include-generated`, `--id <attachment_id>`, `--dir`) streams to
+  `.rootcause/attachments/<session_id>/`, sha256-verified, never overwriting. Images come as uploaded
+  when the original was kept; older ones only as the processed 1536px JPEG.
+- From a record an action created, e.g. a support ticket: `rc run attachments --resource support_ticket:<uuid>`.
+  This host-proven link outlives the action ledger's 14-day params scrub; a ticket's own session
+  hint is unverified, never use it as the source.
+- `expired` = bytes past 30 days; the text and metadata remain.
+
 ## Drill
 
 `rc run debug <uuid>` writes `.rootcause/debug/<run8>-<project>.{md,jsonl}`. Read the markdown index,
