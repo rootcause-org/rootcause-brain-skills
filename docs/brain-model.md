@@ -179,9 +179,11 @@ the doc's **full body** into a different host-assembled prompt:
 
 Pick the role by asking **who must hold the doc**. The pre-step only forwards `path:span` refs
 *probabilistically*; if the main agent must **always** have the content — not just when a selector deems
-it relevant — tag `agent`. The tag is a guarantee; span selection is not. A doc tagged both `grounding`
-and `agent` is marked in the selector's context as "already auto-pasted to the main agent", so the
-selector doesn't waste selections re-forwarding it.
+it relevant — tag `agent`. The tag is a guarantee; span selection is not. Every `agent` doc also reaches
+the selector, marked "already pasted in full to the main agent" (like `AGENTS.md`: re-reads are refused,
+its spans are never forwarded), so the selector spends its turns on what *complements* it. A doc tagged
+both `grounding` and `agent` therefore shows up once, not twice. A doc truncated at the `agent` cap
+stays readable and selectable past the cut.
 
 Standing rule for every role: **tag sparingly**. Each tagged doc is a per-run token tax on every thread;
 the caps are a safety net, not a budget. Past a cap the body is cut ("read the rest with bash") and
@@ -314,7 +316,9 @@ overviews** (a system map, the core glossary) and **never** for case runbooks or
 per-topic content is retrieval's job, fetched on demand.
 
 The trap: this tag reaches the **selector only**. The main answer-writing agent never sees the body — it
-sees, at best, a forwarded span. If the content must be in the writer's hands, add `agent`.
+sees, at best, a forwarded span. If the content must be in the writer's hands, tag `agent` instead —
+the selector sees `agent` docs too, so `[agent]` alone is enough (`[grounding, agent]` behaves the
+same).
 
 ### Feeding the main agent (`include_in: [agent]`)
 
