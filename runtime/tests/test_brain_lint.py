@@ -573,3 +573,48 @@ def test_detect_repo_kind(tmp_path: Path) -> None:
     # lint_brain detects on its own when no kind is passed.
     _write(mirror / "lib/notes.md", "---\ninclude_in: [agent]\n---\nx\n")
     assert [f.rule for f in lint_brain(mirror) if f.rule in _FM_RULES] == ["frontmatter-scope"]
+
+
+def test_run_hidden_paths_need_no_git(tmp_path: Path) -> None:
+    """Publish/canary lint mounts a worktree alone at /brain: its `.git` FILE points at an unmounted
+    gitdir, so git is unusable. Hidden docs must still be recognised from the control files."""
+    _seed_brain(tmp_path)
+    _write(tmp_path / ".git", "gitdir: /nonexistent/worktrees/canary-x\n")
+    _write(tmp_path / ".rcignore", "private/\n")
+    _write(tmp_path / "private/draft.md", "---\ndescription: >-\n  folded\n---\nx\n")
+    _write(tmp_path / "private/tagged.md", "---\ninclude_in: [agent]\n---\nx\n")
+
+    found = _fm(tmp_path, "brain")
+
+    assert list(found) == ["private/tagged.md"]
+    assert "run-hidden path" in found["private/tagged.md"][0].message
+
+
+def test_run_hidden_matcher_follows_gitignore_semantics(tmp_path: Path) -> None:
+    from lib.brain_lint import run_hidden
+
+    _write(tmp_path / ".replypenignore",
+           "# comment\n/tests/\n*.draft.md\n!keep.draft.md\nnotes/**\n/skills/**/tests/\n\\#hash.md\n")
+    _write(tmp_path / ".rcignore", "build\n")
+    hidden = run_hidden(tmp_path)
+
+    for rel in ("tests/a.md", "deep/x.draft.md", "notes/a/b.md", "skills/s/tests/t.md", "#hash.md",
+                "build/x.md", "a/build", ".git/x", "a/.gitignore", "node_modules/p/README.md", ".rcignore"):
+        assert hidden(rel), rel
+    for rel in ("deep/tests/a.md", "keep.draft.md", "notes", "skills/s/SKILL.md", "docs/a.md", "comment"):
+        assert not hidden(rel), rel
+
+
+def test_nested_key_inside_block_scalar_is_text(tmp_path: Path) -> None:
+    _write(tmp_path / "docs/a.md", "---\ndescription: D\nexample: |\n  include_in: [agent]\n---\nx\n")
+    assert _fm(tmp_path, "brain") == {}
+
+
+def test_line_scan_checks_survive_unrelated_yaml_errors(tmp_path: Path) -> None:
+    _write(tmp_path / "docs/a.md", "---\nnotes: invalid: yaml\ninclude_in: [agents]\n---\nx\n")
+    _write(tmp_path / "lib/b.md", "---\nnotes: invalid: yaml\ninclude_in: [agent]\n---\nx\n")
+
+    brain = _fm(tmp_path, "brain")
+    assert [f.rule for f in brain["docs/a.md"]] == ["include-in-value"]
+    assert "lib/b.md" not in brain
+    assert [f.rule for f in _fm(tmp_path, "mirror")["lib/b.md"]] == ["frontmatter-scope"]

@@ -49,6 +49,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 import yaml
 
@@ -437,29 +438,96 @@ def detect_repo_kind(root: str | Path) -> tuple[str, str]:
     return "brain", "no .rootcause.toml identity and no brain lists it under [mirrors]"
 
 
-def run_hidden_paths(root: str | Path) -> tuple[frozenset[str], tuple[str, ...]]:
-    """(exact paths, dir prefixes) a run never sees: the root `.replypenignore` / `.rcignore` rules the
-    host applies to brains, tenant brains and mirrors alike (internal/treeview/visible.go). Empty when
-    git cannot answer — fail-open, like the rest of the lint."""
+# Paths the host drops from every run view whatever the control files say (internal/treeview/visible.go
+# hiddenRunPath): `.git`, `.gitignore`/`.replypenignore` anywhere, the root `.rcignore`, dependency/cache
+# dirs, and secret-bearing dotenv files.
+_ALWAYS_HIDDEN_PARTS = frozenset({".git", ".gitignore", ".replypenignore", "__pycache__", "node_modules",
+                                  ".venv", "venv", ".pytest_cache", ".ruff_cache", ".mypy_cache"})
+_DOTENV_TEMPLATES = (".sample", ".example", ".template", ".dist", ".defaults")
+
+
+def _glob_regex(glob: str) -> str:
+    """gitignore glob -> regex over a slash path: `**/`, `/**`, `**`, `*`, `?`, `[...]`."""
+    out, i = [], 0
+    while i < len(glob):
+        if glob.startswith("**/", i):
+            out.append("(?:.*/)?"); i += 3
+        elif glob.startswith("/**", i) and i + 3 == len(glob):
+            out.append("(?:/.*)?"); i += 3
+        elif glob.startswith("**", i):
+            out.append(".*"); i += 2
+        elif glob[i] == "*":
+            out.append("[^/]*"); i += 1
+        elif glob[i] == "?":
+            out.append("[^/]"); i += 1
+        elif glob[i] == "[" and (end := glob.find("]", i + 2)) != -1:
+            body = glob[i + 1:end]
+            out.append("[" + ("^" + body[1:] if body[:1] in "!^" else body).replace("\\", "\\\\") + "]")
+            i = end + 1
+        elif glob[i] == "\\" and i + 1 < len(glob):
+            out.append(re.escape(glob[i + 1])); i += 2
+        else:
+            out.append(re.escape(glob[i])); i += 1
+    return "".join(out)
+
+
+def _ignore_rules(path: Path) -> list[tuple[re.Pattern[str], bool, bool, bool]]:
+    """(regex, negate, dir_only, anchored) per gitignore line, in file order."""
+    try:
+        lines = path.read_text("utf-8", "replace").splitlines()
+    except OSError:
+        return []
+    rules = []
+    for line in lines:
+        if not line.strip() or line.startswith("#"):
+            continue
+        if not line.endswith("\\ "):
+            line = line.rstrip(" ")
+        negate = line.startswith("!")
+        line = line[1:] if negate else line
+        if line[:2] in ("\\#", "\\!"):
+            line = line[1:]
+        if line.endswith("/**"):  # host: descendants only, never the dir itself (visible.go readRunIgnorePatterns)
+            line += "/*"
+        dir_only = line.endswith("/")
+        line = line.rstrip("/")
+        anchored = "/" in line
+        if not line:
+            continue
+        rules.append((re.compile(_glob_regex(line.lstrip("/"))), negate, dir_only, anchored))
+    return rules
+
+
+def run_hidden(root: str | Path) -> Callable[[str], bool]:
+    """Predicate: is this repo-relative path absent from every run view? Evaluates the root
+    `.replypenignore` / `.rcignore` (gitignore syntax, last match wins per file, union across files, an
+    ignored dir hides everything below it) plus the host's always-hidden paths — in pure Python, because
+    the publish/canary lint sees a worktree whose `.git` points at an unmounted gitdir."""
     root = Path(root)
-    exact: set[str] = set()
-    prefixes: set[str] = set()
-    for control in (".replypenignore", ".rcignore"):
-        if not (root / control).is_file():
-            continue
-        try:
-            proc = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "-c", "-o", "-i",
-                                   f"--exclude-from={root / control}"],
-                                  capture_output=True, text=True, timeout=60)
-        except (OSError, subprocess.SubprocessError):
-            continue
-        if proc.returncode != 0:
-            continue
-        for entry in (e for e in proc.stdout.split("\0") if e):
-            exact.add(entry)
-            if (root / entry).is_dir():
-                prefixes.add(entry.rstrip("/") + "/")
-    return frozenset(exact), tuple(sorted(prefixes))
+    files = [r for c in (".replypenignore", ".rcignore") if (r := _ignore_rules(root / c))]
+
+    def ignored(path: str, is_dir: bool) -> bool:
+        name = path.rsplit("/", 1)[-1]
+        for rules in files:
+            verdict = None
+            for regex, negate, dir_only, anchored in rules:
+                if dir_only and not is_dir:
+                    continue
+                if regex.fullmatch(path if anchored else name):
+                    verdict = not negate
+            if verdict:
+                return True
+        return False
+
+    def hidden(rel: str) -> bool:
+        parts = rel.strip("/").split("/")
+        if rel == ".rcignore" or _ALWAYS_HIDDEN_PARTS.intersection(parts):
+            return True
+        if any((p == ".env" or p.startswith(".env.")) and not p.endswith(_DOTENV_TEMPLATES) for p in parts):
+            return True
+        return any(ignored("/".join(parts[:k]), k < len(parts)) for k in range(1, len(parts) + 1))
+
+    return hidden
 
 
 def _unread_roles(rel: str, kind: str) -> set[str]:
@@ -494,6 +562,22 @@ def _as_list(value: object) -> list[str]:
     return [str(v) for v in value] if isinstance(value, list) else [str(value)]
 
 
+def _nested_keys(node: yaml.Node | None) -> set[str]:
+    """Mapping keys below the top level of a composed YAML document (scalar contents are not keys)."""
+    out: set[str] = set()
+    stack = [(node, 0)] if node is not None else []
+    while stack:
+        cur, depth = stack.pop()
+        if isinstance(cur, yaml.MappingNode):
+            for key, value in cur.value:
+                if depth and isinstance(key, yaml.ScalarNode):
+                    out.add(str(key.value))
+                stack.append((value, depth + 1))
+        elif isinstance(cur, yaml.SequenceNode):
+            stack.extend((item, depth + 1) for item in cur.value)
+    return out
+
+
 def _frontmatter_doc_findings(root: Path, rel: str, kind: str, hidden: bool) -> list[Finding]:
     """FAIL/WARN for one .md whose frontmatter declares something the host will never read."""
     path = root / rel
@@ -505,14 +589,18 @@ def _frontmatter_doc_findings(root: Path, rel: str, kind: str, hidden: bool) -> 
     if intended is None:
         return []
     block, at_byte_0 = intended
+    # YAML gives the author's intent (values, nesting); when it can't decode the block, the host's own
+    # line scan still reads top-level keys, so the line-scan checks below keep running on those.
     try:
+        node = yaml.compose("\n".join(block))
         data = yaml.safe_load("\n".join(block))
     except yaml.YAMLError:
-        data = None
-    data = data if isinstance(data, dict) else {}
-    top = {str(k) for k in data}
-    nested = {m.group(1) for line in block
-              if (m := re.match(r"^\s+(include_in|surfaces|description|exclude_in)\s*:", line))}
+        node = data = None
+    parsed = isinstance(data, dict)
+    data = data if parsed else {}
+    top = ({str(k) for k in data} if parsed else
+           {m.group(1) for line in block if (m := re.match(r"^([^\s#:][^:]*?)\s*:(?:\s|$)", line))})
+    nested = _nested_keys(node) & {*_HOST_KEYS, "exclude_in"} if parsed else set()
     spelled = {k: _KEY_SPELLINGS[n] for k in top
                if (n := k.strip().lower().replace("-", "_")) in _KEY_SPELLINGS and k != _KEY_SPELLINGS[n]}
     declared = ((top | nested) & {*_HOST_KEYS, "exclude_in"}) | set(spelled.values())
@@ -555,7 +643,7 @@ def _frontmatter_doc_findings(root: Path, rel: str, kind: str, hidden: bool) -> 
         out.append(unread(f"`{key}:` is indented (nested under another key); the host only reads "
                           "top-level keys — move it to column 0"))
 
-    if "include_in" in top and data:
+    if "include_in" in top and parsed:
         meant = {v for v in _as_list(data["include_in"]) if v}
         if meant != tags:
             out.append(unread(f"the host's line scan reads `include_in` as {sorted(tags)}, YAML as "
@@ -614,7 +702,7 @@ def _frontmatter_doc_findings(root: Path, rel: str, kind: str, hidden: bool) -> 
 def _check_frontmatter(root: Path, kind: str) -> list[Finding]:
     """Frontmatter the host will never read: tags outside its role's scan scope, unknown roles,
     keys in a form the host's line scan misses, and no-op tags on already-pasted AGENTS.md."""
-    hidden_exact, hidden_dirs = run_hidden_paths(root)
+    hidden = run_hidden(root)
     index = _git_index(root)
     if index is not None:
         rels = sorted(r for r in index[0] if r.endswith(".md") and r not in index[1])
@@ -626,8 +714,7 @@ def _check_frontmatter(root: Path, kind: str) -> list[Finding]:
     findings: list[Finding] = []
     for rel in rels:
         if (root / rel).is_file() and not (root / rel).is_symlink():
-            hidden = rel in hidden_exact or rel.startswith(hidden_dirs)
-            findings += _frontmatter_doc_findings(root, rel, kind, hidden)
+            findings += _frontmatter_doc_findings(root, rel, kind, hidden(rel))
     return findings
 
 

@@ -20,6 +20,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Callable
 
 RUNTIME = (Path(__file__).resolve().parents[3] / "runtime").resolve()
 if RUNTIME.is_dir():
@@ -45,7 +46,7 @@ def _reexec_with_pyyaml() -> int:
 
 
 try:
-    from lib.brain_lint import REPO_KINDS, detect_repo_kind, format_report, lint_brain, run_hidden_paths
+    from lib.brain_lint import REPO_KINDS, detect_repo_kind, format_report, lint_brain, run_hidden
 except ModuleNotFoundError as exc:
     if exc.name != "yaml":
         raise
@@ -73,12 +74,13 @@ def _select(paths: list[str], brain: Path) -> set[str]:
     return selected
 
 
-def _run_hidden(brain: Path) -> tuple[frozenset[str], tuple[str, ...]]:
-    """Run-hidden trees (`.replypenignore` / `.rcignore`, plus the conventional `_internal/`):
-    maintainer-only content absent from every run, so no linter judges it — except the rules that
-    exist to say a declaration there is never read (`_ALWAYS_REPORTED`)."""
-    exact, prefixes = run_hidden_paths(brain)
-    return exact, tuple(sorted({*prefixes, "_internal/"}))
+def _run_hidden(brain: Path) -> Callable[[str], bool]:
+    """Run-hidden trees (`.replypenignore` / `.rcignore` and the host's always-hidden paths, via the
+    git-free `lib.brain_lint.run_hidden`, plus the conventional `_internal/`): maintainer-only content
+    absent from every run, so no linter judges it — except the rules that exist to say a declaration
+    there is never read (`_ALWAYS_REPORTED`)."""
+    hidden = run_hidden(brain)
+    return lambda rel: rel.startswith("_internal/") or hidden(rel)
 
 
 _ALWAYS_REPORTED = frozenset({"frontmatter-scope"})
@@ -105,11 +107,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     findings = lint_brain(brain, kind)
-    hidden_exact, hidden_dirs = _run_hidden(brain)
-    findings = [f for f in findings
-                if f.rule in _ALWAYS_REPORTED
-                or ((rel := f.path.split(":", 1)[0]) not in hidden_exact
-                    and not rel.startswith(hidden_dirs))]
+    hidden = _run_hidden(brain)
+    findings = [f for f in findings if f.rule in _ALWAYS_REPORTED or not hidden(f.path.split(":", 1)[0])]
     if args.paths and not args.all:
         selected = _select(args.paths, brain)
         dirs = tuple(p for p in selected if p.endswith("/"))
