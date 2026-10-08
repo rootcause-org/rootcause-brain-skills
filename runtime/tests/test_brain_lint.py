@@ -15,8 +15,10 @@ from lib.brain_lint import (
     ACTION_SURFACES,
     DESC_MAX_LEN,
     Finding,
+    MIRROR_SCAN_DIRS,
     _md_description,
     _manifest_description,
+    detect_repo_kind,
     format_report,
     lint_brain,
 )
@@ -414,3 +416,160 @@ def test_lint_brain_advises_on_large_on_demand_docs_and_agents_md(tmp_path: Path
     assert not _fails(findings)
     report = format_report(findings)
     assert report.count("fix: keep a lean core") == 1
+
+
+# ---- frontmatter the host never reads -------------------------------------------------------------
+
+_FM_RULES = {"frontmatter-scope", "frontmatter-unread", "frontmatter-redundant", "include-in-value"}
+
+
+def _fm(root: Path, kind: str | None = None) -> dict[str, list[Finding]]:
+    out: dict[str, list[Finding]] = {}
+    for f in lint_brain(root, kind):
+        if f.rule in _FM_RULES:
+            out.setdefault(f.path, []).append(f)
+    return out
+
+
+def test_mirror_include_in_only_read_at_root_and_scan_dirs(tmp_path: Path) -> None:
+    tag = "---\ninclude_in: [agent]\n---\nbody\n"
+    for rel in ("AGENTS.md", "docs/schema.md", "doc/a.md", ".claude/x.md", ".agents/y.md",
+                "skills/starting-context/SKILL.md", "app/models/README.md", "notes/deep/map.md"):
+        _write(tmp_path / rel, tag)
+
+    found = _fm(tmp_path, "mirror")
+
+    assert sorted(found) == ["app/models/README.md", "notes/deep/map.md"]
+    [finding] = found["notes/deep/map.md"]
+    assert (finding.level, finding.rule) == ("FAIL", "frontmatter-scope")
+    assert "only read in a mirror at the repo root *.md or under" in finding.message
+    assert all(f"{d}/" in finding.message for d in MIRROR_SCAN_DIRS)
+    # The same files in a brain are all read (its root AGENTS.md is pasted anyway, hence redundant).
+    assert [f.rule for fs in _fm(tmp_path, "brain").values() for f in fs] == ["frontmatter-redundant"]
+
+
+def test_triage_tag_only_read_in_project_brain(tmp_path: Path) -> None:
+    _write(tmp_path / "triage.md", "---\ninclude_in: [triage, grounding]\n---\nskip bots\n")
+
+    assert _fm(tmp_path, "brain") == {}
+    for kind, where in (("tenant", "tenant overlay"), ("mirror", "mirror")):
+        [finding] = _fm(tmp_path, kind)["triage.md"]
+        assert finding.level == "FAIL" and where in finding.message
+        assert "only read from the project brain" in finding.message
+
+
+def test_mirror_surfaces_are_never_honored(tmp_path: Path) -> None:
+    _write(tmp_path / "docs/chat.md", "---\nsurfaces: [chat]\n---\nchat only\n")
+
+    assert _fm(tmp_path, "brain") == {}
+    [finding] = _fm(tmp_path, "mirror")["docs/chat.md"]
+    assert finding.rule == "frontmatter-scope" and "`surfaces:` is only honored" in finding.message
+    assert not [f for f in lint_brain(tmp_path, "mirror") if f.rule == "doc-surfaces"]
+
+
+def test_tags_in_pruned_and_run_hidden_paths_are_never_read(tmp_path: Path) -> None:
+    _git_brain(tmp_path)
+    tag = "---\ninclude_in: [agent]\n---\nbody\n"
+    _write(tmp_path / ".rootcause/notes.md", tag)
+    _write(tmp_path / "_internal/plan.md", tag)
+    _write(tmp_path / "_internal/untagged.md", "---\ndescription: |\n  x\n---\n")
+    _write(tmp_path / "docs/visible.md", tag)
+    _write(tmp_path / ".replypenignore", "/_internal/\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A", "-f"], check=True)
+
+    found = _fm(tmp_path, "brain")
+
+    assert sorted(found) == [".rootcause/notes.md", "_internal/plan.md"]
+    assert "skips that dir" in found[".rootcause/notes.md"][0].message
+    assert "run-hidden path" in found["_internal/plan.md"][0].message
+
+
+def test_tags_on_already_pasted_agents_md_are_redundant(tmp_path: Path) -> None:
+    _write(tmp_path / "AGENTS.md", "---\ninclude_in: [grounding, agent, triage]\n---\nmap\n")
+
+    [brain] = _fm(tmp_path, "brain")["AGENTS.md"]
+    assert (brain.level, brain.rule) == ("WARN", "frontmatter-redundant")
+    assert brain.message.endswith("drop `agent`, `grounding`")
+    # Tenant: grounding is the useful tag there, agent pastes it twice; triage is never read.
+    tenant = {f.rule: f for f in _fm(tmp_path, "tenant")["AGENTS.md"]}
+    assert tenant["frontmatter-redundant"].message.endswith("pastes it twice — drop `agent`")
+    assert tenant["frontmatter-scope"].level == "FAIL"
+    # Mirror: a tagged root AGENTS.md is exactly how a mirror's instructions get loaded.
+    assert [f.rule for f in _fm(tmp_path, "mirror")["AGENTS.md"]] == ["frontmatter-scope"]
+    _write(tmp_path / "AGENTS.md", "---\ninclude_in: [grounding, agent]\n---\nmap\n")
+    assert _fm(tmp_path, "mirror") == {}
+
+
+def test_unknown_include_in_role_fails_with_hint(tmp_path: Path) -> None:
+    _write(tmp_path / "docs/a.md", "---\ninclude_in: [agents, Grounding, kb]\n---\nx\n")
+    _write(tmp_path / "docs/ok.md", "---\ninclude_in:\n  - agent  # writer\n  - \"principal\"\n---\nx\n")
+
+    found = _fm(tmp_path)
+
+    assert list(found) == ["docs/a.md"]
+    messages = sorted(f.message for f in found["docs/a.md"])
+    assert all(f.rule == "include-in-value" and f.level == "FAIL" for f in found["docs/a.md"])
+    assert "did you mean `agent`?" in messages[1] and "did you mean `grounding`?" in messages[0]
+    assert "'kb'; the host only reads triage, grounding, agent, principal" in messages[2]
+
+
+def test_frontmatter_forms_the_host_line_scan_misses(tmp_path: Path) -> None:
+    cases = {
+        "bom.md": "\ufeff---\ninclude_in: [agent]\n---\nx\n",
+        "blank.md": "\n---\ndescription: D\ninclude_in: [agent]\n---\nx\n",
+        "nested.md": "---\nmeta:\n  include_in: [agent]\n---\nx\n",
+        "dash.md": "---\ninclude-in: [agent]\n---\nx\n",
+        "surface.md": "---\nsurface: [chat]\n---\nx\n",
+        "multiline.md": "---\ninclude_in: [agent,\n  grounding]\n---\nx\n",
+        "exclude.md": "---\nexclude_in: [all]\n---\nx\n",
+        "folded.md": "---\ndescription: >-\n  Open when a refund fails\n---\nx\n",
+        "wrapped.md": "---\ndescription: Open when a refund\n  fails twice\n---\nx\n",
+        "late.md": "---\nnotes: " + "y" * 2100 + "\ndescription: Late one\n---\nx\n",
+        "huge.md": "---\ninclude_in: [agent]\nnotes: " + "y" * 9000 + "\n---\nx\n",
+    }
+    for name, text in cases.items():
+        _write(tmp_path / "notes" / name, text)
+    # Forms the host DOES read: no findings.
+    _write(tmp_path / "notes/fine.md",
+           "---\r\ndescription: 'Open when: refunds'\r\ninclude_in: agent\r\nsurfaces: [email]\r\n---\r\nx\r\n")
+    _write(tmp_path / "notes/plain.md", "# no frontmatter\ninclude_in: [agent]\n")
+    # SKILL.md descriptions are owned by `description-missing`; no second finding here.
+    _write(tmp_path / "skills/x/SKILL.md", "---\ndescription: |\n  multi\n---\n")
+
+    found = _fm(tmp_path)
+
+    assert sorted(found) == sorted(f"notes/{n}" for n in cases)
+    assert all(f.rule == "frontmatter-unread" and f.level == "FAIL" for fs in found.values() for f in fs)
+    msg = {p.split("/")[1]: " | ".join(f.message for f in fs) for p, fs in found.items()}
+    assert "does not start at byte 0" in msg["bom.md"] and "`include_in`" in msg["bom.md"]
+    assert "`description`, `include_in`" in msg["blank.md"]
+    assert "indented" in msg["nested.md"]
+    assert "`include-in:` is not read" in msg["dash.md"] and "`surface:` is not read" in msg["surface.md"]
+    assert "['agent'], YAML as ['agent', 'grounding']" in msg["multiline.md"]
+    assert "`exclude_in` is never read" in msg["exclude.md"]
+    assert "block scalar" in msg["folded.md"] and "no gloss" in msg["folded.md"]
+    assert "spans several lines" in msg["wrapped.md"] and "only 'Open when a refund'" in msg["wrapped.md"]
+    assert "past the first 2048 bytes" in msg["late.md"]
+    assert "closes past the first 8192 bytes" in msg["huge.md"]
+    # A mirror's descriptions are the customer's, not our contract: WARN, not FAIL.
+    assert [f.level for f in _fm(tmp_path, "mirror")["notes/folded.md"]] == ["WARN"]
+
+
+def test_detect_repo_kind(tmp_path: Path) -> None:
+    brain, tenant = tmp_path / "org/brain", tmp_path / "org/brain-tenant-x"
+    mirror, other = tmp_path / "customer/app", tmp_path / "customer/unrelated"
+    for repo in (brain, tenant, mirror, other):
+        repo.mkdir(parents=True)
+    _write(brain / ".rootcause.toml", 'project = "p"\n\n[mirrors]\napp = "../../customer/app"\n')
+    _write(tenant / ".rootcause.toml", 'project = "p"\ntenant = "x"\n')
+
+    assert detect_repo_kind(brain)[0] == "brain"
+    assert detect_repo_kind(tenant)[0] == "tenant"
+    assert detect_repo_kind(mirror) == ("mirror", "listed in brain/.rootcause.toml [mirrors]")
+    assert detect_repo_kind(other)[0] == "brain"
+    # A source repo may carry `project =` only to scope `rc`; being someone's mirror wins.
+    _write(mirror / ".rootcause.toml", 'project = "p-staff"\n')
+    assert detect_repo_kind(mirror)[0] == "mirror"
+    # lint_brain detects on its own when no kind is passed.
+    _write(mirror / "lib/notes.md", "---\ninclude_in: [agent]\n---\nx\n")
+    assert [f.rule for f in lint_brain(mirror) if f.rule in _FM_RULES] == ["frontmatter-scope"]

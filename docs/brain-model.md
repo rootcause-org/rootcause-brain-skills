@@ -177,6 +177,11 @@ the doc's **full body** into a different host-assembled prompt:
 | `agent` | the **answer-writer** — the main loop, pasted right after `AGENTS.md` | **reference** material the writer must hold in full: schema/column maps, identifier tables, field lists | 16KB / 48KB |
 | `principal` | the **answer-writer**, but only on **principal-scoped** runs (an end user's embedded chat) | the lane doc the model must never skip there (e.g. `skills/account-chat/SKILL.md`) and that would mislead other runs; `[agent, principal]` pastes once | shares `agent`'s caps |
 
+Lint FAIL `frontmatter-scope` / `frontmatter-unread` / `include-in-value` (`brain_lint.py`) catch a key
+the host never reads: a tag outside its mount's scan scope (below; `triage` outside the project brain;
+run-hidden paths), a nested/misspelt/multi-line key or one not at byte 0, an unknown role. It lints a
+tenant overlay or mirror repo by its kind (auto-detected; `--as` overrides).
+
 Pick the role by asking **who must hold the doc**. The pre-step only forwards `path:span` refs
 *probabilistically*; if the main agent must **always** have the content — not just when a selector deems
 it relevant — tag `agent`. The tag is a guarantee; span selection is not. Every `agent` doc also reaches

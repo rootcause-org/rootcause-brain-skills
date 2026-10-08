@@ -89,3 +89,36 @@ def test_entrypoint_skips_run_hidden_paths(tmp_path: Path) -> None:
 
     assert run.returncode == 0, run.stdout + run.stderr
     assert "symlink" not in run.stdout
+
+
+def test_entrypoint_lints_a_mirror_without_skills_dir(tmp_path: Path) -> None:
+    """`--as mirror`: no skills/ needed, kind printed, a tag outside the mirror scan dirs FAILs."""
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "notes.md").write_text("---\ninclude_in: [agent]\n---\nx\n", "utf-8")
+    command = [sys.executable, str(SCRIPT), "--brain", str(tmp_path)]
+
+    as_brain = subprocess.run(command, text=True, capture_output=True, check=False)
+    as_mirror = subprocess.run([*command, "--as", "mirror"], text=True, capture_output=True, check=False)
+
+    assert as_brain.returncode == 1 and "--as tenant|mirror" in as_brain.stderr
+    assert as_mirror.returncode == 1, as_mirror.stdout + as_mirror.stderr
+    assert as_mirror.stdout.startswith("brain lint: linting as mirror (--as)\n")
+    assert "lib/notes.md — `include_in` is only read in a mirror" in as_mirror.stdout
+
+
+def test_entrypoint_reports_tags_on_run_hidden_paths(tmp_path: Path) -> None:
+    """Hidden paths are not judged, except to say a tag there is never read."""
+    brain = _brain(tmp_path, "x = 1\n")
+    for args in (["init", "-q"], ["config", "user.email", "t@example.com"],
+                 ["config", "user.name", "Test"]):
+        subprocess.run(["git", "-C", str(brain), *args], check=True, capture_output=True)
+    (brain / ".replypenignore").write_text("/maint/\n", "utf-8")
+    (brain / "maint").mkdir()
+    (brain / "maint" / "plan.md").write_text("---\ninclude_in: [agent]\n---\nx\n", "utf-8")
+    subprocess.run(["git", "-C", str(brain), "add", "-A"], check=True, capture_output=True)
+
+    run = subprocess.run([sys.executable, str(SCRIPT), "--brain", str(brain)],
+                         text=True, capture_output=True, check=False)
+
+    assert run.returncode == 1
+    assert "maint/plan.md — `include_in` on a run-hidden path" in run.stdout

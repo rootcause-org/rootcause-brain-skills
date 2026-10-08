@@ -25,6 +25,11 @@ that contract:
   * **WARN** — a markdown doc that won't reach the model whole: an `include_in` hard-load over the
     host's per-file/total cap (`HARD_LOAD_CAPS`), or an on-demand doc / `AGENTS.md` over
     `ON_DEMAND_DOC_CAP`. Advisory: the fix is a lean core + grouped detail files.
+  * **FAIL** — frontmatter the host will never read: an `include_in` tag outside its role's scan scope
+    (mirror file outside root *.md + `MIRROR_SCAN_DIRS`, `triage` outside the project brain, pruned or
+    run-hidden path), a mirror `surfaces:`, an unknown role, a key the line scan misses (not at byte 0,
+    nested, misspelt, multi-line, `exclude_in`). **WARN** — a no-op tag on an already-pasted AGENTS.md.
+    The repo kind (brain / tenant overlay / mirror) comes from `detect_repo_kind`.
 
 It mirrors `rootcause/internal/brain/bootstrap.go` so lint and tree **agree**: the same bounded
 head-read frontmatter parse for markdown (block scalars / multi-line values are *not* rendered, so
@@ -37,6 +42,7 @@ publish gate can import it without pytest. `lib.brain_lint_pytest` owns the opti
 
 from __future__ import annotations
 
+import difflib
 import json
 import os
 import re
@@ -269,17 +275,23 @@ def _kb(n: int) -> str:
     return f"{n / 1024:.1f} KB"
 
 
+def _frontmatter_lines(text: str) -> list[str] | None:
+    """The lines between the leading `---` fences exactly as treeview.frontmatterLines sees them:
+    opening fence at byte 0, closing fence within FRONTMATTER_CAP; None when the host reads no block."""
+    lines = text[:FRONTMATTER_CAP].split("\n")
+    if len(lines) < 2 or lines[0].rstrip("\r") != "---":
+        return None
+    close = next((i for i, line in enumerate(lines[1:], start=1) if line.rstrip("\r") == "---"), None)
+    return None if close is None else lines[1:close]
+
+
 def _include_in(text: str) -> set[str]:
     """`include_in` entries, read like treeview.frontmatterList: top-level key, flow or block list,
     frontmatter closing within FRONTMATTER_CAP. Line scan, not YAML — what it can't read the host
     doesn't read either."""
-    lines = text[:FRONTMATTER_CAP].split("\n")
-    if len(lines) < 2 or lines[0].rstrip("\r") != "---":
+    block = _frontmatter_lines(text)
+    if block is None:
         return set()
-    close = next((i for i, line in enumerate(lines[1:], start=1) if line.rstrip("\r") == "---"), None)
-    if close is None:
-        return set()
-    block = lines[1:close]
     for i, raw in enumerate(block):
         line = raw.rstrip("\r")
         if not line.startswith("include_in:"):
@@ -329,7 +341,7 @@ def _doc_size_candidates(root: Path) -> list[str]:
                   and (root / r).is_file() and not (root / r).is_symlink())
 
 
-def _check_doc_sizes(root: Path) -> list[Finding]:
+def _check_doc_sizes(root: Path, kind: str = "brain") -> list[Finding]:
     """WARN when a markdown doc won't reach the model whole: a hard-loaded body over its per-file or
     total cap (the host truncates it), or an on-demand doc / AGENTS.md over ON_DEMAND_DOC_CAP."""
     findings: list[Finding] = []
@@ -339,13 +351,13 @@ def _check_doc_sizes(root: Path) -> list[Finding]:
             text = (root / rel).read_text("utf-8", "replace")
         except OSError:
             continue
-        tags = _include_in(text)
+        tags = _include_in(text) - _unread_roles(rel, kind)
         size = len(_strip_frontmatter(text).encode("utf-8"))
         over: list[str] = []
         loaded = False
         for role, (role_tags, per_file, total_cap) in HARD_LOAD_CAPS.items():
-            # The root AGENTS.md is pasted verbatim on its own, never via a grounding/agent tag.
-            if not tags.intersection(role_tags) or (rel == "AGENTS.md" and role != "triage"):
+            # The brain's root AGENTS.md is pasted verbatim on its own, never via a grounding/agent tag.
+            if not tags.intersection(role_tags) or (kind == "brain" and rel == "AGENTS.md" and role != "triage"):
                 continue
             loaded = True
             kept = min(size, per_file)
@@ -359,7 +371,7 @@ def _check_doc_sizes(root: Path) -> list[Finding]:
             findings.append(Finding(rel, "WARN",
                 f"hard-loaded body is {_kb(size)}, over {' and '.join(over)}: the host truncates it "
                 "and models rarely read the rest with bash", "doc-size"))
-        elif rel == "AGENTS.md" and size > ON_DEMAND_DOC_CAP:
+        elif rel == "AGENTS.md" and kind != "mirror" and size > ON_DEMAND_DOC_CAP:
             findings.append(Finding(rel, "WARN",
                 f"AGENTS.md is {_kb(size)}: pasted whole into every run, every extra byte is tax on "
                 "every thread and buries the routing", "doc-size"))
@@ -367,6 +379,255 @@ def _check_doc_sizes(root: Path) -> list[Finding]:
             findings.append(Finding(rel, "WARN",
                 f"{_kb(size)} doc will not be read at once: a bash read shows only a ~3 KB preview "
                 "past 6000 chars, and models often stop at the first screen", "doc-size"))
+    return findings
+
+
+# ---- Frontmatter the host never reads ------------------------------------------------------------
+# Every constant below names the rootcause source it mirrors; change them together with the host.
+
+# include_in roles the host collects: grounding/agent/principal in internal/grounding/hardload.go
+# (roleGrounding/roleAgent/rolePrincipal), triage in internal/triage/brainknowledge.go.
+INCLUDE_IN_ROLES = ("triage", "grounding", "agent", "principal")
+# A MIRROR repo is scanned for include_in only at its root *.md and recursively under these dirs —
+# rootcause internal/grounding/hardload.go `mirrorScanSubdirs`. Brains and tenant overlays are scanned whole.
+MIRROR_SCAN_DIRS = (".agents", ".claude", "doc", "docs", "skills")
+# Dirs treeview.TaggedFiles prunes in every scan (internal/treeview/tagged.go + bootstrap.go skipDirs).
+_TAG_PRUNED_DIRS = frozenset({".git", ".rootcause", "__pycache__", "node_modules", ".venv", "venv",
+                              ".pytest_cache", ".ruff_cache", ".mypy_cache"})
+# Frontmatter keys the host reads from brain markdown, all by a top-level line scan (treeview.frontmatterList,
+# bootstrap.go mdDescription). Near-miss spellings the host silently ignores map to the real key.
+_HOST_KEYS = ("include_in", "surfaces", "description")
+_KEY_SPELLINGS = {"includein": "include_in", "include_in": "include_in", "surface": "surfaces",
+                  "surfaces": "surfaces", "description": "description"}
+
+# How a repo is consumed decides which tags the host reads (see detect_repo_kind).
+REPO_KINDS = ("brain", "tenant", "mirror")
+
+
+def detect_repo_kind(root: str | Path) -> tuple[str, str]:
+    """(kind, reason): `tenant` when the committed `.rootcause.toml` names a tenant; `mirror` when a
+    brain checkout beside it lists this repo in its `.rootcause.toml [mirrors]` (the table brain_run.py
+    resolves) — checked before `project =`, which a source repo may carry only to scope `rc`; else
+    `brain`, the widest include_in scope."""
+    import tomllib
+
+    root = Path(root).resolve()
+
+    def toml(path: Path) -> dict:
+        try:
+            return tomllib.loads(path.read_text("utf-8"))
+        except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
+            return {}
+
+    own = toml(root / ".rootcause.toml")
+    if own.get("tenant"):
+        return "tenant", f".rootcause.toml: project {own.get('project')!r}, tenant {own['tenant']!r}"
+    # Brains declare mirrors as paths relative to themselves; look in the sibling and cousin checkouts
+    # (`../brain`, `../../org/brain`). Skipped at filesystem depth 1 (a container's /brain).
+    if root.parent != root.parent.parent:
+        for cfg in sorted([*root.parent.glob("*/.rootcause.toml"), *root.parent.parent.glob("*/*/.rootcause.toml")]):
+            mirrors = toml(cfg).get("mirrors") if cfg.parent != root else None
+            if not isinstance(mirrors, dict):
+                continue
+            for value in mirrors.values():
+                if isinstance(value, str) and (cfg.parent / value).resolve() == root:
+                    return "mirror", f"listed in {cfg.parent.name}/.rootcause.toml [mirrors]"
+    if own.get("project"):
+        return "brain", f".rootcause.toml: project {own['project']!r}"
+    return "brain", "no .rootcause.toml identity and no brain lists it under [mirrors]"
+
+
+def run_hidden_paths(root: str | Path) -> tuple[frozenset[str], tuple[str, ...]]:
+    """(exact paths, dir prefixes) a run never sees: the root `.replypenignore` / `.rcignore` rules the
+    host applies to brains, tenant brains and mirrors alike (internal/treeview/visible.go). Empty when
+    git cannot answer — fail-open, like the rest of the lint."""
+    root = Path(root)
+    exact: set[str] = set()
+    prefixes: set[str] = set()
+    for control in (".replypenignore", ".rcignore"):
+        if not (root / control).is_file():
+            continue
+        try:
+            proc = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "-c", "-o", "-i",
+                                   f"--exclude-from={root / control}"],
+                                  capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if proc.returncode != 0:
+            continue
+        for entry in (e for e in proc.stdout.split("\0") if e):
+            exact.add(entry)
+            if (root / entry).is_dir():
+                prefixes.add(entry.rstrip("/") + "/")
+    return frozenset(exact), tuple(sorted(prefixes))
+
+
+def _unread_roles(rel: str, kind: str) -> set[str]:
+    """include_in roles the host never collects from `rel` in a repo of this kind."""
+    parts = rel.split("/")
+    if _TAG_PRUNED_DIRS.intersection(parts[:-1]):
+        return set(INCLUDE_IN_ROLES)
+    if kind == "mirror" and len(parts) > 1 and parts[0] not in MIRROR_SCAN_DIRS:
+        return set(INCLUDE_IN_ROLES)
+    # Triage reads only the flat project brain (internal/triage/brainknowledge.go BrainKnowledge).
+    return {"triage"} if kind != "brain" else set()
+
+
+def _intended_block(text: str) -> tuple[list[str], bool] | None:
+    """The frontmatter block an author evidently meant, ignoring the host's byte-0 + 8KB rules:
+    (lines, at_byte_0). None when the file opens with no `---` fence at all."""
+    lines = text.split("\n")
+    start = 0
+    while start < len(lines) and not lines[start].lstrip("\ufeff").strip():
+        start += 1
+    if start >= len(lines) or lines[start].lstrip("\ufeff").strip() != "---":
+        return None
+    close = next((i for i in range(start + 1, len(lines)) if lines[i].strip() == "---"), None)
+    if close is None:
+        return None
+    return lines[start + 1:close], start == 0 and lines[0].rstrip("\r") == "---"
+
+
+def _as_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    return [str(v) for v in value] if isinstance(value, list) else [str(value)]
+
+
+def _frontmatter_doc_findings(root: Path, rel: str, kind: str, hidden: bool) -> list[Finding]:
+    """FAIL/WARN for one .md whose frontmatter declares something the host will never read."""
+    path = root / rel
+    try:
+        text = path.read_bytes().decode("utf-8", "replace")
+    except OSError:
+        return []
+    intended = _intended_block(text)
+    if intended is None:
+        return []
+    block, at_byte_0 = intended
+    try:
+        data = yaml.safe_load("\n".join(block))
+    except yaml.YAMLError:
+        data = None
+    data = data if isinstance(data, dict) else {}
+    top = {str(k) for k in data}
+    nested = {m.group(1) for line in block
+              if (m := re.match(r"^\s+(include_in|surfaces|description|exclude_in)\s*:", line))}
+    spelled = {k: _KEY_SPELLINGS[n] for k in top
+               if (n := k.strip().lower().replace("-", "_")) in _KEY_SPELLINGS and k != _KEY_SPELLINGS[n]}
+    declared = ((top | nested) & {*_HOST_KEYS, "exclude_in"}) | set(spelled.values())
+    if not declared:
+        return []
+    # skills/*/SKILL.md and runbooks already FAIL `description-missing` when the tree renders no gloss.
+    desc_owned = bool(re.fullmatch(r"skills/[^/]+/SKILL\.md|skills/cases/[^/]+\.md", rel))
+
+    def unread(message: str, level: str = "FAIL") -> Finding:
+        return Finding(rel, level, message, "frontmatter-unread")
+
+    def scope(message: str) -> Finding:
+        return Finding(rel, "FAIL", message, "frontmatter-scope")
+
+    fm = _frontmatter_lines(text)
+    if fm is None:
+        lost = sorted(k for k in declared if k != "description" or not desc_owned)
+        if not at_byte_0 and lost:
+            return [unread(f"frontmatter does not start at byte 0 (BOM, blank line, or text before `---`), "
+                           f"so the host reads none of it — its {', '.join(f'`{k}`' for k in lost)} "
+                           "are ignored; make `---` the very first line")]
+        if at_byte_0 and "include_in" in declared:
+            return [unread(f"frontmatter closes past the first {FRONTMATTER_CAP} bytes the host reads, so "
+                           "its `include_in` is ignored; shorten the frontmatter")]
+        return []
+
+    tags = _include_in(text)
+    if hidden:
+        return [scope("`include_in` on a run-hidden path (.replypenignore/.rcignore): the run never sees "
+                      "this file, so it is never hard-loaded; un-hide it or drop the tag")] if tags else []
+
+    out: list[Finding] = []
+    if "exclude_in" in top | nested:
+        out.append(unread("`exclude_in` is never read by the host (no visibility effect); hide a file with "
+                          "`.replypenignore`, scope it per surface with `surfaces:`, or drop the key"))
+    for key, real in sorted(spelled.items()):
+        if real not in top:
+            out.append(unread(f"`{key}:` is not read; the host only reads the exact key `{real}:`"))
+    for key in sorted(nested - top - {"exclude_in"}):
+        out.append(unread(f"`{key}:` is indented (nested under another key); the host only reads "
+                          "top-level keys — move it to column 0"))
+
+    if "include_in" in top and data:
+        meant = {v for v in _as_list(data["include_in"]) if v}
+        if meant != tags:
+            out.append(unread(f"the host's line scan reads `include_in` as {sorted(tags)}, YAML as "
+                              f"{sorted(meant)}; write it on one line (`include_in: [agent, grounding]`) "
+                              "or as a `- role` block list"))
+    unknown = sorted(tags - set(INCLUDE_IN_ROLES))
+    for value in unknown:
+        near = difflib.get_close_matches(value.lower(), INCLUDE_IN_ROLES, n=1)
+        hint = f" — did you mean `{near[0]}`?" if near else ""
+        out.append(Finding(rel, "FAIL", f"unknown `include_in` role {value!r}{hint}; the host only reads "
+                           f"{', '.join(INCLUDE_IN_ROLES)}, so this tag loads nothing", "include-in-value"))
+
+    roles = tags & set(INCLUDE_IN_ROLES)
+    dead = roles & _unread_roles(rel, kind)
+    parts = rel.split("/")
+    if dead and _TAG_PRUNED_DIRS.intersection(parts[:-1]):
+        pruned = next(p for p in parts[:-1] if p in _TAG_PRUNED_DIRS)
+        out.append(scope(f"`include_in` under `{pruned}/`: the host's tag scan skips that dir, so this "
+                         "file is never hard-loaded; move it or drop the tag"))
+    elif dead and kind == "mirror" and len(parts) > 1 and parts[0] not in MIRROR_SCAN_DIRS:
+        dirs = ", ".join(f"{d}/" for d in MIRROR_SCAN_DIRS)
+        out.append(scope(f"`include_in` is only read in a mirror at the repo root *.md or under {dirs} — "
+                         "this file is never hard-loaded; move it there or drop the tag"))
+    elif dead:
+        where = "a tenant overlay" if kind == "tenant" else "a mirror"
+        out.append(scope(f"`include_in: [triage]` is only read from the project brain; triage never reads "
+                         f"{where} — move the rule into the project brain's triage.md or drop `triage`"))
+    if rel == "AGENTS.md":
+        pasted = {"brain": {"grounding", "agent", "principal"}, "tenant": {"agent", "principal"}}.get(kind, set())
+        if extra := sorted(roles & pasted):
+            where = ("/brain/AGENTS.md is already pasted whole into grounding and the main agent on every run"
+                     if kind == "brain" else
+                     "/tenant/AGENTS.md is already pasted whole into the main agent; the tag pastes it twice")
+            out.append(Finding(rel, "WARN", f"{where} — drop {', '.join(f'`{r}`' for r in extra)}",
+                               "frontmatter-redundant"))
+
+    if kind == "mirror" and "surfaces" in top:
+        out.append(scope("`surfaces:` is only honored in a project or tenant brain; a mirror doc is never "
+                         "stubbed per surface — move the doc into the brain or drop the key"))
+
+    if "description" in top and not desc_owned:
+        meant_desc = data.get("description")
+        meant_desc = _tidy(meant_desc) if isinstance(meant_desc, str) else ""
+        shown = _md_description(path) or ""
+        bare = shown.strip("\"'")
+        if meant_desc and meant_desc != shown and meant_desc.startswith(bare):
+            in_head = any(line.startswith("description:") for line in text[:DESC_HEAD_BYTES].split("\n"))
+            why = ("spans several lines" if bare else "is a block scalar or starts on the next line"
+                   if in_head else f"starts past the first {DESC_HEAD_BYTES} bytes the tree reads")
+            got = f"only {shown!r}" if bare else "no gloss"
+            out.append(unread(f"`description:` {why}; the tree line renders {got} — write it as one "
+                              f"line ≤{DESC_MAX_LEN} chars", "WARN" if kind == "mirror" else "FAIL"))
+    return out
+
+
+def _check_frontmatter(root: Path, kind: str) -> list[Finding]:
+    """Frontmatter the host will never read: tags outside its role's scan scope, unknown roles,
+    keys in a form the host's line scan misses, and no-op tags on already-pasted AGENTS.md."""
+    hidden_exact, hidden_dirs = run_hidden_paths(root)
+    index = _git_index(root)
+    if index is not None:
+        rels = sorted(r for r in index[0] if r.endswith(".md") and r not in index[1])
+    else:
+        rels = []
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = sorted(d for d in dirnames if d not in _TAG_PRUNED_DIRS)
+            rels += [_rel(root, Path(dirpath) / f) for f in sorted(filenames) if f.endswith(".md")]
+    findings: list[Finding] = []
+    for rel in rels:
+        if (root / rel).is_file() and not (root / rel).is_symlink():
+            hidden = rel in hidden_exact or rel.startswith(hidden_dirs)
+            findings += _frontmatter_doc_findings(root, rel, kind, hidden)
     return findings
 
 
@@ -497,11 +758,12 @@ def _check_symlinks(root: Path) -> list[Finding]:
     return findings
 
 
-def lint_brain(brain_root: str | Path) -> list[Finding]:
+def lint_brain(brain_root: str | Path, kind: str | None = None) -> list[Finding]:
     """Lint every routable file under `brain_root` for a renderable, in-budget `description:`.
 
     Targets, mirroring the authoring mandate: `skills/*/SKILL.md`, `skills/cases/*.md`, and
     `actions/*/manifest.yaml`. Pure + deterministic (stdlib + PyYAML): no network, no DSN, no model.
+    `kind` (brain | tenant | mirror) sets which frontmatter the host reads; None = detect_repo_kind.
     """
     root = Path(brain_root)
     findings: list[Finding] = []
@@ -539,8 +801,11 @@ def lint_brain(brain_root: str | Path) -> list[Finding]:
     for manifest in sorted(surface_manifests):
         findings += _check_manifest_surfaces(manifest, _rel(root, manifest))
 
-    findings += _check_doc_surfaces(root)
-    findings += _check_doc_sizes(root)
+    kind = kind or detect_repo_kind(root)[0]
+    if kind != "mirror":  # a mirror's `surfaces:` is never honored at all — _check_frontmatter FAILs it
+        findings += _check_doc_surfaces(root)
+    findings += _check_doc_sizes(root, kind)
+    findings += _check_frontmatter(root, kind)
 
     # Bind the sibling lint when this plugin loads, before collected brain tests can replace the
     # top-level ``lib`` module in ``sys.modules`` with a test double.
@@ -559,6 +824,10 @@ _RULE_LABELS = {
     "action-surfaces": "action surfaces",
     "doc-surfaces": "doc surfaces",
     "doc-size": "doc size",
+    "frontmatter-scope": "frontmatter the host never reads here",
+    "frontmatter-unread": "frontmatter the host cannot parse",
+    "frontmatter-redundant": "redundant frontmatter",
+    "include-in-value": "unknown include_in roles",
     "description-missing": "missing descriptions",
     "description-length": "description length",
     "description-style": "description style",
@@ -574,6 +843,12 @@ _RULE_LABELS = {
 
 # One fix line per rule group, printed under its header instead of on every row.
 _RULE_FIXES = {
+    "frontmatter-scope": "fix: move the file where its mount's host scan reads the key, or drop the key "
+                         "(brain_lint.py prints the repo kind it linted as; override with --as)",
+    "frontmatter-unread": "fix: `---` on line 1, keys at column 0 spelled exactly `include_in` / `surfaces` / "
+                          "`description`, one-line values, frontmatter closed within 8 KB",
+    "frontmatter-redundant": "fix: drop the listed tags; the file already reaches that prompt whole",
+    "include-in-value": "fix: use only triage, grounding, agent, principal",
     "doc-size": "fix: keep a lean core with the most important rules first; move detail into grouped "
                 "files (e.g. one per domain), each linked from the core by one \"Open X for Y\" line",
 }

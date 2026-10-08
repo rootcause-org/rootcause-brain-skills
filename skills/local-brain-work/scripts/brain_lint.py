@@ -5,6 +5,11 @@
     brain_lint.py --all                # whole tree, explicitly
     brain_lint.py AGENTS.md skills/    # only these files/dirs
     brain_lint.py --strict             # WARN findings fail too
+    brain_lint.py --as mirror          # lint a repo the way the host reads it as /mirrors/<name>
+
+The repo kind (brain / tenant overlay / mirror) decides which frontmatter the host reads; it is
+auto-detected (`.rootcause.toml` project/tenant, else a sibling brain's `[mirrors]` entry) and printed
+when it is not `brain`.
 """
 
 from __future__ import annotations
@@ -26,31 +31,6 @@ _BOOTSTRAP_FLAG = "RC_BRAIN_LINT_BOOTSTRAPPED"
 # *.py). Explicit paths with any other suffix are ignored rather than treated as clean-but-scanned.
 SCAN_SUFFIXES = {".md", ".py", ".yaml", ".yml"}
 
-# Run-hidden trees (`.replypenignore` / `.rcignore` / the conventional `_internal/`): maintainer-only
-# content that is physically absent from every run, so no linter judges it. Same semantics as
-# brain_structure.py's ignored-refs resolver and brain-harvest/scripts/brain_lint.py.
-IGNORE_CONTROLS = (".replypenignore", ".rcignore")
-
-
-def _run_hidden(brain: Path) -> tuple[set[str], tuple[str, ...]]:
-    """(exact paths, directory prefixes) the production run never sees, brain-relative posix."""
-    exact: set[str] = set()
-    prefixes = {"_internal/"}
-    for control in IGNORE_CONTROLS:
-        if not (brain / control).is_file():
-            continue
-        proc = subprocess.run(
-            ["git", "-C", str(brain), "ls-files", "-z", "-c", "-o", "-i",
-             f"--exclude-from={brain / control}"], capture_output=True, text=True)
-        if proc.returncode != 0:
-            continue  # not a git checkout: judge everything, as before
-        for entry in (e for e in proc.stdout.split("\0") if e):
-            exact.add(entry)
-            if (brain / entry).is_dir():
-                prefixes.add(entry.rstrip("/") + "/")
-    return exact, tuple(sorted(prefixes))
-
-
 def _reexec_with_pyyaml() -> int:
     """The interpreter that picked us up lacks PyYAML (typical when `python3` resolves to an
     ephemeral `uv run` venv, e.g. as a `brain_git_sync.py --verify-command`). Re-exec once under
@@ -65,7 +45,7 @@ def _reexec_with_pyyaml() -> int:
 
 
 try:
-    from lib.brain_lint import format_report, lint_brain
+    from lib.brain_lint import REPO_KINDS, detect_repo_kind, format_report, lint_brain, run_hidden_paths
 except ModuleNotFoundError as exc:
     if exc.name != "yaml":
         raise
@@ -93,10 +73,23 @@ def _select(paths: list[str], brain: Path) -> set[str]:
     return selected
 
 
+def _run_hidden(brain: Path) -> tuple[frozenset[str], tuple[str, ...]]:
+    """Run-hidden trees (`.replypenignore` / `.rcignore`, plus the conventional `_internal/`):
+    maintainer-only content absent from every run, so no linter judges it — except the rules that
+    exist to say a declaration there is never read (`_ALWAYS_REPORTED`)."""
+    exact, prefixes = run_hidden_paths(brain)
+    return exact, tuple(sorted({*prefixes, "_internal/"}))
+
+
+_ALWAYS_REPORTED = frozenset({"frontmatter-scope"})
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="brain_lint.py", description=__doc__)
     parser.add_argument("--brain", help="brain dir (default: cwd)")
     parser.add_argument("--strict", action="store_true", help="exit 1 when WARN findings exist")
+    parser.add_argument("--as", dest="kind", choices=REPO_KINDS,
+                        help="how the host consumes this repo (default: auto-detect)")
     parser.add_argument("--all", action="store_true",
                         help="lint the whole brain tree (the default when no paths are given)")
     parser.add_argument("paths", nargs="*",
@@ -105,21 +98,26 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     brain = Path(args.brain).expanduser().resolve() if args.brain else Path.cwd().resolve()
-    if not (brain / "skills").is_dir() and not (brain / "actions").is_dir():
-        print(f"error: no skills/ or actions/ under {brain} — is this a brain checkout?", file=sys.stderr)
+    kind, reason = (args.kind, "--as") if args.kind else detect_repo_kind(brain)
+    if kind == "brain" and not (brain / "skills").is_dir() and not (brain / "actions").is_dir():
+        print(f"error: no skills/ or actions/ under {brain} — is this a brain checkout? "
+              "(lint a tenant overlay or mirror with --as tenant|mirror)", file=sys.stderr)
         return 1
 
-    findings = lint_brain(brain)
+    findings = lint_brain(brain, kind)
     hidden_exact, hidden_dirs = _run_hidden(brain)
     findings = [f for f in findings
-                if (rel := f.path.split(":", 1)[0]) not in hidden_exact
-                and not rel.startswith(hidden_dirs)]
+                if f.rule in _ALWAYS_REPORTED
+                or ((rel := f.path.split(":", 1)[0]) not in hidden_exact
+                    and not rel.startswith(hidden_dirs))]
     if args.paths and not args.all:
         selected = _select(args.paths, brain)
         dirs = tuple(p for p in selected if p.endswith("/"))
         # Some rules append `:<line>` to the path they report; scope on the file part.
         findings = [f for f in findings
                     if (rel := f.path.split(":", 1)[0]) in selected or rel.startswith(dirs)]
+    if kind != "brain":
+        print(f"brain lint: linting as {kind} ({reason})")
     print(format_report(findings))
     return int(any(f.level == "FAIL" or (args.strict and f.level == "WARN") for f in findings))
 
