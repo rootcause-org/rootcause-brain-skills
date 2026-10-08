@@ -22,6 +22,7 @@ from lib.brain_lint import (
     MIRROR_SCAN_DIRS,
     _include_in,
     md_description_full,
+    md_description_yaml_tag,
     md_tree_gloss,
     _manifest_description,
     detect_repo_kind,
@@ -60,6 +61,7 @@ def test_frontmatter_corpus(name: str) -> None:
     assert (full or "") == want["description_full"]
     assert md_tree_gloss(full) == want["gloss"]
     assert sorted(_include_in((CORPUS / name).read_bytes().decode("utf-8", "replace"))) == want["include_in"]
+    assert md_description_yaml_tag(CORPUS / name) == want["yaml_tag"]
 
 
 def test_md_description_variants(tmp_path: Path) -> None:
@@ -646,3 +648,30 @@ def test_line_scan_checks_survive_unrelated_yaml_errors(tmp_path: Path) -> None:
     assert [f.rule for f in brain["docs/a.md"]] == ["include-in-value"]
     assert "lib/b.md" not in brain
     assert [f.rule for f in _fm(tmp_path, "mirror")["lib/b.md"]] == ["frontmatter-scope"]
+
+
+def test_duplicate_description_on_owned_files(tmp_path: Path) -> None:
+    """SKILL.md/runbooks are judged by `description-missing` for an unread value, but a second
+    `description:` the host ignores is reported like on any other doc — never twice."""
+    dup = "---\ndescription: First routing text\ndescription: Second routing text\n---\n"
+    _write(tmp_path / "skills/dup/SKILL.md", dup)
+    _write(tmp_path / "skills/cases/dup.md", dup)
+    _write(tmp_path / "skills/nulldup/SKILL.md", "---\ndescription: ~\ndescription: Second\n---\n")
+
+    found = {f.path: f for f in lint_brain(tmp_path, "brain") if f.rule == "frontmatter-unread"}
+    assert "declared more than once" in found["skills/dup/SKILL.md"].message
+    assert "declared more than once" in found["skills/cases/dup.md"].message
+    assert "skills/nulldup/SKILL.md" not in found  # already FAILs description-missing
+    assert [f.rule for f in lint_brain(tmp_path, "brain") if f.path == "skills/nulldup/SKILL.md"] == [
+        "description-missing"]
+
+
+def test_plain_scalars_resolve_like_the_host(tmp_path: Path) -> None:
+    """YAML 1.2 (yaml.v3) typing, not PyYAML's 1.1: `on`/`yes`/`OFF` are strings, `1e3` a float."""
+    for name, value in {"on": "on", "yes": "yes", "off": "OFF", "quoted": "'42'"}.items():
+        _write(tmp_path / f"skills/{name}/SKILL.md", f"---\ndescription: {value}\n---\n")
+    for name, value in {"float": "1e3", "hex": "0x1F", "bool": "true"}.items():
+        _write(tmp_path / f"skills/{name}/SKILL.md", f"---\ndescription: {value}\n---\n")
+
+    fails = {f.path for f in _fails(lint_brain(tmp_path, "brain"))}
+    assert fails == {"skills/float/SKILL.md", "skills/hex/SKILL.md", "skills/bool/SKILL.md"}

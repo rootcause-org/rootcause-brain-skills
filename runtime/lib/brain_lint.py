@@ -44,6 +44,7 @@ publish gate can import it without pytest. `lib.brain_lint_pytest` owns the opti
 
 from __future__ import annotations
 
+import datetime
 import difflib
 import json
 import os
@@ -146,31 +147,100 @@ def _legacy_md_description(head: bytes) -> str | None:
     return None
 
 
+_YAML_TAG_PREFIX = "tag:yaml.org,2002:"
+# yaml.v3 resolve() for an untagged plain scalar (gopkg.in/yaml.v3 resolve.go): YAML 1.2 core plus v3's
+# quirks — `on`/`yes`/`off` stay strings, `1e3` is a float — where PyYAML's SafeLoader is YAML 1.1.
+_V3_PLAIN = {
+    **dict.fromkeys(("true", "True", "TRUE", "false", "False", "FALSE"), "bool"),
+    **dict.fromkeys(("", "~", "null", "Null", "NULL"), "null"),
+    **dict.fromkeys((f"{sign}.{v}" for sign in ("", "+", "-") for v in ("inf", "Inf", "INF")), "float"),
+    **dict.fromkeys((".nan", ".NaN", ".NAN"), "float"),
+    "<<": "merge",
+}
+_V3_INT = re.compile(r"[-+]?(?:0[xX][0-9a-fA-F]+|0[oO][0-7]+|0[bB][01]+|0[0-7]*|[1-9][0-9]*)")
+_V3_FLOAT = re.compile(r"[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?")
+_V3_TIMESTAMP = re.compile(
+    r"([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})"
+    r"(?:[Tt][0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}(?:\.[0-9]+)?(?:Z|[-+][0-9]{2}:[0-9]{2})"
+    r"| [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}(?:\.[0-9]+)?)?")
+
+
+def _v3_plain_tag(value: str) -> str:
+    if value in _V3_PLAIN:
+        return _YAML_TAG_PREFIX + _V3_PLAIN[value]
+    if value[:1] == "." and re.fullmatch(r"\.[0-9]+(?:[eE][-+]?[0-9]+)?", value):
+        return _YAML_TAG_PREFIX + "float"
+    if value[:1] and value[0] in "+-0123456789":
+        if m := _V3_TIMESTAMP.fullmatch(value):
+            try:
+                datetime.date(int(m[1]), int(m[2]), int(m[3]))
+                return _YAML_TAG_PREFIX + "timestamp"
+            except ValueError:
+                pass
+        plain = value.replace("_", "")
+        if _V3_INT.fullmatch(plain):
+            return _YAML_TAG_PREFIX + "int"
+        if _V3_FLOAT.fullmatch(plain):
+            return _YAML_TAG_PREFIX + "float"
+    return _YAML_STR
+
+
+class _HostLoader(yaml.SafeLoader):
+    """SafeLoader whose untagged plain scalars resolve like yaml.v3, so the lint's string/non-string/null
+    verdict on a description is the host's `ShortTag()`. Quoted and explicitly tagged scalars are
+    unaffected (PyYAML only calls resolve for them as before)."""
+
+    def resolve(self, kind, value, implicit):  # type: ignore[override]
+        if kind is yaml.ScalarNode and implicit[0]:
+            return _v3_plain_tag(value)
+        return super().resolve(kind, value, implicit)
+
+
+def _description_nodes(block: list[str]) -> list[yaml.Node] | None:
+    """Every top-level `description` value node in a frontmatter block, in order; None when the block
+    is not a decodable YAML mapping (the host then falls back to the line scan)."""
+    try:
+        root = yaml.compose("\n".join(line.rstrip("\r") for line in block), Loader=_HostLoader)
+    except yaml.YAMLError:
+        return None
+    if not isinstance(root, yaml.MappingNode):
+        return None
+    return [v for k, v in root.value if isinstance(k, yaml.ScalarNode) and k.value == "description"]
+
+
+def _node_text(node: yaml.Node) -> str | None:
+    """A description node as the host renders it: any non-null scalar's collapsed source text."""
+    if isinstance(node, yaml.ScalarNode) and node.tag != _YAML_NULL:
+        return _tidy(node.value) or None
+    return None
+
+
 def _frontmatter_description(raw: bytes) -> tuple[str | None, str]:
     """(description, how) exactly as `treeview.DocDescription` reads it, whitespace-collapsed and NOT
     yet capped at DESC_FULL_MAX_LEN. `how`: "yaml" (a string), "yaml-nonstr" (another non-null scalar,
     read as its source text), "line-scan" (legacy fallback), "none".
 
-    The frontmatter block (`---` at byte 0, closing fence within FRONTMATTER_CAP) is decoded as YAML;
-    the FIRST top-level `description` key wins. Malformed YAML, a non-mapping root, or no closed
-    block falls back to the legacy line scan, so nothing the old reader rendered regresses.
+    The frontmatter block (`---` at byte 0, closing fence within FRONTMATTER_CAP) is decoded as YAML
+    with yaml.v3 scalar typing; the FIRST top-level `description` key wins. Malformed YAML, a
+    non-mapping root, or no closed block falls back to the legacy line scan, so nothing the old reader
+    rendered regresses.
     """
     block = _frontmatter_lines(raw[:FRONTMATTER_CAP].decode("utf-8", "replace"))
-    if block is not None:
-        try:
-            root = yaml.compose("\n".join(line.rstrip("\r") for line in block), Loader=yaml.SafeLoader)
-        except yaml.YAMLError:
-            root = None
-        if isinstance(root, yaml.MappingNode):
-            for key, value in root.value:
-                if not (isinstance(key, yaml.ScalarNode) and key.value == "description"):
-                    continue
-                if isinstance(value, yaml.ScalarNode) and value.tag != _YAML_NULL and (val := _tidy(value.value)):
-                    return val, "yaml" if value.tag == _YAML_STR else "yaml-nonstr"
-                return None, "none"
-            return None, "none"
+    nodes = _description_nodes(block) if block is not None else None
+    if nodes is not None:
+        if nodes and (val := _node_text(nodes[0])):
+            return val, "yaml" if nodes[0].tag == _YAML_STR else "yaml-nonstr"
+        return None, "none"
     legacy = _legacy_md_description(raw)
     return (legacy, "line-scan") if legacy else (None, "none")
+
+
+def md_description_yaml_tag(path: str | Path) -> str:
+    """Short YAML tag (`!!str`, `!!int`, `!!seq`, …) of the description node the host decodes, the
+    yaml.v3 `ShortTag()`; "" when the host reads no key from YAML (none, or line-scan fallback)."""
+    block = _frontmatter_lines(_read_head(Path(path)).decode("utf-8", "replace"))
+    nodes = _description_nodes(block) if block is not None else None
+    return nodes[0].tag.replace(_YAML_TAG_PREFIX, "!!") if nodes else ""
 
 
 def _read_head(path: Path, limit: int = FRONTMATTER_CAP) -> bytes:
@@ -667,16 +737,21 @@ def _frontmatter_doc_findings(root: Path, rel: str, kind: str, hidden: bool) -> 
     fm = _frontmatter_lines(text)
 
     def desc_unread() -> list[Finding]:
-        """The tree reads another `description` than the YAML the author wrote. SKILL.md/runbooks are
-        judged by `description-missing`; a mirror's descriptions are the customer's, so WARN there."""
-        meant = data.get("description") if "description" in top and not desc_owned else None
-        if not isinstance(meant, str) or not (meant := _tidy(meant)):
-            return []
+        """The tree reads another `description` than the author wrote: a second key it ignores, or a
+        block past its 8 KiB envelope. An owned file (SKILL.md/runbook) whose host value is unread
+        already FAILs `description-missing`; a mirror's descriptions are the customer's, so WARN there."""
+        nodes = _description_nodes(block) or []
         shown = _frontmatter_description(text.encode("utf-8"))[0] or ""
-        if shown == meant:
+        if not nodes or (desc_owned and not shown):
             return []
-        why = (f"sits in frontmatter that closes past the first {FRONTMATTER_CAP} bytes the host reads"
-               if fm is None else "is declared more than once (the host reads the first, YAML the last)")
+        if fm is not None:
+            if len(nodes) < 2:
+                return []
+            why = "is declared more than once (the host reads only the first)"
+        elif shown == (_node_text(nodes[0]) or ""):
+            return []
+        else:
+            why = f"sits in frontmatter that closes past the first {FRONTMATTER_CAP} bytes the host reads"
         got = repr(_cap(shown, 60)) if shown else "no gloss"
         return [unread(f"`description:` {why}; the tree line renders {got} — keep one `description:` "
                        "in a short frontmatter block", "WARN" if kind == "mirror" else "FAIL")]
