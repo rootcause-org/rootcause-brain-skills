@@ -16,7 +16,8 @@ content is judged. Checks (each independently reported, skippable with `--skip <
                    `.rcignore`, the conventional `_internal/` tree, `.gitignore`, or the controls.
   * lint         — `brain_lint.py` passes on staged files and on the tree scope (below).
   * hygiene      — `brain_hygiene.py`: conflict markers, unresolved `{{ }}`, `/Users/` paths, dead
-                   links, em dashes in customer copy, unrenderable mermaid (changed-file scope).
+                   links, em dashes in customer copy, unrenderable mermaid, a `chat_inspiration.md`
+                   the host would silently mangle (changed-file scope).
   * raw-tracked  — no raw-harvest path is tracked now (`.rootcause/` fragments or split-file shapes).
   * raw-history  — no raw-harvest path appears in git history (deleted-but-still-in-history case).
   * scratch      — (`--expect-clean` only) no `.rootcause/harvest/` scratch root remains on disk.

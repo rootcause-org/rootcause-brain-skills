@@ -48,7 +48,7 @@ Set `SKILL` to the directory holding this `SKILL.md`; every command below is
 | `brain_smoke.py` | import smoke alone (what publish verification runs) |
 | `brain_lint.py` | dependency-light action lint; whole tree by default (`--all`) or only the paths you pass; no uv env, non-zero on FAIL |
 | `brain_structure.py` | links, frontmatter, routing, privacy lint, hygiene |
-| `brain_hygiene.py` | pre-push gate `brain_git_sync.py` always runs: conflict markers, projection `{{ }}`, `/Users/`, dead links, customer-copy em dashes, mermaid |
+| `brain_hygiene.py` | pre-push gate `brain_git_sync.py` always runs: conflict markers, projection `{{ }}`, `/Users/`, dead links, customer-copy em dashes, mermaid, `chat_inspiration.md` gallery (`chat-inspiration`) |
 | `brain_action.py` | hosted-Python action: Layer-1 + preflight + policy + write body |
 | `brain_projection.py` | tenant projection preview — see [projection.md](projection.md) |
 | `brain_dump.py` | explode one prod run id into `.rootcause/dump/` (markdown index + JSONL) |

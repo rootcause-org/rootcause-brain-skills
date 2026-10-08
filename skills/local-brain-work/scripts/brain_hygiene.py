@@ -21,6 +21,14 @@ and dev-tooling dot-dirs are judged for conflict markers only):
                    start (e.g. no headless Chrome), skips the rule with a NOTICE.
   * description  — a `skills/**/*.md` frontmatter `description` over 150 characters (the publish
                    preflight rejects it; the skill tree truncates it).
+  * chat-inspiration — root `chat_inspiration.md` (chat example-prompt gallery), parsed exactly as the
+                   host does (`parse_chat_inspiration`), whose parser drops bad lines silently. FAIL:
+                   no prompt at all, a bullet in a category that yields no prompt, a cap exceeded
+                   (20 categories, 50 prompts/category, 500-char prompt, 80-char title), a heading
+                   that yields no category, a duplicate category id, an unbalanced `[placeholder]`,
+                   frontmatter `surfaces:` missing or without `chat`. NOTICE (non-blocking): prompt
+                   over 160 chars, no bold title, empty category, duplicate prompt text, bullets
+                   swallowed by a sub-heading.
 
 Everything but `conflict` is scoped to changed files (vs `--base`, default origin/main) so a mature
 tree's legacy debt cannot block an unrelated publish; `--all` judges every tracked file.
@@ -41,6 +49,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unicodedata
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -58,6 +67,16 @@ TOOLING_DIRS = (".agents/", ".claude/", ".github/")
 MERMAID_TIMEOUT_S = 30
 DESCRIPTION_MAX = 150  # rootcause publish preflight limit for skills/**/*.md descriptions
 MERMAID_SYNTAX_RE = re.compile(r"(Parse|Lexical|Syntax) error|No diagram type detected", re.I)
+
+# Mirror of rootcause internal/chatinspiration (library.go): keep caps, regexes and separators in sync.
+CHAT_INSPIRATION_FILE = "chat_inspiration.md"
+CI_MAX_CATEGORIES, CI_MAX_PROMPTS, CI_MAX_PROMPT_RUNES, CI_MAX_TITLE_RUNES = 20, 50, 500, 80
+CI_DERIVED_TITLE_RUNES = 60
+CI_READABLE_PROMPT_RUNES = 160  # card readability, not a host cap
+CI_PLACEHOLDER_RE = re.compile(r"\[[^\[\]\n]{1,40}\]")
+CI_ID_SUFFIX_RE = re.compile(r"\s*\{#([A-Za-z0-9_-]{1,64})\}\s*\Z", re.ASCII)
+CI_BOLD_RE = re.compile(r"^\*\*(.+?)\*\*\s*(.*)$", re.DOTALL)
+CI_SEPARATORS = ("\u2014", "\u2013", "-", ":")
 
 
 def _glob_re(glob: str) -> re.Pattern[str]:
@@ -131,6 +150,191 @@ def _mermaid_render(mmdc: list[str], source: str) -> tuple[bool, str]:
         return True, " | ".join(lines[hit:hit + 4])
 
 
+def _ci_slug(label: str) -> str:
+    out, dash = [], False
+    for ch in unicodedata.normalize("NFD", label.lower()):
+        cat = unicodedata.category(ch)
+        if cat == "Mn":
+            continue
+        if cat.startswith("L") or cat == "Nd":
+            if dash and out:
+                out.append("-")
+            dash = False
+            out.append(ch)
+        else:
+            dash = True
+    return "".join(out)
+
+
+def _ci_emoji_base(c: int) -> bool:
+    return (c >= 0x1F000 or 0x2190 <= c <= 0x2BFF or 0x2300 <= c <= 0x23FF or c in (0xA9, 0xAE)
+            or (unicodedata.category(chr(c)) == "So" and c > 0x2000))
+
+
+def _ci_split_emoji(s: str) -> tuple[str, str]:
+    """Peel one leading emoji grapheme off a heading (Go `splitEmoji`)."""
+    if not s or not _ci_emoji_base(ord(s[0])):
+        return "", s
+    regional = lambda c: 0x1F1E6 <= c <= 0x1F1FF  # noqa: E731
+    i = 1
+    if regional(ord(s[0])) and i < len(s) and regional(ord(s[i])):
+        i += 1
+    while i < len(s):
+        c = ord(s[i])
+        if c in (0xFE0F, 0xFE0E, 0x20E3) or 0x1F3FB <= c <= 0x1F3FF or 0xE0020 <= c <= 0xE007F:
+            i += 1
+        elif c == 0x200D:
+            i += 2
+        else:
+            return s[:i], s[i:].strip()
+    return s[:i], ""
+
+
+def _ci_truncate(s: str, n: int) -> str:
+    if len(s) <= n:
+        return s
+    cut = s[:n]
+    if (i := cut.rfind(" ")) > len(cut) // 2:
+        cut = cut[:i]
+    return cut.rstrip(" ,.;:") + "\u2026"
+
+
+def _ci_surfaces(lines: list[str], end: int) -> list[str] | None:
+    """Top-level `surfaces:` of the frontmatter (inline or block list); None when absent."""
+    for i in range(1, end):
+        if m := re.match(r"^surfaces\s*:(.*)$", lines[i]):
+            value = m.group(1).split("#", 1)[0].strip()
+            if not value:
+                items = []
+                for raw in lines[i + 1:end]:
+                    if not (b := re.match(r"^\s+-\s*(.*)$", raw)):
+                        break
+                    items.append(b.group(1).split("#", 1)[0])
+                value = ",".join(items)
+            return [v.strip().strip("\"'") for v in value.strip("[]").split(",") if v.strip()]
+    return None
+
+
+def parse_chat_inspiration(text: str, path: str = CHAT_INSPIRATION_FILE
+                           ) -> tuple[list[dict], list[bs.Finding]]:
+    """Parse a brain's `chat_inspiration.md` exactly as the host does and judge what it would
+    silently drop. Returns (categories, findings); a category is {id, label, emoji, line, prompts},
+    a prompt {title, prompt, placeholders, line, bold}. ERROR findings block; NOTICE ones advise."""
+    findings: list[bs.Finding] = []
+
+    def add(message: str, fix: str, line: int | None, severity: str = "ERROR") -> None:
+        findings.append(bs.Finding("hygiene", f"chat-inspiration: {message}; fix: {fix}",
+                                   path=path, line=line, severity=severity))
+
+    lines = text.replace("\r\n", "\n").split("\n")
+    start = 0
+    if lines and lines[0].strip() == "---":
+        start = next((i + 1 for i in range(1, len(lines)) if lines[i].strip() == "---"), 0)
+    surfaces = _ci_surfaces(lines, start - 1) if start else None
+    if surfaces is None:
+        add("no frontmatter `surfaces:`, so email runs see the gallery as a doc",
+            "start the file with `---` / `surfaces: [chat, dashboard_chat]` / `---`", 1)
+    elif "chat" not in surfaces:
+        add(f"frontmatter `surfaces: {surfaces}` lacks `chat`",
+            "use `surfaces: [chat, dashboard_chat]`", 1)
+
+    cats: list[dict] = []
+    by_id: dict[str, dict] = {}
+    cur: dict | None = None
+    after_subheading = False  # a non-## heading ended a category: its bullets are ignored
+    seen_prompts: dict[str, int] = {}
+    for lineno, line in enumerate(lines[start:], start=start + 1):
+        trimmed = line.strip()
+        is_bullet = trimmed.startswith(("- ", "* "))
+        if trimmed.startswith("## "):
+            cur, after_subheading = None, False
+            heading = trimmed[3:]
+            cid = ""
+            if m := CI_ID_SUFFIX_RE.search(heading):
+                cid, heading = m.group(1).lower(), heading[:m.start()]
+            emoji, label = _ci_split_emoji(heading.strip())
+            cid = cid or _ci_slug(label)
+            if not label or not cid:
+                add("heading yields no category (no label/id), its bullets are dropped",
+                    "write `## <emoji> Label`", lineno)
+                continue
+            if cid in by_id:
+                add(f"duplicate category id {cid!r} (first at line {by_id[cid]['line']}); the host "
+                    "merges them", "merge the sections or give one an explicit `{#id}`", lineno)
+                cur = by_id[cid]
+                continue
+            if len(cats) >= CI_MAX_CATEGORIES:
+                add(f"category {label!r} exceeds the {CI_MAX_CATEGORIES}-category cap and is dropped",
+                    "merge categories", lineno)
+                continue
+            cur = {"id": cid, "label": label, "emoji": emoji, "line": lineno, "prompts": []}
+            cats.append(cur)
+            by_id[cid] = cur
+        elif trimmed.startswith("#"):
+            after_subheading = cur is not None or after_subheading
+            cur = None
+        elif is_bullet and cur is None and after_subheading:
+            add("bullet under a sub-heading is not a prompt (only `##` sections are categories)",
+                "promote the heading to `##` or drop the bullet", lineno, "NOTICE")
+        elif is_bullet and cur is not None:
+            body_text = trimmed[2:].strip()
+            if len(cur["prompts"]) >= CI_MAX_PROMPTS:
+                add(f"category {cur['id']!r} exceeds the {CI_MAX_PROMPTS}-prompt cap, bullet dropped",
+                    "split the category", lineno)
+                continue
+            title, bold = "", False
+            if m := CI_BOLD_RE.match(body_text):
+                title = m.group(1).strip().removesuffix(":").strip()
+                bold = bool(title)
+                body = m.group(2).strip()
+                for sep in CI_SEPARATORS:
+                    if body.startswith(sep):
+                        body = body[len(sep):].strip()
+                        break
+            else:
+                body = body_text
+            if not body:
+                add("bullet yields no prompt (empty text after the title), dropped by the host",
+                    "write `- **Title** \u2014 prompt text`", lineno)
+                continue
+            if len(body) > CI_MAX_PROMPT_RUNES:
+                add(f"prompt is {len(body)} chars (cap {CI_MAX_PROMPT_RUNES}), dropped by the host",
+                    "shorten it", lineno)
+                continue
+            if bold and len(title) > CI_MAX_TITLE_RUNES:
+                add(f"title is {len(title)} chars (cap {CI_MAX_TITLE_RUNES}), truncated by the host",
+                    "shorten the bold title", lineno)
+            if not bold:
+                add("bullet has no bold title; the card shows the prompt cut at ~60 chars",
+                    "write `- **Title** \u2014 prompt`", lineno, "NOTICE")
+                title = _ci_truncate(body, CI_DERIVED_TITLE_RUNES)
+            title = _ci_truncate(title, CI_MAX_TITLE_RUNES)
+            leftover = CI_PLACEHOLDER_RE.sub("", body)
+            if "[" in leftover or "]" in leftover:
+                add("unbalanced or invalid `[placeholder]` (nested, unclosed, empty or over 40 chars)",
+                    "use one flat `[woord]` per blank", lineno)
+            if len(body) > CI_READABLE_PROMPT_RUNES:
+                add(f"prompt is {len(body)} chars; cards read best under {CI_READABLE_PROMPT_RUNES}",
+                    "tighten the prompt", lineno, "NOTICE")
+            key = body.lower()
+            if key in seen_prompts:
+                add(f"duplicate prompt text (first at line {seen_prompts[key]}); the host keeps one",
+                    "drop or reword one", lineno, "NOTICE")
+            else:
+                seen_prompts[key] = lineno
+            placeholders = list(dict.fromkeys(CI_PLACEHOLDER_RE.findall(body)))
+            cur["prompts"].append({"title": title, "prompt": body, "placeholders": placeholders,
+                                   "line": lineno, "bold": bold})
+    for c in cats:
+        if not c["prompts"]:
+            add(f"category {c['id']!r} has no prompts; the gallery hides it",
+                "add `- **Title** \u2014 prompt` bullets or drop the heading", c["line"], "NOTICE")
+    if not any(c["prompts"] for c in cats):
+        add("no prompt parsed; the gallery would be empty",
+            "add `## <emoji> Category` sections with `- **Title** \u2014 prompt` bullets", None)
+    return cats, findings
+
+
 def check(root: Path, files: list[str] | None = None) -> list[bs.Finding]:
     """Hygiene findings for a brain at `root`. `files` scopes every rule but `conflict`;
     None judges the whole tracked tree."""
@@ -179,6 +383,8 @@ def check(root: Path, files: list[str] | None = None) -> list[bs.Finding]:
                 for lineno, line in enumerate(text.splitlines(), start=1):
                     if EM_DASH in line:
                         add("em-dash", "em dash in customer-facing copy", rel, lineno)
+            if rel == CHAT_INSPIRATION_FILE:
+                findings.extend(parse_chat_inspiration(text, rel)[1])
             for lineno, source in _mermaid_blocks(text):
                 mermaid_seen = True
                 if not mmdc:

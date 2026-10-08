@@ -429,6 +429,40 @@ artifacts stay on the laptop.
   `brain_projection.py` when present;
   `rc dev brain render --tenant <slug>` prints the server-compiled view exactly as `/brain` mounts it.
 
+## Chat example prompts — `chat_inspiration.md`
+
+Non-technical chat users stall on an empty composer. A brain-root `chat_inspiration.md` feeds the chat
+page's example-prompt gallery: a pick **inserts** the prompt (never sends it) and highlights its
+`[woord]` placeholders for the user to fill in. Runs read the same file at `/brain/chat_inspiration.md`
+(and `/tenant/chat_inspiration.md`), so "what can I ask you?" draws on it too.
+
+```markdown
+---
+surfaces: [chat, dashboard_chat]
+---
+## 📝 Inschrijvingen
+- **Wachtlijst** — Welke kampen hebben een wachtlijst?
+## 🧑‍🏫 Monitoren {#monitoren}
+- **Monitoren dichtbij** — Geef me monitoren die in de buurt van [stad] wonen.
+```
+
+- `## [emoji] Label [{#id}]` is a category; id = `{#id}`, else the label slugged (case/accent-insensitive).
+  Only `##` sections count: bullets before the first one or under any other heading are ignored.
+- `- **Title** — prompt` (also ` - `, ` – `, `: `, `**Title:**`). No bold title ⇒ the card shows the
+  prompt cut at ~60 chars.
+- Placeholder = `[` + 1–40 chars without brackets + `]`; keep them flat (`[stad]`, never `[a [b]]`).
+- `surfaces: [chat, dashboard_chat]` is required: without it email runs see the gallery as a doc.
+- Caps: 20 categories, 50 prompts each, 500-char prompt, 80-char title. Write for the posture the
+  project's chat serves (end users vs. admins); there is no per-posture filter.
+- **Tenant overlay**: the same path in a tenant brain merges onto the project's. Tenant-only categories
+  come first; a shared id keeps the project's label/emoji and lists tenant prompts first with a tenant
+  badge; an identical prompt text (case-insensitive) keeps one copy, the tenant's.
+
+The host parser is fail-open (a bad line vanishes silently), so the hygiene rule `chat-inspiration`
+(`brain_hygiene.py`, pre-commit and pre-push) parses the file the same way and FAILs on whatever would
+be dropped, unbalanced placeholders, duplicate category ids, a missing `chat` surface, or an empty
+gallery; it advises on prompts over 160 chars, missing bold titles and duplicates.
+
 ## Read-Only Brain Alias
 
 A project can be configured (operator-only settings key `brain_source_project_id`) to run on another
