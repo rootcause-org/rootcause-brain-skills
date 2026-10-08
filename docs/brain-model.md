@@ -204,8 +204,8 @@ do not add the redundant `agent` tag to `/tenant/AGENTS.md`. Triage is separate:
 `agent` tag — the model will not burn a turn following a pointer mid-task.
 
 Scan scope for the `grounding`/`agent` roles: the whole brain plus any bound tenant brain; a **mirror**
-file is only picked up at the repo root as `*.md` or under `doc/`, `docs/`, `.claude/`, `.agents/`;
-`/kb` never. Truncation past a cap appends an explicit marker — the agent may read the rest with `bash`.
+file is only picked up at the repo root as `*.md` or under `doc/`, `docs/`, `.claude/`, `.agents/`, root
+`skills/`; `/kb` never. Truncation past a cap appends an explicit marker — the agent may read the rest with `bash`.
 
 ### Per-surface docs: `surfaces`
 
