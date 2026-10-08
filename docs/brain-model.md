@@ -349,9 +349,11 @@ an irrelevant one is an active distractor. Checklist:
 
 - `description:` frontmatter on every `skills/*/SKILL.md`, `skills/cases/*.md` runbook, and
   `actions/*/manifest.yaml` — "when to open this" in customer vocabulary. Any YAML string form
-  (one line, wrapped, `|`, `>`), 1–1024 chars for Markdown; the tree line shows only the first 150,
-  so lead with one complete when-to-use sentence that fits there and put detail after it. Action
-  descriptions also feed the full catalog and may stay rich under the same lead-sentence rule.
+  (one line, wrapped, `|`, `>`), 1–1024 chars for Markdown. Front-load a ≤150-char when-to-use
+  sentence: the tree line shows only that much. The rest of the description (≤1024) is not lost — each
+  run greps it in `/tmp/rc-context/skills.md` (one line per described doc in /brain, /tenant and the
+  mirrors' skill/doc dirs), so put trigger words, synonyms and edge cases there. Action descriptions also
+  feed the full catalog and may stay rich under the same lead-sentence rule.
 - Python scripts: first docstring line = **usage + purpose** — e.g. `backup_status.py <backup-id> —
   why-isn't-this-backup-running triage.` It is the script's tree gloss and the only line an agent sees
   before calling, so teach the invocation, not just the topic.
