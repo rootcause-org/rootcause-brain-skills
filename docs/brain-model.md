@@ -184,7 +184,11 @@ and `agent` is marked in the selector's context as "already auto-pasted to the m
 selector doesn't waste selections re-forwarding it.
 
 Standing rule for every role: **tag sparingly**. Each tagged doc is a per-run token tax on every thread;
-the caps are a safety net, not a budget. `AGENTS.md` inclusion depends on its mount:
+the caps are a safety net, not a budget. Past a cap the body is cut ("read the rest with bash") and
+models rarely read on; on-demand docs fare no better — a bash read over 6000 chars shows only a ~3 KB
+preview. Lint WARN `doc-size` flags tagged docs over their cap and `AGENTS.md`/on-demand docs over
+16 KB. Fix: a lean core (most important rules first) plus grouped detail files, each linked by one
+"Open X for Y" line. `AGENTS.md` inclusion depends on its mount:
 
 | Path | Grounding pre-step | Main agent |
 |---|---|---|

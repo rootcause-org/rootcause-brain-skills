@@ -22,6 +22,9 @@ that contract:
     catalog prompt, so rich copy is load-bearing there — lead with a short routing sentence, never
     shorten the catalog detail merely for lint); "what this file contains"-style phrasing (`This file…`,
     `Contains…`, `Dit bestand…`). Deterministic, best-effort; never fails a run.
+  * **WARN** — a markdown doc that won't reach the model whole: an `include_in` hard-load over the
+    host's per-file/total cap (`HARD_LOAD_CAPS`), or an on-demand doc / `AGENTS.md` over
+    `ON_DEMAND_DOC_CAP`. Advisory: the fix is a lean core + grouped detail files.
 
 It mirrors `rootcause/internal/brain/bootstrap.go` so lint and tree **agree**: the same bounded
 head-read frontmatter parse for markdown (block scalars / multi-line values are *not* rendered, so
@@ -245,6 +248,128 @@ def _check_doc_surfaces(root: Path) -> list[Finding]:
     return findings
 
 
+# Host size budgets for markdown, in bytes of the frontmatter-stripped body. Mirrors rootcause's
+# internal/grounding/hardload.go (grounding 8K/24K; agent + principal share 16K/48K) and
+# internal/triage/brainknowledge.go (triage 8K/24K). Past a cap the host cuts the body with
+# "... (truncated — read the rest with bash)" — and models rarely do.
+HARD_LOAD_CAPS = {  # role -> (include_in tags, per-file cap, total cap)
+    "triage": (("triage",), 8 << 10, 24 << 10),
+    "grounding": (("grounding",), 8 << 10, 24 << 10),
+    "agent": (("agent", "principal"), 16 << 10, 48 << 10),
+}
+# Untagged docs are read on demand with bash, which shows a stream over 6000 chars only as a
+# 2000+1000-char preview (rootcause internal/tool/tool.go defaultBashSpillThreshold). The advisory
+# stays at 16 KB so it names genuinely oversized docs; AGENTS.md is pasted whole, uncapped, every run.
+ON_DEMAND_DOC_CAP = 16 << 10
+_DOC_SIZE_IGNORED_DIRS = frozenset({".agents", ".claude", ".rootcause", ".git", ".venv", "_internal",
+                                    "node_modules", "__pycache__"})
+
+
+def _kb(n: int) -> str:
+    return f"{n / 1024:.1f} KB"
+
+
+def _include_in(text: str) -> set[str]:
+    """`include_in` entries, read like treeview.frontmatterList: top-level key, flow or block list,
+    frontmatter closing within FRONTMATTER_CAP. Line scan, not YAML — what it can't read the host
+    doesn't read either."""
+    lines = text[:FRONTMATTER_CAP].split("\n")
+    if len(lines) < 2 or lines[0].rstrip("\r") != "---":
+        return set()
+    close = next((i for i, line in enumerate(lines[1:], start=1) if line.rstrip("\r") == "---"), None)
+    if close is None:
+        return set()
+    block = lines[1:close]
+    for i, raw in enumerate(block):
+        line = raw.rstrip("\r")
+        if not line.startswith("include_in:"):
+            continue
+        rest = re.sub(r"(^|\s)#.*$", "", line[len("include_in:"):]).strip()
+        if rest:
+            items = rest.strip("[]").split(",")
+        else:
+            items = []
+            for nxt in block[i + 1:]:
+                item = re.sub(r"(^|\s)#.*$", "", nxt).strip()
+                if not item:
+                    continue
+                if not item.startswith("- "):
+                    break
+                items.append(item[2:])
+        return {v for v in (_unquote(p.strip()) for p in items) if v}
+    return set()
+
+
+def _unquote(v: str) -> str:
+    return v[1:-1] if len(v) >= 2 and v[0] in "\"'" and v[-1] == v[0] else v
+
+
+def _strip_frontmatter(text: str) -> str:
+    """The body the host pastes (hardload.go's stripHardLoadFrontmatter + TrimRight "\\n")."""
+    first, sep, rest = text.partition("\n")
+    if sep and first.rstrip("\r") == "---":
+        offset = len(first) + 1
+        for line in rest.split("\n"):
+            if line.rstrip("\r") == "---":
+                return text[offset + len(line) + 1:].lstrip("\n").rstrip("\n")
+            offset += len(line) + 1
+    return text.rstrip("\n")
+
+
+def _doc_size_candidates(root: Path) -> list[str]:
+    """Run-visible markdown, brain-relative and sorted like the host scan: git-tracked when git can
+    answer (ignored kit/scratch trees never reach a run), else a disk walk."""
+    index = _git_index(root)
+    if index is not None:
+        rels = [r for r in index[0] if r.endswith(".md") and r not in index[1]]
+    else:
+        rels = [_rel(root, p) for p in root.rglob("*.md")]
+    return sorted(r for r in rels
+                  if not _DOC_SIZE_IGNORED_DIRS.intersection(r.split("/")[:-1])
+                  and (root / r).is_file() and not (root / r).is_symlink())
+
+
+def _check_doc_sizes(root: Path) -> list[Finding]:
+    """WARN when a markdown doc won't reach the model whole: a hard-loaded body over its per-file or
+    total cap (the host truncates it), or an on-demand doc / AGENTS.md over ON_DEMAND_DOC_CAP."""
+    findings: list[Finding] = []
+    totals = dict.fromkeys(HARD_LOAD_CAPS, 0)
+    for rel in _doc_size_candidates(root):
+        try:
+            text = (root / rel).read_text("utf-8", "replace")
+        except OSError:
+            continue
+        tags = _include_in(text)
+        size = len(_strip_frontmatter(text).encode("utf-8"))
+        over: list[str] = []
+        loaded = False
+        for role, (role_tags, per_file, total_cap) in HARD_LOAD_CAPS.items():
+            # The root AGENTS.md is pasted verbatim on its own, never via a grounding/agent tag.
+            if not tags.intersection(role_tags) or (rel == "AGENTS.md" and role != "triage"):
+                continue
+            loaded = True
+            kept = min(size, per_file)
+            if size > per_file:
+                over.append(f"the {_kb(per_file)} `{role}` cap")
+            if totals[role] >= total_cap or kept > total_cap - totals[role]:
+                over.append(f"the {_kb(total_cap)} `{role}` total (earlier tagged docs hold "
+                            f"{_kb(totals[role])})")
+            totals[role] += min(kept, max(total_cap - totals[role], 0))
+        if over:
+            findings.append(Finding(rel, "WARN",
+                f"hard-loaded body is {_kb(size)}, over {' and '.join(over)}: the host truncates it "
+                "and models rarely read the rest with bash", "doc-size"))
+        elif rel == "AGENTS.md" and size > ON_DEMAND_DOC_CAP:
+            findings.append(Finding(rel, "WARN",
+                f"AGENTS.md is {_kb(size)}: pasted whole into every run, every extra byte is tax on "
+                "every thread and buries the routing", "doc-size"))
+        elif not loaded and size > ON_DEMAND_DOC_CAP:
+            findings.append(Finding(rel, "WARN",
+                f"{_kb(size)} doc will not be read at once: a bash read shows only a ~3 KB preview "
+                "past 6000 chars, and models often stop at the first screen", "doc-size"))
+    return findings
+
+
 def _check(path: Path, rel: str, desc: str | None, kind: str) -> list[Finding]:
     """Turn one file's extracted description into findings (missing/overlong + style WARN)."""
     if desc is None:
@@ -415,6 +540,7 @@ def lint_brain(brain_root: str | Path) -> list[Finding]:
         findings += _check_manifest_surfaces(manifest, _rel(root, manifest))
 
     findings += _check_doc_surfaces(root)
+    findings += _check_doc_sizes(root)
 
     # Bind the sibling lint when this plugin loads, before collected brain tests can replace the
     # top-level ``lib`` module in ``sys.modules`` with a test double.
@@ -432,6 +558,7 @@ def _rel(root: Path, p: Path) -> str:
 _RULE_LABELS = {
     "action-surfaces": "action surfaces",
     "doc-surfaces": "doc surfaces",
+    "doc-size": "doc size",
     "description-missing": "missing descriptions",
     "description-length": "description length",
     "description-style": "description style",
@@ -442,6 +569,13 @@ _RULE_LABELS = {
     "helper-drift": "drifted helpers",
     "private-dead": "dead private names",
     "other": "other",
+}
+
+
+# One fix line per rule group, printed under its header instead of on every row.
+_RULE_FIXES = {
+    "doc-size": "fix: keep a lean core with the most important rules first; move detail into grouped "
+                "files (e.g. one per domain), each linked from the core by one \"Open X for Y\" line",
 }
 
 
@@ -460,5 +594,7 @@ def format_report(findings: list[Finding]) -> str:
             rows = sorted((f for f in findings if f.level == level and f.rule == rule),
                           key=lambda f: (f.path, f.message))
             lines.append(f"{level} {_RULE_LABELS.get(rule, rule)} ({len(rows)})")
+            if rule in _RULE_FIXES:
+                lines.append(f"  {_RULE_FIXES[rule]}")
             lines.extend(f"  {f.path} — {f.message}" for f in rows)
     return "\n".join(lines)

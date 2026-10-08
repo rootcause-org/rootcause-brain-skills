@@ -363,3 +363,54 @@ def test_lint_brain_warns_on_unknown_doc_surfaces(tmp_path: Path) -> None:
     assert "not valid YAML" in findings[0].message
     assert "exceeds 8192 bytes" in findings[1].message
     assert "stays visible on every surface" in findings[2].message
+
+
+def _doc(tags: str, kb: float) -> str:
+    front = f"---\ndescription: D\ninclude_in: {tags}\n---\n" if tags else "---\ndescription: D\n---\n"
+    return front + "x" * int(kb * 1024)
+
+
+def test_lint_brain_warns_on_hard_loads_over_per_file_cap(tmp_path: Path) -> None:
+    _seed_brain(tmp_path)
+    _write(tmp_path / "docs/schema.md", _doc("[agent]", 17))
+    _write(tmp_path / "docs/fits.md", _doc("[agent]", 15.9))
+    _write(tmp_path / "docs/map.md", _doc("[grounding, agent]", 12))
+    _write(tmp_path / "triage.md", "---\ndescription: T\ninclude_in:\n  - triage # gate\n---\n" + "x" * 9000)
+
+    findings = [f for f in lint_brain(tmp_path) if f.rule == "doc-size"]
+
+    assert {(f.path, f.level) for f in findings} == {
+        ("docs/schema.md", "WARN"), ("docs/map.md", "WARN"), ("triage.md", "WARN")}
+    by_path = {f.path: f.message for f in findings}
+    assert "16.0 KB `agent` cap" in by_path["docs/schema.md"]
+    assert "8.0 KB `grounding` cap" in by_path["docs/map.md"] and "`agent`" not in by_path["docs/map.md"]
+    assert "`triage` cap" in by_path["triage.md"]
+
+
+def test_lint_brain_warns_when_agent_total_cap_cuts_later_docs(tmp_path: Path) -> None:
+    _seed_brain(tmp_path)
+    for name in ("a", "b", "c", "d"):
+        _write(tmp_path / f"docs/{name}.md", _doc("[agent]", 15))
+    _write(tmp_path / "skills/chat/SKILL.md", _doc("[principal]", 1))
+
+    findings = [f for f in lint_brain(tmp_path) if f.rule == "doc-size"]
+
+    assert [f.path for f in findings] == ["docs/d.md", "skills/chat/SKILL.md"]
+    assert "48.0 KB `agent` total" in findings[0].message
+
+
+def test_lint_brain_advises_on_large_on_demand_docs_and_agents_md(tmp_path: Path) -> None:
+    _seed_brain(tmp_path)
+    _write(tmp_path / "AGENTS.md", _doc("[agent]", 17))
+    _write(tmp_path / "playbooks/big.md", _doc("", 17))
+    _write(tmp_path / "playbooks/ok.md", _doc("", 15))
+    _write(tmp_path / ".agents/skills/kit/SKILL.md", _doc("", 40))
+
+    findings = [f for f in lint_brain(tmp_path) if f.rule == "doc-size"]
+
+    assert [f.path for f in findings] == ["AGENTS.md", "playbooks/big.md"]
+    assert "pasted whole into every run" in findings[0].message
+    assert "will not be read at once" in findings[1].message
+    assert not _fails(findings)
+    report = format_report(findings)
+    assert report.count("fix: keep a lean core") == 1
