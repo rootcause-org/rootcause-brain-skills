@@ -2,21 +2,27 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import types
 import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lib.brain_lint import (
     ACTION_SURFACE_ALIASES,
     ACTION_SURFACES,
+    DESC_FULL_MAX_LEN,
     DESC_MAX_LEN,
     Finding,
     MIRROR_SCAN_DIRS,
-    _md_description,
+    _include_in,
+    md_description_full,
+    md_tree_gloss,
     _manifest_description,
     detect_repo_kind,
     format_report,
@@ -38,21 +44,30 @@ def _warns(findings: list[Finding]) -> list[Finding]:
     return [f for f in findings if f.level == "WARN"]
 
 
+CORPUS = Path(__file__).resolve().parents[1] / "lib" / "contracts" / "frontmatter"
+EXPECTED = json.loads((CORPUS / "expected.json").read_text("utf-8"))
+
+
+def test_frontmatter_corpus_is_complete() -> None:
+    assert sorted(EXPECTED) == sorted(p.name for p in CORPUS.glob("*.md"))
+
+
+@pytest.mark.parametrize("name", sorted(EXPECTED))
+def test_frontmatter_corpus(name: str) -> None:
+    """The shared corpus rootcause's treeview.DocDescription replays byte-for-byte."""
+    want = EXPECTED[name]
+    full = md_description_full(CORPUS / name)
+    assert (full or "") == want["description_full"]
+    assert md_tree_gloss(full) == want["gloss"]
+    assert sorted(_include_in((CORPUS / name).read_bytes().decode("utf-8", "replace"))) == want["include_in"]
+
+
 def test_md_description_variants(tmp_path: Path) -> None:
-    good = _write(tmp_path / "good.md", "---\ndescription: When a backup job fails\n---\n# X\n")
-    assert _md_description(good) == "When a backup job fails"
-
-    quoted = _write(tmp_path / "q.md", "---\ndescription: \"Open for login errors\"\n---\n")
-    assert _md_description(quoted) == "Open for login errors"
-
     collapsed = _write(tmp_path / "c.md", "---\ndescription:   lots   of\tspace  \n---\n")
-    assert _md_description(collapsed) == "lots of space"
-
-    # block scalar / empty / missing frontmatter / no key all render nothing → None
-    assert _md_description(_write(tmp_path / "b.md", "---\ndescription: |\n  multi\n---\n")) is None
-    assert _md_description(_write(tmp_path / "e.md", "---\ndescription:\n---\n")) is None
-    assert _md_description(_write(tmp_path / "n.md", "# no frontmatter\n")) is None
-    assert _md_description(_write(tmp_path / "k.md", "---\nname: foo\n---\n")) is None
+    assert md_description_full(collapsed) == "lots of space"
+    assert md_description_full(_write(tmp_path / "b.md", "---\ndescription: |\n  multi\n  line\n---\n")) == "multi line"
+    assert md_description_full(_write(tmp_path / "e.md", "---\ndescription:\n---\n")) is None
+    assert md_description_full(_write(tmp_path / "k.md", "---\nname: foo\n---\n")) is None
 
 
 def test_manifest_description(tmp_path: Path) -> None:
@@ -159,28 +174,37 @@ def test_lint_brain_survives_brain_test_replacing_lib_module(tmp_path: Path, mon
 def test_lint_brain_flags_missing_and_overlong(tmp_path: Path) -> None:
     _seed_brain(tmp_path)
     _write(tmp_path / "skills/nodesc/SKILL.md", "# no frontmatter here\n")
-    long = "x" * (DESC_MAX_LEN + 5)
-    _write(tmp_path / "skills/cases/toolong.md", f"---\ndescription: {long}\n---\n")
+    _write(tmp_path / "skills/cases/toolong.md", f"---\ndescription: {'x' * (DESC_FULL_MAX_LEN + 1)}\n---\n")
+    _write(tmp_path / "skills/listdesc/SKILL.md", "---\ndescription: [a, b]\n---\n")
+    _write(tmp_path / "skills/numdesc/SKILL.md", "---\ndescription: 42\n---\n")
+    _write(tmp_path / "skills/late/SKILL.md",
+           "---\ndescription: |\n  block\n" + "pad: " + "y" * 9000 + "\n---\n")
     _write(tmp_path / "actions/broken/manifest.yaml", "id: broken\n")
 
-    fails = _fails(lint_brain(tmp_path))
-    paths = {f.path for f in fails}
-    assert "skills/nodesc/SKILL.md" in paths
-    assert "skills/cases/toolong.md" in paths
-    assert "actions/broken/manifest.yaml" in paths
-    assert all("skills/backups/SKILL.md" != f.path for f in fails)
+    fails = {f.path: f for f in _fails(lint_brain(tmp_path))}
+    assert set(fails) >= {"skills/nodesc/SKILL.md", "skills/cases/toolong.md", "skills/listdesc/SKILL.md",
+                          "skills/numdesc/SKILL.md", "skills/late/SKILL.md", "actions/broken/manifest.yaml"}
+    assert "Agent Skills limit" in fails["skills/cases/toolong.md"].message
+    assert "must be a YAML string" in fails["skills/numdesc/SKILL.md"].message
+    assert "skills/backups/SKILL.md" not in fails
 
 
-def test_md_description_length_boundary(tmp_path: Path) -> None:
-    # The cap mirrors bootstrap.go's descMaxLen: exactly at the cap renders, one over truncates.
+def test_md_description_any_yaml_form_and_first_sentence(tmp_path: Path) -> None:
+    """Block scalars and wrapped values are read whole; past 150 chars only the first sentence matters."""
     assert DESC_MAX_LEN == 150
     _seed_brain(tmp_path)
+    lead = "Open when a parent cannot log in."
+    _write(tmp_path / "skills/login/SKILL.md",
+           f"---\ndescription: >-\n  {lead}\n  " + "Covers resets, 2FA and lockouts. " * 10 + "\n---\n")
+    _write(tmp_path / "skills/cases/wrapped.md", "---\ndescription: Open when a refund\n  fails twice\n---\n")
     _write(tmp_path / "skills/cases/atcap.md", f"---\ndescription: {'x' * DESC_MAX_LEN}\n---\n")
     _write(tmp_path / "skills/cases/overcap.md", f"---\ndescription: {'x' * (DESC_MAX_LEN + 1)}\n---\n")
+    _write(tmp_path / "skills/cases/atfull.md", f"---\ndescription: {'x' * DESC_FULL_MAX_LEN}\n---\n")
 
-    fails = {f.path for f in _fails(lint_brain(tmp_path))}
-    assert "skills/cases/atcap.md" not in fails
-    assert "skills/cases/overcap.md" in fails
+    findings = lint_brain(tmp_path)
+    assert _fails(findings) == []
+    warned = {f.path for f in _warns(findings) if f.rule == "description-length"}
+    assert warned == {"skills/cases/overcap.md", "skills/cases/atfull.md"}
 
 
 def test_lint_brain_overlong_manifest_warns_not_fails(tmp_path: Path) -> None:
@@ -522,10 +546,9 @@ def test_frontmatter_forms_the_host_line_scan_misses(tmp_path: Path) -> None:
         "surface.md": "---\nsurface: [chat]\n---\nx\n",
         "multiline.md": "---\ninclude_in: [agent,\n  grounding]\n---\nx\n",
         "exclude.md": "---\nexclude_in: [all]\n---\nx\n",
-        "folded.md": "---\ndescription: >-\n  Open when a refund fails\n---\nx\n",
-        "wrapped.md": "---\ndescription: Open when a refund\n  fails twice\n---\nx\n",
-        "late.md": "---\nnotes: " + "y" * 2100 + "\ndescription: Late one\n---\nx\n",
+        "dup.md": "---\ndescription: First\ndescription: Second\n---\nx\n",
         "huge.md": "---\ninclude_in: [agent]\nnotes: " + "y" * 9000 + "\n---\nx\n",
+        "hugedesc.md": "---\ndescription: >-\n  Open when a refund fails\nnotes: " + "y" * 9000 + "\n---\nx\n",
     }
     for name, text in cases.items():
         _write(tmp_path / "notes" / name, text)
@@ -533,6 +556,12 @@ def test_frontmatter_forms_the_host_line_scan_misses(tmp_path: Path) -> None:
     _write(tmp_path / "notes/fine.md",
            "---\r\ndescription: 'Open when: refunds'\r\ninclude_in: agent\r\nsurfaces: [email]\r\n---\r\nx\r\n")
     _write(tmp_path / "notes/plain.md", "# no frontmatter\ninclude_in: [agent]\n")
+    # Every YAML string form is read whole now: block scalars, wrapped and late descriptions are fine.
+    _write(tmp_path / "notes/folded.md", "---\ndescription: >-\n  Open when a refund fails\n---\nx\n")
+    _write(tmp_path / "notes/wrapped.md", "---\ndescription: Open when a refund\n  fails twice\n---\nx\n")
+    _write(tmp_path / "notes/late.md", "---\nnotes: " + "y" * 2100 + "\ndescription: Late one\n---\nx\n")
+    # One-line description in an over-8 KiB block: the legacy line-scan fallback still renders it.
+    _write(tmp_path / "notes/hugeline.md", "---\ndescription: Open when refunds\nnotes: " + "y" * 9000 + "\n---\nx\n")
     # SKILL.md descriptions are owned by `description-missing`; no second finding here.
     _write(tmp_path / "skills/x/SKILL.md", "---\ndescription: |\n  multi\n---\n")
 
@@ -547,12 +576,11 @@ def test_frontmatter_forms_the_host_line_scan_misses(tmp_path: Path) -> None:
     assert "`include-in:` is not read" in msg["dash.md"] and "`surface:` is not read" in msg["surface.md"]
     assert "['agent'], YAML as ['agent', 'grounding']" in msg["multiline.md"]
     assert "`exclude_in` is never read" in msg["exclude.md"]
-    assert "block scalar" in msg["folded.md"] and "no gloss" in msg["folded.md"]
-    assert "spans several lines" in msg["wrapped.md"] and "only 'Open when a refund'" in msg["wrapped.md"]
-    assert "past the first 2048 bytes" in msg["late.md"]
+    assert "declared more than once" in msg["dup.md"] and "'First'" in msg["dup.md"]
     assert "closes past the first 8192 bytes" in msg["huge.md"]
+    assert "closes past the first 8192 bytes" in msg["hugedesc.md"] and "no gloss" in msg["hugedesc.md"]
     # A mirror's descriptions are the customer's, not our contract: WARN, not FAIL.
-    assert [f.level for f in _fm(tmp_path, "mirror")["notes/folded.md"]] == ["WARN"]
+    assert [f.level for f in _fm(tmp_path, "mirror")["notes/hugedesc.md"]] == ["WARN"]
 
 
 def test_detect_repo_kind(tmp_path: Path) -> None:

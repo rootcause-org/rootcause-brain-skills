@@ -1,0 +1,156 @@
+{
+  "01-single-line.md": {
+    "description_full": "Open when a customer asks about refunds or chargebacks",
+    "gloss": "Open when a customer asks about refunds or chargebacks",
+    "include_in": [],
+    "notes": "plain one-line scalar: unchanged from the legacy line scan"
+  },
+  "02-double-quoted-escapes.md": {
+    "description_full": "Use when the user writes \"cancel\" or 'stop' in a reply",
+    "gloss": "Use when the user writes \"cancel\" or 'stop' in a reply",
+    "include_in": [],
+    "notes": "double-quoted with escaped and embedded quotes: YAML unescapes (the legacy scan kept the backslashes)"
+  },
+  "03-single-quoted.md": {
+    "description_full": "It's about invoices: open when a payment bounced",
+    "gloss": "It's about invoices: open when a payment bounced",
+    "include_in": [],
+    "notes": "single-quoted with '' escape and a colon inside the quotes"
+  },
+  "04-folded-plain-wrapped.md": {
+    "description_full": "Open when a camp leader asks why a child is missing from the attendance list or the daily check-in export.",
+    "gloss": "Open when a camp leader asks why a child is missing from the attendance list or the daily check-in export.",
+    "include_in": [
+      "grounding"
+    ],
+    "notes": "plain scalar wrapped over three lines: full value (legacy rendered only the first line); block-list include_in"
+  },
+  "05-literal-block.md": {
+    "description_full": "Open when a parent cannot log in. Covers password resets and 2FA.",
+    "gloss": "Open when a parent cannot log in. Covers password resets and 2FA.",
+    "include_in": [],
+    "notes": "literal block `|`: newlines collapse to spaces (legacy rendered no gloss)"
+  },
+  "06-folded-block.md": {
+    "description_full": "Open when an invoice total looks wrong, a discount is missing, or VAT is off.",
+    "gloss": "Open when an invoice total looks wrong, a discount is missing, or VAT is off.",
+    "include_in": [],
+    "notes": "folded block `>` (legacy rendered no gloss)"
+  },
+  "07-folded-strip.md": {
+    "description_full": "Use for backup restores that hang at 99 percent.",
+    "gloss": "Use for backup restores that hang at 99 percent.",
+    "include_in": [],
+    "notes": "folded block with strip chomping `>-` and trailing blank lines"
+  },
+  "08-comments.md": {
+    "description_full": "Open for export questions",
+    "gloss": "Open for export questions",
+    "include_in": [
+      "grounding"
+    ],
+    "notes": "YAML comments: a ` #` comment is stripped from the plain value (the legacy scan kept it)"
+  },
+  "09-crlf.md": {
+    "description_full": "Open when the Windows export shows garbled characters",
+    "gloss": "Open when the Windows export shows garbled characters",
+    "include_in": [],
+    "notes": "CRLF line endings throughout, wrapped plain scalar"
+  },
+  "10-unicode.md": {
+    "description_full": "Open wanneer een ouder vraagt naar het café-abonnement of de crèche 🎒 — inclusief terugbetaling",
+    "gloss": "Open wanneer een ouder vraagt naar het café-abonnement of de crèche 🎒 — inclusief terugbetaling",
+    "include_in": [],
+    "notes": "Dutch accents, an emoji and an em dash: rune-preserving"
+  },
+  "11-bom.md": {
+    "description_full": "",
+    "gloss": "",
+    "include_in": [],
+    "notes": "UTF-8 BOM before the opening fence: the host requires `---` at byte 0 (same as include_in/surfaces), so no description"
+  },
+  "12-leading-blank-line.md": {
+    "description_full": "",
+    "gloss": "",
+    "include_in": [],
+    "notes": "blank line before the opening fence: not frontmatter, no description"
+  },
+  "13-description-past-2kb.md": {
+    "description_full": "Open when the description sits past the old two-kilobyte head read.",
+    "gloss": "Open when the description sits past the old two-kilobyte head read.",
+    "include_in": [],
+    "notes": "description key starts past 2 KiB but the block closes within 8 KiB: read in full (legacy rendered nothing)"
+  },
+  "14-closing-past-8kb.md": {
+    "description_full": "Open when the frontmatter never closes in time",
+    "gloss": "Open when the frontmatter never closes in time",
+    "include_in": [],
+    "notes": "closing fence past the 8 KiB envelope: not a YAML block, falls back to the legacy 2 KiB line scan, so a one-line description still renders"
+  },
+  "15-closing-past-8kb-block.md": {
+    "description_full": "",
+    "gloss": "",
+    "include_in": [],
+    "notes": "closing fence past 8 KiB AND a block scalar: the line-scan fallback drops it, so no description (lint FAILs)"
+  },
+  "16-duplicate-keys.md": {
+    "description_full": "First one wins",
+    "gloss": "First one wins",
+    "include_in": [],
+    "notes": "duplicate top-level description: the FIRST occurrence wins (matches the legacy scan; PyYAML safe_load would keep the last)"
+  },
+  "17-non-string-list.md": {
+    "description_full": "",
+    "gloss": "",
+    "include_in": [],
+    "notes": "sequence value: no description (lint FAILs non-string)"
+  },
+  "18-non-string-number.md": {
+    "description_full": "42",
+    "gloss": "42",
+    "include_in": [],
+    "notes": "non-null scalar of another type: the host renders its source text (lint FAILs non-string)"
+  },
+  "19-null.md": {
+    "description_full": "",
+    "gloss": "",
+    "include_in": [],
+    "notes": "explicit null: no description"
+  },
+  "20-malformed-yaml.md": {
+    "description_full": "Valid line survives broken YAML",
+    "gloss": "Valid line survives broken YAML",
+    "include_in": [],
+    "notes": "malformed YAML (unclosed flow sequence): falls back to the legacy line scan, which still reads the one-line description"
+  },
+  "21-colon-in-plain.md": {
+    "description_full": "Use when: a tenant asks why the sync stopped",
+    "gloss": "Use when: a tenant asks why the sync stopped",
+    "include_in": [],
+    "notes": "unquoted `: ` inside a plain value is invalid YAML: legacy fallback keeps today's gloss"
+  },
+  "22-next-line-plain.md": {
+    "description_full": "Open when a refund was issued twice for the same booking.",
+    "gloss": "Open when a refund was issued twice for the same booking.",
+    "include_in": [],
+    "notes": "plain scalar starting on the line after the key (legacy rendered nothing)"
+  },
+  "23-nested-only.md": {
+    "description_full": "",
+    "gloss": "",
+    "include_in": [],
+    "notes": "description only nested under another key: no description (top-level only)"
+  },
+  "24-over-1024.md": {
+    "description_full": "Open when a customer asks about the yearly subscription renewal and the invoice. Open when a customer asks about the yearly subscription renewal and the invoice. Open when a customer asks about the yearly subscription renewal and the invoice. Open when a customer asks about the yearly subscription renewal and the invoice. Open when a customer asks about the yearly subscription renewal and the invoice. Open when a customer asks about the yearly subscription renewal and the invoice. Open when a customer asks about the yearly subscription renewal and the invoice. Open when a customer asks about the yearly subscription renewal and the invoice. Open when a customer asks about the yearly subscription renewal and the invoice. Open when a customer asks about the yearly subscription renewal and the invoice. Open when a customer asks about the yearly subscription renewal and the invoice. Open when a customer asks about the yearly subscription renewal and the invoice. Open when a customer asks about the yearly subscrip…",
+    "gloss": "Open when a customer asks about the yearly subscription renewal and the invoice. Open when a customer asks about the yearly subscription renewal and …",
+    "include_in": [],
+    "notes": "longer than 1024 runes: full value truncated to 1023 runes + `…` (lint FAILs >1024)"
+  },
+  "25-no-frontmatter.md": {
+    "description_full": "",
+    "gloss": "",
+    "include_in": [],
+    "notes": "no frontmatter: no description"
+  }
+}

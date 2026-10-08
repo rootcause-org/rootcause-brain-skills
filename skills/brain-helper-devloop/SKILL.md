@@ -129,8 +129,9 @@ or when the remaining misses are clearly not yours (model prose, emphasis, a gro
 [brain-publish](../brain-publish/SKILL.md) for the brain (exact SHA, channel proof); the mirror's
 own publish path for the mirror. Then one `rc ask` **without** `--brain-ref` and confirm in its trace
 `brain_resolved` is the published SHA and the helper still gets called. Done means live, not
-"ready to publish". Before publishing: every `skills/**` description ≤ 150 chars (publish lint, also
-for other threads' files on `main`; the pre-commit hygiene gate catches yours).
+"ready to publish". Before publishing: every `skills/**` description ≤ 1024 chars with a first
+sentence that fits the 150-char tree gloss (publish lint, also for other threads' files on `main`;
+the pre-commit hygiene gate catches yours).
 
 Shared checkouts with parallel agents: code in a `git worktree add` copy; land through a detached
 `/tmp` worktree at `origin/main` + cherry-pick, never amend/rebase in the shared checkout. Shared

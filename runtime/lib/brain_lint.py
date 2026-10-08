@@ -5,10 +5,10 @@ it is **invisible to the grounding pre-step**: retrieval is `rg`-driven and lexi
 tree line has no customer-vocabulary gloss never gets grepped. This lint holds the brain content up to
 that contract:
 
-  * **FAIL** — a `skills/*/SKILL.md` or `skills/cases/*.md` with no renderable `description:`
-    frontmatter, or one whose whitespace-collapsed length exceeds 150 chars (the tree truncates
-    there, so the tail never reaches the model; nothing else consumes a long md description);
-    an `actions/*/manifest.yaml` with no top-level `description:`.
+  * **FAIL** — a `skills/*/SKILL.md` or `skills/cases/*.md` whose frontmatter `description:` the host
+    cannot read (absent, empty, null, not a YAML string, or in a block the host never decodes) or that
+    exceeds 1024 chars (the Agent Skills limit; the host keeps only the first 1024); an
+    `actions/*/manifest.yaml` with no top-level `description:`.
   * **FAIL** — a git-tracked symlink whose target is absolute or escapes the repo root; neither can
     resolve to brain content in a fresh checkout.
   * **FAIL** — a Python script outside `skills/`, `actions/`, or `tests/` (except root
@@ -17,24 +17,26 @@ that contract:
   * **WARN** — a git-tracked relative symlink whose target is not tracked (the supported committed
     `.claude/skills -> ../.agents/skills` alias shape): it dangles in a fresh checkout, which the host
     skips when building a run view.
-  * **WARN** — an overlong action-manifest description whose first complete sentence does not fit in
-    the 150-character tree gloss (the SAME field is injected full-length into the per-run action
-    catalog prompt, so rich copy is load-bearing there — lead with a short routing sentence, never
-    shorten the catalog detail merely for lint); "what this file contains"-style phrasing (`This file…`,
-    `Contains…`, `Dit bestand…`). Deterministic, best-effort; never fails a run.
+  * **WARN** — a description (Markdown or action manifest) whose first complete sentence does not fit
+    in the 150-character tree gloss: the tree line shows only the first 150 chars, so lead with a short
+    when-to-use sentence; rich detail after it is kept in the full value (an action manifest's is
+    injected full-length into the per-run action catalog); "what this file contains"-style phrasing
+    (`This file…`, `Contains…`, `Dit bestand…`). Deterministic, best-effort; never fails a run.
   * **WARN** — a markdown doc that won't reach the model whole: an `include_in` hard-load over the
     host's per-file/total cap (`HARD_LOAD_CAPS`), or an on-demand doc / `AGENTS.md` over
     `ON_DEMAND_DOC_CAP`. Advisory: the fix is a lean core + grouped detail files.
   * **FAIL** — frontmatter the host will never read: an `include_in` tag outside its role's scan scope
     (mirror file outside root *.md + `MIRROR_SCAN_DIRS`, `triage` outside the project brain, pruned or
-    run-hidden path), a mirror `surfaces:`, an unknown role, a key the line scan misses (not at byte 0,
-    nested, misspelt, multi-line, `exclude_in`). **WARN** — a no-op tag on an already-pasted AGENTS.md.
+    run-hidden path), a mirror `surfaces:`, an unknown role, a key the host misses (not at byte 0,
+    nested, misspelt, a multi-line `include_in`, a duplicate or past-8 KiB `description`, `exclude_in`).
+    **WARN** — a no-op tag on an already-pasted AGENTS.md.
     The repo kind (brain / tenant overlay / mirror) comes from `detect_repo_kind`.
 
-It mirrors `rootcause/internal/brain/bootstrap.go` so lint and tree **agree**: the same bounded
-head-read frontmatter parse for markdown (block scalars / multi-line values are *not* rendered, so
-they count as missing here), real YAML for action manifests, and the same `tidyDesc` whitespace
-collapse before the 150-char measure.
+It mirrors `rootcause/internal/treeview` so lint and tree **agree**: `md_description_full` is a port
+of `treeview.DocDescription` (real YAML over the frontmatter block closed within 8 KiB, any string
+form; malformed YAML or no closed block falls back to the legacy 2 KiB line scan), real YAML for
+action manifests, and the same `tidyDesc` whitespace collapse. Both sides replay the shared corpus in
+`contracts/frontmatter/` (rootcause vendors it as `internal/treeview/testdata/frontmatter/`).
 
 This module stays stdlib + PyYAML only so the standalone developer entrypoint and the production
 publish gate can import it without pytest. `lib.brain_lint_pytest` owns the optional pytest wiring.
@@ -55,9 +57,15 @@ import yaml
 
 from .action_lint import lint_actions
 
-# Mirror bootstrap.go's descMaxLen / descHeadBytes so the lint's verdict matches what the tree renders.
+# Mirror treeview's descMaxLen (tree gloss) / descFullMaxLen (agentskills.io cap) / descHeadBytes
+# (legacy line-scan fallback) so the lint's verdict matches what the host reads.
 DESC_MAX_LEN = 150
+DESC_FULL_MAX_LEN = 1024
 DESC_HEAD_BYTES = 2048
+# Mirrors treeview's frontmatterCap: the host only reads frontmatter whose closing fence lies within it.
+FRONTMATTER_CAP = 8 << 10
+_YAML_NULL = "tag:yaml.org,2002:null"
+_YAML_STR = "tag:yaml.org,2002:str"
 _ACTION_SURFACE_CONTRACT = json.loads(
     (Path(__file__).parent / "contracts" / "action_surfaces.json").read_text("utf-8")
 )
@@ -108,19 +116,18 @@ def _tidy(val: str) -> str:
     return " ".join(val.split())
 
 
-def _md_description(path: Path) -> str | None:
-    """The renderable frontmatter `description:` of a markdown file, or None when the tree renders none.
+def _cap(val: str, limit: int) -> str:
+    """Truncate to `limit` code points (Go runes) with a trailing ellipsis, like tidyDesc."""
+    return val if len(val) <= limit else val[:limit - 1] + "…"
 
-    Faithful port of bootstrap.go's `mdDescription`: a bounded head-read + line scan (NOT a YAML
-    parser). Returns None for missing frontmatter, no `description:` key, an empty value, or a block
-    scalar (`|`/`>`) / multi-line value — every case where the tree line would carry no gloss, so the
-    lint treats them all as "no description" exactly as the model would see it.
+
+def _legacy_md_description(head: bytes) -> str | None:
+    """The pre-YAML host reader (now only treeview's fallback): a 2 KiB head line scan.
+
+    One-line `description:` values only; a matched quote pair is stripped, embedded quotes stay. None
+    for no frontmatter, no key, an empty value, or a block scalar / value on the next line.
     """
-    try:
-        head = path.read_bytes()[:DESC_HEAD_BYTES]
-    except OSError:
-        return None
-    lines = head.decode("utf-8", "replace").split("\n")
+    lines = head[:DESC_HEAD_BYTES].decode("utf-8", "replace").split("\n")
     if len(lines) < 2 or lines[0].rstrip("\r") != "---":
         return None
     for raw in lines[1:]:
@@ -131,13 +138,59 @@ def _md_description(path: Path) -> str | None:
         if rest is None:
             continue
         val = rest.strip()
-        # Strip only a MATCHED surrounding quote pair (embedded quotes stay intact) — as bootstrap does.
         if len(val) >= 2 and val[0] in "\"'" and val[-1] == val[0]:
             val = val[1:-1]
         if val == "" or val.startswith("|") or val.startswith(">"):
-            return None  # block scalar or empty: the tree drops it
-        return _tidy(val)
+            return None
+        return _tidy(val) or None
     return None
+
+
+def _frontmatter_description(raw: bytes) -> tuple[str | None, str]:
+    """(description, how) exactly as `treeview.DocDescription` reads it, whitespace-collapsed and NOT
+    yet capped at DESC_FULL_MAX_LEN. `how`: "yaml" (a string), "yaml-nonstr" (another non-null scalar,
+    read as its source text), "line-scan" (legacy fallback), "none".
+
+    The frontmatter block (`---` at byte 0, closing fence within FRONTMATTER_CAP) is decoded as YAML;
+    the FIRST top-level `description` key wins. Malformed YAML, a non-mapping root, or no closed
+    block falls back to the legacy line scan, so nothing the old reader rendered regresses.
+    """
+    block = _frontmatter_lines(raw[:FRONTMATTER_CAP].decode("utf-8", "replace"))
+    if block is not None:
+        try:
+            root = yaml.compose("\n".join(line.rstrip("\r") for line in block), Loader=yaml.SafeLoader)
+        except yaml.YAMLError:
+            root = None
+        if isinstance(root, yaml.MappingNode):
+            for key, value in root.value:
+                if not (isinstance(key, yaml.ScalarNode) and key.value == "description"):
+                    continue
+                if isinstance(value, yaml.ScalarNode) and value.tag != _YAML_NULL and (val := _tidy(value.value)):
+                    return val, "yaml" if value.tag == _YAML_STR else "yaml-nonstr"
+                return None, "none"
+            return None, "none"
+    legacy = _legacy_md_description(raw)
+    return (legacy, "line-scan") if legacy else (None, "none")
+
+
+def _read_head(path: Path, limit: int = FRONTMATTER_CAP) -> bytes:
+    try:
+        with path.open("rb") as fh:
+            return fh.read(limit)
+    except OSError:
+        return b""
+
+
+def md_description_full(path: str | Path) -> str | None:
+    """Port of `treeview.DocDescription`: the full frontmatter description (whitespace collapsed,
+    ≤ DESC_FULL_MAX_LEN runes), or None when the host reads none. `md_tree_gloss` is its tree line."""
+    val, _ = _frontmatter_description(_read_head(Path(path)))
+    return _cap(val, DESC_FULL_MAX_LEN) if val else None
+
+
+def md_tree_gloss(full: str | None) -> str:
+    """The tree-line gloss `tidyDesc` renders from a full description ("" when none)."""
+    return _cap(full, DESC_MAX_LEN) if full else ""
 
 
 def _strip_prefix(line: str, prefix: str) -> str | None:
@@ -204,10 +257,6 @@ def _check_manifest_surfaces(path: Path, rel: str) -> list[Finding]:
                                     "action-surfaces"))
         seen.add(normalized)
     return findings
-
-
-# Mirrors treeview's frontmatterCap: the host only reads frontmatter whose closing fence lies within it.
-FRONTMATTER_CAP = 8 << 10
 
 
 def _doc_surfaces_problem(path: Path) -> str | None:
@@ -278,8 +327,8 @@ def _kb(n: int) -> str:
 
 def _frontmatter_lines(text: str) -> list[str] | None:
     """The lines between the leading `---` fences exactly as treeview.frontmatterLines sees them:
-    opening fence at byte 0, closing fence within FRONTMATTER_CAP; None when the host reads no block."""
-    lines = text[:FRONTMATTER_CAP].split("\n")
+    opening fence at byte 0, closing fence within FRONTMATTER_CAP BYTES; None when the host reads no block."""
+    lines = text.encode("utf-8")[:FRONTMATTER_CAP].decode("utf-8", "ignore").split("\n")
     if len(lines) < 2 or lines[0].rstrip("\r") != "---":
         return None
     close = next((i for i, line in enumerate(lines[1:], start=1) if line.rstrip("\r") == "---"), None)
@@ -616,16 +665,33 @@ def _frontmatter_doc_findings(root: Path, rel: str, kind: str, hidden: bool) -> 
         return Finding(rel, "FAIL", message, "frontmatter-scope")
 
     fm = _frontmatter_lines(text)
+
+    def desc_unread() -> list[Finding]:
+        """The tree reads another `description` than the YAML the author wrote. SKILL.md/runbooks are
+        judged by `description-missing`; a mirror's descriptions are the customer's, so WARN there."""
+        meant = data.get("description") if "description" in top and not desc_owned else None
+        if not isinstance(meant, str) or not (meant := _tidy(meant)):
+            return []
+        shown = _frontmatter_description(text.encode("utf-8"))[0] or ""
+        if shown == meant:
+            return []
+        why = (f"sits in frontmatter that closes past the first {FRONTMATTER_CAP} bytes the host reads"
+               if fm is None else "is declared more than once (the host reads the first, YAML the last)")
+        got = repr(_cap(shown, 60)) if shown else "no gloss"
+        return [unread(f"`description:` {why}; the tree line renders {got} — keep one `description:` "
+                       "in a short frontmatter block", "WARN" if kind == "mirror" else "FAIL")]
+
     if fm is None:
         lost = sorted(k for k in declared if k != "description" or not desc_owned)
         if not at_byte_0 and lost:
             return [unread(f"frontmatter does not start at byte 0 (BOM, blank line, or text before `---`), "
                            f"so the host reads none of it — its {', '.join(f'`{k}`' for k in lost)} "
                            "are ignored; make `---` the very first line")]
-        if at_byte_0 and "include_in" in declared:
-            return [unread(f"frontmatter closes past the first {FRONTMATTER_CAP} bytes the host reads, so "
-                           "its `include_in` is ignored; shorten the frontmatter")]
-        return []
+        if not at_byte_0:
+            return []
+        late = [unread(f"frontmatter closes past the first {FRONTMATTER_CAP} bytes the host reads, so "
+                       "its `include_in` is ignored; shorten the frontmatter")] if "include_in" in declared else []
+        return late + desc_unread()
 
     tags = _include_in(text)
     if hidden:
@@ -684,18 +750,7 @@ def _frontmatter_doc_findings(root: Path, rel: str, kind: str, hidden: bool) -> 
         out.append(scope("`surfaces:` is only honored in a project or tenant brain; a mirror doc is never "
                          "stubbed per surface — move the doc into the brain or drop the key"))
 
-    if "description" in top and not desc_owned:
-        meant_desc = data.get("description")
-        meant_desc = _tidy(meant_desc) if isinstance(meant_desc, str) else ""
-        shown = _md_description(path) or ""
-        bare = shown.strip("\"'")
-        if meant_desc and meant_desc != shown and meant_desc.startswith(bare):
-            in_head = any(line.startswith("description:") for line in text[:DESC_HEAD_BYTES].split("\n"))
-            why = ("spans several lines" if bare else "is a block scalar or starts on the next line"
-                   if in_head else f"starts past the first {DESC_HEAD_BYTES} bytes the tree reads")
-            got = f"only {shown!r}" if bare else "no gloss"
-            out.append(unread(f"`description:` {why}; the tree line renders {got} — write it as one "
-                              f"line ≤{DESC_MAX_LEN} chars", "WARN" if kind == "mirror" else "FAIL"))
+    out += desc_unread()
     return out
 
 
@@ -718,31 +773,32 @@ def _check_frontmatter(root: Path, kind: str) -> list[Finding]:
     return findings
 
 
-def _check(path: Path, rel: str, desc: str | None, kind: str) -> list[Finding]:
-    """Turn one file's extracted description into findings (missing/overlong + style WARN)."""
+def _check(rel: str, desc: str | None, kind: str, how: str = "yaml") -> list[Finding]:
+    """Turn one file's extracted (uncapped) description into findings: missing/non-string/over 1024
+    FAIL, a first sentence past the tree gloss WARN, contents-style WARN."""
     if desc is None:
         return [Finding(rel, "FAIL",
-                        f"missing renderable `description:` in {kind} "
-                        "(absent, empty, or a block-scalar/multi-line value the tree drops)",
-                        "description-missing")]
+                        f"missing `description:` in {kind} (absent, empty, null, or in frontmatter the "
+                        "host cannot read)", "description-missing")]
     out: list[Finding] = []
-    if len(desc) > DESC_MAX_LEN:
-        if kind == "action manifest":
-            # Manifest descriptions double as the full-length action-catalog prompt entry, so
-            # length is legitimate. A complete opening sentence within the tree budget is the
-            # deterministic proof that its routing signal was intentionally front-loaded.
-            first_end = next((m.end() for m in _SENTENCE_BOUNDARY.finditer(desc)), None)
-            if first_end is None or first_end > DESC_MAX_LEN:
-                out.append(Finding(rel, "WARN",
-                                   f"description is {len(desc)} chars and its first complete sentence "
-                                   f"exceeds the {DESC_MAX_LEN}-char tree gloss — lead with a short "
-                                   "when-to-use sentence; keep the rich catalog detail after it",
-                                   "description-length"))
-        else:
-            out.append(Finding(rel, "FAIL",
-                               f"description is {len(desc)} chars (>{DESC_MAX_LEN}); the tree truncates "
-                               f"at {DESC_MAX_LEN}, so the tail is invisible to the model",
-                               "description-length"))
+    if how == "yaml-nonstr":
+        out.append(Finding(rel, "FAIL", "`description:` must be a YAML string — quote the value",
+                           "description-missing"))
+    if kind != "action manifest" and len(desc) > DESC_FULL_MAX_LEN:
+        out.append(Finding(rel, "FAIL",
+                           f"description is {len(desc)} chars (>{DESC_FULL_MAX_LEN}, the Agent Skills limit); "
+                           f"the host keeps only the first {DESC_FULL_MAX_LEN}", "description-length"))
+    elif len(desc) > DESC_MAX_LEN:
+        # A complete opening sentence within the tree budget is the deterministic proof that the
+        # routing signal was intentionally front-loaded; the rich detail after it stays in the full
+        # value (an action manifest's feeds the per-run action catalog full-length).
+        first_end = next((m.end() for m in _SENTENCE_BOUNDARY.finditer(desc)), None)
+        if first_end is None or first_end > DESC_MAX_LEN:
+            out.append(Finding(rel, "WARN",
+                               f"description is {len(desc)} chars and its first complete sentence exceeds "
+                               f"the {DESC_MAX_LEN}-char tree gloss — the tree line shows the first "
+                               f"{DESC_MAX_LEN} chars, so lead with a short when-to-use sentence; detail "
+                               "after it stays in the full description", "description-length"))
     if _CONTAINS_STYLE.match(desc):
         out.append(Finding(rel, "WARN",
                            "description reads as \"what this contains\"; prefer \"when to open this\" "
@@ -846,7 +902,7 @@ def _check_symlinks(root: Path) -> list[Finding]:
 
 
 def lint_brain(brain_root: str | Path, kind: str | None = None) -> list[Finding]:
-    """Lint every routable file under `brain_root` for a renderable, in-budget `description:`.
+    """Lint every routable file under `brain_root` for a host-readable, in-budget `description:`.
 
     Targets, mirroring the authoring mandate: `skills/*/SKILL.md`, `skills/cases/*.md`, and
     `actions/*/manifest.yaml`. Pure + deterministic (stdlib + PyYAML): no network, no DSN, no model.
@@ -873,15 +929,13 @@ def lint_brain(brain_root: str | Path, kind: str | None = None) -> list[Finding]
 
     findings += _check_symlinks(root)
 
-    for skill_md in sorted(root.glob("skills/*/SKILL.md")):
-        findings += _check(skill_md, _rel(root, skill_md), _md_description(skill_md), "SKILL.md")
-
-    for case_md in sorted(root.glob("skills/cases/*.md")):
-        findings += _check(case_md, _rel(root, case_md), _md_description(case_md), "runbook")
+    for md, label in [*((p, "SKILL.md") for p in sorted(root.glob("skills/*/SKILL.md"))),
+                      *((p, "runbook") for p in sorted(root.glob("skills/cases/*.md")))]:
+        desc, how = _frontmatter_description(_read_head(md))
+        findings += _check(_rel(root, md), desc, label, how)
 
     for manifest in sorted(root.glob("actions/*/manifest.yaml")):
-        findings += _check(manifest, _rel(root, manifest), _manifest_description(manifest),
-                           "action manifest")
+        findings += _check(_rel(root, manifest), _manifest_description(manifest), "action manifest")
 
     surface_manifests = set(root.glob("actions/*/manifest.yaml"))
     surface_manifests.update(root.glob("actions-drafts/*/manifest.yaml"))
@@ -933,7 +987,8 @@ _RULE_FIXES = {
     "frontmatter-scope": "fix: move the file where its mount's host scan reads the key, or drop the key "
                          "(brain_lint.py prints the repo kind it linted as; override with --as)",
     "frontmatter-unread": "fix: `---` on line 1, keys at column 0 spelled exactly `include_in` / `surfaces` / "
-                          "`description`, one-line values, frontmatter closed within 8 KB",
+                          "`description`, one-line or `- item` lists, one `description:`, frontmatter "
+                          "closed within 8 KB",
     "frontmatter-redundant": "fix: drop the listed tags; the file already reaches that prompt whole",
     "include-in-value": "fix: use only triage, grounding, agent, principal",
     "doc-size": "fix: keep a lean core with the most important rules first; move detail into grouped "
