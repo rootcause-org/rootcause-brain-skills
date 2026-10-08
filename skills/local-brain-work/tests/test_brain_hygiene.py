@@ -33,7 +33,7 @@ FIXTURES = {
     "em-dash": {"actions/refund/manifest.yaml": "id: refund\ndescription: Refund\n"
                                                 "display_name: \"Terugbetaling — snel\"\n"},
     "mermaid": {"skills/x/SKILL.md": "```mermaid\ngraph TD\n  A-->>>((B\n```\n"},
-    "description": {"skills/cases/x.md": f"---\nname: x\ndescription: \"{'w' * 151}\"\n---\nBody.\n"},
+    "description": {"skills/cases/x.md": f"---\nname: x\ndescription: \"{'w' * 1025}\"\n---\nBody.\n"},
 }
 
 
@@ -204,3 +204,98 @@ def test_real_brain_galleries_have_no_fail(brain: str) -> None:
         pytest.skip(f"{path} not checked out")
     cats, found = brain_hygiene.parse_chat_inspiration(path.read_text("utf-8"))
     assert cats and [f.render() for f in found if f.severity != "NOTICE"] == []
+
+
+# --- chat-inspiration author notes + skill pointers (grammar v2; host internal/chatinspiration) ---
+
+GRAMMAR_EXAMPLE = """---
+surfaces: [chat, dashboard_chat]
+---
+## 📝 Inschrijvingen
+skills: records, /mirrors/kampadmin-rootcause-common/skills/columns
+Elke lijst: één rij per inschrijving, status als eerste kolom.
+- **Wachtlijst bekijken** — Voor welke activiteiten staat er een wachtlijst?
+  - skills: subscription-stats
+  - `registrations.waitlist_position IS NOT NULL`; sluit geannuleerde uit; aantal per activiteit.
+  - Valkuil: een kind kan op meerdere wachtlijsten staan, tel per activiteit, niet per kind.
+- **Bijna volzet** — Welke activiteiten zijn bijna volzet?
+"""
+CAT_NOTE = "Elke lijst: één rij per inschrijving, status als eerste kolom."
+CAT_SKILLS = ["/brain/skills/records/SKILL.md",
+              "/mirrors/kampadmin-rootcause-common/skills/columns/SKILL.md"]
+
+
+def test_chat_inspiration_grammar_example_notes_and_skills() -> None:
+    cats, found = brain_hygiene.parse_chat_inspiration(GRAMMAR_EXAMPLE)
+    assert found == []
+    (cat,) = cats
+    assert cat["notes"] == [CAT_NOTE] and cat["skills"] == CAT_SKILLS
+    wait, full = cat["prompts"]
+    assert [p["title"] for p in cat["prompts"]] == ["Wachtlijst bekijken", "Bijna volzet"]
+    assert wait["skills"] == CAT_SKILLS + ["/brain/skills/subscription-stats/SKILL.md"]
+    assert wait["notes"] == [
+        CAT_NOTE,
+        "`registrations.waitlist_position IS NOT NULL`; sluit geannuleerde uit; aantal per activiteit.",
+        "Valkuil: een kind kan op meerdere wachtlijsten staan, tel per activiteit, niet per kind."]
+    assert full["notes"] == [CAT_NOTE] and full["skills"] == CAT_SKILLS
+
+
+@pytest.mark.parametrize("entry, path", [
+    ("records", "/brain/skills/records/SKILL.md"),
+    ("/skills/xlsx", "/skills/xlsx/SKILL.md"),
+    ("/tenant/skills/a/guide.md", "/tenant/skills/a/guide.md"),
+    ("skills/records", None), ("/etc/passwd", None), ("/brain/../x", None), ("my skill", None),
+])
+def test_chat_inspiration_skill_path(entry: str, path: str | None) -> None:
+    assert brain_hygiene.ci_skill_path(entry) == path
+
+
+def test_chat_inspiration_skill_caps_category_first() -> None:
+    text = HEADER + "## A\nskills: " + ", ".join(f"c{i}" for i in range(5)) + "\n" \
+        + "- **T** — p\n  - skills: c0, p1, p2\n"
+    cats, found = brain_hygiene.parse_chat_inspiration(text)
+    names = [s.split("/")[3] for s in cats[0]["prompts"][0]["skills"]]
+    assert names == ["c0", "c1", "c2", "c3", "c4", "p1"]
+    assert any("drops ['/brain/skills/p2/SKILL.md']" in f.message for f in found)
+
+
+@pytest.mark.parametrize("text, needle", [
+    (HEADER + "## A\n- **T** — p\nmore prompt text\n", "plain line after the category's first prompt"),
+    (HEADER + "## A\n- **T** — p\n  - skills: ../x\n", "skill pointer '../x'"),
+    (HEADER + "## A\n- **T** — p\n  - skills: /opt/x\n", "skill pointer '/opt/x'"),
+    (HEADER + "## A\n- **T** — p\n  - " + "n" * 301 + "\n", "cap 300"),
+    (HEADER + "## A\n" + "".join(f"note {i}\n" for i in range(5)) + "- **T** — p\n"
+     + "".join(f"  - own {i}\n" for i in range(4)), "drops ['own 3']"),
+    (HEADER + "## A\n" + "".join(f"note {i}\n" for i in range(9)) + "- **T** — p\n",
+     "category 'a' has 9 notes (cap 8)"),
+    (HEADER + "## A\n- **T** — p\n- skills: records\n", "top-level bullet starting `skills:`"),
+])
+def test_chat_inspiration_note_errors(text: str, needle: str) -> None:
+    errors, _ = ci(text)
+    assert any(needle in m for m in errors), errors
+
+
+@pytest.mark.parametrize("text, needle", [
+    (HEADER + "## A\n  - stray\n- **T** — p\n", "indented bullet before the category's first prompt"),
+    (HEADER + "## A\n- **T** — p\n  - Skill: records\n", "'Skill:', read as a note"),
+    (HEADER + "## A\n- **T** — p\n  - skills: x\n- **U** — q\n", "prompt 'U' has no skill pointer"),
+])
+def test_chat_inspiration_note_notices(text: str, needle: str) -> None:
+    errors, notices = ci(text)
+    assert errors == set()
+    assert any(needle in m for m in notices), notices
+
+
+def test_chat_inspiration_no_skill_notice_when_feature_unused() -> None:
+    assert ci(HEADER + "## A\n- **T** — p\n  - a note\n") == (set(), set())
+
+
+def test_chat_inspiration_missing_bare_skill_needs_root(tmp_path: Path) -> None:
+    text = HEADER + "## A\nskills: present, absent\n- **T** — p\n"
+    (tmp_path / "skills" / "present").mkdir(parents=True)
+    (tmp_path / "skills" / "present" / "SKILL.md").write_text("x")
+    _, found = brain_hygiene.parse_chat_inspiration(text, root=tmp_path)
+    assert [f.message for f in found if f.severity == "ERROR"] == [
+        ("chat-inspiration: skill 'absent' has no skills/absent/SKILL.md in this brain; the agent "
+         "would be pointed at a missing file; fix: fix the name or add the skill")]
+    assert ci(text) == (set(), set())  # no root: existence unchecked

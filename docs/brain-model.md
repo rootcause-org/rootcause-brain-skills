@@ -348,9 +348,10 @@ its selection into the model's opening turn. Every upfront line is a router hook
 an irrelevant one is an active distractor. Checklist:
 
 - `description:` frontmatter on every `skills/*/SKILL.md`, `skills/cases/*.md` runbook, and
-  `actions/*/manifest.yaml` — "when to open this" in customer vocabulary, ≤150 chars for Markdown.
-  Action descriptions also feed the full catalog and may stay rich; lead those with one complete
-  routing sentence that fits within 150 chars. The offline lint preserves this distinction.
+  `actions/*/manifest.yaml` — "when to open this" in customer vocabulary. Any YAML string form
+  (one line, wrapped, `|`, `>`), 1–1024 chars for Markdown; the tree line shows only the first 150,
+  so lead with one complete when-to-use sentence that fits there and put detail after it. Action
+  descriptions also feed the full catalog and may stay rich under the same lead-sentence rule.
 - Python scripts: first docstring line = **usage + purpose** — e.g. `backup_status.py <backup-id> —
   why-isn't-this-backup-running triage.` It is the script's tree gloss and the only line an agent sees
   before calling, so teach the invocation, not just the topic.
@@ -397,8 +398,10 @@ It is the only text the model sees before deciding whether to open the file, so 
 becomes relevant** — the situations, questions and symptoms in the customer's own words ("Open when…",
 "Use for…"). Say what it is *not* for when that prevents a wrong hop ("not for cancellations"). Never
 summarise contents: "This file contains…" tells the router nothing it can match on. The offline lint
-FAILs a Markdown description over 150 chars (the tree truncates, the tail never reaches the model) and
-WARNs on contents-style openers.
+FAILs a Markdown description that is missing, not a YAML string, or over 1024 chars, WARNs when its
+first sentence overruns the 150-char tree gloss, and WARNs on contents-style openers. Lint and host
+read it identically: both replay the shared corpus in `runtime/lib/contracts/frontmatter/` (rootcause
+vendors it and checks it against the pinned kit tag).
 
 ## Production Mounts
 
@@ -463,10 +466,32 @@ surfaces: [chat, dashboard_chat]
   come first; a shared id keeps the project's label/emoji and lists tenant prompts first with a tenant
   badge; an identical prompt text (case-insensitive) keeps one copy, the tenant's.
 
+**Author notes + skill pointers** — hidden from the gallery; reach the agent only on the turn the user
+sent a picked example (even edited), as reference guidance below the request.
+
+```markdown
+## 📝 Inschrijvingen
+skills: records, /mirrors/kampadmin-rootcause-common/skills/columns
+Elke lijst: één rij per inschrijving, status als eerste kolom.
+- **Wachtlijst bekijken** — Voor welke activiteiten staat er een wachtlijst?
+  - skills: subscription-stats
+  - Valkuil: een kind kan op meerdere wachtlijsten staan, tel per activiteit.
+```
+
+- Prompt = an unindented bullet. Prompt note = an indented bullet under it. Category note = a plain line
+  above the category's first prompt; a plain line after it is ignored (lint FAIL).
+- `skills:` (category or prompt note) = comma list: bare name → `/brain/skills/<n>/SKILL.md`
+  (`/tenant/…` for tenant prompts); absolute path under `/brain/`, `/tenant/`, `/skills/`, `/mirrors/` →
+  verbatim + `/SKILL.md` unless `.md`. Anything else is dropped.
+- Effective per prompt = category entries first, then its own; caps 300 chars/note, 8 notes, 6 skills.
+
 The host parser is fail-open (a bad line vanishes silently), so the hygiene rule `chat-inspiration`
 (`brain_hygiene.py`, pre-commit and pre-push) parses the file the same way and FAILs on whatever would
 be dropped, unbalanced placeholders, duplicate category ids, a missing `chat` surface, or an empty
-gallery; it advises on prompts over 160 chars, missing bold titles and duplicates.
+gallery, plus dropped notes/skills (ignored plain line, invalid or missing skill, cap, a top-level
+`- skills:` bullet that would show as a card); it advises on prompts over 160 chars, missing bold titles,
+duplicates, ignored indented bullets, `skill:` typos, and (once the file uses `skills:`) prompts without
+any skill pointer.
 
 ## Read-Only Brain Alias
 
