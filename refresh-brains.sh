@@ -275,6 +275,10 @@ for b in "${BRAINS[@]}"; do
     echo "  skip $b (no skills/ | playbooks/ | projection.yaml | .rootcause.toml — not a brain)"; continue; }
   echo "  → $(basename "$b")"
   [ "$DRY" = 1 ] || RC_BRAIN_KIT="$KIT" RC_BRAIN_KIT_TAG="$TARGET" "$ROOT/install.sh" "$b" >/dev/null
+  # Legacy-debt sweep: the commit/push gates judge changed files only, so a rule added after a file
+  # was written (2026-10-08: a 176-char description from before the 150-char rule) stays invisible
+  # until someone runs --all. Report, never block a release.
+  [ "$DRY" = 1 ] || (cd "$b" && uv run --no-project python "$ROOT/skills/local-brain-work/scripts/brain_hygiene.py" --all 2>/dev/null | grep -v '^NOTICE' | grep -E ' hygiene: ' | sed 's/^/    ⚠ /' || true)
 done
 
 # ── 3. prod (rootcause) — consume the new pin in the sibling checkout ─────────
