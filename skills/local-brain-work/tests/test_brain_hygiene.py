@@ -299,3 +299,24 @@ def test_chat_inspiration_missing_bare_skill_needs_root(tmp_path: Path) -> None:
         ("chat-inspiration: skill 'absent' has no skills/absent/SKILL.md in this brain; the agent "
          "would be pointed at a missing file; fix: fix the name or add the skill")]
     assert ci(text) == (set(), set())  # no root: existence unchecked
+
+
+@pytest.mark.parametrize("entry,want", [
+    ("/brain///x/", "/brain/x/SKILL.md"),
+    ("/brain/notes.md/", "/brain/notes.md"),
+    ("/mirrors/r/skills/a", "/mirrors/r/skills/a/SKILL.md"),
+    ("/brain", None),
+    ("/brain//", None),
+    ("/brain/../etc", None),
+])
+def test_chat_inspiration_skill_path_normalises_before_checks(entry: str, want: str | None) -> None:
+    # Lockstep with Go SkillPath (TestSkillPathNormalisesBeforeChecks).
+    assert brain_hygiene.ci_skill_path(entry) == want
+
+
+def test_chat_inspiration_duplicate_card_id_fails() -> None:
+    text = ("---\nsurfaces: [chat]\n---\n## Cat\n- **Same** — first\n  - skills: /skills/x\n"
+            "- **Same** — second\n- **Other** — third\n")
+    _, found = brain_hygiene.parse_chat_inspiration(text)
+    errors = [f for f in found if f.severity == "ERROR"]
+    assert len(errors) == 1 and "duplicate card id" in errors[0].message and errors[0].line == 7

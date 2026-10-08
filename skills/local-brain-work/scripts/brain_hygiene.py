@@ -48,6 +48,7 @@ fails at commit time, not at push.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import shutil
 import subprocess
@@ -227,10 +228,15 @@ def ci_skill_path(entry: str) -> str | None:
     """Run path of one `skills:` entry (Go `SkillPath`, project-sourced); None = host drops it."""
     if CI_SKILL_NAME_RE.fullmatch(entry):
         return f"/brain/skills/{entry}/SKILL.md"
-    if (not entry.startswith(CI_SKILL_ROOTS) or any(c.isspace() for c in entry)
-            or ".." in entry.split("/") or entry.rstrip("/") + "/" in CI_SKILL_ROOTS):
+    if not entry.startswith("/") or any(c.isspace() for c in entry):
         return None
-    return entry if entry.endswith(".md") else entry.rstrip("/") + "/SKILL.md"
+    while "//" in entry:  # normalise BEFORE the root/.md checks, in lockstep with the Go SkillPath
+        entry = entry.replace("//", "/")
+    entry = entry.rstrip("/")
+    if (not entry.startswith(CI_SKILL_ROOTS) or ".." in entry.split("/")
+            or entry + "/" in CI_SKILL_ROOTS):
+        return None
+    return entry if entry.endswith(".md") else entry + "/SKILL.md"
 
 
 def _ci_capped(cat: list[tuple[str, int]], own: list[tuple[str, int]], cap: int, dedup: bool
@@ -278,6 +284,7 @@ def parse_chat_inspiration(text: str, path: str = CHAT_INSPIRATION_FILE, root: P
     cur: dict | None = None
     after_subheading = False  # a non-## heading ended a category: its bullets are ignored
     seen_prompts: dict[str, int] = {}
+    seen_ids: dict[str, int] = {}
     in_preamble = True  # this `##` section has not had a prompt bullet yet
     target: dict | None = None  # prompt the next indented bullets annotate (None: bullet dropped)
     any_skills_key = False
@@ -388,6 +395,12 @@ def parse_chat_inspiration(text: str, path: str = CHAT_INSPIRATION_FILE, root: P
             if len(body) > CI_READABLE_PROMPT_RUNES:
                 add(f"prompt is {len(body)} chars; cards read best under {CI_READABLE_PROMPT_RUNES}",
                     "tighten the prompt", lineno, "NOTICE")
+            card_id = hashlib.sha256(("project\x00" + cur["id"] + "\x00" + title.lower()).encode()).hexdigest()[:12]
+            if card_id in seen_ids:
+                add(f"duplicate card id: same title as line {seen_ids[card_id]} in this category; a gallery "
+                    "pick of either card loses its notes (the host resolves fail-open)", "rename one title", lineno)
+            else:
+                seen_ids[card_id] = lineno
             key = body.lower()
             if key in seen_prompts:
                 add(f"duplicate prompt text (first at line {seen_prompts[key]}); the host keeps one",
