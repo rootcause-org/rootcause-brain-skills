@@ -150,7 +150,9 @@ if [ -n "$RELEASE" ]; then
   [ "$DRY" = 1 ] || BUMPED=1
   for f in "${FILES[@]}"; do
     [ -f "$ROOT/$f" ] || continue
-    grep -qF "$CUR" "$ROOT/$f" && run sed -i '' "s/${CUR//./\\.}/$NEW/g" "$ROOT/$f" || true
+    # Digit-bounded: a bare 0.11.1 → 0.11.2 would also rewrite a dependency pin like pdfplumber==0.11.10
+    # (seen 2026-10-08: the coherence check then reports a phantom dependency edit and aborts the release).
+    grep -qF "$CUR" "$ROOT/$f" && run sed -i '' -E "s/(^|[^0-9.])${CUR//./\\.}([^0-9]|$)/\\1$NEW\\2/g" "$ROOT/$f" || true
   done
 
   # 1b. lockfile: only when deps changed (--relock). Skill/doc releases keep lib identical → identical
