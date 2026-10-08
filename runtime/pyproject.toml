@@ -34,6 +34,8 @@ dependencies = [
     "pypdf>=6.14.2,<7",
     "pdfplumber==0.11.10",
     "fpdf2==2.8.7",
+    # pandas' optional backend for DataFrame.to_markdown(); without it the call raises ImportError.
+    "tabulate==0.10.0",
 ]
 
 [project.optional-dependencies]
