@@ -205,7 +205,11 @@ def compare(repo, ref, diff, base, argv, project, tenant=None, principal_kind=No
         raise ValueError('No changed files to compare')
     grounding_changes = [p for p in changed if not any(
         part.startswith('.') or part == 'actions' for part in PurePosixPath(p).parts)]
-    seeds = {argv[1], *paths, *(p for p in grounding_changes if '/tests/' not in '/' + p and not p.startswith('tests/'))}
+    changed_seeds = [p for p in grounding_changes if '/tests/' not in '/' + p and not p.startswith('tests/')]
+    if not stage_all:  # changed code outside the helper's closure is not shipped; data next to it is
+        home = str(PurePosixPath(argv[1]).parent)
+        changed_seeds = [p for p in changed_seeds if not p.endswith('.py') and (home == '.' or under(p, [home]))]
+    seeds = {argv[1], *paths, *changed_seeds}
     via = {}
     before_files = stage(repo, base_sha, seeds, via=via)
     after_files = stage(repo, after_sha, seeds, working=diff, only=only, via=via)
@@ -213,9 +217,19 @@ def compare(repo, ref, diff, base, argv, project, tenant=None, principal_kind=No
         raise ValueError('Helper missing from staged tree')
     live = {}
     if not stage_all:  # ship the helper + changed bytes; unchanged imports come from the live mirror
-        same = {n for n in before_files if n != argv[1] and after_files.get(n) == before_files[n]}
+        trees = {base_sha: tree(repo, base_sha), after_sha: tree(repo, after_sha)}
+
+        def blob(files, sha, n, working=False):  # a closure may not reach n on the other side
+            if n in files:
+                return files[n]
+            if working and (not only or under(n, only)) and (repo / n).is_file():
+                return base64.b64encode((repo / n).read_bytes()).decode()
+            if n in trees[sha]:
+                return base64.b64encode(subprocess.check_output(['git', '-C', str(repo), 'show', f'{sha}:{n}'])).decode()
+        same = {n: b for n in sorted(set(before_files) | set(after_files)) if n != argv[1]
+                and (b := blob(before_files, base_sha, n)) is not None and b == blob(after_files, after_sha, n, diff)}
         live = dict(mirror=mirror or f'/mirrors/{repo.name}', borrowed={
-            n: hashlib.sha256(base64.b64decode(before_files[n])).hexdigest() for n in sorted(same)})
+            n: hashlib.sha256(base64.b64decode(b)).hexdigest() for n, b in same.items()})
         before_files = {n: d for n, d in before_files.items() if n not in same}
         after_files = {n: d for n, d in after_files.items() if n not in same}
     scope = ['--project', project, '--tenant', tenant] if tenant else ['--project', project, '--scope', 'project']
@@ -226,7 +240,7 @@ def compare(repo, ref, diff, base, argv, project, tenant=None, principal_kind=No
     # Resolve and validate both payloads before either production call.
     name = re.sub('[^A-Za-z0-9_-]', '-', repo.name)
     payload = {}
-    for label, files in (('before', before_files), ('after', after_files)):
+    for label, files in (() if no_base else (('before', before_files),)) + (('after', after_files),):
         try:
             payload[label] = len(console_command(files, argv, name, **live).encode())
         except ValueError as exc:
