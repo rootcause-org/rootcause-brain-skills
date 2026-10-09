@@ -455,3 +455,33 @@ def test_segments_are_measurements():
     out = kb.segments_ok(segs, 3800)
     assert out[:3] == [{"t": 0, "text": "a", "spoken": True}, {"t": 65, "text": "b c", "spoken": True},
                        {"t": 120, "text": "n", "spoken": True}] and out[-1]["t"] == 3723
+
+
+def test_manifest_write_failure_rolls_back_the_corpus(brain, monkeypatch):
+    src = Source()
+    refresh(brain, src)
+    before = tree(brain)
+    p = kb.Profile(brain, NAME)
+    src.articles[0]["body"] = "<p>updated</p>"
+    real = kb.jdump
+
+    def fail_manifest(path, obj):
+        if path == p.manifest:
+            raise OSError("manifest write failed")
+        return real(path, obj)
+
+    monkeypatch.setattr(kb, "jdump", fail_manifest)
+    with pytest.raises(OSError, match="manifest write failed"):
+        refresh(brain, src)
+    assert tree(brain) == before
+
+
+@pytest.mark.parametrize("limit", [0, -1])
+def test_nonpositive_limit_never_transcribes(brain, monkeypatch, limit):
+    refresh(brain, with_video(Source()))
+    calls = []
+    monkeypatch.setattr(kb, "video_meta", lambda p, ref, state: {"title": "test", "duration": 420})
+    monkeypatch.setattr(kb, "transcribe", lambda p, ref, meta: calls.append(ref["id"]))
+    with pytest.raises(kb.MirrorError):
+        kb.video_transcribe(kb.Profile(brain, NAME), limit, False, False)
+    assert calls == []

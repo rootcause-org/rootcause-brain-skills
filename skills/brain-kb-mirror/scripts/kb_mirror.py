@@ -136,8 +136,15 @@ def jload(p: Path, default=None):
 
 
 def jdump(p: Path, obj) -> None:
+    write_atomic(p, (json.dumps(obj, ensure_ascii=False, indent=1, sort_keys=True) + "\n").encode())
+
+
+def write_atomic(p: Path, data: bytes) -> None:
+    """Temp file + rename: a failed write never leaves a truncated file behind."""
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(obj, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
+    tmp = p.with_name(p.name + ".tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, p)
 
 
 def ensure_cache(p: Profile) -> None:
@@ -982,9 +989,10 @@ def safe_path(root: Path, rel: str) -> Path:
     return dest
 
 
-def swap(root: Path, cand: Path, old: dict | None, new: dict, adopt: bool = False) -> None:
+def swap(root: Path, cand: Path, old: dict | None, new: dict, adopt: bool = False,
+         manifest: Path | None = None) -> None:
     """Replace the manifest-owned files of the live corpus with the candidate, all or nothing: every conflict is
-    found before the first write, and a failing write rolls back what was already moved."""
+    found before the first write, and a failing write (manifest included) rolls back what was already moved."""
     if root.is_symlink():
         raise MirrorError(f"target is a symlink: {root}")
     owned, conflicts, writes = set(old["files"]) if old else set(), [], []
@@ -1005,6 +1013,7 @@ def swap(root: Path, cand: Path, old: dict | None, new: dict, adopt: bool = Fals
     if conflicts:
         raise MirrorError("refusing to replace the corpus:\n  " + "\n  ".join(conflicts[:20]))
     backup = cand.parent / "backup"
+    old_manifest = manifest.read_bytes() if manifest is not None and manifest.is_file() else None
     shutil.rmtree(backup, ignore_errors=True)
     done: list[tuple[Path, Path | None, bool]] = []  # (live path, backup, newly written)
     try:
@@ -1018,7 +1027,14 @@ def swap(root: Path, cand: Path, old: dict | None, new: dict, adopt: bool = Fals
             if src is not None:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(src, dest)
+        if manifest is not None:  # inside the rollback boundary: corpus and manifest change together
+            jdump(manifest, new)
     except BaseException:
+        if manifest is not None:
+            if old_manifest is not None:
+                write_atomic(manifest, old_manifest)
+            else:
+                manifest.unlink(missing_ok=True)
         for dest, bak, written in reversed(done):
             if written:
                 dest.unlink(missing_ok=True)
@@ -1095,8 +1111,7 @@ def refresh(p: Profile, offline: bool = False, allow_shrink: bool = False, fetch
     if errs:
         raise MirrorError("candidate failed validation:\n  " + "\n  ".join(errs[:20]))
     diff_summary(p, old, new)
-    swap(p.target, cand, old, new, adopt)
-    jdump(p.manifest, new)
+    swap(p.target, cand, old, new, adopt, manifest=p.manifest)
     if not offline:
         jdump(snap_path, snap)
     shutil.rmtree(cand)
@@ -1393,7 +1408,9 @@ def video_transcribe(p: Profile, limit: int | None, yes: bool, retry_unavailable
     have = load_transcripts(p)
     todo = [v for v in sorted(man.get("videos", {})) if v not in have
             or have[v]["prompt_version"] != TRANSCRIPT_VERSION or (retry_unavailable and have[v]["source"] == "none")]
-    todo = todo[:limit] if limit else todo
+    if limit is not None and limit < 1:
+        raise MirrorError("--limit must be a positive number of videos")
+    todo = todo[:limit] if limit is not None else todo
     state: dict = {}
     with ThreadPoolExecutor(2) as ex:  # metadata only (title, duration, caption tracks): no download
         metas = dict(zip(todo, ex.map(lambda v: video_meta(p, man["videos"][v], state), todo), strict=True))
