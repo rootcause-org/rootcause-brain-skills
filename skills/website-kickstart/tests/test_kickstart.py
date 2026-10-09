@@ -477,6 +477,45 @@ class KickstartTest(unittest.TestCase):
         self.assertTrue(self.world.repos[parked[0]]["archived"])
         self.assertEqual(len([n for n in self.world.repos if "-teardown-" in n]), 1)  # no second rename
 
+    def test_teardown_without_local_record_resumes_after_connection_delete_failure(self):
+        self.kick()
+        state = Path(self.tmp.name, "state", f"{ACC}-site-test.json")
+        state.unlink()  # teardown from another machine: ownership comes from the live binding only
+        orig = self.world.cloudflare
+
+        def always_503(method, path, body):
+            if method == "DELETE" and path.startswith("/builds/repos/connections/"):
+                return 503, b'{"success": false}'
+            return orig(method, path, body)
+        self.world.cloudflare = always_503
+        code, out, _ = self.kick("--teardown", "site-test")
+        self.assertEqual(code, 1, out)
+        self.assertEqual(self.world.triggers, {})  # now unbound
+        self.assertIn("conn-dentai-org-site-test", json.loads(state.read_text())["connections"])
+        self.world.cloudflare = orig
+        code, out, writes = self.kick("--teardown", "site-test")  # no --force-orphan needed
+        self.assertEqual(code, 0, out)
+        self.assertIn(("DELETE", "/builds/repos/connections/conn-dentai-org-site-test", None), writes)
+        self.assertEqual((self.world.connections, self.world.scripts), ({}, {}))
+
+    def test_unlinked_github_org_gets_a_hint_and_rerun_reuses_the_worker(self):
+        orig = self.world.cloudflare
+
+        def unlinked(method, path, body):
+            if method == "PUT" and path == "/builds/repos/connections":
+                return 404, json.dumps({"success": False, "errors": [
+                    {"code": 8000008, "message": "This project is disconnected from your Git account"}]}).encode()
+            return orig(method, path, body)
+        self.world.cloudflare = unlinked
+        code, out, _ = self.kick()
+        self.assertEqual(code, 1)
+        self.assertIn("Import a repository → Add GitHub account → dentai-org", out)
+        self.world.cloudflare = orig
+        code, out, writes = self.kick()
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("cmd wrangler deploy", self.names(writes))
+        self.assertIn("unbound, created by this machine's kickstart", out)
+
 
 if __name__ == "__main__":
     unittest.main()

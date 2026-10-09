@@ -423,6 +423,7 @@ class Kickstart:
         detail = "exists"
         if tag is not None:
             detail = self.check_owner(tag, self.a.adopt, "--adopt")
+            self.save_state(tag=tag)  # accepted (bound, recorded or adopted): reusable on rerun
         else:
             if self.a.dry_run:
                 self.plan(f"bash build.sh && pnpm dlx wrangler@4 deploy (creates Worker {self.worker})")
@@ -442,10 +443,18 @@ class Kickstart:
 
     def step_builds(self):
         tag = self.s.get("worker_tag")
-        conn = self.cf("PUT", "/builds/repos/connections", {
-            "provider_type": "github", "provider_account_id": str(self.s.get("owner_id", "<owner id>")),
-            "provider_account_name": self.a.org, "repo_id": str(self.s.get("repo_id", "<repo id>")),
-            "repo_name": self.repo_name})
+        try:
+            conn = self.cf("PUT", "/builds/repos/connections", {
+                "provider_type": "github", "provider_account_id": str(self.s.get("owner_id", "<owner id>")),
+                "provider_account_name": self.a.org, "repo_id": str(self.s.get("repo_id", "<repo id>")),
+                "repo_name": self.repo_name})
+        except StepFailed as err:
+            if "8000008" in str(err):  # "This project is disconnected from your Git account"
+                raise StepFailed(f"Cloudflare is not linked to GitHub org {self.a.org}: link the GitHub org to the "
+                                 "Cloudflare account once: Workers & Pages → Create → Import a repository → "
+                                 f"Add GitHub account → {self.a.org}; then rerun (the Worker is reused)",
+                                 err.status) from err
+            raise
         conn_uuid = (conn or {}).get("repo_connection_uuid", "<repo_connection_uuid>")
         if conn:
             self.save_state(tag=tag, connections=sorted(set(self.state.get("connections", [])) | {conn_uuid}))
@@ -709,6 +718,9 @@ class Kickstart:
         triggers = self.bindings(tag)[0] if tag else []
         conns = set(self.state.get("connections", []))
         conns |= {(t.get("repo_connection") or {}).get("repo_connection_uuid") for t in triggers} - {None}
+        # Record what preflight proved before the first delete: once the triggers are gone, the Worker
+        # is unbound and these ids are the only way back to the connections (no list endpoint).
+        self.save_state(**({"tag": tag} if tag else {}), connections=sorted(conns))
         for t in triggers:
             self.cf_delete(f"/builds/triggers/{t['trigger_uuid']}")
         for uuid in sorted(conns):
