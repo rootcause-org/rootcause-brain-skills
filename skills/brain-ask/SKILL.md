@@ -32,7 +32,8 @@ and `rc ask --help`.
      durable journal push, proposed actions/PRs are test artifacts.
    - `--file <path>` (repeatable) stages local files read-only in the run workspace. Content is sniffed
      server-side; text, images, pdf, csv, json and xlsx pass, other binaries/archives are rejected.
-     Generated files do **not** come back on this lane — the answer is text only.
+     Files the run generates (written to `/tmp/outbox`) come back as metadata + a download URL in the
+     result's `attachments` (never inline content); `--file` inputs are not echoed there.
    - `--effort pro|max` only when deliberately escalating.
 
 3. **Relay the result:** draft/note/actions for the email scenario, or the direct answer for
