@@ -33,7 +33,9 @@ def snapshot(repo, sha, paths):
     return stage(Path(repo), sha, selected)
 
 
-def console_command(files, argv, repo_name="helper"):
+def console_command(files, argv, repo_name="helper", mirror=None, borrowed=None):
+    """mirror: the live checkout (`/mirrors/<repo>`) that unstaged imports resolve from; borrowed:
+    {path: sha256 of the base bytes} for those imports, verified on the box before the helper runs."""
     if not re.fullmatch(r"[A-Za-z0-9_-]+", repo_name):
         raise ValueError("Invalid scratch repository name")
     # No shell interpolation of filenames, source, or helper arguments. Scratch is removed on exit.
@@ -44,6 +46,8 @@ def console_command(files, argv, repo_name="helper"):
     source += 'files = json.loads(zlib.decompress(base64.b64decode(' + repr(payload) + ')))\n'
     source += 'argv = ' + repr(argv) + '\n'
     source += 'prefix = ' + repr(repo_name + '-') + '\n'
+    dirs = sorted({str(PurePosixPath(n).parent) for n in files if n.endswith('.py')}) if mirror else []
+    source += 'mirror, dirs, borrowed = ' + repr((mirror, dirs, borrowed or {})) + '\n'
     # Unique scratch per invocation (/tmp/try/<repo>-<pid>-*) so parallel runs never collide.
     source += '''pathlib.Path("/tmp/try").mkdir(parents=True,exist_ok=True)
 with tempfile.TemporaryDirectory(prefix=prefix+str(os.getpid())+"-", dir="/tmp/try") as root:
@@ -52,20 +56,24 @@ with tempfile.TemporaryDirectory(prefix=prefix+str(os.getpid())+"-", dir="/tmp/t
   path.parent.mkdir(parents=True,exist_ok=True)
   path.write_bytes(base64.b64decode(data))
   path.chmod(0o700)
+ import hashlib
+ stale=[n for n,h in sorted(borrowed.items()) if not os.path.isfile(os.path.join(mirror,n)) or hashlib.sha256(open(os.path.join(mirror,n),"rb").read()).hexdigest()!=h]
+ if stale: print("mirror-try: live mirror differs from base for %d borrowed import(s): %s; unchanged imports come from the live copy" % (len(stale), ", ".join(stale[:5])), file=__import__("sys").stderr)
  env=dict(os.environ)
- env["PYTHONPATH"]=root+os.pathsep+env.get("PYTHONPATH", "")
+ live=[os.path.join(root,d) for d in dirs]+([os.path.join(mirror,d) for d in dirs]+[mirror] if mirror else [])
+ env["PYTHONPATH"]=os.pathsep.join([root,*live,env.get("PYTHONPATH", "")])
  result=subprocess.run(argv,cwd=root,env=env)
  raise SystemExit(result.returncode)
 '''
     if len(source.encode()) > 120_000:
-        raise ValueError('Command exceeds 120 KB shell argument budget; ' + BUDGET_REMEDY)
+        raise ValueError(f'Compressed payload {len(source.encode()) // 1000} KB exceeds the 120 KB console budget; ' + BUDGET_REMEDY)
     return 'python - <<\'REVIEW_HELPER\'\n' + source + '\nREVIEW_HELPER'
 
 
-def run_version(files, argv, scope, sha, repo_name="helper"):
+def run_version(files, argv, scope, sha, repo_name="helper", **live):
     cmd = ['rc', 'dev', 'console', 'bash', 'run', *scope, '--raw-output', '-o', 'json',
            '--timeout', '120', '--', '-']
-    done = subprocess.run(cmd, input=console_command(files, argv, repo_name), text=True,
+    done = subprocess.run(cmd, input=console_command(files, argv, repo_name, **live), text=True,
                           capture_output=True, timeout=180)
     try:
         result = json.loads(done.stdout)
@@ -98,10 +106,12 @@ def under(name, paths):
     return any(name == p or name.startswith(p.rstrip('/') + '/') for p in paths)
 
 
-def stage(repo, ref, seeds, *, working=False, only=()):
+def stage(repo, ref, seeds, *, working=False, only=(), via=None):
     """Bounded closure of static sibling/root Python imports, plus explicit data paths.
 
-    working: read working-tree bytes; with only, just for files under those paths (rest from ref)."""
+    working: read working-tree bytes; with only, just for files under those paths (rest from ref).
+    via: filled with {file: the file that imported it} for the over-budget report."""
+    via = {} if via is None else via
     entries = tree(repo, ref)
     if working:
         for name in git(repo, 'ls-files').splitlines():
@@ -125,14 +135,13 @@ def stage(repo, ref, seeds, *, working=False, only=()):
         else:
             data = subprocess.check_output(['git', '-C', str(repo), 'show', f'{ref}:{name}'])
         files[name] = base64.b64encode(data).decode()
-        if len(json.dumps(files).encode()) > 240_000:
-            raise ValueError('Selected files exceed 240 KB console budget; ' + BUDGET_REMEDY)
         if path.suffix != '.py':
             continue
         for parent in path.parents:
             init = str(parent / '__init__.py')
             if init in entries and init != name:
                 pending.append(init)
+                via.setdefault(init, name)
         try:
             parsed = ast.parse(data, filename=name)
         except SyntaxError:
@@ -157,12 +166,26 @@ def stage(repo, ref, seeds, *, working=False, only=()):
                     found = next((c for c in candidates if c in entries), None)
                     if found:
                         pending.append(found)
+                        via.setdefault(found, name)
                         break
     return files
 
 
+def offenders(files, via):
+    """Staged files by size, each with the import path that pulled it in."""
+    lines = []
+    for name in sorted(files, key=lambda n: -len(files[n])):
+        chain, cur = [], via.get(name)
+        while cur and cur not in chain:
+            chain.append(cur)
+            cur = via.get(cur)
+        lines.append(f'  {PurePosixPath(name).name} {len(base64.b64decode(files[name])) // 1000} KB'
+                     + ''.join(' ← ' + PurePosixPath(c).stem for c in chain))
+    return '\n'.join(lines)
+
+
 def compare(repo, ref, diff, base, argv, project, tenant=None, principal_kind=None,
-            principal_id=None, paths=(), only=()):
+            principal_id=None, paths=(), only=(), mirror=None, stage_all=False, no_base=False):
     repo = repo.expanduser().resolve()
     if not argv or len(argv) < 2 or argv[0] not in ('python', 'python3') or not argv[1].endswith('.py'):
         raise ValueError('Command must be python relative/helper.py [args]; no shell or inline code')
@@ -183,10 +206,18 @@ def compare(repo, ref, diff, base, argv, project, tenant=None, principal_kind=No
     grounding_changes = [p for p in changed if not any(
         part.startswith('.') or part == 'actions' for part in PurePosixPath(p).parts)]
     seeds = {argv[1], *paths, *(p for p in grounding_changes if '/tests/' not in '/' + p and not p.startswith('tests/'))}
-    before_files = stage(repo, base_sha, seeds)
-    after_files = stage(repo, after_sha, seeds, working=diff, only=only)
+    via = {}
+    before_files = stage(repo, base_sha, seeds, via=via)
+    after_files = stage(repo, after_sha, seeds, working=diff, only=only, via=via)
     if argv[1] not in after_files:
         raise ValueError('Helper missing from staged tree')
+    live = {}
+    if not stage_all:  # ship the helper + changed bytes; unchanged imports come from the live mirror
+        same = {n for n in before_files if n != argv[1] and after_files.get(n) == before_files[n]}
+        live = dict(mirror=mirror or f'/mirrors/{repo.name}', borrowed={
+            n: hashlib.sha256(base64.b64decode(before_files[n])).hexdigest() for n in sorted(same)})
+        before_files = {n: d for n, d in before_files.items() if n not in same}
+        after_files = {n: d for n, d in after_files.items() if n not in same}
     scope = ['--project', project, '--tenant', tenant] if tenant else ['--project', project, '--scope', 'project']
     if principal_kind:
         scope += ['--principal-kind', principal_kind, '--principal-id', principal_id]
@@ -194,16 +225,26 @@ def compare(repo, ref, diff, base, argv, project, tenant=None, principal_kind=No
         after_sha = 'worktree:' + hashlib.sha256(json.dumps(after_files, sort_keys=True).encode()).hexdigest()
     # Resolve and validate both payloads before either production call.
     name = re.sub('[^A-Za-z0-9_-]', '-', repo.name)
-    console_command(before_files, argv, name)
-    console_command(after_files, argv, name)
+    payload = {}
+    for label, files in (('before', before_files), ('after', after_files)):
+        try:
+            payload[label] = len(console_command(files, argv, name, **live).encode())
+        except ValueError as exc:
+            raise ValueError(f'{exc}\n{label} staged {len(files)} file(s), by size ← importer:\n'
+                             + offenders(files, via)) from None
     return dict(repo=str(repo), base=base_sha, ref=after_sha, files=len(changed),
                 staged_before=sorted(before_files), staged_after=sorted(after_files),
+                borrowed=sorted(live.get('borrowed', {})), payload=payload,
                 command=reduced(shlex.join(argv)),
-                before=run_version(before_files, argv, scope, base_sha, name),
-                after=run_version(after_files, argv, scope, after_sha, name))
+                before=None if no_base else run_version(before_files, argv, scope, base_sha, name, **live),
+                after=run_version(after_files, argv, scope, after_sha, name, **live))
 
 
 def side_by_side(result):
+    if result['before'] is None:
+        value = result['after']
+        return '\n'.join(['no base run (new helper)', 'exit: ' + str(value['exit_code']), 'stdout:',
+                          *value['stdout'].splitlines(), 'stderr:', *value['stderr'].splitlines()])
     columns = []
     for label in ('before', 'after'):
         value = result[label]
@@ -231,11 +272,18 @@ def main():
                    help='With --diff: stage working-tree changes only under PATH (repeatable)')
     p.add_argument('--cmd', required=True, help='Quoted python relative/helper.py [args]')
     p.add_argument('--json', action='store_true')
+    p.add_argument('--mirror', help='Live mirror path on the box (default /mirrors/<repo dir name>)')
+    p.add_argument('--stage-all', action='store_true', help='Ship the whole import closure (old behaviour)')
+    p.add_argument('--no-base', action='store_true', help='New helper: skip the base run')
     p.add_argument('--read-only-reviewed', action='store_true', required=True,
                    help='Helper/imports inspected: no sends, actions, or customer writes')
     args = p.parse_args()
     result = compare(args.repo, args.ref, args.diff, args.base, shlex.split(args.cmd),
-                     args.project, args.tenant, args.principal_kind, args.principal_id, args.path, args.only)
+                     args.project, args.tenant, args.principal_kind, args.principal_id, args.path, args.only,
+                     args.mirror, args.stage_all, args.no_base)
+    print('payload ' + ' · '.join(f'{k} {v // 1000} KB' for k, v in result['payload'].items())
+          + f' of 120 KB; staged {len(result["staged_after"])}, borrowed {len(result["borrowed"])} from the live mirror',
+          file=sys.stderr)
     print(json.dumps(result, indent=2) if args.json else side_by_side(result))
     return 0 if result['after']['exit_code'] == 0 else 1
 
