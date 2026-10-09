@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import html
 import importlib.util
 import io
 import json
 import re
 import tempfile
 import unittest
+import unittest.mock
 import urllib.parse
 from pathlib import Path
+
+import yaml
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "kickstart_site.py"
 SPEC = importlib.util.spec_from_file_location("kickstart_site", SCRIPT)
@@ -39,6 +43,9 @@ class World:
         self.builds = []
         self.build_outcomes = []  # consumed per started build; default success
         self.rc_repos = []
+        self.connections = {}  # uuid -> connection
+        self.redirects = {}  # old full_name -> new (GitHub keeps answering renamed repos)
+        self.fail_once = set()  # (method, path prefix) answered 503 once
         self.writes = []
         self.n = 0
 
@@ -50,15 +57,21 @@ class World:
     def request(self, method, url, *, headers=None, body=None):
         u = urllib.parse.urlsplit(url)
         path, query = u.path, urllib.parse.parse_qs(u.query)
+        short = re.sub(r"^/client/v4/accounts/\w+", "", path)
         if method != "GET":
-            self.writes.append((method, re.sub(r"^/client/v4/accounts/\w+", "", path), body))
+            self.writes.append((method, short, body))
+        for key in list(self.fail_once):
+            if method == key[0] and short.startswith(key[1]):
+                self.fail_once.discard(key)
+                return 503, b'{"success": false, "errors": [{"message": "flaky"}]}'
         if u.netloc == "api.github.com":
             return self.github(method, path, query, body)
         if u.netloc == "api.cloudflare.com":
             return self.cloudflare(method, path.removeprefix(f"/client/v4/accounts/{ACC}"), body)
         # the live site: up once the Worker exists and a build succeeded
         if self.scripts and any(b["outcome"] == "success" for b in self.builds):
-            return 200, b"<h1>Praktijk Test</h1>"
+            site = yaml.safe_load(next(iter(self.repos.values()))["files"]["_data/site.yml"])
+            return 200, f"<h1>{html.escape(site['name'])}</h1>".encode()
         return 404, b"not found"
 
     def ok(self, result, status=200):
@@ -67,19 +80,22 @@ class World:
     def github(self, method, path, query, body):
         js = lambda d, s=200: (s, json.dumps(d).encode())
         if m := re.fullmatch(r"/repos/([^/]+/[^/]+)", path):
-            name = m.group(1)
+            name = self.redirects.get(m.group(1), m.group(1))
             if method == "PATCH":
                 repo = self.repos.pop(name)
                 repo.update(body)
                 new = name.split("/")[0] + "/" + body.get("name", name.split("/")[1])
                 self.repos[new] = repo
+                if new != name:
+                    self.redirects[name] = new
                 return js({})
             repo = self.repos.get(name)
             if not repo:
                 return js({"message": "Not Found"}, 404)
             return js({"id": repo["id"], "full_name": name, "owner": {"id": 277291192},
-                       "html_url": f"https://github.com/{name}"})
+                       "html_url": f"https://github.com/{name}", "archived": repo.get("archived", False)})
         if path == "/repos/rootcause-org/site-template/generate":
+            self.redirects.pop(f"{body['owner']}/{body['name']}", None)
             self.repos[f"{body['owner']}/{body['name']}"] = {"id": 1000 + self.n, "files": dict(TEMPLATE_FILES),
                                                               "sha": "a" * 40}
             return js({}, 201)
@@ -115,10 +131,12 @@ class World:
             self.scripts.pop(m.group(1))
             return self.ok(None)
         if path == "/builds/repos/connections":
-            if method == "DELETE":
-                return self.ok(None)
-            return self.ok(body | {"repo_connection_uuid": "conn-1"})
+            uuid = f"conn-{body['provider_account_name']}-{body['repo_name']}"
+            self.connections[uuid] = body | {"repo_connection_uuid": uuid}
+            return self.ok(self.connections[uuid])
         if path.startswith("/builds/repos/connections/"):
+            if not self.connections.pop(path.rsplit("/", 1)[1], None):
+                return 404, b'{"success": false, "errors": [{"message": "not found"}]}'
             return self.ok(None)
         if path == "/builds/tokens":
             return self.ok([{"build_token_uuid": "tok-1", "build_token_name": "site-de-kies build token"}])
@@ -128,12 +146,14 @@ class World:
             uuid = self.uid("trig")
             conn = body["repo_connection_uuid"]
             self.triggers[uuid] = {k: v for k, v in body.items() if k != "repo_connection_uuid"} | {
-                "trigger_uuid": uuid, "repo_connection": {"repo_connection_uuid": conn}}
+                "trigger_uuid": uuid, "repo_connection": self.connections[conn]}
             return self.ok(self.triggers[uuid])
         if m := re.fullmatch(r"/builds/triggers/([\w-]+)", path):
             if method == "DELETE":
                 self.triggers.pop(m.group(1))
                 return self.ok(None)
+            if "repo_connection_uuid" in body:
+                body = dict(body, repo_connection=self.connections[body.pop("repo_connection_uuid")])
             self.triggers[m.group(1)].update(body)
             return self.ok(self.triggers[m.group(1)])
         if m := re.fullmatch(r"/builds/triggers/([\w-]+)/builds", path):
@@ -165,6 +185,9 @@ class World:
                 (target / rel).write_text(text)
             target.joinpath(".origin").write_text(cmd[3])
             return ""
+        if cmd[:2] == ["bash", "build.sh"] and cwd:
+            # the real build parses _data/site.yml with js-yaml
+            yaml.safe_load((Path(cwd) / "_data/site.yml").read_text())
         if cmd[0] == "git":
             root = Path(cmd[2])
             if "push" in cmd:
@@ -205,8 +228,10 @@ class KickstartTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
 
     def kick(self, *extra, env=TOKENS):
-        args = ks.parse_args(["dentai-org", "test", "--project", "dentai", "--tenant", "test",
-                              "--name", "Praktijk Test", "--out", self.tmp.name, *extra])
+        org = extra[0] if extra and not extra[0].startswith("-") else "dentai-org"
+        extra = extra[1:] if extra and not extra[0].startswith("-") else extra
+        args = ks.parse_args([org, "test", "--project", "dentai", "--tenant", "test", "--name", "Praktijk Test",
+                              "--out", self.tmp.name, "--state-dir", self.tmp.name + "/state", *extra])
         k = ks.Kickstart(args, http=self.world, run=self.world.run, sleep=lambda s: None, env=env)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
@@ -320,6 +345,137 @@ class KickstartTest(unittest.TestCase):
         self.assertIn("gh repo delete", out)
         code, out, _ = self.kick()  # the slug is free again
         self.assertEqual(code, 0, out)
+
+    # ---- review 2026-10-09 regressions (Astra): ownership, secrets, YAML, resumable teardown ----
+
+    def test_teardown_from_wrong_org_refuses_before_any_write(self):
+        self.kick()
+        code, out, writes = self.kick("wrong-org", "--teardown", "site-test")
+        self.assertEqual((code, writes), (1, []))
+        self.assertIn("builds from dentai-org/site-test", out)
+        self.assertIn("site-test", self.world.scripts)
+
+    def test_teardown_missing_repo_is_an_error_not_acceptance(self):
+        self.world.scripts["site-test"] = "tag0"  # unbound Worker, no record, no repo
+        code, out, writes = self.kick("--teardown", "site-test", "--force-orphan")
+        self.assertEqual((code, writes), (1, []))
+        self.assertIn("no GitHub repo", out)
+
+    def test_teardown_of_unbound_worker_needs_record_or_force_orphan(self):
+        self.kick()
+        for t in list(self.world.triggers):  # someone removed the Git connection by hand
+            del self.world.triggers[t]
+        Path(self.tmp.name, "state").joinpath(f"{ACC}-site-test.json").unlink()
+        code, out, writes = self.kick("--teardown", "site-test")
+        self.assertEqual((code, writes), (1, []))
+        self.assertIn("--force-orphan", out)
+        code, out, _ = self.kick("--teardown", "site-test", "--force-orphan")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.world.scripts, {})
+
+    def test_same_slug_from_another_org_aborts_before_any_write(self):
+        self.kick()
+        code, out, writes = self.kick("another-org")
+        self.assertEqual((code, writes), (1, []))
+        self.assertIn("✗ preflight", out)
+        self.assertTrue(all(t["repo_connection"]["provider_account_name"] == "dentai-org"
+                            for t in self.world.triggers.values()))
+        code, out, writes = self.kick("another-org", "--adopt")  # adopt does not override a foreign binding
+        self.assertEqual((code, writes), (1, []))
+
+    def test_existing_repo_without_record_needs_adopt(self):
+        self.kick()
+        Path(self.tmp.name, "state").joinpath(f"{ACC}-site-test.json").unlink()
+        code, out, writes = self.kick()
+        self.assertEqual((code, writes), (1, []))
+        self.assertIn("--adopt", out)
+        code, out, _ = self.kick("--adopt")
+        self.assertEqual(code, 0, out)
+
+    def test_subprocess_env_carries_no_operator_secrets(self):
+        import os
+        import sys
+        probe = "import os; print(sorted(k for k in os.environ if k.endswith(('TOKEN', '_PAT'))))"
+        with unittest.mock.patch.dict(os.environ, {"GH_SITE_PROVISIONING_PAT": "SENTINEL_PAT_123",
+                                                   "CF_SITES_USER_TOKEN": "SENTINEL_CF_456"}):
+            self.assertEqual(ks.run_command([sys.executable, "-c", probe]).strip(), "[]")
+            out = ks.run_command([sys.executable, "-c", probe], env={"CLOUDFLARE_API_TOKEN": "x"}).strip()
+            self.assertEqual(out, "['CLOUDFLARE_API_TOKEN']")
+
+    def test_secrets_in_failing_command_output_are_redacted(self):
+        env = {k: v * 8 for k, v in TOKENS.items()}  # only values >= 8 chars count as secrets
+        world_run = self.world.run
+
+        def leaky(cmd, **kw):
+            if cmd[:2] == ["bash", "build.sh"]:
+                raise ks.StepFailed(f"env: {env['GH_SITE_PROVISIONING_PAT']} {env['CF_SITES_USER_TOKEN']}")
+            return world_run(cmd, **kw)
+        args = ks.parse_args(["dentai-org", "test", "--project", "dentai", "--tenant", "test",
+                              "--out", self.tmp.name, "--state-dir", self.tmp.name + "/state"])
+        k = ks.Kickstart(args, http=self.world, run=leaky, sleep=lambda s: None, env=env)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(k.main(), 1)
+        self.assertIn("env: *** ***", out.getvalue())
+        self.assertNotIn(env["GH_SITE_PROVISIONING_PAT"], out.getvalue())
+
+    def test_names_with_quotes_backslashes_newlines_stay_valid_yaml(self):
+        for name in ['Praktijk "De Brug"', "Back\\slash: yes", "Twee\nregels", "Tandarts Ève & Zoon #1"]:
+            with self.subTest(name=name):
+                self.world = World()
+                code, out, _ = self.kick("--name", name)
+                self.assertEqual(code, 0, out)
+                site = yaml.safe_load(self.world.repos["dentai-org/site-test"]["files"]["_data/site.yml"])
+                self.assertEqual(site["name"], name)
+                Path(self.tmp.name, "state").joinpath(f"{ACC}-site-test.json").unlink()
+
+    def test_bad_slugs_are_rejected(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            ks.parse_args(["dentai-org", "Bad Slug", "--project", "dentai", "--tenant", "t"])
+
+    def test_teardown_resumes_after_connection_delete_failure(self):
+        self.kick()
+        orig = self.world.cloudflare
+        def always_503(method, path, body):
+            if method == "DELETE" and path.startswith("/builds/repos/connections/"):
+                return 503, b'{"success": false}'
+            return orig(method, path, body)
+        self.world.cloudflare = always_503  # outlasts the retries
+        code, out, _ = self.kick("--teardown", "site-test")
+        self.assertEqual(code, 1, out)
+        self.assertEqual(self.world.triggers, {})
+        self.world.cloudflare = orig
+        code, out, writes = self.kick("--teardown", "site-test")
+        self.assertEqual(code, 0, out)
+        self.assertIn(("DELETE", "/builds/repos/connections/conn-dentai-org-site-test", None), writes)
+        self.assertEqual(self.world.connections, {})
+
+    def test_transient_503_is_retried(self):
+        self.kick()
+        self.world.fail_once = {("DELETE", "/builds/triggers/")}
+        code, out, _ = self.kick("--teardown", "site-test")
+        self.assertEqual(code, 0, out)
+        self.assertEqual((self.world.triggers, self.world.connections, self.world.scripts), ({}, {}, {}))
+
+    def test_teardown_resumes_after_archive_failure(self):
+        self.kick()
+        orig = self.world.github
+        def archive_fails(method, path, query, body):
+            if method == "PATCH" and body == {"archived": True}:
+                return 500, b'{"message": "boom"}'
+            return orig(method, path, query, body)
+        self.world.github = archive_fails
+        code, out, _ = self.kick("--teardown", "site-test")
+        self.assertEqual(code, 1, out)
+        parked = [n for n in self.world.repos if "-teardown-" in n]
+        self.assertEqual(len(parked), 1)
+        self.assertFalse(self.world.repos[parked[0]].get("archived"))
+        self.world.github = orig
+        code, out, _ = self.kick("--teardown", "site-test")
+        self.assertEqual(code, 0, out)
+        self.assertIn("renamed by an earlier teardown", out)
+        self.assertTrue(self.world.repos[parked[0]]["archived"])
+        self.assertEqual(len([n for n in self.world.repos if "-teardown-" in n]), 1)  # no second rename
 
 
 if __name__ == "__main__":

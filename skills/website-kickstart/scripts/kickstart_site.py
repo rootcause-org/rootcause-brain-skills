@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
-# dependencies = []
+# dependencies = ["pyyaml"]
 # ///
 """Provision a chat-editable public website on Cloudflare Workers Builds in one run.
 
@@ -10,7 +10,11 @@ first production build → rootcause `role=website` mirror → Browser Rendering
 
 Every step reads live state first and only writes what is missing, so a rerun after a failure
 continues where it stopped. `--dry-run` never writes: reads run when their credential is present,
-writes are printed. Stdlib only (urllib); shells out to git, pnpm, rc.
+writes are printed. urllib + PyYAML; shells out to git, pnpm, rc with a minimal environment.
+
+Ownership: a Worker is only touched when its Workers Builds connection points at <org>/site-<slug>,
+or when this machine's kickstart record (--state-dir) says we created it. Everything else needs an
+explicit --adopt (provision) or --force-orphan (teardown).
 """
 
 from __future__ import annotations
@@ -31,6 +35,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+import yaml
+
 CF_API = "https://api.cloudflare.com/client/v4"
 GH_API = "https://api.github.com"
 DEFAULT_ACCOUNT = "60c5feed78b351b48868d3a691184c4b"  # Cloudflare "Rootcause Sites"
@@ -48,7 +54,25 @@ TRIGGER_COMPARE = ("build_command", "deploy_command", "root_directory", "branch_
 
 
 class StepFailed(Exception):
-    pass
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
+
+
+SLUG = re.compile(r"[a-z0-9][a-z0-9-]*")
+# What a child process may see: tool plumbing, never the operator's tokens. Per-command extras are
+# added explicitly (wrangler: its Cloudflare token; gh/git: their own config/keyring; rc: RC_*).
+SAFE_ENV = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "SHELL",
+            "SSH_AUTH_SOCK", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "PNPM_HOME",
+            "MISE_DATA_DIR", "MISE_CONFIG_DIR", "MISE_CACHE_DIR")
+TOOL_ENV = {"gh": ("GH_CONFIG_DIR", "GH_HOST"), "git": ("GIT_SSH_COMMAND", "GH_CONFIG_DIR"), "rc": ("RC_",)}
+
+
+def child_env(cmd, extra=None):
+    allowed = SAFE_ENV + TOOL_ENV.get(Path(cmd[0]).name, ())
+    env = {k: v for k, v in os.environ.items()
+           if k in allowed or any(a.endswith("_") and k.startswith(a) for a in allowed)}
+    return env | (extra or {})
 
 
 class Http:
@@ -70,7 +94,7 @@ class Http:
 
 
 def run_command(cmd, *, cwd=None, env=None):
-    proc = subprocess.run(cmd, cwd=cwd, env={**os.environ, **(env or {})}, text=True, capture_output=True, check=False)
+    proc = subprocess.run(cmd, cwd=cwd, env=child_env(cmd, env), text=True, capture_output=True, check=False)
     if proc.returncode:
         tail = (proc.stderr or proc.stdout).strip().splitlines()[-15:]
         raise StepFailed(f"`{' '.join(cmd[:4])}…` exited {proc.returncode}: " + " | ".join(tail))
@@ -97,11 +121,29 @@ class Kickstart:
         self.out = Path(args.out).expanduser()
         self.s = {}  # facts gathered along the way, printed in the summary
         self._checkout = None
+        self.secrets = [t for t in (self.cf_token, self.gh_pat, self.br_token) if len(t) >= 8]
+        # This machine's record of what it provisioned: the ownership proof for an unbound Worker and
+        # the resume point for a partial teardown (Cloudflare has no list-connections endpoint).
+        self.state_path = Path(args.state_dir).expanduser() / f"{args.account}-{self.worker}.json"
+        self.state = json.loads(self.state_path.read_text()) if self.state_path.exists() else {}
 
     # ---- plumbing -------------------------------------------------------------------------------
 
     def say(self, mark, step, detail):
-        print(f"{mark} {step} — {detail}", flush=True)
+        print(f"{mark} {step} — {self.redact(detail)}", flush=True)
+
+    def redact(self, text):
+        for secret in self.secrets:
+            text = text.replace(secret, "***")
+        return text
+
+    def save_state(self, **facts):
+        if self.a.dry_run:
+            return
+        self.state |= facts | {"account": self.a.account, "worker": self.worker, "repo": self.full_name,
+                               "project": self.a.project, "tenant": self.a.tenant}
+        self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        self.state_path.write_text(json.dumps(self.state, indent=2, sort_keys=True) + "\n")
 
     def plan(self, what):
         print(f"    (dry-run) would {what}", flush=True)
@@ -112,6 +154,8 @@ class Kickstart:
             if not token:
                 try:
                     token = self.run(["gh", "auth", "token"]).strip()
+                    if len(token) >= 8:
+                        self.secrets.append(token)
                 except (StepFailed, OSError):
                     token = ""
             self._gh_token = token
@@ -138,7 +182,7 @@ class Kickstart:
         if status not in ok or (isinstance(data, dict) and data.get("success") is False):
             errors = data.get("errors") if isinstance(data, dict) else None
             msg = errors or (data.get("message") if isinstance(data, dict) else None) or raw[:300]
-            raise StepFailed(f"{method} {path} → HTTP {status}: {msg}")
+            raise StepFailed(f"{method} {path} → HTTP {status}: {msg}", status)
         return data
 
     def cf(self, method, path, body=None):
@@ -202,6 +246,8 @@ class Kickstart:
             else:
                 raise StepFailed(f"{self.full_name} not visible after creation")
         self.s |= {"repo_id": repo["id"], "owner_id": repo["owner"]["id"], "repo_url": repo["html_url"]}
+        if created:
+            self.save_state(repo_id=repo["id"])
         for _ in range(12):  # a repo generated from a template is empty for a few seconds
             wrangler = self.file_text("wrangler.jsonc")
             if wrangler is not None:
@@ -223,8 +269,11 @@ class Kickstart:
             else:
                 self.personalise()
                 detail = f"{'created' if created else 'filled'} {self.full_name} ({self.worker})"
-        else:
+        elif self.state.get("repo_id") == repo["id"]:
             detail = f"{self.full_name} exists, already personalised"
+        else:
+            raise StepFailed(f"{self.full_name} exists and is not a kickstart from this machine; "
+                             "pass --adopt to take it over (its triggers will be converged)")
         head = self.gh("GET", f"/repos/{self.full_name}/commits/main")
         self.s["head_sha"] = head["sha"] if head else None
         return detail + (f" @ {self.s['head_sha'][:8]}" if self.s["head_sha"] else "")
@@ -234,6 +283,21 @@ class Kickstart:
         that is not ours, the name is free."""
         repo = self.gh("GET", f"/repos/{self.full_name}")
         return repo if repo and repo["full_name"].lower() == self.full_name.lower() else None
+
+    def find_repo(self):
+        """(repo, parked) for teardown: the live repo, or the renamed `-teardown-` one a previous
+        teardown left (found via the record, or via GitHub's redirect from the old name)."""
+        repo = self.gh("GET", f"/repos/{self.full_name}")
+        if repo and repo["full_name"].lower() == self.full_name.lower():
+            return repo, False
+        parked = re.compile(re.escape(self.full_name) + r"-teardown-\d+", re.IGNORECASE)
+        if repo and parked.fullmatch(repo["full_name"]):
+            return repo, True
+        if self.state.get("parked_repo"):
+            repo = self.gh("GET", f"/repos/{self.state['parked_repo']}")
+            if repo:
+                return repo, True
+        return None, False
 
     def file_text(self, path):
         try:
@@ -246,7 +310,10 @@ class Kickstart:
 
     def personalise(self):
         root = self.checkout()
-        values = {"__WORKER_NAME__": self.worker, "__SITE_NAME__": self.a.name,
+        # Slugs are validated by parse_args; the free-text name becomes a JSON-encoded (= valid YAML
+        # double-quoted) scalar, replacing the template's quoted placeholder whole.
+        name = json.dumps(self.a.name, ensure_ascii=False)
+        values = {'"__SITE_NAME__"': name, "__SITE_NAME__": name, "__WORKER_NAME__": self.worker,
                   "__PROJECT__": self.a.project, "__TENANT__": self.a.tenant}
         for rel in ("wrangler.jsonc", "package.json", "_data/site.yml"):
             path = root / rel
@@ -254,6 +321,12 @@ class Kickstart:
             for key, value in values.items():
                 text = text.replace(key, value)
             path.write_text(text)
+        try:
+            site = yaml.safe_load((root / "_data/site.yml").read_text())
+        except yaml.YAMLError as err:
+            raise StepFailed(f"_data/site.yml no longer parses after filling: {err}") from err
+        if site.get("name") != self.a.name:
+            raise StepFailed(f"_data/site.yml name reads back as {site.get('name')!r}, not {self.a.name!r}")
         self.run(["git", "-C", str(root), "add", "-A"])
         self.run(["git", "-C", str(root), "commit", "--quiet", "-m",
                   f"Kickstart {self.a.name}: worker {self.worker}, form {self.a.project}/{self.a.tenant}"])
@@ -315,21 +388,54 @@ class Kickstart:
         scripts = self.cf("GET", "/workers/scripts")
         return next((s["tag"] for s in scripts or [] if s.get("id") == self.worker), None)
 
+    def bindings(self, tag):
+        """The repos this Worker builds from, as `org/repo` per Workers Builds trigger connection."""
+        triggers = self.cf("GET", f"/builds/workers/{tag}/triggers") or []
+        conns = [t.get("repo_connection") or {} for t in triggers]
+        return triggers, {f"{c.get('provider_account_name')}/{c.get('repo_name')}" for c in conns if c}
+
+    def check_owner(self, tag, override, flag):
+        """Raise unless Worker `tag` belongs to this org/repo: its connection points here, or it is
+        unbound and this machine's kickstart record created it, or `override` was given."""
+        _, bound = self.bindings(tag)
+        foreign = {b for b in bound if b.lower() != self.full_name.lower()}
+        if foreign:
+            raise StepFailed(f"Worker {self.worker} builds from {', '.join(sorted(foreign))}, not "
+                             f"{self.full_name}; refusing to touch it (pick another --worker-name/slug)")
+        if bound:
+            return f"bound to {self.full_name}"
+        if self.state.get("tag") == tag and self.state.get("repo", "").lower() == self.full_name.lower():
+            return "unbound, created by this machine's kickstart"
+        if override:
+            return f"unbound, {flag}"
+        raise StepFailed(f"Worker {self.worker} exists without a Git connection and no kickstart record "
+                         f"({self.state_path}); pass {flag} if it is really {self.full_name}'s")
+
+    def step_preflight(self):
+        """Before any write: a same-named Worker in the shared account must already be ours."""
+        tag = self.worker_tag()
+        if tag is None:
+            return f"Worker {self.worker} is free"
+        return f"Worker {self.worker} exists, {self.check_owner(tag, self.a.adopt, '--adopt')}"
+
     def step_worker(self):
         tag = self.worker_tag()
         detail = "exists"
-        if tag is None:
+        if tag is not None:
+            detail = self.check_owner(tag, self.a.adopt, "--adopt")
+        else:
             if self.a.dry_run:
                 self.plan(f"bash build.sh && pnpm dlx wrangler@4 deploy (creates Worker {self.worker})")
                 return f"would create Worker {self.worker} by a first wrangler deploy"
             root = self.checkout()
             self.run(["bash", "build.sh"], cwd=root, env=self.local_env(root))
-            self.run(["pnpm", "dlx", "wrangler@4", "deploy"], cwd=root,
+            self.run(["pnpm", "dlx", "wrangler@4", "deploy"], cwd=root,  # the only step that gets a CF token
                      env=self.local_env(root) | {"CLOUDFLARE_API_TOKEN": self.cf_token,
                                                  "CLOUDFLARE_ACCOUNT_ID": self.a.account})
             tag = self.worker_tag()
             if tag is None:
                 raise StepFailed(f"wrangler deployed but GET /workers/scripts has no {self.worker}")
+            self.save_state(tag=tag)
             detail = "created by wrangler deploy"
         self.s["worker_tag"] = tag
         return f"{self.worker} tag {tag} ({detail})"
@@ -341,6 +447,8 @@ class Kickstart:
             "provider_account_name": self.a.org, "repo_id": str(self.s.get("repo_id", "<repo id>")),
             "repo_name": self.repo_name})
         conn_uuid = (conn or {}).get("repo_connection_uuid", "<repo_connection_uuid>")
+        if conn:
+            self.save_state(tag=tag, connections=sorted(set(self.state.get("connections", [])) | {conn_uuid}))
         existing = (self.cf("GET", f"/builds/workers/{tag}/triggers") if tag else None) or []
         token = self.build_token(existing)
         triggers, parts = [], []
@@ -530,29 +638,62 @@ class Kickstart:
     # ---- teardown (throwaway sites only) --------------------------------------------------------
 
     def teardown(self):
-        """Undo a kickstart: rc mirror row, Cloudflare triggers + repo connection + Worker, App access.
-        Neither our gh login nor the PAT may delete repos, so the repo is renamed out of the way
-        (the slug is free for the next run) and archived; the manual delete command is printed."""
+        """Undo a kickstart: rc mirror row, Cloudflare triggers + repo connections + Worker, App access.
+        Ownership is proven before the first delete. Neither our gh login nor the PAT may delete repos,
+        so the repo is renamed out of the way (the slug is free again) and archived; the delete command
+        is printed. Rerunnable from any partial failure (record + redirect + idempotent deletes)."""
         if self.a.teardown != self.worker:
             print(f"✗ teardown — pass --teardown {self.worker} to confirm", flush=True)
             return 1
-        steps = (("rootcause mirror", self.teardown_rootcause), ("cloudflare", self.teardown_cloudflare),
-                 ("github", self.teardown_github))
+        try:
+            plan = self.teardown_preflight()
+        except StepFailed as err:
+            self.say("✗", "preflight", f"{err} — nothing was changed")
+            return 1
+        self.say("·" if self.a.dry_run else "✓", "preflight", plan["detail"])
+        steps = (("rootcause mirror", lambda: self.teardown_rootcause()),
+                 ("cloudflare", lambda: self.teardown_cloudflare(plan["tag"])),
+                 ("github", lambda: self.teardown_github(plan["repo"], plan["parked"])))
         ok = True
         for label, fn in steps:
             try:
                 detail = fn()
                 self.say("·" if self.a.dry_run else "✓", label, ("would: " if self.a.dry_run else "") + detail)
             except StepFailed as err:
-                self.say("✗", label, str(err))
+                self.say("✗", label, f"{err} (rerun the same command to resume)")
                 ok = False
+        if ok and not self.a.dry_run:
+            self.state_path.unlink(missing_ok=True)
         return 0 if ok else 1
+
+    def teardown_preflight(self):
+        tag = self.worker_tag()
+        owner = self.check_owner(tag, self.a.force_orphan, "--force-orphan") if tag else "already deleted"
+        repo, parked = self.find_repo()
+        if repo is None:
+            raise StepFailed(f"no GitHub repo {self.full_name} (nor a teardown-renamed one): "
+                             "wrong org/slug, or already fully torn down")
+        where = f"repo {repo['full_name']}" + (" (renamed by an earlier teardown)" if parked else "")
+        return {"tag": tag, "repo": repo, "parked": parked, "detail": f"Worker {self.worker} {owner}; {where}"}
 
     def act(self, cmd):
         if self.a.dry_run:
             self.plan("$ " + " ".join(_quote(x) for x in cmd))
         else:
             self.run(cmd)
+
+    def cf_delete(self, path):
+        """DELETE with retries; 404 = already gone."""
+        for attempt in range(3):
+            try:
+                self.cf("DELETE", path)
+                return
+            except StepFailed as err:
+                if err.status == 404:
+                    return
+                if attempt == 2 or (err.status and err.status < 500 and err.status != 429):
+                    raise
+                self.sleep(POLL_SECONDS)
 
     def teardown_rootcause(self):
         scope = ["rc", "--project", self.a.project, "--tenant", self.a.tenant]
@@ -564,39 +705,41 @@ class Kickstart:
         self.act(scope + ["project", "repo", "rm", self.a.mirror_name])
         return f"removed mirror {self.a.mirror_name}"
 
-    def teardown_cloudflare(self):
-        tag = self.worker_tag()
-        if tag is None:
-            return f"no Worker {self.worker}"
-        triggers = self.cf("GET", f"/builds/workers/{tag}/triggers") or []
-        conns = {(t.get("repo_connection") or {}).get("repo_connection_uuid") for t in triggers} - {None}
+    def teardown_cloudflare(self, tag):
+        triggers = self.bindings(tag)[0] if tag else []
+        conns = set(self.state.get("connections", []))
+        conns |= {(t.get("repo_connection") or {}).get("repo_connection_uuid") for t in triggers} - {None}
         for t in triggers:
-            self.cf("DELETE", f"/builds/triggers/{t['trigger_uuid']}")
-        for uuid in conns:
-            self.cf("DELETE", f"/builds/repos/connections/{uuid}")
-        self.cf("DELETE", f"/workers/scripts/{self.worker}?force=true")
-        return f"deleted {len(triggers)} triggers, {len(conns)} repo connection(s), Worker {self.worker}"
+            self.cf_delete(f"/builds/triggers/{t['trigger_uuid']}")
+        for uuid in sorted(conns):
+            self.cf_delete(f"/builds/repos/connections/{uuid}")
+            self.save_state(connections=sorted(set(self.state.get("connections", [])) - {uuid}))
+        if tag:
+            self.cf_delete(f"/workers/scripts/{self.worker}?force=true")
+        return (f"deleted {len(triggers)} triggers, {len(conns)} repo connection(s), "
+                f"Worker {self.worker if tag else '(already gone)'}")
 
-    def teardown_github(self):
-        repo = self.get_repo()
-        if repo is None:
-            return f"no repo {self.full_name}"
+    def teardown_github(self, repo, parked):
         parts = []
         for slug, inst in (self.installations() or {}).items():
             if inst.get("repository_selection") != "all" and repo["id"] in self.install_repo_ids(inst["id"]):
                 self.gh("DELETE", f"/user/installations/{inst['id']}/repositories/{repo['id']}", pat=True)
                 parts.append(f"removed from {slug}")
-        parked = f"{self.repo_name}-teardown-{time.strftime('%Y%m%d%H%M%S')}"
-        self.gh("PATCH", f"/repos/{self.full_name}",
-                {"name": parked, "description": "kickstart teardown — safe to delete"})
-        self.gh("PATCH", f"/repos/{self.a.org}/{parked}", {"archived": True})
-        parts.append(f"renamed to {parked} + archived; delete: gh auth refresh -s delete_repo && "
-                     f"gh repo delete {self.a.org}/{parked} --yes")
+        name = repo["full_name"]
+        if not parked:
+            name = f"{self.full_name}-teardown-{time.strftime('%Y%m%d%H%M%S')}"
+            self.gh("PATCH", f"/repos/{self.full_name}",
+                    {"name": name.split("/", 1)[1], "description": "kickstart teardown — safe to delete"})
+            self.save_state(parked_repo=name)
+        if not repo.get("archived") or not parked:
+            self.gh("PATCH", f"/repos/{name}", {"archived": True})
+        parts.append(f"parked as {name} (archived); delete: gh auth refresh -s delete_repo && "
+                     f"gh repo delete {name} --yes")
         return "; ".join(parts)
 
     # ---- driver ---------------------------------------------------------------------------------
 
-    STEPS = (("repo", "step_repo"), ("github apps", "step_github_apps"), ("worker", "step_worker"),
+    STEPS = (("preflight", "step_preflight"), ("repo", "step_repo"), ("github apps", "step_github_apps"), ("worker", "step_worker"),
              ("workers builds", "step_builds"), ("first build", "step_build"),
              ("rootcause mirror", "step_rootcause"), ("screenshots", "step_screenshots"))
 
@@ -655,9 +798,19 @@ def parse_args(argv=None):
     p.add_argument("--adopt", action="store_true", help="existing repo: skip creation and placeholder filling")
     p.add_argument("--mirror-name", default=MIRROR_NAME, help="rootcause mirror name (default: site)")
     p.add_argument("--teardown", metavar="WORKER", help="undo a throwaway kickstart; value must equal the Worker name")
+    p.add_argument("--force-orphan", action="store_true",
+                   help="teardown: also delete a Worker with no Git connection and no kickstart record")
+    p.add_argument("--state-dir", default="~/.local/state/website-kickstart",
+                   help="kickstart records (ownership + teardown resume points)")
     p.add_argument("--dry-run", action="store_true", help="read live state, print writes, change nothing")
     p.add_argument("--out", default="~/Downloads", help="where screenshots + trigger JSON go")
     args = p.parse_args(argv)
+    for flag in ("slug", "project", "tenant", "worker_name", "mirror_name"):
+        value = getattr(args, flag)
+        if value is not None and not SLUG.fullmatch(value):
+            p.error(f"--{flag.replace('_', '-')} must be lowercase letters, digits and dashes: {value!r}")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*", args.org):
+        p.error(f"invalid GitHub org {args.org!r}")
     args.name = args.name or args.slug.replace("-", " ").title()
     return args
 
