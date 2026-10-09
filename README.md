@@ -57,6 +57,7 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 | [`brain-dream-cycle`](skills/brain-dream-cycle/SKILL.md) | Full local dreamcycle pass from a brain checkout: mine feedback/sent deltas/patterns with `rc`, then update brain files plus persona/triage settings. |
 | [`brain-harvest`](skills/brain-harvest/SKILL.md) | Full local harvest pass: trigger a production sent-history export, download the cleaned corpus, fan out per-topic subagents to distil patterns (privacy-linted), decide brain/persona/triage homes, verify, publish, then delete the corpus. |
 | [`brain-website-scout`](skills/brain-website-scout/SKILL.md) | Broad local public-site map and Firecrawl capture, followed by per-topic synthesis into a progressive-disclosure brain; raw pages remain gitignored. |
+| [`brain-kb-mirror`](skills/brain-kb-mirror/SKILL.md) | Re-pull a public help center (Zendesk) into a committed Markdown + image snapshot under `knowledge/` from a per-brain source profile, describe new screenshots with cheap vision sub-agents, check, publish. |
 | `brain-ask` | Last-mile production-loop `rc ask` validation, usually against a pushed `dev/*` ref. |
 | `rc-debug` | One run/thread/session to trace/debug/index/JSONL drilldown; analysis-first before edits. |
 | `rc-health` | Stale mirrors plus dead-lettered runs. |
@@ -99,6 +100,7 @@ Details: [docs/side-effects.md](docs/side-effects.md).
 | `local_imap_harvest.py` | Connects to IMAP from the laptop and writes a raw local sent-history corpus. |
 | `brain-website-scout` plan | Calls Firecrawl map and same-domain public discovery endpoints; may consume Firecrawl credits and writes only gitignored local artifacts. |
 | `brain-website-scout` scrape/run | Opens the approved public-page selection through Firecrawl, consumes page/proxy credits, and writes split gitignored local captures. |
+| `brain-kb-mirror` refresh | Reads a public help center (≤2 req/s, allowlisted hosts) and rewrites the mirrored corpus under the brain's `knowledge/`; committed only when you commit. |
 | `rc ask` against `main` | Creates a real production run; may create draft/journal/test artifacts. |
 | `rc ask --brain-ref dev/<branch>` | Creates a test run; no callback or durable journal push; proposals are test artifacts. |
 | `rc run feedback` / `rc run retry` | Writes learning feedback / creates a replacement production run. |

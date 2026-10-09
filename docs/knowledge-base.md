@@ -4,6 +4,9 @@ Use this when a brain has an external knowledge source mounted at `/kb`, or when
 `knowledge/` directory. It is for read-only discovery from `rc dev console bash`; durable routing belongs in the
 brain's own skills/playbooks after you learn which articles matter.
 
+A third-party public help center you don't sync to `/kb` can be committed as a snapshot under
+`/brain/knowledge/` and refreshed monthly with [`brain-kb-mirror`](../skills/brain-kb-mirror/SKILL.md).
+
 ## Mounts And Inventory
 
 Hosted runs may have three relevant read-only trees:

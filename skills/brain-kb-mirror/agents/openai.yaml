@@ -1,0 +1,4 @@
+interface:
+  display_name: "Brain KB Mirror"
+  short_description: "Refresh a committed public help-center snapshot in a brain"
+  default_prompt: "Use $brain-kb-mirror to refresh this brain's public help-center snapshot, describe new images, check, and publish."
