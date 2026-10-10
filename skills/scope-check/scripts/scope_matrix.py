@@ -89,7 +89,8 @@ def classify(report: dict) -> dict[str, str]:
             continue
         predicate = (table.get("predicate") or "").strip()
         if predicate and name not in unconstrained:
-            cells[name] = f"rows:{table.get('count', '?')}"
+            count = table.get("count", "?")
+            cells[name] = "rows:too large to count" if count == -1 else f"rows:{count}"
         else:
             cells[name] = VISIBLE
     return cells
@@ -134,7 +135,7 @@ def render(
         "views a real run of that identity gets. Do not hand-edit; regenerate and commit the diff.",
         "",
         f"`{VISIBLE}` = fully queryable · `rows:<n>` = row-constrained by a compiled predicate "
-        f"(n rows visible) · `{HIDDEN}` = removed by the access policy (raises "
+        f"(n rows visible; `rows:too large to count` = host preview count -1) · `{HIDDEN}` = removed by the access policy (raises "
         f"`lib.db.HiddenTableError`) · `{ABSENT}` = not in this projection at all",
         "",
     ]

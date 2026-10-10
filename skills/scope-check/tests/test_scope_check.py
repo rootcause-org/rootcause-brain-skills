@@ -281,3 +281,8 @@ def test_classify_marks_unconstrained_tables_visible():
         "hidden_tables": ["tenants"],
     })
     assert cells == {"activities": VISIBLE, "people": VISIBLE, "avo_tables": "rows:56", "tenants": HIDDEN}
+
+
+def test_classify_count_minus_one_is_too_large():
+    cells = scope_matrix.classify({"tables": [{"name": "versions", "count": -1, "predicate": "CASE …"}]})
+    assert cells == {"versions": "rows:too large to count"}
