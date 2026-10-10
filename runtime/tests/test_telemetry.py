@@ -96,3 +96,21 @@ class RunContext(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LazySDK(unittest.TestCase):
+    def test_import_lib_does_not_import_posthog(self):
+        # Fresh interpreter: `import lib` must not pull the SDK (and `requests`) in.
+        import subprocess
+
+        code = "import sys, lib; print('posthog' in sys.modules, 'requests' in sys.modules)"
+        out = subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).resolve().parents[1],
+                             capture_output=True, text=True, check=True).stdout.strip()
+        self.assertEqual(out, "False False")
+
+    def test_flush_without_capture_skips_sdk(self):
+        with mock.patch.dict(os.environ, {telemetry.KEY_ENV: "phc_host"}, clear=True), \
+                mock.patch.object(telemetry, "_sdk_configured", False), \
+                mock.patch.object(telemetry, "_sdk") as sdk:
+            telemetry.flush()
+            sdk.assert_not_called()

@@ -26,10 +26,11 @@ import atexit
 import os
 import sys
 
-try:
-    import posthog
-except Exception:  # noqa: BLE001 — posthog absent ⇒ full no-op, never break the import of lib
-    posthog = None
+# The SDK is imported lazily: `import posthog` pulls in `requests` (~90-200 ms), which every
+# grounding script paid at `import lib` even though exceptions are rare. Tests patch this attribute.
+posthog = None
+_sdk_tried = False
+_sdk_configured = False
 
 _installed = False
 _prev_excepthook = None
@@ -53,8 +54,34 @@ _CONTEXT_ENV = {
 }
 
 
+def _sdk():
+    """Import the PostHog SDK on first use; None when absent. Never raises."""
+    global posthog, _sdk_tried
+    if posthog is None and not _sdk_tried:
+        _sdk_tried = True
+        try:
+            import posthog as _posthog  # deliberate lazy import (see module header)
+
+            posthog = _posthog
+        except Exception:  # noqa: BLE001 — posthog absent ⇒ full no-op
+            posthog = None
+    return posthog
+
+
 def _enabled() -> bool:
-    return posthog is not None and bool(os.environ.get(KEY_ENV, "").strip())
+    return bool(os.environ.get(KEY_ENV, "").strip()) and _sdk() is not None
+
+
+def _configure():
+    """Point the SDK at the host key once, right before the first send."""
+    global _sdk_configured
+    if _sdk_configured:
+        return
+    _sdk_configured = True
+    posthog.project_api_key = os.environ[KEY_ENV].strip()
+    posthog.host = os.environ.get(HOST_ENV) or _DEFAULT_HOST
+    posthog.capture_exception_code_variables = False
+    posthog.before_send = _scrub
 
 
 def _scrub(event):
@@ -97,6 +124,7 @@ def _capture(exc, extra_props=None):
         kwargs = {"distinct_id": distinct_id, "properties": props}
         if groups:
             kwargs["groups"] = groups
+        _configure()
         posthog.capture_exception(exc, **kwargs)
     except Exception:  # noqa: BLE001 — best-effort: never let telemetry break the caller
         pass
@@ -119,13 +147,10 @@ def install():
     if _installed:
         return
     _installed = True
-    if not _enabled():
+    # Only the key gates install; the SDK import waits for the first exception (hooks are cheap).
+    if not os.environ.get(KEY_ENV, "").strip():
         return
     try:
-        posthog.project_api_key = os.environ[KEY_ENV].strip()
-        posthog.host = os.environ.get(HOST_ENV) or _DEFAULT_HOST
-        posthog.capture_exception_code_variables = False
-        posthog.before_send = _scrub
         _prev_excepthook = sys.excepthook
         sys.excepthook = _excepthook
         atexit.register(flush)
@@ -145,7 +170,7 @@ def capture_exception(exc=None, **extra_props):
 
 def flush():
     """Flush queued events (call before process exit, or they are lost). No-op when disabled."""
-    if not _enabled():
+    if not _sdk_configured or not _enabled():  # nothing was ever queued ⇒ don't import the SDK to flush
         return
     try:
         posthog.flush()
